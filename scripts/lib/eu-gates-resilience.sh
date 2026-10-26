@@ -151,7 +151,7 @@ eu_gate_G12() {
 }
 
 eu_gate_G13() {
-  local connection_seq generation baseline cursor revisions revision audit loss_budget node step field evidence target expected
+  local connection_seq generation baseline cursor revisions revision audit loss_budget node step field evidence target expected final
   local nodes='["breaker-1","f2-breaker","rmu-1","rmu-2","oltc-1"]' solved
   # Name every physical device explicitly: a missing device cannot pass all().
   # shellcheck disable=SC2016 # jq variables, not shell expansions
@@ -188,8 +188,13 @@ eu_gate_G13() {
       fail "G13 $node audit cursor unavailable or unparsable"
       return
     fi
-    cursor=$(printf '%s' "$API_BODY" | jq -er '.latest_seq | numbers') || {
-      fail "G13 $node audit cursor is not a number"
+    # A device may advance between the solved snapshot and this audit read.
+    # Keep those transitions: start at the last entry for the baseline itself,
+    # not at a newer latest_seq that would silently discard them.
+    cursor=$(printf '%s' "$API_BODY" | jq -er --argjson generation "$generation" --argjson baseline "$baseline" '
+      select(.generation == $generation)
+      | [.entries[] | select(.after.revision == $baseline)] | last.seq | numbers') || {
+      fail "G13 $node audit has no cursor for solved baseline revision $baseline: $API_BODY"
       return
     }
     evidence=$(printf '%s' "$evidence" | jq -c --arg node "$node" --argjson generation "$generation" \
@@ -263,18 +268,30 @@ eu_gate_G13() {
     and .link.gi.state == \"complete\" and station_good and f2_good" 30 "G13 CC recovery by a new connection and GI"; then
     pass "G13 CC recovered all station observations through a new IEC104 connection and completed GI"
   fi
+  # The PLC/actuators keep running during RTU loss and recovery. Freeze an
+  # independent solved field cut, then require every revision through it,
+  # including transitions between observations or after the last outage step.
+  eu_wait_for_field "$solved" 10 "G13 final solver agrees with all five devices" || return
+  field="$WAIT_BODY"
   for node in breaker-1 f2-breaker rmu-1 rmu-2 oltc-1; do
     generation=$(printf '%s' "$evidence" | jq -r --arg node "$node" '.[$node].generation')
     baseline=$(printf '%s' "$evidence" | jq -r --arg node "$node" '.[$node].baseline')
     cursor=$(printf '%s' "$evidence" | jq -r --arg node "$node" '.[$node].cursor')
     revisions=$(printf '%s' "$evidence" | jq -c --arg node "$node" '.[$node].revisions')
+    final=$(printf '%s' "$field" | jq -er --arg node "$node" --argjson generation "$generation" \
+      --argjson last "$(printf '%s' "$revisions" | jq -c 'max // 0')" '
+      .devices[$node] | select(.generation == $generation)
+      | .revision | numbers | select(. >= $last)') || {
+      fail "G13 $node final generation changed or revision regressed: $field"
+      continue
+    }
     if ! eu_api_get "/api/field/audit?device=$node&after=$cursor"; then
       fail "G13 $node post-outage audit response is unavailable or unparsable"
       continue
     fi
     audit="$API_BODY"
     if [ "$revisions" = "[]" ]; then fail "G13 $node recorded no device revision during the outage"; fi
-    eu_check_g13_audit "$audit" "$generation" "$baseline" "$cursor" "$revisions" "$node" || true
+    eu_check_g13_audit "$audit" "$generation" "$baseline" "$cursor" "$final" "$revisions" "$node" || true
   done
 }
 

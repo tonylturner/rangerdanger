@@ -2,12 +2,13 @@
 # Attempt-local audit, command-result and historian evidence predicates.
 # Loaded by eu-iec104-smoke.sh; sourcing only defines helpers/gates.
 
-# eu_check_g13_audit AUDIT GENERATION BASELINE CURSOR REVISIONS [DEVICE]: the device
-# audit after CURSOR (generation compared as a number) is non-empty and complete,
-# records exactly the REVISIONS (JSON array) as truth changes, and a first_solve
-# for each of them and for nothing at or below BASELINE.
+# eu_check_g13_audit AUDIT GENERATION BASELINE CURSOR FINAL OBSERVED [DEVICE]:
+# prove the full revision interval, not just the sparsely observed revisions.
+# FINAL is an independent, solved field snapshot taken before reading the audit.
+# Autonomous changes beyond that fixed cut belong to the next interval.
 eu_check_g13_audit() {
-  local audit="$1" generation="$2" baseline="$3" cursor="$4" revisions="$5" revision label="G13${6:+ $6}"
+  local audit="$1" generation="$2" baseline="$3" cursor="$4" final="$5" observed="$6"
+  local revisions truth_revisions revision label="G13${7:+ $7}"
   if printf '%s' "$audit" | jq -e --argjson generation "$generation" \
     '.generation == $generation' >/dev/null 2>&1; then
     pass "$label audit generation equals device generation $generation"
@@ -24,14 +25,25 @@ eu_check_g13_audit() {
     fail "$label audit after cursor $cursor is empty, not cursor-bounded, or lost entries: $audit"
     return 1
   fi
-  if printf '%s' "$audit" | jq -e --argjson revisions "$revisions" '
+  revisions=$(jq -nce --argjson baseline "$baseline" --argjson final "$final" --argjson observed "$observed" '
+    select(($baseline | type == "number" and . == floor)
+      and ($final | type == "number" and . == floor) and $final > $baseline
+      and ($observed | type == "array" and length > 0)
+      and all($observed[]; type == "number" and . > $baseline and . <= $final))
+    | [range($baseline + 1; $final + 1)]') || {
+    fail "$label invalid revision interval baseline=$baseline final=$final observed=$observed: $audit"
+    return 1
+  }
+  truth_revisions=$(printf '%s' "$audit" | jq -c '
     [.entries[] | select(.operation != "first_solve"
         and (.before.revision | type == "number") and (.after.revision | type == "number")
-        and .after.revision > .before.revision) | .after.revision] | unique == ($revisions | sort)
+        and .after.revision > .before.revision) | .after.revision] | unique') || return
+  if printf '%s' "$truth_revisions" | jq -e --argjson revisions "$revisions" --argjson final "$final" '
+    map(select(. <= $final)) == $revisions
   ' >/dev/null 2>&1; then
     pass "$label device audit records exactly the truth revisions $revisions"
   else
-    fail "$label device audit truth changes differ from the observed revisions $revisions"
+    fail "$label device audit truth revisions=$truth_revisions differ from expected=$revisions through final=$final; observed=$observed; audit=$audit"
   fi
   for revision in $(printf '%s' "$revisions" | jq -r '.[]'); do
     if printf '%s' "$audit" | jq -e --argjson revision "$revision" '
