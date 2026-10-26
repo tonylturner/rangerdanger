@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from eu_circuit import EUFeederSolver
 from eu_profile import load_profile
 from eu_controls import ActionError
+from eu_models import ElectricalSnapshot, HealthSnapshot
 from eu_state import EUProcessState
 from eu_truth_loop import TruthSolveLoop
 from fastapi import FastAPI, Request
@@ -53,7 +54,9 @@ def create_eu_app(profile_path: str) -> FastAPI:
             headers={"Allow": "GET"},
         )
 
-    @app.get("/api/electrical")
+    # JSONResponse preserves the existing wire representation without coercion;
+    # the required, nullable response shapes also document startup/partial truth.
+    @app.get("/api/electrical", response_model=ElectricalSnapshot)
     def get_electrical() -> JSONResponse:
         return JSONResponse(content=state.electrical())
 
@@ -67,7 +70,7 @@ def create_eu_app(profile_path: str) -> FastAPI:
             return JSONResponse(content={"reason": reason}, status_code=400)
         return JSONResponse(content=result)
 
-    @app.get("/api/health")
+    @app.get("/api/health", response_model=HealthSnapshot)
     def health() -> JSONResponse:
         return JSONResponse(content=state.health())
 

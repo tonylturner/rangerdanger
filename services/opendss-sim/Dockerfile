@@ -17,6 +17,7 @@ COPY services/opendss-sim/main.py services/opendss-sim/circuit.py \
     services/opendss-sim/eu_circuit.py services/opendss-sim/eu_truth_loop.py \
     services/opendss-sim/eu_app.py services/opendss-sim/eu_wire.py \
     services/opendss-sim/eu_controls.py services/opendss-sim/eu_state.py \
+    services/opendss-sim/eu_models.py \
     services/opendss-sim/eu_dynamics.py ./
 COPY services/opendss-sim/dss/ ./dss/
 

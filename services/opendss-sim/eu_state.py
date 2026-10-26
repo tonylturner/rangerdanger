@@ -5,6 +5,7 @@ import threading
 import time
 
 from eu_controls import ProcessControls
+from eu_models import ElectricalSnapshot, HealthSnapshot
 from eu_profile import EUProfile
 
 
@@ -13,12 +14,12 @@ class EUProcessState:
         self._lock = threading.RLock()
         self._clock = clock
         self._stale_after = profile.truth_stale_after_ms / 1000
-        self._last_truth_at = None
+        self._last_truth_at: float | None = None
         self._truth_lost = True
-        self._last_converged = None
+        self._last_converged: bool | None = None
         self._failures = 0
         self._pending = False
-        self._latest = {
+        self._latest: ElectricalSnapshot = {
             "schema": 3, "profile_id": profile.id, "solver_epoch": None,
             "solve_seq": 0, "solved_at": None, "truth_stale": True,
             **ProcessControls().snapshot(), "tap": None, "f2_tripped": None,
@@ -65,7 +66,7 @@ class EUProcessState:
             for device in self._latest["devices"].values():
                 device["delivered"] = False
 
-    def publish(self, result: dict, pending: bool = False) -> None:
+    def publish(self, result: ElectricalSnapshot, pending: bool = False) -> None:
         with self._lock:
             self._latest = copy.deepcopy(result)
             self._last_converged = True
@@ -73,13 +74,13 @@ class EUProcessState:
             good = not pending and all(v["delivered"] for v in result["devices"].values())
             self._failures = 0 if good else self._failures + 1
 
-    def electrical(self) -> dict:
+    def electrical(self) -> ElectricalSnapshot:
         with self._lock:
             result = copy.deepcopy(self._latest)
             result["truth_stale"] = self.truth_stale()
             return result
 
-    def health(self) -> dict:
+    def health(self) -> HealthSnapshot:
         with self._lock:
             degraded = (self.truth_stale() or self._last_converged is not True
                         or self._pending or not all(

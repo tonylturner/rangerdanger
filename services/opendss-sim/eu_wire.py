@@ -7,6 +7,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from eu_profile import DeviceProfile, EUProfile
+from eu_models import DeliveryEvidence
 
 BASE = {"schema", "device_id", "kind", "generation", "revision", "event_seq", "changed_at"}
 FIELDS = {
@@ -59,9 +60,10 @@ def validate_truth(value: object, device: DeviceProfile) -> dict:
     return dict(value)
 
 
-def acknowledgement(status: int, body: object, revision: int) -> tuple[dict, bool]:
+def acknowledgement(status: int, body: object, revision: int) -> tuple[DeliveryEvidence, bool]:
     """Return delivery evidence and whether a full-vector reread is required."""
-    record = {"delivered": False, "solved_revision": revision, "revision": revision}
+    record: DeliveryEvidence = {
+        "delivered": False, "solved_revision": revision, "revision": revision}
     if (status == 409 and isinstance(body, dict)
             and set(body) == {"accepted", "reason"} and body["accepted"] is False
             and body["reason"] == "stale_truth"):
