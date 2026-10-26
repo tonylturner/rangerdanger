@@ -10,7 +10,7 @@ it.each(["control-centre", "physical-system"] as const)("keeps a single persiste
   const client = new QueryClient();
   let tree!: ReactTestRenderer;
   const page = (state = FEEDER_STATE, stateError: unknown = null) => <QueryClientProvider client={client}>
-    <ControlCentreScreen state={state} stateError={stateError} stateUpdatedAt={NOW} journal={undefined} now={NOW} view={view} physicalSystem={<section>Independent physical observations</section>} />
+    <ControlCentreScreen state={state} stateError={stateError} stateUpdatedAt={NOW} journal={undefined} now={NOW} view={view} physicalSystem={<section aria-label="Independent physical observations">Independent physical observations</section>} />
   </QueryClientProvider>;
   act(() => { tree = create(page()); });
   const banner = () => tree.root.findAll((n) => typeof n.type === "string" && n.props["data-view-state"] !== undefined);
@@ -77,8 +77,16 @@ it.each(["control-centre", "physical-system"] as const)("keeps a single persiste
     act(() => tree.update(page()));
     expect(banner()[0].props["data-view-state"]).toBe("ok");
     expect(banner()[0].children).toHaveLength(0);
-    const html = renderToStaticMarkup(page(LOST_LINK_STATE));
-    expect(html.indexOf('data-view-state="lost"')).toBeLessThan(html.indexOf(view === "control-centre" ? 'aria-label="CC observation snapshot"' : "<section>Independent physical observations"));
+    // Keep this assertion in the mounted renderer: switching this context
+    // provider to react-dom/server produces multiple-renderer warnings.
+    act(() => tree.update(page(LOST_LINK_STATE)));
+    const contentLabel = view === "control-centre" ? "CC observation snapshot" : "Independent physical observations";
+    const sections = tree.root.findAll((n) => typeof n.type === "string" && (
+      n.props["data-view-state"] !== undefined || n.props["aria-label"] === contentLabel
+    ));
+    expect(sections).toHaveLength(2);
+    expect(sections[0].props["data-view-state"]).toBe("lost");
+    expect(sections[1].props["aria-label"]).toBe(contentLabel);
   } finally {
     act(() => tree.unmount());
     client.clear();
