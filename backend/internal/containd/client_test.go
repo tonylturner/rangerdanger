@@ -168,6 +168,10 @@ func TestAuthHeaderFormat(t *testing.T) {
 // Content-Type: application/json.
 func TestDoRequestWithBodySetsContentType(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{}`))
+			return
+		}
 		if r.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("expected application/json, got %s", r.Header.Get("Content-Type"))
 		}

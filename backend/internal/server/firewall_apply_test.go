@@ -46,6 +46,8 @@ func fakeContaind(t *testing.T, candidateStatus, commitStatus int) (*httptest.Se
 	c := &fakeContaindCounters{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/api/v1/config":
+			io.WriteString(w, `{"interfaces":[{"name":"lan3","device":"eth8"}]}`)
 		case "/api/v1/config/candidate":
 			body, _ := io.ReadAll(r.Body)
 			c.lastCandidate = body

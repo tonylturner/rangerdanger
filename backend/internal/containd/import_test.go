@@ -18,6 +18,10 @@ func TestImportConfigSuccess(t *testing.T) {
 	var sawCandidate, sawCommit bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
+		if r.Method == http.MethodGet {
+			io.WriteString(w, `{}`)
+			return
+		}
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
@@ -81,6 +85,10 @@ func TestImportConfigSuccess(t *testing.T) {
 func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
+		if r.Method == http.MethodGet {
+			io.WriteString(w, `{}`)
+			return
+		}
 		switch r.URL.Path {
 		case "/api/v1/config/candidate":
 			w.WriteHeader(http.StatusOK)
@@ -116,6 +124,10 @@ func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
 func TestImportConfigNoWarningsHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
+		if r.Method == http.MethodGet {
+			io.WriteString(w, `{}`)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -191,6 +203,8 @@ func TestImportConfigLegacyFallback(t *testing.T) {
 	var sawImport bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/api/v1/config":
+			io.WriteString(w, `{}`)
 		case "/api/v1/config/candidate":
 			w.WriteHeader(http.StatusNotFound)
 		case "/api/v1/config/import":
@@ -266,6 +280,10 @@ func TestImportFallbackOnlyMissingCandidate(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/%d", phase, code), func(t *testing.T) {
 				var legacy atomic.Int32
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodGet {
+						io.WriteString(w, `{}`)
+						return
+					}
 					if strings.HasSuffix(r.URL.Path, "/import") {
 						legacy.Add(1)
 						return

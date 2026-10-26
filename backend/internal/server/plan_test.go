@@ -19,7 +19,7 @@ func planRequest(s *Server, ids ...string) any {
 }
 
 func TestPlanHandlersAndProvenance(t *testing.T) {
-	var running []byte
+	running := []byte(`{"interfaces":[{"name":"lan3","device":"eth8"}]}`)
 	failCommit, mismatch := false, false
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

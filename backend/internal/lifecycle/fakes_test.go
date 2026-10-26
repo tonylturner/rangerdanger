@@ -259,6 +259,8 @@ func newFakeFirewall(t *testing.T) *fakeFirewall {
 		switch r.URL.Path {
 		case "/api/v1/health":
 			_ = json.NewEncoder(w).Encode(containd.HealthStatus{Status: "ok"})
+		case "/api/v1/config":
+			_ = json.NewEncoder(w).Encode(map[string]any{"interfaces": []any{map[string]string{"name": "lan3", "device": "eth8"}}})
 		case "/api/v1/config/candidate":
 			fw.imports.Add(1)
 		case "/api/v1/config/commit":

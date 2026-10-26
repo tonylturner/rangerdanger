@@ -38,7 +38,15 @@ func (c *Client) ImportConfig(ctx context.Context, configJSON []byte) ([]string,
 	if err := labs.CheckManagementSafety(configJSON); err != nil {
 		return nil, err
 	}
-	patched, err := ensureEnforcementOn(configJSON)
+	running, err := c.GetConfigDocument(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read appliance bindings: %w", err)
+	}
+	bound, err := mergeApplianceBindings(running, configJSON)
+	if err != nil {
+		return nil, fmt.Errorf("merge appliance bindings: %w", err)
+	}
+	patched, err := ensureEnforcementOn(bound)
 	if err != nil {
 		return nil, fmt.Errorf("ensure enforcement on: %w", err)
 	}

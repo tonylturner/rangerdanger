@@ -173,7 +173,7 @@ func TestPlanConduitDeniesFollowSelectedRules(t *testing.T) {
 }
 
 func TestEUPlanHandlers(t *testing.T) {
-	var running []byte
+	running := []byte(`{"interfaces":[{"name":"lan3","device":"eth8"}]}`)
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/config/candidate":
