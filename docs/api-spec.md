@@ -307,7 +307,7 @@ Direct operations against the containd NGFW.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/firewall/health` | containd management health, as containd sends it: `{"status":"ok","component","build","time"}`. |
+| `GET` | `/firewall/health` | Management-plane liveness subset: `{"status":"ok","component","build","time"}`. Not the complete containd health body and not proof of operational readiness or forwarding. |
 | `GET` | `/firewall/rules` | Currently-loaded rules |
 | `GET` | `/firewall/flows` | containd engine flow table (proxied from containd `GET /api/v1/flows`). Optional `?limit=` 1..5000, default 200; anything else is `400`. Returns `{"flows":[{"flowId","firstSeen","lastSeen","srcIp","dstIp","srcPort","dstPort","transport","application","eventCount","avDetected","avBlocked"}]}`; containd omits empty `srcIp`/`dstIp`/ports/`transport`/`application` and false `av*` fields. `503` with `{"flows":[],"error":"..."}` when containd is unreachable or errors. |
 | `GET` | `/firewall/active` | Active policy identity: `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan"\|"manual-custom"}` for the workshop policies. When the source is `plan`, also returns `plan: {label, actionIds, packageId, revision, policyHash, appliedAt}`; otherwise `plan` is omitted. `manual-custom` means the range's policy observer detected a divergent containd commit outside the backend. A new range starts on its package's default policy, with source `weak` or `hardened-reference` for those named defaults (empty for other default names). |
@@ -316,6 +316,19 @@ Direct operations against the containd NGFW.
 | `POST` | `/plan/compile` | Compile selected catalog actions without applying them. Body: `{"packageId":string,"revision":int,"actionIds":string[]}` (max 64 KiB; unknown fields rejected). Returns `{packageId, revision, label, actions, rules, expectations, policyHash, config}`; see below. `409` for a package/revision mismatch with the active range; `400` for malformed requests or unknown action IDs. |
 | `POST` | `/firewall/apply-plan` | Same request as compile. Compiles, lints, checks management safety, imports into containd and verifies the running firewall hash. Returns `200 {"applied":true,"warnings":string[],"plan":<compile response>}` and records `active_config=custom`, `policy_source=plan` and provenance. `409`/`400` as for compile; `422 {"error":string,"warnings":string[]}` for compilation, lint, safety, import or running-hash verification failures. Warnings are returned even on success. |
 | `POST` | `/firewall/validation-report` | No request body. Runs the segmentation validation matrix against the currently active policy and captures a short PCAP without applying a policy. Returns `markdown`, `summary` (`authorized_pass`, `authorized_total`, `unauthorized_pass`, `unauthorized_total`, `skipped`, `result`), `planProof`, `acceptance`, `active_config`, `policy_source`, `pcap_path`, `policy_hash`, `window_start`, `window_end` and `policy_stable`. `summary.result` follows Hardened acceptance, not plan proof. |
+
+For operational diagnosis, query containd directly (or through `/containd`):
+`GET /api/v1/health` exposes `ipv4Forwarding` (`enabled`, `disabled`, `unknown`)
+and `managementBinding.state` (`configured`, `unbound-appliance`, `unknown`).
+HTTP 200/status `ok` is management liveness, not forwarding readiness.
+Authenticated `GET /api/v1/system/management-reservation` exposes `bootFault`,
+`recovery`, `listenerFaults` and guard fault history. Both packages reserve
+management access for backend `10.99.99.10` and proxy `10.99.99.3`.
+Recovery can be pending/failed; staging alone does not clear a boot fault.
+Review and commit a reservation-safe candidate, then recheck recovery and
+forwarding. Historical guard faults are not necessarily current failures;
+optional listener faults require corrected settings and a restart, not just
+a commit. These diagnostics are not included in `/api/firewall/health`.
 
 The compile response's `label` is `weak`, `partial` or `hardened`.
 `actions` lists `{id, kind, chosen}` in catalog order (`kind` is `enforce`,
@@ -353,7 +366,13 @@ Used by Lab 1.2 (Baseline Traffic Analysis) to produce representative substation
 
 ## PCAP capture
 
-Unified PCAP API. Uses the containd PCAP subsystem when available, falls back to `tcpdump` in the firewall container otherwise.
+Unified PCAP API. The current US backend submits no native interface/zone
+selection, which containd 0.1.33 rejects, then falls back to `tcpdump -i any`
+in the firewall container. EU deliberately uses `tcpdump` for its multi-port
+filter. This is a RangerDanger client limitation, not missing containd zone
+support: containd 0.1.33 accepts explicit zones/logical interfaces and a
+single port/range filter. A native-path failure alone does not mean the
+fallback capture failed; check capture status and files.
 
 | Method | Path | Description |
 |--------|------|-------------|
