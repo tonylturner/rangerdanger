@@ -39,6 +39,7 @@ function Die($msg) { Write-Host "[x] $msg" -ForegroundColor Red; exit 1 }
 function Banner($msg) { Write-Host "`n$msg`n$('-' * $msg.Length)`n" -ForegroundColor Cyan }
 
 . "$PSScriptRoot/scripts/lib/docker-bounded.ps1"
+. "$PSScriptRoot/scripts/lib/docker-floor.ps1"
 . "$PSScriptRoot/scripts/lib/windows-root.ps1"
 . "$PSScriptRoot/scripts/lib/setup-package.ps1"
 . "$PSScriptRoot/scripts/lib/setup-range.ps1"
@@ -61,7 +62,10 @@ $info = (Invoke-SetupDocker @('info', '--format', '{{json .}}') 30) | ConvertFro
 Assert-DesktopWsl2 $info
 Say "Docker Desktop WSL2 reachable; root: $DaemonRoot (mode: $Mode)"
 $composeVer = (Invoke-SetupDocker @('compose', 'version', '--short')).Trim()
-Say "Compose v2 present ($composeVer)"
+$engineApi = (Invoke-SetupDocker @('version', '--format', '{{.Server.APIVersion}}')).Trim()
+$floorProblem = Get-DockerFloorProblem $composeVer $engineApi
+if ($floorProblem) { Die $floorProblem }
+Say "Compose $composeVer on Engine API $engineApi"
 $arch = switch ($info.Architecture) {
     { $_ -in @('amd64', 'x86_64') } { 'amd64'; break }
     { $_ -in @('arm64', 'aarch64') } { 'arm64'; break }
