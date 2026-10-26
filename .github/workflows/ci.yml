@@ -171,6 +171,9 @@ jobs:
       - name: go vet
         working-directory: backend
         run: go vet ./...
+      - name: Unused Go code (U1000)
+        working-directory: backend
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks U1000 ./...
       - name: go test
         working-directory: backend
         # -count=1 defeats Go's test cache for this module. The
@@ -204,6 +207,9 @@ jobs:
       - name: go vet
         working-directory: services
         run: go vet ./...
+      - name: Unused Go code (U1000)
+        working-directory: services
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks U1000 ./...
       - name: go test
         working-directory: services
         run: go test -race ./...
@@ -244,6 +250,9 @@ jobs:
       - name: go vet
         working-directory: dnp3go
         run: go vet ./...
+      - name: Unused Go code (U1000)
+        working-directory: dnp3go
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks U1000 ./...
       - name: go test
         working-directory: dnp3go
         run: go test -race ./...
@@ -269,6 +278,9 @@ jobs:
       - name: go vet
         working-directory: iec104go
         run: go vet ./...
+      - name: Unused Go code (U1000)
+        working-directory: iec104go
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks U1000 ./...
       - name: go test
         working-directory: iec104go
         run: go test -race -count=1 -timeout 300s ./...
