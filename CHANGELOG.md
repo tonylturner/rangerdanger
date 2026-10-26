@@ -171,6 +171,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **TCP validation probes on BusyBox images.** A dropped connection on
+  a BusyBox-only or BusyBox-`timeout` image, and a refused connection
+  on a BusyBox-only image, were reported as `skipped`. Each now
+  classifies as `deny` or `allow`.
+- **OLTC audit and EU outage-recovery evidence.** Arming the OLTC from
+  the PLC now writes an audit entry with its actor, and EU gate G13
+  attributes each OLTC change to the lab action or autonomous control
+  that made it, so the recovery check is deterministic.
+
 - **Network Map OpenPLC button.** It opened a lab-instance path that
   always answered 404; it now opens `/apps/openplc/`.
 
