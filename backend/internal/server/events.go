@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -22,7 +23,18 @@ func (s *Server) handleGetFirewallHealth(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, health)
+	// Liveness remains status=ok even when forwarding/binding/recovery is
+	// degraded. A diagnostic read failure is visible, not a false outage.
+	reservation, reservationErr := rangeOf(c).Containd().GetManagementReservation(c.Request.Context())
+	response := struct {
+		*containd.HealthStatus
+		ManagementReservation      json.RawMessage `json:"managementReservation,omitempty"`
+		ManagementReservationError string          `json:"managementReservationError,omitempty"`
+	}{HealthStatus: health, ManagementReservation: reservation}
+	if reservationErr != nil {
+		response.ManagementReservationError = reservationErr.Error()
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // handleGetFirewallFlows returns containd's engine flow table. An

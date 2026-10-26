@@ -579,3 +579,24 @@ func TestMissingCandidateCannotActivateRange(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileRejectsUnsupportedContaindWithoutReseeding(t *testing.T) {
+	for _, build := range []string{"0.1.32", "unparseable"} {
+		t.Run(build, func(t *testing.T) {
+			h := newHarness(t)
+			h.ready(h.options(), "pkg-a")
+			before := h.firewall.imports.Load()
+			h.firewall.build = build
+			m := h.manager(h.options())
+			m.Start()
+			m.wait()
+			st := m.Status()
+			if st.Phase != PhaseFailed || !strings.Contains(st.Error, build) {
+				t.Fatalf("unsupported range adopted: %+v", st)
+			}
+			if len(h.activated) != 0 || h.firewall.imports.Load() != before || len(h.compose.callLog()) != 0 {
+				t.Fatal("reconciliation activated or mutated the unsupported range")
+			}
+		})
+	}
+}

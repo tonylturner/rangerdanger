@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -69,7 +70,7 @@ func TestGetHealthNon200(t *testing.T) {
 // TestIsAvailable verifies the availability check.
 func TestIsAvailable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(HealthStatus{Status: "ok"})
+		json.NewEncoder(w).Encode(HealthStatus{Status: "ok", Build: MinimumVersion})
 	}))
 	defer srv.Close()
 
@@ -94,7 +95,7 @@ func TestWaitReadySuccess(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		json.NewEncoder(w).Encode(HealthStatus{Status: "ok"})
+		json.NewEncoder(w).Encode(HealthStatus{Status: "ok", Build: MinimumVersion})
 	}))
 	defer srv.Close()
 
@@ -119,5 +120,28 @@ func TestWaitReadyTimeout(t *testing.T) {
 	err := client.WaitReady(context.Background(), 3*time.Second)
 	if err == nil {
 		t.Fatal("expected timeout error")
+	}
+}
+
+func TestWaitReadyVersionGate(t *testing.T) {
+	for _, tc := range []struct {
+		build   string
+		allowed bool
+	}{
+		{"0.1.32", false}, {"0.1.33", true}, {"v0.1.33+source", true}, {"0.1.33-rc.1", false}, {"0.1.34-rc.1", true}, {"1.0.0-dev", true}, {"dev", false}, {"", false}, {"0.01.33", false}, {"0.1.34-01", false}, {"0.1.34-alpha.0", true}, {"0.1.9999999999999999999999999", true},
+	} {
+		t.Run(tc.build, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]any{"status": "ok", "build": tc.build, "ipv4Forwarding": "disabled", "managementBinding": map[string]any{"state": "unbound-appliance"}})
+			}))
+			defer srv.Close()
+			err := newTestClient(srv.URL).WaitReady(t.Context(), time.Second)
+			if (err == nil) != tc.allowed {
+				t.Fatalf("build %q: %v", tc.build, err)
+			}
+			if err != nil && (!strings.Contains(err.Error(), tc.build) || !strings.Contains(err.Error(), MinimumVersion)) {
+				t.Fatalf("unhelpful version error: %v", err)
+			}
+		})
 	}
 }

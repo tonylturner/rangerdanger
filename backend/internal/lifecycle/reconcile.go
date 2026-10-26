@@ -58,8 +58,9 @@ func (m *Manager) recoverInterrupted(rec Record, reason string) {
 // reconcileReady adopts a range that was ready when the backend stopped:
 // every manifest container must exist with the range project label (not
 // necessarily healthy yet: after a host reboot the range restarts beside
-// the backend) and the proxy must run this package's routes. It neither
-// starts the range nor reseeds the policy.
+// the backend) and the proxy must run this package's routes. Management
+// liveness and the supported build are checked before activation, without
+// gating recovery on operational health. It neither starts nor reseeds it.
 func (m *Manager) reconcileReady(rec Record) error {
 	if rec.Root != m.opts.Root || rec.Mode != m.opts.Mode {
 		return fmt.Errorf("started from root %s in %s mode, backend now runs root %s in %s mode", rec.Root, rec.Mode, m.opts.Root, m.opts.Mode)
@@ -108,9 +109,14 @@ func (m *Manager) reconcileReady(rec Record) error {
 		return fmt.Errorf("proxy routes are not the routes of %s", pkg.ID)
 	}
 
+	client := m.opts.NewContaind(api)
+	if err := client.WaitReady(ctx, m.timeouts.ContaindReady); err != nil {
+		return fmt.Errorf("containd readiness: %w", err)
+	}
+
 	// The range was started by an earlier backend; the ready record's
 	// time is the latest bound that still precedes anything done on it.
-	gen := NewGeneration(rec.Generation, pkg, man, m.opts.NewContaind(api), rec.UpdatedAt)
+	gen := NewGeneration(rec.Generation, pkg, man, client, rec.UpdatedAt)
 	m.opts.Activate(gen)
 	m.mu.Lock()
 	m.current = gen

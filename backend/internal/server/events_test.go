@@ -2,9 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -112,22 +114,55 @@ func TestHandleGetFirewallFlows_ContaindError(t *testing.T) {
 // TestHandleGetFirewallHealth pins the portal's /api/firewall/health
 // body: containd's own health fields, passed through.
 func TestHandleGetFirewallHealth(t *testing.T) {
-	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/health" {
-			t.Errorf("unexpected containd path: %s", r.URL.Path)
+	for _, forwarding := range []string{"enabled", "disabled", "unknown"} {
+		for _, reservation := range []string{
+			`{"active":false}`,
+			`{"active":true,"bootFault":{"error":"stored conflict"},"recovery":{"state":"pending"},"listenerFaults":["https bind failed"],"guard":{"healthy":false}}`,
+			`{"active":true,"recovery":{"state":"failed","error":"engine unreachable"},"faultHistory":["old fault"]}`,
+			`{"active":true,"bootFault":null,"recovery":{"state":"applied"},"guard":{"healthy":true},"faultHistory":["old fault"]}`,
+			"unavailable",
+		} {
+			t.Run(forwarding+reservation, func(t *testing.T) {
+				fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch r.URL.Path {
+					case "/api/v1/health":
+						fmt.Fprintf(w, `{"build":"0.1.33","component":"mgmt","status":"ok","time":"2026-10-09T12:34:56.789Z","ipv4Forwarding":%q,"managementBinding":{"state":"unbound-appliance","recoveryPorts":[8080]}}`, forwarding)
+					case "/api/v1/system/management-reservation":
+						if r.Header.Get("Authorization") == "" {
+							t.Error("unauthenticated reservation query")
+						}
+						if reservation == "unavailable" {
+							w.WriteHeader(503)
+							return
+						}
+						io.WriteString(w, reservation)
+					default:
+						t.Errorf("unexpected path %s", r.URL.Path)
+					}
+				}))
+				defer fake.Close()
+				s := newTestServer(t, fake.URL)
+				rec, body := invoke(s, s.handleGetFirewallHealth, "GET", "/api/firewall/health", nil)
+				if rec.Code != 200 || body["status"] != "ok" || body["ipv4Forwarding"] != forwarding {
+					t.Fatalf("lost liveness/forwarding: %s", rec.Body)
+				}
+				binding := body["managementBinding"].(map[string]any)
+				if binding["state"] != "unbound-appliance" || len(binding["recoveryPorts"].([]any)) != 1 {
+					t.Fatalf("lost binding: %s", rec.Body)
+				}
+				if reservation == "unavailable" {
+					if body["managementReservationError"] == nil {
+						t.Fatal("lost diagnostic failure")
+					}
+				} else {
+					var want any
+					json.Unmarshal([]byte(reservation), &want)
+					if !reflect.DeepEqual(body["managementReservation"], want) {
+						t.Fatalf("lost reservation diagnostics: %s", rec.Body)
+					}
+				}
+			})
 		}
-		io.WriteString(w, `{"build":"v0.1.40","component":"mgmt","status":"ok","time":"2026-10-09T12:34:56.789Z"}`)
-	}))
-	t.Cleanup(fake.Close)
-	s := newTestServer(t, fake.URL)
-
-	rec, _ := invoke(s, s.handleGetFirewallHealth, "GET", "/api/firewall/health", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status: got %d (%s)", rec.Code, rec.Body.String())
-	}
-	want := `{"status":"ok","component":"mgmt","build":"v0.1.40","time":"2026-10-09T12:34:56.789Z"}`
-	if got := rec.Body.String(); got != want {
-		t.Errorf("body: got %s, want %s", got, want)
 	}
 }
 

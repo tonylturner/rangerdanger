@@ -251,15 +251,16 @@ type fakeFirewall struct {
 	server          *httptest.Server
 	imports         atomic.Int32
 	candidateStatus int
+	build           string
 }
 
 func newFakeFirewall(t *testing.T) *fakeFirewall {
 	t.Helper()
-	fw := &fakeFirewall{}
+	fw := &fakeFirewall{build: containd.MinimumVersion}
 	fw.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/health":
-			_ = json.NewEncoder(w).Encode(containd.HealthStatus{Status: "ok"})
+			_ = json.NewEncoder(w).Encode(containd.HealthStatus{Status: "ok", Build: fw.build})
 		case "/api/v1/config":
 			_ = json.NewEncoder(w).Encode(map[string]any{"interfaces": []any{map[string]string{"name": "lan3", "device": "eth8"}}})
 		case "/api/v1/config/candidate":

@@ -10,12 +10,42 @@ import (
 
 // HealthStatus mirrors containd's GET /api/v1/health body. The endpoint
 // is a liveness probe of the management plane: it always answers
-// status "ok" while the API is up and says nothing about the engine.
+// status "ok" while the API is up; operational diagnostics are separate.
 type HealthStatus struct {
-	Status    string    `json:"status"`    // "ok"
-	Component string    `json:"component"` // "mgmt"
-	Build     string    `json:"build"`     // containd build version
-	Time      time.Time `json:"time"`      // containd's clock, UTC
+	Status            string                   `json:"status"`    // "ok"
+	Component         string                   `json:"component"` // "mgmt"
+	Build             string                   `json:"build"`     // containd build version
+	Time              time.Time                `json:"time"`      // containd's clock, UTC
+	IPv4Forwarding    string                   `json:"ipv4Forwarding"`
+	ManagementBinding *ManagementBindingStatus `json:"managementBinding"`
+}
+
+// ManagementBindingStatus describes the appliance's management NIC binding.
+type ManagementBindingStatus struct {
+	State         string `json:"state"`
+	RecoveryPorts []int  `json:"recoveryPorts,omitempty"`
+}
+
+// GetManagementReservation reads authenticated operational diagnostics. The
+// reservation authority is appliance-owned; preserve its fault/history objects
+// rather than inventing a backend schema for them.
+func (c *Client) GetManagementReservation(ctx context.Context) (json.RawMessage, error) {
+	resp, err := c.doRequest(ctx, http.MethodGet, c.BaseURL+"/api/v1/system/management-reservation")
+	if err != nil {
+		return nil, fmt.Errorf("management reservation: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("management reservation returned %d", resp.StatusCode)
+	}
+	var status map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return nil, fmt.Errorf("decode management reservation: %w", err)
+	}
+	if _, ok := status["active"]; !ok {
+		return nil, fmt.Errorf("management reservation missing active status")
+	}
+	return json.Marshal(status)
 }
 
 // GetHealth returns the firewall health status.
@@ -45,25 +75,24 @@ func (c *Client) IsAvailable(ctx context.Context) bool {
 }
 
 // WaitReady polls containd health, first at once and then every two
-// seconds, until it responds or the context is cancelled.
+// seconds, until a supported build responds or the context is cancelled.
 func (c *Client) WaitReady(ctx context.Context, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	if c.IsAvailable(ctx) {
-		return nil
-	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-
 	for {
+		status, err := c.GetHealth(ctx)
+		if err == nil && status.Status != "" {
+			// Version compatibility gates seeding, but recoverable operational
+			// faults must not prevent the safe seed commit that clears them.
+			return checkBuild(status.Build)
+		}
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("containd not ready after %s: %w", timeout, ctx.Err())
 		case <-ticker.C:
-			if c.IsAvailable(ctx) {
-				return nil
-			}
 		}
 	}
 }
