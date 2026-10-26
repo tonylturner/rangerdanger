@@ -2,26 +2,26 @@
 # Attempt-local audit, command-result and historian evidence predicates.
 # Loaded by eu-iec104-smoke.sh; sourcing only defines helpers/gates.
 
-# eu_check_g13_audit AUDIT GENERATION BASELINE CURSOR REVISIONS: the device
+# eu_check_g13_audit AUDIT GENERATION BASELINE CURSOR REVISIONS [DEVICE]: the device
 # audit after CURSOR (generation compared as a number) is non-empty and complete,
 # records exactly the REVISIONS (JSON array) as truth changes, and a first_solve
 # for each of them and for nothing at or below BASELINE.
 eu_check_g13_audit() {
-  local audit="$1" generation="$2" baseline="$3" cursor="$4" revisions="$5" revision
+  local audit="$1" generation="$2" baseline="$3" cursor="$4" revisions="$5" revision label="G13${6:+ $6}"
   if printf '%s' "$audit" | jq -e --argjson generation "$generation" \
     '.generation == $generation' >/dev/null 2>&1; then
-    pass "G13 audit generation equals device generation $generation"
+    pass "$label audit generation equals device generation $generation"
   else
-    fail "G13 audit generation differs from device generation $generation: $audit"
+    fail "$label audit generation differs from device generation $generation: $audit"
   fi
   if printf '%s' "$audit" | jq -e --argjson cursor "$cursor" '
     (.entries | type == "array" and length > 0)
     and all(.entries[]; (.seq | type == "number") and .seq > $cursor)
     and (.oldest_seq | type == "number" and . <= $cursor + 1)
   ' >/dev/null 2>&1; then
-    pass "G13 audit after cursor $cursor is non-empty and lost no entries"
+    pass "$label audit after cursor $cursor is non-empty and lost no entries"
   else
-    fail "G13 audit after cursor $cursor is empty, not cursor-bounded, or lost entries: $audit"
+    fail "$label audit after cursor $cursor is empty, not cursor-bounded, or lost entries: $audit"
     return 1
   fi
   if printf '%s' "$audit" | jq -e --argjson revisions "$revisions" '
@@ -29,26 +29,26 @@ eu_check_g13_audit() {
         and (.before.revision | type == "number") and (.after.revision | type == "number")
         and .after.revision > .before.revision) | .after.revision] | unique == ($revisions | sort)
   ' >/dev/null 2>&1; then
-    pass "G13 device audit records exactly the truth revisions $revisions"
+    pass "$label device audit records exactly the truth revisions $revisions"
   else
-    fail "G13 device audit truth changes differ from the observed revisions $revisions"
+    fail "$label device audit truth changes differ from the observed revisions $revisions"
   fi
   for revision in $(printf '%s' "$revisions" | jq -r '.[]'); do
     if printf '%s' "$audit" | jq -e --argjson revision "$revision" '
       any(.entries[]; .operation == "first_solve" and .detail.revision == $revision)
     ' >/dev/null 2>&1; then
-      pass "G13 solver first_solve audit covers device revision $revision"
+      pass "$label solver first_solve audit covers device revision $revision"
     else
-      fail "G13 solver lacks first_solve audit for device revision $revision"
+      fail "$label solver lacks first_solve audit for device revision $revision"
     fi
   done
   if printf '%s' "$audit" | jq -e --argjson baseline "$baseline" '
     all(.entries[] | select(.operation == "first_solve");
       (.detail.revision | type == "number") and .detail.revision > $baseline)
   ' >/dev/null 2>&1; then
-    pass "G13 every first_solve after the cursor is for a post-baseline revision"
+    pass "$label every first_solve after the cursor is for a post-baseline revision"
   else
-    fail "G13 a first_solve after the cursor is unparsable or not after baseline revision $baseline"
+    fail "$label a first_solve after the cursor is unparsable or not after baseline revision $baseline"
   fi
 }
 # PLC accepted requests must be new, peer-attributed Modbus writes, never just

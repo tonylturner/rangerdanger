@@ -42,116 +42,200 @@ t_expect_fails 1 "a mutation missing from the audit fails"
 t_run eu_check_g13_audit "$AUDIT" 42 9 20 "[10]"
 t_expect_fails 1 "an audited truth change the gate did not make fails"
 
-# Gate flow: each mutation waits for its own first_solve while the RTU is
-# paused, the CC must lose the link, and recovery needs a newer connection_seq.
+# Gate flow uses distinct per-device generations, revisions and cursors. Every
+# wait evaluates the real predicate against offline field/operator/audit data.
 CALLS="$TMP_DIR/g13-calls.log"
-: >"$CALLS"
-REVISION=9
-RTU_STATE=false
-RESET_DONE=false
-RESET_FAIL=false
-FIELD_FAIL=false
-FIELD_PREDICATE=""
-eu_apply_named() {
-  printf 'policy %s\n' "$1" >>"$CALLS"
+FIELD_BASE=$(cat "$T_FIXTURES/field-g13.json")
+OPERATOR_BASE=$(cat "$T_FIXTURES/operator-gi-untimed.json")
+init_flow() {
+  : >"$CALLS"
+  FIELD="$FIELD_BASE"
+  OPERATOR="$OPERATOR_BASE"
+  RECOVERY_OPERATOR="$OPERATOR_BASE"
+  AUDITS=$(printf '%s' "$FIELD" | jq -c '.devices | to_entries | map({key:.key,
+    value:{generation:.value.generation, latest_seq:(.value.revision * 10), oldest_seq:1, entries:[]}}) | from_entries')
+  RTU_STATE=false
+  WAS_PAUSED=false
+  RESET_FAIL=false
+  RESET_DONE=false
+  BAD_DEVICE=""
+  BAD_AUDIT="."
+  NOOP_ACTION=""
+  BASELINE_PREDICATE=""
 }
+eu_apply_named() { printf 'policy %s\n' "$1" >>"$CALLS"; }
 eu_reset_all() {
   printf 'reset\n' >>"$CALLS"
-  if [ "$RESET_FAIL" = true ]; then
-    fail "reset failed (stub)"
-    return 1
-  fi
+  if [ "$RESET_FAIL" = true ]; then fail "reset failed (stub)"; return 1; fi
   RESET_DONE=true
 }
 docker() {
   printf 'docker %s\n' "$1" >>"$CALLS"
   case "$1" in
-    pause) RTU_STATE=true ;;
+    pause) RTU_STATE=true; WAS_PAUSED=true ;;
     unpause) RTU_STATE=false ;;
     inspect) printf '%s\n' "$RTU_STATE" ;;
+    *) fail "unexpected docker call"; return 1 ;;
   esac
 }
 eu_wait_for_operator() {
   printf 'operator %s\n' "$1" | tr -s ' \n' ' ' >>"$CALLS"
   printf '\n' >>"$CALLS"
-  if [ "$1" = '.link.state != "started"' ]; then LOSS_BUDGET="$2"; fi
-  WAIT_BODY=$(cat "$T_FIXTURES/operator-gi-untimed.json")
+  WAIT_BODY="$OPERATOR"
+  if [ "$RTU_STATE" = true ]; then
+    LOSS_BUDGET="$2"
+    WAIT_BODY=$(printf '%s' "$WAIT_BODY" | jq -c '.link.state = "disconnected"')
+  elif [ "$WAS_PAUSED" = true ]; then
+    WAIT_BODY=$(printf '%s' "$RECOVERY_OPERATOR" | jq -c '.link.connection_seq += 1')
+  fi
+  printf '%s' "$WAIT_BODY" | jq -e "$EU_JQ_DEFS $1" >/dev/null || { fail "operator predicate rejected fixture"; return 1; }
 }
 eu_wait_for_field() {
   printf 'field\n' >>"$CALLS"
-  FIELD_PREDICATE="$1"
-  WAIT_BODY=$(cat "$T_FIXTURES/field-baseline.json")
-  if [ "$FIELD_FAIL" = true ] || ! printf '%s' "$WAIT_BODY" | jq -e "$1" >/dev/null; then
-    fail "reset truth not settled (stub)"
-    return 1
-  fi
+  if [ -z "$BASELINE_PREDICATE" ]; then BASELINE_PREDICATE="$1"; fi
+  WAIT_BODY="$FIELD"
+  printf '%s' "$WAIT_BODY" | jq -e "$1" >/dev/null || { fail "unsettled field (stub)"; return 1; }
 }
-eu_action_step() {
+mutate_device() {
+  local node="$1" op="$2" rev
+  FIELD=$(printf '%s' "$FIELD" | jq -c --arg node "$node" '
+    .devices[$node].revision += 1 | .devices[$node] as $device
+    | .process.devices[$device.device_id].solved_revision = $device.revision')
+  rev=$(printf '%s' "$FIELD" | jq -r --arg node "$node" '.devices[$node].revision')
+  AUDITS=$(printf '%s' "$AUDITS" | jq -c --arg node "$node" --arg op "$op" --argjson rev "$rev" '
+    .[$node] |= (.latest_seq as $seq | .latest_seq += 2 | .entries += [
+      {seq:($seq+1),operation:$op,before:{revision:($rev-1)},after:{revision:$rev}},
+      {seq:($seq+2),operation:"first_solve",detail:{revision:$rev}}])')
+}
+eu_action() {
   local node="$1" action="$2"
-  if [ "$node:$action" = process:fault_s1 ] && [ "$RESET_DONE" != true ]; then
-    fail "process fault action without reset"
-    return 1
-  fi
+  if [ "$RESET_DONE" != true ] || [ "$RTU_STATE" != true ]; then fail "mutation outside owned outage"; return 1; fi
+  printf 'action %s %s\n' "$node" "$action" >>"$CALLS"
+  if [ "$node:$action" = "$NOOP_ACTION" ]; then return 0; fi
   case "$node:$action" in
-    process:fault_s1|breaker-1:reset) REVISION=$((REVISION + 1)) ;;
+    process:fault_s1)
+      FIELD=$(printf '%s' "$FIELD" | jq -c '.devices["breaker-1"].protection_tripped = true')
+      mutate_device breaker-1 local_protection_trip
+      mutate_device rmu-1 fault_passage ;;
+    process:clear_fault) : ;;
+    breaker-1:reset)
+      FIELD=$(printf '%s' "$FIELD" | jq -c '.devices["breaker-1"].protection_tripped = false')
+      mutate_device "$node" "$action" ;;
+    *) mutate_device "$node" "$action" ;;
   esac
-  printf 'action %s %s revision %s\n' "$node" "$action" "$REVISION" >>"$CALLS"
-  API_BODY="{\"revision\":$REVISION}"
+}
+eu_action_step() { eu_action "$1" "$2"; }
+eu_api_get() {
+  local query="${1#*device=}" node after
+  node="${query%%&*}"
+  after="${1##*after=}"
+  printf 'audit %s %s\n' "$node" "$after" >>"$CALLS"
+  API_BODY=$(printf '%s' "$AUDITS" | jq -c --arg node "$node" --argjson after "$after" \
+    '.[$node] | .entries |= map(select(.seq > $after))')
+  if [ "$node" = "$BAD_DEVICE" ] && [ "$after" != 0 ]; then API_BODY=$(printf '%s' "$API_BODY" | jq -c "$BAD_AUDIT"); fi
 }
 eu_wait_for_state() {
-  printf 'wait %s\n' "$4" >>"$CALLS"
+  printf 'solve %s paused=%s\n' "$1" "$RTU_STATE" >>"$CALLS"
+  eu_api_get "$1"
+  printf '%s' "$API_BODY" | jq -e "$EU_JQ_DEFS $2" >/dev/null || { fail "missing first_solve (stub)"; return 1; }
 }
-eu_api_get() {
-  printf 'audit\n' >>"$CALLS"
-  # shellcheck disable=SC2034 # read by the sourced gate helpers
-  HTTP_STATUS=200
-  API_BODY="$AUDIT"
-  # shellcheck disable=SC2034 # consumed by eu_check_g13_audit
-  [ "$1" != "/api/field/audit?after=0" ] || API_BODY='{"generation":42,"entries":[],"latest_seq":20,"oldest_seq":1}'
-}
+init_flow
 t_run eu_gate_G13
-t_expect_fails 0 "the G13 flow passes against an audit with both first_solve entries"
+t_expect_fails 0 "G13 covers every device with independent audit evidence"
 t_expect_eq "$LOSS_BUDGET" "$(jq -r '.timers | .t3_s + .t1_s + 10' "$PACKAGE/protocols/points.json")" "G13 loss budget derives from t3+t1 plus ten seconds"
-t_run grep -E '^(policy|reset|field|audit|action|wait|docker (pause|unpause)|operator .link.state != )' "$CALLS"
-t_expect_eq "$T_OUT" "policy improved
+t_expect_eq "$(grep -c 'connection_seq > 1 ' "$CALLS")" 1 "recovery requires a newer connection"
+for node in breaker-1 f2-breaker rmu-1 rmu-2 oltc-1; do
+  t_expect_out "G13 $node device audit records exactly the truth revisions" "$node final audit is checked"
+  cursor=$(printf '%s' "$FIELD_BASE" | jq -r --arg node "$node" '.devices[$node].revision * 10')
+  t_expect_eq "$(grep -c "^audit $node 0$" "$CALLS")" 1 "$node owns its initial cursor"
+  t_expect_eq "$(grep -c "^solve /api/field/audit?device=$node&after=$cursor paused=true$" "$CALLS")" \
+    "$(printf '%s' "$AUDITS" | jq -r --arg node "$node" '[.[$node].entries[] | select(.operation == "first_solve")] | length')" \
+    "$node waits for every changed revision while RTU paused"
+done
+t_expect_eq "$(grep -E '^(policy|reset|field|audit .* 0$|docker pause)' "$CALLS" | head -9)" \
+  "policy improved
 reset
 field
-audit
-docker pause
-action process fault_s1 revision 10
-wait G13 solver first_solve of device revision 10 while RTU paused
-action process clear_fault revision 10
-action breaker-1 reset revision 11
-wait G13 solver first_solve of device revision 11 while RTU paused
-operator .link.state != \"started\" 
-docker unpause
-audit" "reset and solver agreement precede the cursor and pause; each mutation awaits its first_solve"
-t_run grep -c 'connection_seq > 1 ' "$CALLS"
-t_expect_eq "$T_OUT" 1 "recovery requires a connection_seq newer than the pre-outage link"
-precondition_matches() {
-  jq "$1" "$T_FIXTURES/field-baseline.json" | jq -e "$FIELD_PREDICATE"
-}
+audit breaker-1 0
+audit f2-breaker 0
+audit rmu-1 0
+audit rmu-2 0
+audit oltc-1 0
+docker pause" "all baselines and cursors precede the RTU pause"
+t_expect_eq "$(grep -E '^(action|solve)' "$CALLS")" \
+  "action process fault_s1
+solve /api/field/audit?device=breaker-1&after=90 paused=true
+solve /api/field/audit?device=rmu-1&after=290 paused=true
+action process clear_fault
+action breaker-1 reset
+solve /api/field/audit?device=breaker-1&after=90 paused=true
+action rmu-1 reset
+solve /api/field/audit?device=rmu-1&after=290 paused=true
+action rmu-2 reset
+solve /api/field/audit?device=rmu-2&after=390 paused=true
+action f2-breaker reset
+solve /api/field/audit?device=f2-breaker&after=190 paused=true
+action oltc-1 block
+solve /api/field/audit?device=oltc-1&after=490 paused=true
+action oltc-1 unblock
+solve /api/field/audit?device=oltc-1&after=490 paused=true" \
+  "every revision's first_solve precedes the next action that could replace it"
+precondition_matches() { jq "$1" "$T_FIXTURES/field-g13.json" | jq -e "$BASELINE_PREDICATE"; }
 for mutation in '.devices["breaker-1"].position = "open"' \
   '.devices["breaker-1"].protection_tripped = true' \
-  '.process.devices["feeder-breaker"].solved_revision = -1'; do
+  '.process.devices["feeder-breaker"].solved_revision = -1' \
+  'del(.devices["rmu-1"])' '.devices["oltc-1"].measurements.valid = false' \
+  '.process.devices["rmu-2"].delivered = false'; do
   t_run precondition_matches "$mutation"
   t_expect_eq "$T_STATUS" 1 "G13 rejects an unsettled precondition: $mutation"
 done
 
-: >"$CALLS"
-RESET_DONE=false
+# Failures on any peer must be visible, not hidden by a healthy CB1 audit.
+for action in process:fault_s1 breaker-1:reset rmu-1:reset rmu-2:reset \
+  f2-breaker:reset oltc-1:block oltc-1:unblock; do
+  init_flow
+  NOOP_ACTION="$action"
+  t_run eu_gate_G13
+  t_expect_eq "$((T_FAILS > 0))" 1 "an acknowledged no-op cannot replace the required transition: $action"
+done
+for node in breaker-1 f2-breaker rmu-1 rmu-2 oltc-1; do
+  for mutation in '.generation += 1' '.oldest_seq = 9999' \
+    '.entries |= map(select(.operation != "first_solve"))' \
+    '.entries |= map(select(.operation == "first_solve"))'; do
+    init_flow
+    BAD_DEVICE="$node" BAD_AUDIT="$mutation"
+    t_run eu_gate_G13
+    t_expect_eq "$((T_FAILS > 0))" 1 "G13 rejects $node audit damage: $mutation"
+  done
+done
+
+# Recovery fixtures preserve the total count when substituting a point. This
+# catches count-only inventories as well as missing and bad RMU/OLTC telemetry.
+for node in rmu-1 rmu-2 oltc-1; do
+  for mutation in 'del(.points[] | select(.device == $node))' \
+    '(.points[] | select(.device == $node) | .quality.iv) = true' \
+    '(.points[] | select(.device == $node) | .id) = "substituted"'; do
+    init_flow
+    RECOVERY_OPERATOR=$(printf '%s' "$OPERATOR_BASE" | jq -c --arg node "$node" "$mutation")
+    t_run eu_gate_G13
+    t_expect_eq "$T_FAILS" 1 "G13 recovery rejects $node telemetry: $mutation"
+  done
+done
+for mutation in '.link.connection_seq = 0' '.link.gi.state = "running"'; do
+  init_flow
+  RECOVERY_OPERATOR=$(printf '%s' "$OPERATOR_BASE" | jq -c "$mutation")
+  t_run eu_gate_G13
+  t_expect_fails 1 "G13 recovery rejects an old connection or incomplete GI: $mutation"
+done
+init_flow
 RESET_FAIL=true
 t_run eu_gate_G13
 t_expect_fails 1 "G13 aborts if its own reset fails"
 t_expect_eq "$(cat "$CALLS")" "policy improved
-reset" "a failed reset cannot reach the audit cursor, RTU pause or direct driver"
-
-: >"$CALLS"
-RESET_FAIL=false
-FIELD_FAIL=true
+reset" "a failed reset cannot reach a cursor or pause"
+init_flow
+FIELD=$(printf '%s' "$FIELD_BASE" | jq -c '.process.devices["oltc-1"].solved_revision = -1')
 t_run eu_gate_G13
 t_expect_fails 1 "G13 aborts if reset truth and solver have not converged"
-t_run grep -Ec '^(audit|docker|action)' "$CALLS"
-t_expect_eq "$T_OUT" 0 "unsettled reset cannot reach the audit cursor, pause or trip"
-
+t_expect_eq "$(grep -Ec '^(audit|docker|action)' "$CALLS")" 0 "unsettled truth cannot reach a cursor, pause or fault"
 t_finish

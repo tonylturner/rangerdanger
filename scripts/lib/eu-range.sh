@@ -2,11 +2,15 @@
 # EU range API/device operations and operator/truth/solver convergence helpers.
 
 # jq definitions shared by every operator-state predicate (eu_wait_for_state,
-# eu_assert_jq*): baseline CB1 subset and full-station/F2 quality.
-# Embed the package inventory count once so direct jq callers need no extra args.
+# eu_assert_jq*): outage CB1 subset and full-station/F2 quality.
+# Embed inventory identities once so direct jq callers need no extra args.
 EU_JQ_DEFS=$(jq -er '.points | arrays | select(length > 0)
-  | "def station_point_count: \(length);"' "$PACKAGE/protocols/points.json") || {
-  printf 'Cannot load station point count from %s/protocols/points.json\n' "$PACKAGE" >&2
+  | map({id, ioa, device: .source.device}) | sort_by(.id)
+  | select(all(.[]; (.id | type == "string") and (.ioa | type == "number")
+    and (.device | type == "string")))
+  | select((map(.id) | unique | length) == length)
+  | "def station_inventory: \(tojson);"' "$PACKAGE/protocols/points.json") || {
+  printf 'Cannot load station point identities from %s/protocols/points.json\n' "$PACKAGE" >&2
   return 1
 }
 # shellcheck disable=SC2016
@@ -17,10 +21,10 @@ def four_points: ([breaker_points[].id] | sort)
 def good: .value != null and .quality.iv == false and .quality.nt == false
   and .quality.sb == false and .quality.bl == false and (.quality.ov == null or .quality.ov == false)
   and .stale_reason == null;
-def all_good: four_points and all(breaker_points[]; good);
 def all_stale($reason): four_points
   and all(breaker_points[]; .quality.iv == true and .quality.nt == true and .stale_reason == $reason);
-def station_good: (.points | length == station_point_count) and all(.points[]; good);
+def station_good: ([.points[] | {id, ioa, device}] | sort_by(.id)) == station_inventory
+  and all(.points[]; good);
 def f2_good: ([.points[] | select(.device == "f2-breaker")] | length == 4 and all(.[]; good));
 def point($id): ([.points[] | select(.id == $id)][0] // {});
 def epoch: capture("^(?<base>.*:[0-9]{2})(?:\\.(?<frac>[0-9]+))?Z$")
