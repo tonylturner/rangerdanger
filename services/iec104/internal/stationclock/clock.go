@@ -10,11 +10,17 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sync"
 	"time"
 
 	"github.com/tturner/rangerdanger/services/iec104/internal/pointmap"
 )
+
+// Require uppercase separators, fixed-width fields, a decimal point for
+// fractions, and bounded offsets: time.Parse alone accepts looser syntax.
+// Leap seconds are unsupported by Go's time model and rejected here.
+var reportedTimeSyntax = regexp.MustCompile(`\A[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])\z`)
 
 // Fetch is a bounded, one-shot HTTP GPS request, injectable in model tests.
 type Fetch func(context.Context, string) ([]byte, error)
@@ -88,6 +94,9 @@ func (c *Clock) Poll(ctx context.Context) error {
 	}
 	if sample.Status == nil || sample.Time == nil {
 		return fmt.Errorf("clock: missing sync_status/reported_time")
+	}
+	if !reportedTimeSyntax.MatchString(*sample.Time) {
+		return fmt.Errorf("clock: invalid reported_time: expected strict RFC 3339 without leap seconds")
 	}
 	utc, err := time.Parse(time.RFC3339Nano, *sample.Time)
 	if err != nil {
