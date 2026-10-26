@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/docker/docker/api/types"
@@ -24,6 +25,7 @@ type fakeDockerAPI struct {
 	networks   []network.Summary
 	volumes    map[string]error
 	listed     []container.ListOptions
+	netListed  []network.ListOptions
 }
 
 func (f *fakeDockerAPI) VolumeInspect(_ context.Context, name string) (volume.Volume, error) {
@@ -39,7 +41,8 @@ func (f *fakeDockerAPI) ContainerList(_ context.Context, options container.ListO
 	return f.containers, nil
 }
 
-func (f *fakeDockerAPI) NetworkList(context.Context, network.ListOptions) ([]network.Summary, error) {
+func (f *fakeDockerAPI) NetworkList(_ context.Context, options network.ListOptions) ([]network.Summary, error) {
+	f.netListed = append(f.netListed, options)
 	return f.networks, nil
 }
 
@@ -69,8 +72,51 @@ func TestDockerEngineProjectResourcesFiltersByLabel(t *testing.T) {
 		t.Errorf("resources = %q %q", containers, networks)
 	}
 	options := api.listed[0]
-	if !options.All || !reflect.DeepEqual(options.Filters.Get("label"), []string{"com.docker.compose.project=rangerdanger"}) {
-		t.Errorf("container list options = %+v, want all containers by project label", options)
+	labels := options.Filters.Get("label")
+	slices.Sort(labels)
+	if !options.All || !reflect.DeepEqual(labels, []string{"com.docker.compose.oneoff", "com.docker.compose.project=rangerdanger"}) {
+		t.Errorf("container list options = %+v, want all Compose-created project containers", options)
+	}
+}
+
+func TestDockerEngineComposeOwnershipFilters(t *testing.T) {
+	for _, method := range []string{"ProjectResources", "MountedVolumes"} {
+		t.Run(method, func(t *testing.T) {
+			// The fake does not apply filters. Check the request rather than
+			// pretending its response proves inherited labels are excluded.
+			api := &fakeDockerAPI{}
+			engine := NewDockerEngine(api, nil)
+			const project = "training-range"
+			var err error
+			if method == "ProjectResources" {
+				_, _, err = engine.ProjectResources(t.Context(), project)
+			} else {
+				_, err = engine.MountedVolumes(t.Context(), project)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(api.listed) != 1 {
+				t.Fatalf("container list calls = %d, want 1", len(api.listed))
+			}
+			options := api.listed[0]
+			labels := options.Filters.Get("label")
+			slices.Sort(labels)
+			// Key-only oneoff accepts both service and one-off containers.
+			want := []string{"com.docker.compose.oneoff", "com.docker.compose.project=" + project}
+			if !options.All || options.Filters.Len() != 1 || !reflect.DeepEqual(labels, want) {
+				t.Errorf("container list options = %+v, want all containers with labels %q", options, want)
+			}
+			if method == "ProjectResources" {
+				if len(api.netListed) != 1 {
+					t.Fatalf("network list calls = %d, want 1", len(api.netListed))
+				}
+				filters := api.netListed[0].Filters
+				if filters.Len() != 1 || !reflect.DeepEqual(filters.Get("label"), []string{"com.docker.compose.project=" + project}) {
+					t.Errorf("network filters = %+v, want only the project label", filters)
+				}
+			}
+		})
 	}
 }
 
@@ -115,8 +161,10 @@ func TestDockerEngineVolumes(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(mounted, []string{"beef", "c0ffee"}) {
 		t.Fatalf("MountedVolumes = %q, %v; want the volume mounts only", mounted, err)
 	}
-	if got := api.listed[0].Filters.Get("label"); !reflect.DeepEqual(got, []string{"com.docker.compose.project=rangerdanger"}) {
-		t.Errorf("label filter = %q", got)
+	labels := api.listed[0].Filters.Get("label")
+	slices.Sort(labels)
+	if !reflect.DeepEqual(labels, []string{"com.docker.compose.oneoff", "com.docker.compose.project=rangerdanger"}) {
+		t.Errorf("label filter = %q", labels)
 	}
 	existing, err := engine.ExistingVolumes(t.Context(), mounted)
 	if err != nil || !reflect.DeepEqual(existing, []string{"beef"}) {

@@ -18,15 +18,21 @@ import (
 // projectLabel is the label Compose puts on every resource of a project.
 const projectLabel = "com.docker.compose.project"
 
+// oneoffLabel is set on Compose-created containers, not Compose-built images.
+const oneoffLabel = "com.docker.compose.oneoff"
+
 // Engine is what the lifecycle asks of the Docker Engine directly.
 type Engine interface {
 	// MissingImages returns the references not present in the local store.
 	MissingImages(ctx context.Context, refs []string) ([]string, error)
 	// ProjectResources returns the names of the containers and networks
-	// that carry the project's Compose label.
+	// that belong to the project. Containers must carry both the project label
+	// and the Compose oneoff label: ad-hoc containers can inherit the project
+	// label from an image. Networks need only the project label.
 	ProjectResources(ctx context.Context, project string) (containers, networks []string, err error)
 	// MountedVolumes returns the names of the volumes the project's
-	// containers mount.
+	// Compose-created containers mount, requiring both the project label and
+	// the oneoff label to exclude ad-hoc containers of Compose-built images.
 	MountedVolumes(ctx context.Context, project string) ([]string, error)
 	// ExistingVolumes returns which of names still exist.
 	ExistingVolumes(ctx context.Context, names []string) ([]string, error)
@@ -83,7 +89,7 @@ func (e *DockerEngine) MissingImages(ctx context.Context, refs []string) ([]stri
 // ProjectResources implements Engine.
 func (e *DockerEngine) ProjectResources(ctx context.Context, project string) ([]string, []string, error) {
 	label := filters.NewArgs(filters.Arg("label", projectLabel+"="+project))
-	containers, err := e.api.ContainerList(ctx, container.ListOptions{All: true, Filters: label})
+	containers, err := e.api.ContainerList(ctx, container.ListOptions{All: true, Filters: projectContainerFilters(project)})
 	if err != nil {
 		return nil, nil, fmt.Errorf("list containers of project %s: %w", project, err)
 	}
@@ -105,8 +111,7 @@ func (e *DockerEngine) ProjectResources(ctx context.Context, project string) ([]
 
 // MountedVolumes implements Engine.
 func (e *DockerEngine) MountedVolumes(ctx context.Context, project string) ([]string, error) {
-	label := filters.NewArgs(filters.Arg("label", projectLabel+"="+project))
-	containers, err := e.api.ContainerList(ctx, container.ListOptions{All: true, Filters: label})
+	containers, err := e.api.ContainerList(ctx, container.ListOptions{All: true, Filters: projectContainerFilters(project)})
 	if err != nil {
 		return nil, fmt.Errorf("list containers of project %s: %w", project, err)
 	}
@@ -122,6 +127,13 @@ func (e *DockerEngine) MountedVolumes(ctx context.Context, project string) ([]st
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+func projectContainerFilters(project string) filters.Args {
+	return filters.NewArgs(
+		filters.Arg("label", projectLabel+"="+project),
+		filters.Arg("label", oneoffLabel),
+	)
 }
 
 // ExistingVolumes implements Engine.
