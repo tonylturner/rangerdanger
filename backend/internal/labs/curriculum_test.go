@@ -1,12 +1,14 @@
 package labs
 
 import (
+	"bytes"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func curriculumExample(t *testing.T) (Package, *CurriculumBinding) {
@@ -97,10 +99,7 @@ func TestCurriculumEUFieldDestinationInventory(t *testing.T) {
 
 func TestCurriculumStrictDecode(t *testing.T) {
 	pkg, binding := curriculumExample(t)
-	raw, err := os.ReadFile(filepath.Join("testdata", "curriculum-eu", "curriculum.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := curriculumExampleDocument(t, binding)
 	cases := []struct{ name, data, want string }{
 		{"unknown field", string(raw) + "\nsurprise: true\n", "field surprise"},
 		{"extra document", string(raw) + "\n---\nschema: 1\n", "exactly one"},
@@ -119,7 +118,7 @@ func TestCurriculumStrictDecode(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeDefinition(t, filepath.Join(dir, binding.File), tc.data)
+			writeDefinition(t, filepath.Join(dir, binding.Dir, "catalog.yml"), tc.data)
 			_, err := loadCurriculum(dir, binding, pkg)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want %s", err, tc.want)
@@ -127,9 +126,9 @@ func TestCurriculumStrictDecode(t *testing.T) {
 		})
 	}
 	bad := *binding
-	bad.File = "../curriculum.yml"
+	bad.Dir = "../curriculum"
 	if _, err := loadCurriculum("testdata/curriculum-eu", &bad, pkg); err == nil {
-		t.Fatal("accepted non-sibling file")
+		t.Fatal("accepted non-sibling directory")
 	}
 }
 
@@ -225,4 +224,23 @@ func TestCurriculumRejectsRetiredInlineCatalog(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Mutation tests share the production merge path instead of reading one section.
+func curriculumExampleDocument(t *testing.T, binding *CurriculumBinding) []byte {
+	t.Helper()
+	document, err := readCurriculumDocument(filepath.Join("testdata", "curriculum-eu"), binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	encoder := yaml.NewEncoder(&out)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(document); err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
 }

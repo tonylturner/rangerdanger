@@ -1,7 +1,6 @@
 package labs
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,10 +37,7 @@ func TestCurriculumRequiredNestedCollections(t *testing.T) {
 				if err := validateCurriculum(pkg); err != nil {
 					t.Fatalf("valid fixture: %v", err)
 				}
-				raw, err := os.ReadFile(filepath.Join("testdata", "curriculum-eu", binding.File))
-				if err != nil {
-					t.Fatal(err)
-				}
+				raw := curriculumExampleDocument(t, binding)
 				var fixture map[string]any
 				if err := yaml.Unmarshal(raw, &fixture); err != nil {
 					t.Fatal(err)
@@ -70,7 +66,7 @@ func TestCurriculumRequiredNestedCollections(t *testing.T) {
 					t.Fatal(err)
 				}
 				dir := t.TempDir()
-				writeDefinition(t, filepath.Join(dir, binding.File), string(data))
+				writeDefinition(t, filepath.Join(dir, binding.Dir, "catalog.yml"), string(data))
 				pkg.Curriculum, err = loadCurriculum(dir, binding, pkg)
 				if err == nil {
 					err = validateCurriculum(pkg)

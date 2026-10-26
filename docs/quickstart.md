@@ -130,7 +130,7 @@ explicit package, a rerun restarts the recorded package (US is the
 fresh-install default).
 
 Each `lab-definitions/packages/<id>/` directory owns `package.yml`,
-`curriculum.yml`, `manifest.json`, `compose.source.yml`,
+`curriculum/`, `manifest.json`, `compose.source.yml`,
 `compose.release.yml` and `nginx.routes.conf`, plus package-specific content.
 The platform uses the root Compose files; do not start a package directly
 with a host-side Compose command.

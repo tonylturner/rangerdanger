@@ -8,7 +8,7 @@ Lab 1.3, `eu-segmentation-requirements`, displays those values in read-only find
 
 ### Fund the EU action catalog
 
-`package.yml` binds the baseline, requirements, planning, implementation, hardening, vendor and validation roles to their EU scenario IDs. Lab 1.4, `eu-remediation-planning`, reads the Lab 1.3 verdicts and the four readiness answers (`ot-eng-availability`, `fw-admin-skills`, `vendor-change-window` and `risk-acceptance-authority`). Its catalog and mappings come from this package's `curriculum.yml`.
+`package.yml` binds the baseline, requirements, planning, implementation, hardening, vendor and validation roles to their EU scenario IDs. Lab 1.4, `eu-remediation-planning`, reads the Lab 1.3 verdicts and the four readiness answers (`ot-eng-availability`, `fw-admin-skills`, `vendor-change-window` and `risk-acceptance-authority`). Its catalog and mappings come from this package's `curriculum/`.
 
 ### Compile and apply one plan
 
@@ -34,4 +34,4 @@ Curriculum state is stored in the student's browser under `rd:<package-id>:<revi
 
 Reset Lab changes simulator state and restores the package firewall baseline; it does not clear browser-saved decisions or the remediation plan. Reset Progress clears only the current lab's completed steps, notes and command log. Neither should be mistaken for a curriculum-wide reset. Browser storage may also be unavailable, in which case answers may not persist across views or reloads.
 
-Implementation: package `package.yml` and `curriculum.yml`; frontend `lib/curriculum-storage.ts`, `lib/remediation-plan.ts`, `lib/requirement-coverage.ts` and `components/scenario-description-blocks.tsx`.
+Implementation: package `package.yml` and `curriculum/`; frontend `lib/curriculum-storage.ts`, `lib/remediation-plan.ts`, `lib/requirement-coverage.ts` and `components/scenario-description-blocks.tsx`.

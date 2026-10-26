@@ -1,7 +1,7 @@
 topology: ../../../../../lab-definitions/packages/eu-iec104-substation/topology.yml
 ics_rules: forbidden
 curriculum:
-  file: curriculum.yml
+  dir: curriculum
   roles:
     baseline: eu-baseline-assessment
     requirements: eu-segmentation-requirements

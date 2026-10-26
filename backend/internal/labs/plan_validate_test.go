@@ -2,7 +2,6 @@ package labs
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -135,10 +134,7 @@ func TestPlanStrictLoader(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pkg, binding := curriculumExample(t)
-			raw, err := os.ReadFile(filepath.Join("testdata", "curriculum-eu", "curriculum.yml"))
-			if err != nil {
-				t.Fatal(err)
-			}
+			raw := curriculumExampleDocument(t, binding)
 			var document map[string]any
 			if err := yaml.Unmarshal(raw, &document); err != nil {
 				t.Fatal(err)
@@ -149,7 +145,7 @@ func TestPlanStrictLoader(t *testing.T) {
 				t.Fatal(err)
 			}
 			dir := t.TempDir()
-			writeDefinition(t, filepath.Join(dir, binding.File), string(data))
+			writeDefinition(t, filepath.Join(dir, binding.Dir, "catalog.yml"), string(data))
 			if _, err := loadCurriculum(dir, binding, pkg); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want %q", err, tc.want)
 			}
