@@ -25,12 +25,20 @@ const (
 // Alpine RTU/CC images instead ship BusyBox nc: -e true exits immediately
 // AFTER connect, rather than waiting on an established protocol session and
 // mistaking that idle session for a connect timeout. Neither sends a payload.
+// Only timeout owns the budget: nc -w can fail silently on BusyBox. GNU timeout
+// returns 124; BusyBox returns 143 after SIGTERM. Normalise that here, not in
+// the classifier, where an unexplained signal must remain untested.
 const euTCPCommand = `export LC_ALL=C
 if command -v bash >/dev/null 2>&1; then
-  exec timeout 3 bash -c 'exec 3<>/dev/tcp/$1/$2' probe "$1" "$2"
+  timeout 3 bash -c 'exec 3<>/dev/tcp/$1/$2' probe "$1" "$2"
 else
-  exec timeout 4 busybox nc -w 3 "$1" "$2" -e /bin/true
-fi`
+  timeout 3 busybox nc "$1" "$2" -e /bin/true
+fi
+rc=$?
+case "$rc" in
+  124|143) exit 124 ;;
+  *) exit "$rc" ;;
+esac`
 
 // strictTCPProbe is shared by the EU report and validators. Only a successful
 // connect, explicit refusal, or the probe's own connect timeout is measurable.
