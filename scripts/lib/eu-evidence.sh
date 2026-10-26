@@ -2,12 +2,14 @@
 # Attempt-local audit, command-result and historian evidence predicates.
 # Loaded by eu-iec104-smoke.sh; sourcing only defines helpers/gates.
 
-# eu_check_g13_audit AUDIT GENERATION BASELINE CURSOR REVISIONS [DEVICE]: the device
-# audit after CURSOR (generation compared as a number) is non-empty and complete,
-# records exactly the REVISIONS (JSON array) as truth changes, and a first_solve
-# for each of them and for nothing at or below BASELINE.
+# eu_check_g13_audit AUDIT GENERATION BASELINE CURSOR REVISIONS [DEVICE] [ACTIONS].
+# REVISIONS are solved field samples. For OLTC, ACTIONS binds each lab operation
+# to its response revision; every other change must identify the PLC/actuator.
+# The window includes recovery, ending at this per-device audit snapshot, not
+# at the final field poll or RTU unpause. No tail changes are silently discarded.
 eu_check_g13_audit() {
   local audit="$1" generation="$2" baseline="$3" cursor="$4" revisions="$5" revision label="G13${6:+ $6}"
+  local actions="${7:-[]}" accounted
   if printf '%s' "$audit" | jq -e --argjson generation "$generation" \
     '.generation == $generation' >/dev/null 2>&1; then
     pass "$label audit generation equals device generation $generation"
@@ -24,7 +26,44 @@ eu_check_g13_audit() {
     fail "$label audit after cursor $cursor is empty, not cursor-bounded, or lost entries: $audit"
     return 1
   fi
-  if printf '%s' "$audit" | jq -e --argjson revisions "$revisions" '
+  if [ "${6:-}" = oltc-1 ]; then
+    # Equality is against the action journal plus independently attributed
+    # autonomous changes, NOT a subset of the sampled field revisions. The
+    # contiguous revision chain also catches a state change missing its audit.
+    if accounted=$(printf '%s' "$audit" | jq -ce --argjson baseline "$baseline" \
+      --argjson cursor "$cursor" --argjson revisions "$revisions" --argjson actions "$actions" '
+      def plc: .context.protocol == "modbus"
+        and (.context.peer | type == "string" and test("^10[.]30[.]30[.]30:[0-9]+$"));
+      def autonomous:
+        .result == "accepted" and (
+          (.operation == "plc_arm" and plc and .before.armed == false and .after.armed == true)
+          or (.operation == "plc_request" and plc and .before.moving == false and .after.moving == true
+            and ((.after.target_tap - .before.tap) | fabs) == 1)
+          or (.operation == "motion_complete" and .context.protocol == "local" and .context.peer == "actuator"
+            and .before.moving == true and .after.moving == false and .after.tap == .before.target_tap));
+      [.entries[] | select(.operation != "first_solve" and .after.revision != .before.revision)] as $changes
+      | [$changes[] | select(autonomous) | .after.revision] as $auto
+      | [$changes[] | select(.context.protocol == "lab" and .result == "accepted"
+          and ((.operation == "block" and .before.blocked == false and .after.blocked == true)
+            or (.operation == "unblock" and .before.blocked == true and .after.blocked == false)))
+          | {operation, revision:.after.revision}] as $lab
+      | [$changes[].after.revision] as $actual
+      | select(
+          # Audit sequences and revision transitions must both be gap-free.
+          [.entries[].seq] == [range($cursor + 1; .latest_seq + 1)]
+          and all(range(0; $changes | length); . as $i
+            | $changes[$i].before.revision == (if $i == 0 then $baseline else $changes[$i-1].after.revision end)
+            and $changes[$i].after.revision == $changes[$i].before.revision + 1)
+          and $lab == $actions
+          and $actual == (($auto + [$actions[].revision]) | sort)
+          and all($revisions[]; . as $r | any($actual[]; . == $r)))
+      | $actual
+    ' 2>/dev/null); then
+      pass "$label device audit records exactly the attributed truth revisions $accounted (lab actions $actions)"
+    else
+      fail "$label device audit has an unexplained truth change, revision gap, or lab action mismatch: $audit"
+    fi
+  elif printf '%s' "$audit" | jq -e --argjson revisions "$revisions" '
     [.entries[] | select(.operation != "first_solve"
         and (.before.revision | type == "number") and (.after.revision | type == "number")
         and .after.revision > .before.revision) | .after.revision] | unique == ($revisions | sort)
