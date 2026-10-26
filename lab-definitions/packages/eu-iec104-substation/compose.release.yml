@@ -22,6 +22,9 @@ services:
     - CONTAIND_AUTO_LAN1_SUBNET=10.30.30.0/24
     - CONTAIND_AUTO_LAN2_SUBNET=10.40.40.0/24
     - CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24
+    # Reserved management (containd 0.1.33+): the backend (.10) and the proxy
+    # (.3) always reach the API on lan3; no applied policy can remove that path.
+    - 'CONTAIND_MGMT_RESERVATION={"subnet":"10.99.99.0/24","sources":["10.99.99.10","10.99.99.3"],"listen":":8080"}'
     - CONTAIND_AUTO_LAN4_SUBNET=10.60.60.0/24
     - CONTAIND_AUTO_LAN5_SUBNET=10.70.70.0/24
     volumes:

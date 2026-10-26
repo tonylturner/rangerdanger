@@ -57,6 +57,9 @@ services:
       # mgmt eth falls outside the policy and the input chain drops
       # backend's API calls - RangerDanger UI shows 502 on apply.
       - CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24
+      # Reserved management (containd 0.1.33+): the backend (.10) and the proxy
+      # (.3) always reach the API on lan3; no applied policy can remove that path.
+      - 'CONTAIND_MGMT_RESERVATION={"subnet":"10.99.99.0/24","sources":["10.99.99.10","10.99.99.3"],"listen":":8080"}'
     volumes:
       - ./data/firewall:/data
     ports:
