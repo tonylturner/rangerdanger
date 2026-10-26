@@ -433,8 +433,7 @@ back to sh on minimal images. The environment includes
 `TERM=xterm-256color`.
 
 **The firewall node is different.** Its terminal first lands in the
-containd appliance CLI (matching what `ssh containd@localhost -p 2222`
-gives you), and only drops into bash after the CLI exits:
+containd appliance CLI, and only drops into bash after the CLI exits:
 
 ```
 sh -c "containd cli; exec bash -il || exec sh -i"
@@ -442,10 +441,12 @@ sh -c "containd cli; exec bash -il || exec sh -i"
 
 So when you open the `fw-1` terminal you'll see the `containd# `
 prompt first. Type `shell` (or `exit`) to drop into the underlying
-Linux bash (containd runs `CONTAIND_SSH_SHELL_MODE=linux`, so the
-bash drop-in carries the same tools as the SSH path). The host port
-mapping `127.0.0.1:2222:2222` still exposes the SSH path for users
-who want it (`ssh -p 2222 containd@localhost`, password `containd`).
+Linux bash. SSH is different: the host port mapping
+`127.0.0.1:2222:2222` exposes containd's SSH server
+(`ssh -p 2222 containd@localhost`, password `containd`), and an
+interactive SSH login opens the Linux bash directly, because containd
+runs `CONTAIND_SSH_SHELL_MODE=linux`. Both paths reach the same bash
+and tools; from SSH bash, run `containd cli` for the appliance prompt.
 
 ### Resize propagation
 
