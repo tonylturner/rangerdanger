@@ -393,7 +393,8 @@ class EnforcementContracts(unittest.TestCase):
             self.assertTrue(actions[action_id]["why"].endswith(suffix))
             self.assertNotRegex(actions[action_id]["why"], r"(?i)\b(yet|future|soon)\b")
         self.assertEqual(curriculum["dpiForbiddenNotice"]["description"],
-                         ", " + suffix[0].lower() + suffix[1:])
+                         " — this range emits no protocol rule. "
+                         "The L4 source pin enforces; DPI detects and logs.")
 
     def test_us_curriculum_dpi_does_not_claim_to_block_or_filter_writes(self):
         curriculum = read_curriculum(ROOT / "lab-definitions/packages/us-dnp3-substation")

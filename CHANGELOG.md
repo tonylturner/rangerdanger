@@ -9,7 +9,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Package curricula now use strict, single-purpose `curriculum/` sections; EU DPI catalog text states planning-only review with no emitted protocol rule.
-
 - **containd 0.1.33 or later is required.** The backend rejects older
   firewall builds at range start and when it adopts a running range.
   Policy applies keep the firewall's NIC bindings, so segmentation holds

@@ -14,7 +14,7 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// The EU fingerprint was then updated for the three intentional DPI prose edits.
 	for id, want := range map[string]string{
 		"us-dnp3-substation":   "ab4eeadfe8b19b515307ed71b3c694f67b46a088e8cbc76bf9a8ceee6e2261e0",
-		"eu-iec104-substation": "a8c27f4af0f15a27dfe467471f3e839ab7eeedbf753b47575d983651917b2722",
+		"eu-iec104-substation": "de82ea894e8159a09cef18ed9dae987fa62571752b537d442c75f3a3280346ea",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))
