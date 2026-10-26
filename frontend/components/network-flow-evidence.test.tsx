@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -11,6 +12,15 @@ import { FlowEvidence } from "./network-flow-evidence";
 import { TrafficMatrixView } from "./traffic-matrix-view";
 import { ActiveFlowsPanel } from "./network-drawers";
 import { TooltipProvider } from "./ui/tooltip";
+
+// This Node-renderer test exercises flow selection, not tooltip DOM events.
+// Radix's unmount effects access window/document even with closed tooltips.
+vi.mock("./ui/tooltip", () => ({
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
+  TooltipContent: () => null,
+}));
 
 const graph = euFixture as LabGraph;
 const context = createFlowContext(graph, { operator: FEEDER_STATE });
