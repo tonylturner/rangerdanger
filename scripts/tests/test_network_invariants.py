@@ -127,9 +127,37 @@ def differences(expected: dict, actual: dict, name: str) -> list[str]:
     return problems
 
 
+def strip_nginx_comments(text: str) -> str:
+    """Remove unquoted comments, preserving strings and their backslash escapes."""
+    out = []
+    quote = None
+    escaped = False
+    comment = False
+    for char in text:
+        if comment:
+            if char == "\n":
+                comment = False
+                out.append(char)
+            continue
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in ("'", '"'):
+            quote = char
+        elif char == "#":
+            comment = True
+            continue
+        out.append(char)
+    return "".join(out)
+
+
 def upstreams(text: str) -> list[tuple[str, int]]:
     """Read service endpoints, resolving proxy_pass names through upstream groups."""
-    text = re.sub(r"#[^\n]*", "", text)
+    text = strip_nginx_comments(text)
     endpoint = r"([A-Za-z0-9_.-]+):(\d+)"
     found = set()
     groups = {}
@@ -457,6 +485,16 @@ class ProxyChecks(unittest.TestCase):
             location /again/ { set $u http://openplc:8080; proxy_pass $u; }
         """), [("backend", 8080), ("backend_replica", 8081), ("default_port", 80),
                ("direct", 8082), ("frontend", 3000), ("implicit_port", 80), ("openplc", 8080)])
+
+    def test_upstream_parser_quoted_hash(self) -> None:
+        for value in ('"a#b"', "'a#b'", r'"a\"#b"', r"'a\'#b'",
+                      r'"a\\"', r"'a\\'", '"a\'#b"', "'a\"#b'"):
+            with self.subTest(value=value):
+                self.assertEqual(upstreams(
+                    f"add_header X {value}; proxy_pass http://foo:81; "
+                    "# proxy_pass http://ignored:82; \"'\n"
+                    "proxy_pass http://next:83;"
+                ), [("foo", 81), ("next", 83)])
 
 
 if __name__ == "__main__":
