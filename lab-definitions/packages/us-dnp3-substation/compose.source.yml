@@ -37,7 +37,7 @@ services:
       - CONTAIND_CONFIG_DB=/data/config.db
       # CONTAIND_CAPTURE_IFACES intentionally unset. The backend selects
       # native capture zones from the authored topology via containd's API,
-      # not Docker-assigned ethN names. US startup errors do not select tcpdump.
+      # not kernel interface names. US startup errors do not select tcpdump.
       - CONTAIND_ENFORCE_ENABLED=1
       - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
       - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
@@ -45,9 +45,9 @@ services:
       - CONTAIND_AUTO_LAN2_SUBNET=10.40.40.0/24
       # lan3 is the RangerDanger control-plane (backend↔firewall over
       # mgmt_net). containd's auto-bind matches lan3's subnet against
-      # whatever ethN docker assigned to mgmt_net. Without this, the
-      # mgmt eth falls outside the policy and the input chain drops
-      # backend's API calls - RangerDanger UI shows 502 on apply.
+      # the mgmt_net NIC. Without this, the mgmt NIC falls outside the
+      # policy and the input chain drops backend's API calls -
+      # RangerDanger UI shows 502 on apply.
       - CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24
       # Reserved management (containd 0.1.33+): the backend (.10) and the proxy
       # (.3) always reach the API on lan3; no applied policy can remove that path.
@@ -61,16 +61,25 @@ services:
       - "127.0.0.1:9080:8080"   # containd UI
       - "127.0.0.1:9443:8443"   # containd HTTPS
       - "127.0.0.1:2222:2222"   # containd SSH console
+    # interface_name pins each NIC's kernel name to its containd zone, so
+    # `tcpdump -i lan2` is the field zone on every host (Docker's ethN order
+    # is not stable). Needs Compose 2.36+ on Engine 28.1+ (setup.sh checks);
+    # packagelint checks the names against the topology and policies.
     networks:
       mgmt_net:
+        interface_name: lan3
         ipv4_address: 10.99.99.2
       enterprise_net:
+        interface_name: wan
         ipv4_address: 10.10.10.2
       vendor_net:
+        interface_name: dmz
         ipv4_address: 10.20.20.2
       ot_ops_net:
+        interface_name: lan1
         ipv4_address: 10.30.30.2
       field_net:
+        interface_name: lan2
         ipv4_address: 10.40.40.2
     restart: unless-stopped
 

@@ -95,6 +95,10 @@ func (run *lintRun) check() {
 				run.problem(pkg.id+" platform release", err)
 			}
 		}
+		policies, err := run.readPolicies(pkg)
+		if err != nil {
+			run.problem(pkg.id+" policies", err)
+		}
 		for _, mode := range []manifest.Mode{manifest.ModeSource, manifest.ModeRelease} {
 			path := filepath.Join(pkg.dir, manifest.ComposeFile(mode))
 			rawOK := true
@@ -110,6 +114,11 @@ func (run *lintRun) check() {
 			if rawOK {
 				if err := manifest.CheckCompose(pkg.manifest, mode, run.root, normalized); err != nil {
 					run.problem(pkg.id+" "+string(mode)+" compose", err)
+				}
+			}
+			if policies != nil {
+				if err := manifest.CheckFirewallInterfaces(pkg.manifest, pkg.topology, policies, normalized); err != nil {
+					run.problem(pkg.id+" "+string(mode)+" firewall interfaces", err)
 				}
 			}
 			if mode == manifest.ModeSource {
@@ -164,6 +173,20 @@ func (run *lintRun) compose(project, file string) ([]byte, error) {
 		return nil, fmt.Errorf("docker %s: %w: %s", strings.Join(args, " "), err, singleLine(detail))
 	}
 	return stdout.Bytes(), nil
+}
+
+// readPolicies reads every named package policy; the catalog reader has
+// already resolved and linted their definitions-relative paths.
+func (run *lintRun) readPolicies(pkg *packageModel) (map[string][]byte, error) {
+	policies := make(map[string][]byte, len(pkg.topology.Policies))
+	for name, relative := range pkg.topology.Policies {
+		data, err := os.ReadFile(filepath.Join(run.root, "lab-definitions", relative))
+		if err != nil {
+			return nil, fmt.Errorf("read policy %s: %w", name, err)
+		}
+		policies[name] = data
+	}
+	return policies, nil
 }
 
 func (run *lintRun) checkNginx(pkg *packageModel) error {

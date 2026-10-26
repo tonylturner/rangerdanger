@@ -22,7 +22,7 @@ services:
       - CONTAIND_CONFIG_DB=/data/config.db
       # CONTAIND_CAPTURE_IFACES intentionally unset. The backend selects
       # native capture zones from the authored topology via containd's API,
-      # not Docker-assigned ethN names. US startup errors do not select tcpdump.
+      # not kernel interface names. US startup errors do not select tcpdump.
       - CONTAIND_ENFORCE_ENABLED=1
       - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
       - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
@@ -42,16 +42,25 @@ services:
       - "127.0.0.1:9080:8080"
       - "127.0.0.1:9443:8443"
       - "127.0.0.1:2222:2222"
+    # interface_name pins each NIC's kernel name to its containd zone, so
+    # `tcpdump -i lan2` is the field zone on every host (Docker's ethN order
+    # is not stable). Needs Compose 2.36+ on Engine 28.1+ (setup.sh checks);
+    # packagelint checks the names against the topology and policies.
     networks:
       mgmt_net:
+        interface_name: lan3
         ipv4_address: 10.99.99.2
       enterprise_net:
+        interface_name: wan
         ipv4_address: 10.10.10.2
       vendor_net:
+        interface_name: dmz
         ipv4_address: 10.20.20.2
       ot_ops_net:
+        interface_name: lan1
         ipv4_address: 10.30.30.2
       field_net:
+        interface_name: lan2
         ipv4_address: 10.40.40.2
     restart: unless-stopped
 

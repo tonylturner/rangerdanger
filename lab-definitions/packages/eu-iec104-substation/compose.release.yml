@@ -33,20 +33,31 @@ services:
     - 127.0.0.1:9080:8080
     - 127.0.0.1:9443:8443
     - 127.0.0.1:2222:2222
+    # interface_name pins each NIC's kernel name to its containd zone, so
+    # `tcpdump -i lan2` is the field zone on every host (Docker's ethN order
+    # is not stable). Needs Compose 2.36+ on Engine 28.1+ (setup.sh checks);
+    # packagelint checks the names against the topology and policies.
     networks:
       mgmt_net:
+        interface_name: lan3
         ipv4_address: 10.99.99.2
       enterprise_net:
+        interface_name: wan
         ipv4_address: 10.10.10.2
       vendor_net:
+        interface_name: dmz
         ipv4_address: 10.20.20.2
       station_net:
+        interface_name: lan1
         ipv4_address: 10.30.30.2
       field_net:
+        interface_name: lan2
         ipv4_address: 10.40.40.2
       control_centre_net:
+        interface_name: lan4
         ipv4_address: 10.60.60.2
       ops_dmz_net:
+        interface_name: lan5
         ipv4_address: 10.70.70.2
     restart: unless-stopped
   kali:

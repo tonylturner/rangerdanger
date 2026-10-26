@@ -741,7 +741,8 @@ type composeService struct {
 }
 
 type composeAttachment struct {
-	IPv4 string `json:"ipv4_address"`
+	IPv4          string `json:"ipv4_address"`
+	InterfaceName string `json:"interface_name"`
 }
 
 type composePort struct {
