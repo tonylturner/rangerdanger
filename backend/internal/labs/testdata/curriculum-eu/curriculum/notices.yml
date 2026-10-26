@@ -1,0 +1,6 @@
+dpiNotice:
+  title: ICS DPI included
+  description: ' — protocol predicates are included in the generated policy'
+dpiForbiddenNotice:
+  title: ICS DPI planned
+  description: ', not enforceable in this range yet'

@@ -18,21 +18,14 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 	if binding == nil {
 		return nil, nil
 	}
-	if binding.File == "" || filepath.Base(binding.File) != binding.File {
-		return nil, fmt.Errorf("curriculum.file must name a sibling file")
-	}
-	data, err := os.ReadFile(filepath.Join(dir, binding.File))
+	document, err := readCurriculumDocument(dir, binding)
 	if err != nil {
 		return nil, err
 	}
 	// Resolve only scalar values. This avoids corrupting YAML quoting in prose.
-	// Parse exactly one document here; the resolved model is strictly typed below.
-	var document yaml.Node
-	if err := decodeStrict(data, &document); err != nil {
-		return nil, err
-	}
+	// The merged document is strictly typed after topology resolution.
 	if pkg.ICSRules == ICSRulesForbidden {
-		if err := rejectForbiddenPlanICS(&document); err != nil {
+		if err := rejectForbiddenPlanICS(document); err != nil {
 			return nil, err
 		}
 	}
@@ -77,10 +70,10 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 		}
 		return nil
 	}
-	if err := resolve(&document); err != nil {
+	if err := resolve(document); err != nil {
 		return nil, err
 	}
-	resolved, err := yaml.Marshal(&document)
+	resolved, err := yaml.Marshal(document)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +92,63 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 		return nil, err
 	}
 	return c, nil
+}
+
+// Curriculum sections are a closed set: editor backups, subdirectories and
+// misspelled filenames must not silently disappear from the loaded model.
+var curriculumSections = map[string]bool{
+	"catalog.yml": true, "requirements.yml": true, "readiness.yml": true,
+	"coverage.yml": true, "implementation.yml": true, "nodes.yml": true,
+	"notices.yml": true, "plan.yml": true,
+}
+
+func readCurriculumDocument(dir string, binding *CurriculumBinding) (*yaml.Node, error) {
+	if !slugPattern.MatchString(binding.Dir) {
+		return nil, fmt.Errorf("curriculum.dir must name a sibling directory using %s", slugRule)
+	}
+	path := filepath.Join(dir, binding.Dir)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("curriculum.dir must be a directory, not a file or symlink")
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("curriculum.dir must not be empty")
+	}
+	mapping := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	document := &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{mapping}}
+	keys := map[string]string{}
+	for _, entry := range entries {
+		if !curriculumSections[entry.Name()] || !entry.Type().IsRegular() {
+			return nil, fmt.Errorf("unknown curriculum file %q (regular section files only)", entry.Name())
+		}
+		var section yaml.Node
+		if err := decodeFile(filepath.Join(path, entry.Name()), &section); err != nil {
+			return nil, err
+		}
+		if len(section.Content) != 1 || section.Content[0].Kind != yaml.MappingNode || len(section.Content[0].Content) == 0 {
+			return nil, fmt.Errorf("curriculum file %s must contain a nonempty mapping", entry.Name())
+		}
+		content := section.Content[0].Content
+		for i := 0; i < len(content); i += 2 {
+			key := content[i]
+			if key.Kind != yaml.ScalarNode || key.Tag != "!!str" {
+				return nil, fmt.Errorf("curriculum file %s requires string keys", entry.Name())
+			}
+			if previous, ok := keys[key.Value]; ok {
+				return nil, fmt.Errorf("curriculum key %q already defined in %s (also in %s)", key.Value, previous, entry.Name())
+			}
+			keys[key.Value] = entry.Name()
+		}
+		mapping.Content = append(mapping.Content, content...)
+	}
+	return document, nil
 }
 
 func validateCurriculum(pkg Package) error {

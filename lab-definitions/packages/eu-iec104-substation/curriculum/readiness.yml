@@ -1,0 +1,104 @@
+readiness:
+- id: ot-eng-availability
+  label: OT engineering capacity
+  good: AVAILABLE
+- id: fw-admin-skills
+  label: Firewall admin skills
+  good: IN_HOUSE
+- id: vendor-change-window
+  label: Vendor change windows
+  good: SECURED
+- id: risk-acceptance-authority
+  label: Risk-acceptance authority
+  good: CLEAR
+readinessFlags:
+- actions:
+  - restrict-vendor-to-station
+  - block-vendor-to-field
+  - pin-rtu-to-field
+  - modbus-dpi
+  - iec104-dpi
+  - station-architecture-review
+  - positive-validation
+  severity: warn
+  source: ot-eng-availability
+  sourceLabel: OT engineering capacity
+  verdict: STRETCHED
+  message: OT Engineer marked STRETCHED — expect this to take longer than the budget shows.
+- actions:
+  - restrict-vendor-to-station
+  - block-vendor-to-field
+  - pin-rtu-to-field
+  - modbus-dpi
+  - iec104-dpi
+  - station-architecture-review
+  - positive-validation
+  severity: blocked
+  source: ot-eng-availability
+  sourceLabel: OT engineering capacity
+  verdict: UNAVAILABLE
+  message: OT Engineer marked UNAVAILABLE — this action can't ship without OT review.
+- actions:
+  - modbus-dpi
+  - iec104-dpi
+  severity: warn
+  source: fw-admin-skills
+  sourceLabel: Firewall admin skills
+  verdict: VENDOR_LED
+  message: Firewall admin skills are vendor-led — DPI tuning will need vendor cycles, not just internal time.
+- actions:
+  - block-enterprise-to-field
+  - block-enterprise-to-station
+  - restrict-vendor-to-station
+  - block-vendor-to-field
+  - pin-rtu-to-field
+  - tighten-firewall-objects
+  severity: warn
+  source: fw-admin-skills
+  sourceLabel: Firewall admin skills
+  verdict: GAP
+  message: Firewall admin skills marked GAP — basic policy work needs hiring or training to land cleanly.
+- actions:
+  - modbus-dpi
+  - iec104-dpi
+  severity: blocked
+  source: fw-admin-skills
+  sourceLabel: Firewall admin skills
+  verdict: GAP
+  message: Firewall admin skills marked GAP — DPI tuning can't ship without hiring or training first.
+- actions:
+  - restrict-vendor-to-station
+  - block-vendor-to-field
+  severity: warn
+  source: vendor-change-window
+  sourceLabel: Vendor change windows
+  verdict: NEGOTIATING
+  message: Vendor change window NEGOTIATING — schedule slip is likely.
+- actions:
+  - restrict-vendor-to-station
+  - block-vendor-to-field
+  severity: blocked
+  source: vendor-change-window
+  sourceLabel: Vendor change windows
+  verdict: NOT_DISCUSSED
+  message: Vendor change window NOT_DISCUSSED — this action can't ship until that conversation happens.
+- actions:
+  - block-enterprise-to-field
+  - block-enterprise-to-station
+  - block-vendor-to-field
+  - pin-rtu-to-field
+  severity: warn
+  source: risk-acceptance-authority
+  sourceLabel: Risk-acceptance authority
+  verdict: UNCLEAR
+  message: Risk-acceptance authority UNCLEAR — get the signoff path nailed down before applying this rule.
+- actions:
+  - block-enterprise-to-field
+  - block-enterprise-to-station
+  - block-vendor-to-field
+  - pin-rtu-to-field
+  severity: blocked
+  source: risk-acceptance-authority
+  sourceLabel: Risk-acceptance authority
+  verdict: DISPUTED
+  message: Risk-acceptance authority DISPUTED — denying production flows without a clear signoff path is unsafe.

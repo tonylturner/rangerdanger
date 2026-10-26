@@ -1,0 +1,118 @@
+impact:
+  block-enterprise-to-field:
+    defends:
+      - hardening-configurations
+    note: Blocks enterprise → field — closes the DNP3 command-injection path demonstrated in Lab 2.3
+  block-enterprise-to-ot:
+    defends:
+      - hardening-configurations
+    note: Blocks enterprise → OT Ops — removes the staging foothold for the Modbus override demonstrated in Lab 2.3
+  restrict-vendor-to-ot:
+    defends:
+      - vendor-rdp-compromise
+    note: Restricts vendor → OT to encrypted management protocols — narrows the vendor pivot lane in Lab 2.3-bonus
+  block-vendor-to-field:
+    defends:
+      - vendor-rdp-compromise
+    note: Blocks vendor → field entirely — closes the second hop of the vendor RDP/VNC kill chain in Lab 2.3-bonus
+  pin-rtac-to-field:
+    defends:
+      - hardening-configurations
+    note: Pins field access to the RTAC source IP — prevents the lateral Modbus override demonstrated in Lab 2.3
+  modbus-dpi:
+    defends:
+      - hardening-configurations
+    note: Modbus DPI provides function-code visibility and detects and logs writes; the L4 source pin enforces field access from the RTAC source address (Lab 2.3 DPI lesson)
+  dnp3-dpi:
+    defends:
+      - hardening-configurations
+    note: DNP3 DPI provides function-code visibility and detects and logs Direct Operate writes; the L4 source pin enforces field access from the RTAC source address (Lab 2.3 DPI lesson)
+  positive-validation:
+    defends:
+      - validation-evidence
+    note: Planning-only test preparation. Run Lab 2.4 to collect the evidence package.
+  ids-deployment:
+    defends:
+      - validation-evidence
+    note: Planning-only sensor work. Selecting it deploys no IDS and changes no firewall verdict.
+  ot-asset-inventory:
+    defends:
+      - validation-evidence
+    note: Planning-only inventory work. Selecting it creates no inventory and changes no firewall verdict.
+  vendor-zta-broker:
+    defends:
+      - vendor-rdp-compromise
+    note: Planning-only ZTNA/PAM review. Selecting it deploys no broker and changes no pivot result.
+groups:
+  block-enterprise-to-field:
+    title: Block enterprise → field direct access
+    description: Remove the paths from the corporate IT zone straight to field relays and reclosers.
+    effect: closes
+  block-enterprise-to-ot:
+    title: Block enterprise → OT Operations ICS ports
+    description: Remove enterprise access to HMI, RTAC, and OpenPLC on ICS and management ports.
+    effect: closes
+  restrict-vendor-to-ot:
+    title: Restrict vendor → OT to SSH/HTTPS only
+    description: Vendor remote access limited to encrypted management protocols. No direct Modbus or HMI web.
+    effect: restricts
+  block-vendor-to-field:
+    title: Block vendor → field devices entirely
+    description: No legitimate reason for the vendor DMZ to reach field devices directly.
+    effect: closes
+  pin-rtac-to-field:
+    title: Pin field-device access to RTAC source IP
+    description: Only the RTAC (${ip:rtac-1}) can reach field devices from OT Ops. The RTAC ALLOW rules above this DENY take priority (first-match), so RTAC traffic passes while all other OT Ops hosts are blocked.
+    effect: restricts
+  modbus-dpi:
+    title: Modbus ICS DPI — function-code visibility
+    description: Modbus DPI provides function-code visibility and detects and logs writes. The L4 source pin enforces field access from the RTAC source address.
+    effect: semantic
+  dnp3-dpi:
+    title: DNP3 ICS DPI — Direct Operate detection
+    description: DNP3 DPI provides function-code visibility and detects and logs Direct Operate writes. The L4 source pin enforces field access from the RTAC source address.
+    effect: semantic
+  improve-logging:
+    title: Enable firewall logging and PCAP retention
+    description: Enable per-rule logging on all deny actions and critical allow rules. Without this, post-incident review is blind.
+    effect: logging
+  tighten-firewall-objects:
+    title: Tighten firewall object hygiene
+    description: Planning-only object review. Required RTAC and GPS pins already exist; this action changes no rule.
+    effect: restricts
+  positive-validation:
+    title: Post-change positive/negative validation
+    description: Build a test plan that verifies legitimate flows still work and illegitimate flows are blocked.
+    effect: conceptual
+  rtac-architecture-review:
+    title: Validate and document RTAC hardening
+    description: Verify RTAC host-level hardening (ip_forward=0, FORWARD DROP, policy routing). Document as a compensating control.
+    effect: conceptual
+planningOnly:
+  - ids-deployment
+  - ot-asset-inventory
+  - vendor-zta-broker
+groupOrder:
+  - block-enterprise-to-field
+  - block-enterprise-to-ot
+  - restrict-vendor-to-ot
+  - block-vendor-to-field
+  - pin-rtac-to-field
+  - modbus-dpi
+  - dnp3-dpi
+  - improve-logging
+  - tighten-firewall-objects
+  - positive-validation
+  - rtac-architecture-review
+impactOrder:
+  - block-enterprise-to-field
+  - block-enterprise-to-ot
+  - restrict-vendor-to-ot
+  - block-vendor-to-field
+  - pin-rtac-to-field
+  - modbus-dpi
+  - dnp3-dpi
+  - positive-validation
+  - ids-deployment
+  - ot-asset-inventory
+  - vendor-zta-broker

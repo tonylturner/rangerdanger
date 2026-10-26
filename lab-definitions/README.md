@@ -37,9 +37,9 @@ scenarios: ../../scenarios                    # directory of <slug>.yml; the onl
 capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
 ```
 
-The EU package binds an additional `curriculum.yml` through `package.yml`:
-its `curriculum.roles` names the seven exercises, and the curriculum file
-owns the package-level budget, teams, action catalog, requirements and
+Both packages bind `curriculum: {dir: curriculum}` through `package.yml`.
+The binding's `curriculum.roles` names the seven exercises, and the
+curriculum directory owns the package-level budget, teams, action catalog, requirements and
 readiness mappings. In particular, `eu-segmentation-requirements.yml`
 holds the design/readiness prompt fences while
 `eu-remediation-planning.yml` has a single `action.type: decision` step;
@@ -48,8 +48,8 @@ defined by [`backend/internal/labs/package.go`](../backend/internal/labs/package
 and the active package's curriculum is included by
 [`backend/internal/server/packages.go`](../backend/internal/server/packages.go#L14-L26).
 
-- `packages/eu-iec104-substation/curriculum.yml` is bound by
-  `packages/eu-iec104-substation/package.yml`; its `roles` map design,
+- `packages/eu-iec104-substation/curriculum/` is bound by
+  `packages/eu-iec104-substation/package.yml`; the binding's `roles` map design,
   planning, implementation and validator roles to their served EU
   exercises. The loader validates required roles and decision options
   against the requirements exercise

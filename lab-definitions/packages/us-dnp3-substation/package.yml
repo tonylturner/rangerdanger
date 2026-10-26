@@ -18,7 +18,7 @@ policies:
   improved: ../../firewall/substation-improved.json
 operator_view: us-dnp3-substation
 curriculum:
-  file: curriculum.yml
+  dir: curriculum
   roles:
     baseline: baseline-assessment
     requirements: segmentation-requirements

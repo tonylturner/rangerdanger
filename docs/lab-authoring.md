@@ -31,11 +31,11 @@ Inline decision prompts belong in a step's description as
 `:::decision` fences. A labor-planning step does not carry its own
 catalog, team capacities or budget. Mark that step with
 `action: {type: decision}`; the panel reads the budget, teams and action
-catalog from the active package's `curriculum.yml`.
+catalog from the active package's `curriculum/`.
 
-The EU package binds that file and its exercise roles in
+The EU package binds that directory and its exercise roles in
 `lab-definitions/packages/eu-iec104-substation/package.yml`; its
-`curriculum.yml` owns the 500-hour budget, four teams and shared action
+`curriculum/` owns the 500-hour budget, four teams and shared action
 catalog for the requirements and planning exercises. The requirements
 exercise supplies the design/readiness decision prompts, and the
 planning exercise has one decision step. This keeps options and
@@ -49,6 +49,33 @@ served on `GET /api/packages` by
 [`backend/internal/server/packages.go`](../backend/internal/server/packages.go#L14-L26),
 and consumed by the frontend
 [`DecisionPanel`](../frontend/components/decision-panel.tsx#L31-L36).
+
+### Curriculum sections
+
+Both packages use `curriculum: {dir: curriculum}` in `package.yml`.
+The directory must be an immediate sibling with a lowercase hyphenated name;
+the former `file:` binding is not accepted. Keep exercise `roles`, `activities`
+and `dynamicSteps` in the package binding. Author the remaining top-level keys
+once each, in these single-purpose section files (each under 1000 lines):
+
+| File | Content |
+| --- | --- |
+| `catalog.yml` | Schema, budget, team capacities and action catalog |
+| `requirements.yml` | Requirement mappings and display order |
+| `readiness.yml` | Readiness answers and flags |
+| `coverage.yml` | Impacts, groups, planning-only IDs and display orders |
+| `implementation.yml` | Phase templates, test text and empty-plan guidance |
+| `nodes.yml` | Exercise node mappings and inference |
+| `notices.yml` | DPI explanatory notices |
+| `plan.yml` | Policy compiler and proof model |
+
+The loader merges disjoint top-level keys, then resolves topology references in
+scalar values and strictly validates the complete model. Directory order does
+not change list order or prose. Duplicate keys (including across files), unknown
+fields, unknown filenames, symlinks, nested directories, empty directories or
+sections, and extra YAML documents are errors. Each section is one nonempty YAML
+mapping. Validate authoring changes with `go -C backend test -race -count=1
+-timeout 300s ./internal/labs/...` and `go -C backend run ./cmd/packagelint -root ..`.
 
 ## Package knowledge
 
@@ -328,7 +355,7 @@ Supported `type` values:
   renders [`DecisionPanel`](../frontend/components/decision-panel.tsx#L31-L36),
   which reads `budgetHours`, `teams` and `catalog` from the active
   package curriculum. The catalog actions, effort, roles, requirements
-  and readiness mappings belong in that package's `curriculum.yml`.
+  and readiness mappings belong in that package's `curriculum/`.
 - `check` - a state-check action with `expect: {key: value}` against the substation API. Used to confirm "the lab is in known-good state" between phases.
 - `probe` - TCP reachability check from `step.node` (or a per-target `from` topology node). Set `outcome: reachable|blocked` and one or more `targets` with IPv4 `host`, TCP `port` (1–65535), and optional `note`. Every target must match the outcome. Fast connection refusal counts as reachable; a timeout counts as blocked; any other exit status is a probe error and fails the target. UDP is not supported.
 - `command`, `firewall`, `sequence` - older patterns for auto-running specific commands. Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks. A manual step has no `action`; `type: manual` is invalid.

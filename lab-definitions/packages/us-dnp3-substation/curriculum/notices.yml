@@ -1,0 +1,6 @@
+dpiNotice:
+  title: ICS DPI enabled
+  description: ' - containd provides Modbus/DNP3 function-code visibility and detects and logs writes; the L4 source pin enforces field access from the RTAC source address'
+dpiForbiddenNotice:
+  title: ICS DPI planned
+  description: ', not enforceable in this range yet'

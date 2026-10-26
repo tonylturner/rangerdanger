@@ -10,6 +10,8 @@ import unittest
 
 import yaml
 
+from scripts.tests.curriculum import read_curriculum
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIOS = ROOT / "lab-definitions/scenarios"
@@ -200,7 +202,7 @@ class ErrataContracts(unittest.TestCase):
         binding = package["curriculum"]["dynamicSteps"]
         steps = scenario("firewall-implementation")["steps"]
         self.assertEqual({s["id"] for s in steps} & set(binding), set(binding))
-        curriculum = yaml.safe_load((ROOT / "lab-definitions/packages/us-dnp3-substation/curriculum.yml").read_text())
+        curriculum = read_curriculum(ROOT / "lab-definitions/packages/us-dnp3-substation")
         for step_id, phase in binding.items():
             self.assertIn(phase, curriculum["phases"])
             self.assertTrue(next(s for s in steps if s["id"] == step_id)["title"].startswith("Phase "))
@@ -383,9 +385,7 @@ class EnforcementContracts(unittest.TestCase):
     """Lab 2.3 states what the frozen images do: the L4 source pin blocks, DPI records."""
 
     def test_us_curriculum_dpi_does_not_claim_to_block_or_filter_writes(self):
-        curriculum = yaml.safe_load(
-            (ROOT / "lab-definitions/packages/us-dnp3-substation/curriculum.yml").read_text()
-        )
+        curriculum = read_curriculum(ROOT / "lab-definitions/packages/us-dnp3-substation")
 
         def string_values(value):
             if isinstance(value, dict):

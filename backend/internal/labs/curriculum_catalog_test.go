@@ -53,7 +53,7 @@ func TestCurriculumCanonicalValidation(t *testing.T) {
 				t.Fatal(err)
 			}
 			dir := t.TempDir()
-			writeDefinition(t, filepath.Join(dir, binding.File), string(data))
+			writeDefinition(t, filepath.Join(dir, binding.Dir, "catalog.yml"), string(data))
 			pkg.Curriculum, err = loadCurriculum(dir, binding, pkg)
 			if err == nil {
 				err = validateCurriculum(pkg)
@@ -91,7 +91,7 @@ func TestCurriculumDeclaredOptionsOverrideDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	writeDefinition(t, filepath.Join(dir, binding.File), string(data))
+	writeDefinition(t, filepath.Join(dir, binding.Dir, "catalog.yml"), string(data))
 	pkg.Curriculum, err = loadCurriculum(dir, binding, pkg)
 	if err == nil {
 		err = validateCurriculum(pkg)

@@ -1,0 +1,45 @@
+nodeMap:
+  baseline-assessment:
+    primary: fw-1
+    others:
+      - eng-ws-1
+      - kali-1
+  segmentation-requirements:
+    primary: ''
+    others: []
+  remediation-planning:
+    primary: ''
+    others: []
+  firewall-implementation:
+    primary: fw-1
+    others:
+      - kali-1
+      - eng-ws-1
+  hardening-configurations:
+    primary: kali-1
+    others: []
+  vendor-rdp-compromise:
+    primary: kali-1
+    others:
+      - vendor-jump-1
+  validation-evidence:
+    primary: kali-1
+    others:
+      - vendor-jump-1
+      - eng-ws-1
+nodeInference:
+  - node: kali-1
+    ip: ${ip:kali-1}
+    pattern: \bkali\b
+  - node: vendor-jump-1
+    ip: ${ip:vendor-jump-1}
+    pattern: \bvendor.?jump\b
+  - node: eng-ws-1
+    ip: ${ip:eng-ws-1}
+    pattern: \bengineering.?workstation\b
+  - node: openplc-1
+    ip: ${ip:openplc-1}
+    pattern: \bopenplc\b
+  - node: rtac-1
+    ip: ${ip:rtac-1}
+    pattern: \brtac\b

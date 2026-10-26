@@ -1,0 +1,26 @@
+nodeMap:
+  eu-baseline-assessment:
+    primary: kali-1
+    others: []
+  eu-segmentation-requirements:
+    primary: ''
+    others: []
+  eu-remediation-planning:
+    primary: ''
+    others: []
+  eu-firewall-implementation:
+    primary: kali-1
+    others: []
+  eu-hardening-configurations:
+    primary: kali-1
+    others: []
+  eu-vendor-rdp-compromise:
+    primary: kali-1
+    others: []
+  eu-validation-evidence:
+    primary: kali-1
+    others: []
+nodeInference:
+  - node: rtu-1
+    ip: ${ip:rtu-1}
+    pattern: \brtu\b

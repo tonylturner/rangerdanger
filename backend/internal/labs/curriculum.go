@@ -3,7 +3,7 @@ package labs
 // CurriculumBinding is the small package.yml binding. Roles are scenario IDs;
 // dynamicSteps are step IDs in the implementation scenario, never title matches.
 type CurriculumBinding struct {
-	File         string                        `yaml:"file" json:"-"`
+	Dir          string                        `yaml:"dir" json:"-"`
 	Roles        map[string]string             `yaml:"roles" json:"roles"`
 	Activities   map[string]CurriculumActivity `yaml:"activities" json:"activities"`
 	DynamicSteps map[string]string             `yaml:"dynamicSteps" json:"dynamicSteps"`

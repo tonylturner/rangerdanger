@@ -75,7 +75,7 @@ Open http://localhost:8088 - the UI is the entry point.
 | `iec104go/` | Standalone Go IEC 104 library |
 | `lab-definitions/` | YAML lab topologies, exercises, firewall configs |
 | `docs/` | Architecture, API spec, workshop guides, lab-authoring guide |
-| `lab-definitions/packages/` | Range packages: `package.yml`, `curriculum.yml`, `manifest.json`, Compose twins, proxy routes and package-specific content |
+| `lab-definitions/packages/` | Range packages: `package.yml`, `curriculum/`, `manifest.json`, Compose twins, proxy routes and package-specific content |
 | `scripts/` | Dev helpers (`dev-up.sh`, `dev-down.sh`, `seed-labs.sh`) |
 | `.github/workflows/` | CI |
 

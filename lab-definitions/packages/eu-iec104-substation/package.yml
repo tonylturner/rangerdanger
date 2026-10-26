@@ -15,7 +15,7 @@ policies:
 operator_view: eu-iec104
 ics_rules: forbidden
 curriculum:
-  file: curriculum.yml
+  dir: curriculum
   roles:
     baseline: eu-baseline-assessment
     requirements: eu-segmentation-requirements
