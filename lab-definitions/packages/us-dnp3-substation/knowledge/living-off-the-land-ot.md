@@ -39,9 +39,9 @@ For OT environments specifically, the LOTL-mitigation posture looks like:
 
 - **Strict network segmentation** with per-conduit allow rules (no broad zone allows)
 - **Source-pinning** so a tool used from the wrong place is denied at L4
-- **DPI for protocol surfaces** so the right tool used the wrong way is denied at L7
+- **DPI for protocol surfaces** so the right tool used the wrong way is detected and logged
 - **Behavioral monitoring** for traffic that does not match the baseline operational pattern
 - **Just-in-time vendor access** (open the path for a maintenance window, close it after)
 - **Per-session audit** so an investigation can pin actions to a specific human and timeframe
 
-The lab exercises the first three. The remaining items are organizational practice that no docker compose can simulate, but they are where the real defense lives.
+The lab exercises the first three. The L4 source pin enforces; DPI detects and logs. The remaining items are organizational practice that no docker compose can simulate, but they are where the real defense lives.
