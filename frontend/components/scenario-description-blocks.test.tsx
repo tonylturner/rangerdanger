@@ -1,15 +1,26 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { describe, expect, it, vi } from "vitest";
 import type { CurriculumBinding, PackageSummary } from "../lib/api";
 import { CurriculumScopeProvider } from "../lib/curriculum-scope";
 import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test-util";
+import { curriculumKey, decisionName, REMEDIATION_PLAN, writeCurriculum } from "../lib/curriculum-storage";
+import { memoryStorage } from "../lib/memory-storage.test-util";
 import { US_PLANS, EU_PLANS } from "../lib/plan-fixtures.test-util";
 import { CompiledPlanSummary } from "./compiled-plan-summary";
 import { PlanCoveragePanel } from "./scenario-description-blocks";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { TooltipProvider } from "./ui/tooltip";
+
+vi.mock("next/link", async () => {
+  const { createElement } = await import("react");
+  return {
+    default: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) =>
+      createElement("a", { href, ...props }, children),
+  };
+});
 
 const EU = fixtureCurriculum("backend/internal/labs/testdata/curriculum-eu");
 function render(binding?: CurriculumBinding) {
@@ -69,4 +80,83 @@ describe("package-bound curriculum presentation", () => {
     expect(html).toContain("Weak exposure open");
   });
 
+});
+
+describe("live shared curriculum panels", () => {
+  it("updates decisions in the same tab and plan coverage from another tab", () => {
+    const storage = memoryStorage();
+    const browser = Object.assign(new EventTarget(), { localStorage: storage });
+    vi.stubGlobal("window", browser);
+    const pkg: PackageSummary = {
+      id: "fixture",
+      revision: 3,
+      title: "Fixture",
+      active: true,
+      operator_view: "us-dnp3",
+      policies: [],
+      curriculum: US_CURRICULUM,
+    };
+    const scope = { packageId: pkg.id, revision: pkg.revision, curriculum: pkg.curriculum };
+    let tree!: ReactTestRenderer;
+
+    const dispatchCrossTabStorage = (key: string) => {
+      const event = new Event("storage");
+      Object.defineProperty(event, "key", { value: key });
+      act(() => { browser.dispatchEvent(event); });
+    };
+
+    try {
+      act(() => {
+        tree = create(
+          <CurriculumScopeProvider pkg={pkg}>
+            <>
+              <DecisionPanel exerciseId={US_CURRICULUM.roles.planning} />
+              <PlanCoveragePanel title="Coverage" />
+            </>
+          </CurriculumScopeProvider>,
+        );
+      });
+
+      const enterpriseFieldAction = () => tree.root.findAllByType("button").find((button) =>
+        button.findAllByType("div").some((div) => div.children.includes("Block enterprise → field direct access")),
+      );
+      const requirementKey = curriculumKey(
+        scope,
+        decisionName(US_CURRICULUM.roles.requirements, "enterprise-to-field"),
+      );
+      act(() => {
+        // The same-tab write event refreshes both readers.
+        writeCurriculum(
+          scope,
+          decisionName(US_CURRICULUM.roles.requirements, "enterprise-to-field"),
+          "BLOCK",
+        );
+      });
+      expect(JSON.stringify(tree.toJSON())).toContain("BLOCK");
+      expect(JSON.stringify(tree.toJSON())).toContain("deferred");
+      expect(JSON.stringify(tree.toJSON())).toContain("Current selection coverage only, not firewall proof");
+
+      storage.setItem(
+        curriculumKey(scope, REMEDIATION_PLAN),
+        JSON.stringify({
+          exerciseId: US_CURRICULUM.roles.planning,
+          selectedActionIds: ["block-enterprise-to-field"],
+          savedAt: "another tab",
+        }),
+      );
+      dispatchCrossTabStorage(curriculumKey(scope, REMEDIATION_PLAN));
+      expect(JSON.stringify(tree.toJSON())).toContain("planned actions selected");
+      expect(JSON.stringify(tree.toJSON())).not.toContain("deferred. Implementing actions");
+      expect(enterpriseFieldAction()?.props.className).toContain("border-sky-600");
+
+      storage.setItem(requirementKey, "ALLOW");
+      dispatchCrossTabStorage(requirementKey);
+      expect(JSON.stringify(tree.toJSON())).toContain("ALLOW");
+      expect(JSON.stringify(tree.toJSON())).toContain("design says ALLOW");
+      expect(JSON.stringify(tree.toJSON())).not.toContain("BLOCK, planned actions selected");
+    } finally {
+      act(() => tree.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
 });

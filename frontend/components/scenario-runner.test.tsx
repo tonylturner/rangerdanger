@@ -37,8 +37,9 @@ const scenario: Scenario = {
   id: "reset-fixture", order: "1.2", name: "Reset fixture", description: "Test",
   package_id: "fixture", lab_template_id: "fixture", validator: "", tags: [], nodes: [],
   steps: [
-    { id: "first", title: "First instruction", description: "Start here" },
-    { id: "second", title: "Second instruction", description: "Continue" },
+    { id: "first", title: "First instruction", description: "Start here", action: { type: "decision" } },
+    { id: "second", title: "Second instruction", description: "Continue", action: { type: "manual" } },
+    { id: "third", title: "Third instruction", description: "Run this", action: { type: "probe" } },
   ],
 };
 
@@ -57,17 +58,26 @@ describe("Reset Progress", () => {
       act(() => { tree = create(<QueryClientProvider client={client}><ScenarioRunner scenario={scenario} onExit={() => {}} /></QueryClientProvider>); });
       const click = (label: string) => act(() => tree.root.findByProps({ "aria-label": label }).props.onClick());
       try {
+        expect(tree.root.findAllByType("button").some((button) => button.children.includes("Execute Step"))).toBe(false);
+        expect(JSON.stringify(tree.toJSON())).toContain("Mark Complete is self-attested; it does not run a system check.");
         click("View Summary");
-        expect(JSON.stringify(tree.toJSON())).toContain("Exercise Summary");
+        expect(JSON.stringify(tree.toJSON())).toContain("Steps marked complete");
+        expect(JSON.stringify(tree.toJSON())).toContain("Mark Complete is self-attested; it does not run a system check.");
         click("Reset Progress");
         expect(JSON.stringify(tree.toJSON())).not.toContain("Exercise Summary");
         expect(JSON.stringify(tree.toJSON())).toContain("First instruction");
+        expect(tree.root.findAllByType("button").some((button) => button.children.includes("Execute Step"))).toBe(false);
         expect(tree.root.findByType("textarea").props.value).toBe("");
         expect(loadProgress(scope, scenario)).toEqual({ completedStepIds: [], notes: "", cmdLog: [] });
         expect(loadProgress(scope, { id: "another", steps: [{ id: "kept", title: "", description: "" }] }).notes).toBe("keep");
         const complete = tree.root.findAllByType("button").find((b) => b.children.includes("Mark Complete"))!;
         act(() => complete.props.onClick());
         expect(JSON.stringify(tree.toJSON())).toContain("Second instruction");
+        expect(tree.root.findAllByType("button").some((button) => button.children.includes("Execute Step"))).toBe(false);
+        const completeManual = tree.root.findAllByType("button").find((b) => b.children.includes("Mark Complete"))!;
+        act(() => completeManual.props.onClick());
+        expect(JSON.stringify(tree.toJSON())).toContain("Third instruction");
+        expect(tree.root.findAllByType("button").some((button) => button.children.includes("Execute Step"))).toBe(true);
       } finally {
         act(() => tree.unmount());
         client.clear();

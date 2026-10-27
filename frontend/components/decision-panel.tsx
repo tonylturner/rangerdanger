@@ -6,6 +6,7 @@ import { Check, AlertCircle, CircleCheck, CircleDashed, ChevronUp, ChevronDown }
 import type { DecisionAction, DecisionRole } from "../lib/api";
 import { saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
 import { useCurriculumScope } from "../lib/curriculum-scope";
+import { useCurriculumStorageRevision } from "../lib/use-curriculum-storage-revision";
 import {
   readRequirements,
   actionImplements,
@@ -13,8 +14,6 @@ import {
   summariseCoverage,
   readReadiness,
   readinessFlagsForAction,
-  type Requirement,
-  type ReadinessAnswer,
 } from "../lib/requirement-coverage";
 
 type DecisionPanelProps = {
@@ -28,50 +27,47 @@ function hoursPerRole(action: DecisionAction): number {
   return Math.round(action.effort_hours / action.roles.length);
 }
 
+function loadSelectedActions(scope: ReturnType<typeof useCurriculumScope>, exerciseId: string): Set<string> {
+  const plan = loadRemediationPlan(scope);
+  return plan?.exerciseId === exerciseId ? new Set(plan.selectedActionIds) : new Set();
+}
+
 export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
   const scope = useCurriculumScope();
+  const storageRevision = useCurriculumStorageRevision(scope);
   const binding = scope.curriculum;
   const budgetHours = binding?.budgetHours ?? 0;
   const roles: DecisionRole[] = useMemo(() => binding?.teams ?? [], [binding?.teams]);
   const catalog: DecisionAction[] = useMemo(() => binding?.catalog ?? [], [binding?.catalog]);
 
-  // Load any previously saved plan for this exercise
-  const [selected, setSelected] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    const plan = loadRemediationPlan(scope);
-    if (plan && plan.exerciseId === exerciseId) {
-      return new Set(plan.selectedActionIds);
-    }
-    return new Set();
-  });
+  const selectionScope = `${scope.packageId}:${scope.revision}:${exerciseId}`;
+  const [selectionState, setSelectionState] = useState(() => ({
+    scope: selectionScope,
+    revision: storageRevision,
+    selected: loadSelectedActions(scope, exerciseId),
+  }));
+  const selected = selectionState.scope === selectionScope && selectionState.revision === storageRevision
+    ? selectionState.selected
+    : loadSelectedActions(scope, exerciseId);
 
-  // Lab 1.3 verdicts (the design requirements) + resourcing
-  // readiness answers. Both read once on mount - students aren't
-  // expected to flip back to 1.3 mid-1.4-session.
-  const [requirements, setRequirements] = useState<Requirement[]>([]);
-  const [readiness, setReadiness] = useState<ReadinessAnswer[]>([]);
-  useEffect(() => {
-    setRequirements(readRequirements(scope));
-    setReadiness(readReadiness(scope));
-  }, [scope]);
+  // Shared Lab 1.3 answers stay current when another step or tab changes them.
+  const requirements = readRequirements(scope);
+  const readiness = readReadiness(scope);
   const hasAnyReadiness = readiness.some((r) => r.verdict !== "");
 
-  // Persist on change
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  const toggle = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectionState({
+      scope: selectionScope,
+      revision: storageRevision,
+      selected: next,
+    });
     saveRemediationPlan(scope, {
       exerciseId,
-      selectedActionIds: [...selected],
+      selectedActionIds: [...next],
       savedAt: new Date().toISOString(),
-    });
-  }, [scope, selected, exerciseId]);
-
-  const toggle = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
     });
   };
 

@@ -23,6 +23,16 @@ export function curriculumKey(scope: CurriculumScope, name: string): string {
   return `rd:${scope.packageId}:${scope.revision}:${name}`;
 }
 
+export function curriculumStorageChangedEvent(scope: CurriculumScope): string {
+  return `rangerdanger.curriculum-storage-changed:${scope.packageId}:${scope.revision}`;
+}
+
+function announceCurriculumStorageChange(scope: CurriculumScope): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(curriculumStorageChangedEvent(scope)));
+  }
+}
+
 // A `:::decision id=<decisionId>` answer recorded in <scenarioId>. The
 // step title is deliberately not part of the name so renaming a step
 // does not orphan the answer.
@@ -61,7 +71,10 @@ export function readCurriculum(scope: CurriculumScope, name: string): string | n
 
 export function writeCurriculum(scope: CurriculumScope, name: string, value: string): void {
   try {
-    browserStorage()?.setItem(curriculumKey(scope, name), value);
+    const storage = browserStorage();
+    if (!storage) return;
+    storage.setItem(curriculumKey(scope, name), value);
+    announceCurriculumStorageChange(scope);
   } catch {
     // Quota or privacy mode: the UI keeps working without persistence.
   }
@@ -69,7 +82,10 @@ export function writeCurriculum(scope: CurriculumScope, name: string, value: str
 
 export function removeCurriculum(scope: CurriculumScope, name: string): void {
   try {
-    browserStorage()?.removeItem(curriculumKey(scope, name));
+    const storage = browserStorage();
+    if (!storage) return;
+    storage.removeItem(curriculumKey(scope, name));
+    announceCurriculumStorageChange(scope);
   } catch {
     // Same as writeCurriculum.
   }

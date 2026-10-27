@@ -334,7 +334,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const step = scenario.steps[currentStep];
   const elec = state?.electrical;
   const progress = completedStepIds.size / scenario.steps.length;
-  const hasAction = !!step?.action;
+  const hasAction = !!step?.action && step.action.type !== "decision" && step.action.type !== "manual";
   const stepDone = step !== undefined && completedStepIds.has(step.id);
   const showValidate = showsValidateButton(scenario, binding);
 
@@ -438,9 +438,12 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           />
         </div>
         <span className="text-[10px] text-slate-500 shrink-0">
-          {completedStepIds.size}/{scenario.steps.length} steps
+          {completedStepIds.size}/{scenario.steps.length} steps marked complete
         </span>
       </div>
+      <p className="text-[10px] text-slate-600">
+        Mark Complete is self-attested; it does not run a system check.
+      </p>
 
       {/* ── Remediation Plan Banner (shown on later exercises) ── */}
       {!showSummary && binding && <RemediationPlanBanner currentExerciseId={scenario.id} appliedPlan={appliedPlan} />}

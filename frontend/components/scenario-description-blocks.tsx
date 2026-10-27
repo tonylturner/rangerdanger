@@ -37,6 +37,7 @@ import {
   writeCurriculum,
 } from "../lib/curriculum-storage";
 import { useCurriculumScope } from "../lib/curriculum-scope";
+import { useCurriculumStorageRevision } from "../lib/use-curriculum-storage-revision";
 import {
   injectDynamicContent,
 } from "../lib/scenario-runner-logic";
@@ -315,32 +316,17 @@ export function FindingsPanel({ sourceScenario, title, items }: FindingsPanelPro
 // student manually recall their selections.
 export function PlanCoveragePanel({ title }: { title: string }) {
   const scope = useCurriculumScope();
-  const [snapshot, setSnapshot] = useState<{
-    hasPlan: boolean;
-    coverage: ReturnType<typeof computeCoverage>;
-    summary: ReturnType<typeof summariseCoverage>;
-  }>({
-    hasPlan: false,
-    coverage: [],
-    summary: { total: 0, covered: 0, partial: 0, gap: 0, na: 0 },
-  });
-
-  useEffect(() => {
-    const requirements = readRequirements(scope);
-    const plan = loadRemediationPlan(scope);
-    const selected = new Set(plan?.selectedActionIds ?? []);
-    const coverage = computeCoverage(requirements, selected, scope.curriculum);
-    const summary = summariseCoverage(coverage);
-    setSnapshot({
-      hasPlan: !!plan && plan.selectedActionIds.length > 0,
-      coverage,
-      summary,
-    });
-  }, [scope]);
+  useCurriculumStorageRevision(scope);
+  const requirements = readRequirements(scope);
+  const plan = loadRemediationPlan(scope);
+  const selected = new Set(plan?.selectedActionIds ?? []);
+  const coverage = computeCoverage(requirements, selected, scope.curriculum);
+  const summary = summariseCoverage(coverage);
+  const hasPlan = !!plan && plan.selectedActionIds.length > 0;
 
   if (!scope.curriculum) return null;
 
-  if (!snapshot.hasPlan && snapshot.coverage.length === 0) {
+  if (!hasPlan && coverage.length === 0) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-500 italic">
         No remediation plan recorded yet. Visit <Link
@@ -351,7 +337,6 @@ export function PlanCoveragePanel({ title }: { title: string }) {
     );
   }
 
-  const { coverage, summary } = snapshot;
   const allClosed = summary.covered === summary.total - summary.na && summary.gap === 0 && summary.partial === 0;
 
   return (
@@ -423,10 +408,10 @@ export function PlanCoveragePanel({ title }: { title: string }) {
         })}
       </div>
       <div className="mt-2 text-[10px] text-slate-500 italic">
-        Selection coverage only, not firewall proof. Read-only snapshot of your <Link
+        Current selection coverage only, not firewall proof. Change selections in your <Link
           href={`/exercises/${scope.curriculum?.roles.planning}`}
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
-        >Lab 1.4 plan</Link>. Edit selections there to update.
+        >Lab 1.4 plan</Link>.
       </div>
     </div>
   );

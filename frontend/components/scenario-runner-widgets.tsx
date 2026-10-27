@@ -109,7 +109,7 @@ export function ExerciseSummary({
 
   const summaryText = [
     `Lab ${scenario.order}: ${scenario.name}`,
-    `Completed: ${completedStepIds.size}/${scenario.steps.length} steps (${completionPct}%)`,
+    `Steps marked complete: ${completedStepIds.size}/${scenario.steps.length} (${completionPct}%)`,
     `Firewall Config: ${activeConfig || "unknown"}`,
     `Date: ${timestamp}`,
     "",
@@ -137,7 +137,7 @@ export function ExerciseSummary({
 
         <div className="grid gap-3 md:grid-cols-3 mb-4">
           <div className="rounded-sm border border-slate-800 bg-slate-950 p-3">
-            <div className="text-[9px] uppercase tracking-wider text-slate-600">Completion</div>
+            <div className="text-[9px] uppercase tracking-wider text-slate-600">Steps marked complete</div>
             <div className={`text-lg font-bold ${completionPct === 100 ? "text-green-400" : "text-sky-400"}`}>
               {completionPct}%
             </div>
@@ -155,6 +155,10 @@ export function ExerciseSummary({
             </div>
           </div>
         </div>
+
+        <p className="mb-3 text-[10px] text-slate-600">
+          Mark Complete is self-attested; it does not run a system check.
+        </p>
 
         <div className="space-y-2">
           {scenario.steps.map((s, i) => {
