@@ -44,6 +44,7 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
         "rangerdanger-corp-ws": set(),
         "rangerdanger-openplc": {
             ("dir", "dnp3go"),
+            ("dir", "lab-definitions/packages/us-dnp3-substation/seeds/openplc"),
             ("file", "scripts/openplc-entrypoint.sh"),
             ("file", "scripts/set-gateway.sh"),
         },

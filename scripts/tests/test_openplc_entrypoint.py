@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import hashlib
 import os
+import shutil
+import socket
+import sqlite3
+import struct
 import subprocess
 import tempfile
+import threading
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "scripts/openplc-entrypoint.sh"
+SEED_SOURCE = ROOT / "lab-definitions/packages/us-dnp3-substation/seeds/openplc"
 
 
 class OpenPLCEntrypointTests(unittest.TestCase):
@@ -16,13 +25,31 @@ class OpenPLCEntrypointTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.workdir = self.root / "workdir"
         self.openplc = self.root / "openplc"
+        self.seed = self.root / "seed"
         self.bin = self.root / "bin"
         self.workdir.mkdir()
         (self.openplc / "st_files").mkdir(parents=True)
         (self.openplc / "scripts").mkdir()
         self.bin.mkdir()
+        shutil.copytree(SEED_SOURCE, self.seed)
         self.sqlite_log = self.root / "sqlite.log"
         self.gateway_log = self.root / "gateway.log"
+        self.curl_log = self.root / "curl.log"
+        self.modbus_server: socket.socket | None = None
+        self.modbus_stop = threading.Event()
+        self.modbus_thread: threading.Thread | None = None
+
+        install = self.seed / "install.py"
+        install_source = install.read_text(encoding="utf-8")
+        self.assertEqual(install_source.count('pathlib.Path("/root/OpenPLC_v3/webserver")'), 1)
+        install.write_text(
+            install_source.replace(
+                'pathlib.Path("/root/OpenPLC_v3/webserver")',
+                f'pathlib.Path("{self.openplc}")',
+            ),
+            encoding="utf-8",
+        )
+        self._write_seed_manifest()
 
         source = ENTRYPOINT.read_text(encoding="utf-8")
         replacements = {
@@ -30,6 +57,8 @@ class OpenPLCEntrypointTests(unittest.TestCase):
             'WORKDIR="/workdir"': f'WORKDIR="{self.workdir}"',
             'OPENPLC_DIR="/root/OpenPLC_v3/webserver"':
                 f'OPENPLC_DIR="{self.openplc}"',
+            'SEED_DIR="/opt/openplc-us"': f'SEED_DIR="{self.seed}"',
+            "/var/lib/openplc-us-seed.sha256": str(self.root / "seed.sha256"),
             "/root/OpenPLC_v3/start_openplc.sh":
                 str(self.openplc / "start_openplc.sh"),
         }
@@ -57,20 +86,34 @@ class OpenPLCEntrypointTests(unittest.TestCase):
             'case "$2" in *"${SQLITE_FAIL_MATCH:-}"*) '
             '[ -z "${SQLITE_FAIL_MATCH:-}" ] || exit 23 ;; esac\n',
         )
-        self._write_executable(self.bin / "curl", "#!/bin/sh\nexit 0\n")
-        self._write_executable(self.bin / "netstat", '#!/bin/sh\nprintf "tcp :::502 LISTEN\\n"\n')
+        self._write_executable(
+            self.bin / "curl",
+            '#!/bin/sh\nprintf "%s\\n" "$*" >> "$CURL_LOG"\n'
+            '[ "${CURL_EXIT:-0}" -eq 0 ]\n',
+        )
+        self._write_executable(
+            self.bin / "netstat",
+            '#!/bin/sh\nprintf "tcp :::502 LISTEN\\n"\n',
+        )
         self._write_executable(self.bin / "sleep", "#!/bin/sh\nexit 0\n")
-        self._write_executable(self.openplc / "start_openplc.sh", "#!/bin/sh\nexit 0\n")
+        self._write_executable(
+            self.openplc / "start_openplc.sh",
+            "#!/bin/sh\nprintf 'started\\n' >> \"$START_LOG\"\nexit 0\n",
+        )
         self._write_executable(
             self.openplc / "scripts/compile_program.sh",
             '#!/bin/sh\n'
-            'printf "%s\\n" "$1" > "$COMPILER_LOG"\n'
+            'printf "%s\\n" "$1" >> "$COMPILER_LOG"\n'
             'printf "compiler output\\n"\n'
-            'exit "${COMPILER_EXIT:-0}"\n',
+            'if [ "${COMPILER_EXIT:-0}" -ne 0 ]; then exit "$COMPILER_EXIT"; fi\n'
+            'printf "#!/bin/sh\\n" > core/openplc\n'
+            'chmod +x core/openplc\n',
         )
-        (self.openplc / "openplc.db").touch()
+        (self.openplc / "core").mkdir()
+        self._make_database()
 
     def tearDown(self) -> None:
+        self._stop_modbus_server()
         self.temp.cleanup()
 
     @staticmethod
@@ -78,13 +121,44 @@ class OpenPLCEntrypointTests(unittest.TestCase):
         path.write_text(contents, encoding="utf-8")
         path.chmod(0o755)
 
+    def _write_seed_manifest(self) -> None:
+        names = ("substation-automation.st", "install.py", "check_runtime.py")
+        manifest = "".join(
+            f"{hashlib.sha256((self.seed / name).read_bytes()).hexdigest()}  {name}\n"
+            for name in names
+        )
+        (self.seed / "seed.sha256").write_text(manifest, encoding="utf-8")
+
+    def _make_database(self) -> None:
+        with self._database() as db:
+            db.execute(
+                "CREATE TABLE Programs "
+                "(Name TEXT, Description TEXT, File TEXT, Date_upload INTEGER)"
+            )
+            db.execute("CREATE TABLE Slave_dev (name TEXT)")
+            db.execute("CREATE TABLE Settings (Key TEXT PRIMARY KEY, Value TEXT)")
+            db.execute("INSERT INTO Programs VALUES ('old', 'old', 'old.st', 0)")
+            db.execute("INSERT INTO Slave_dev VALUES ('old remote device')")
+            db.execute("INSERT INTO Settings VALUES ('Start_run_mode', 'false')")
+            db.commit()
+
+    @contextmanager
+    def _database(self) -> Iterator[sqlite3.Connection]:
+        database = sqlite3.connect(self.openplc / "openplc.db")
+        try:
+            yield database
+        finally:
+            database.close()
+
     def _run(self, **extra_env: str) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env.update({
             "PATH": f"{self.bin}{os.pathsep}{env['PATH']}",
             "SQLITE_LOG": str(self.sqlite_log),
             "GATEWAY_LOG": str(self.gateway_log),
+            "CURL_LOG": str(self.curl_log),
             "COMPILER_LOG": str(self.root / "compiler.log"),
+            "START_LOG": str(self.root / "start.log"),
         })
         env.update(extra_env)
         return subprocess.run(
@@ -98,7 +172,116 @@ class OpenPLCEntrypointTests(unittest.TestCase):
         )
 
     def _add_program(self) -> None:
-        (self.workdir / "example.st").write_text("PROGRAM example END_PROGRAM\n", encoding="utf-8")
+        (self.workdir / "example.st").write_text(
+            "PROGRAM example END_PROGRAM\n", encoding="utf-8")
+
+    def _start_modbus_server(self) -> None:
+        self.modbus_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.modbus_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.modbus_server.bind(("127.0.0.1", 0))
+        self.modbus_server.listen()
+        self.modbus_server.settimeout(0.2)
+        port = self.modbus_server.getsockname()[1]
+        checker = self.seed / "check_runtime.py"
+        source = checker.read_text(encoding="utf-8")
+        self.assertEqual(source.count("PORT = 502"), 1)
+        checker.write_text(source.replace("PORT = 502", f"PORT = {port}"), encoding="utf-8")
+        self._write_seed_manifest()
+
+        def serve() -> None:
+            heartbeat = 0
+            while not self.modbus_stop.is_set():
+                try:
+                    connection, _ = self.modbus_server.accept()
+                except socket.timeout:
+                    continue
+                except OSError:
+                    return
+                with connection:
+                    connection.settimeout(1)
+                    request = b""
+                    while len(request) < 12:
+                        chunk = connection.recv(12 - len(request))
+                        if not chunk:
+                            break
+                        request += chunk
+                    if len(request) != 12:
+                        continue
+                    heartbeat = (heartbeat + 1) & 0xFFFF
+                    body = b"\x03\x08" + struct.pack(">4H", 15, 0, heartbeat, 0)
+                    response = struct.pack(">HHHB", struct.unpack(">H", request[:2])[0],
+                                           0, len(body) + 1, 1) + body
+                    connection.sendall(response)
+
+        self.modbus_thread = threading.Thread(target=serve, daemon=True)
+        self.modbus_thread.start()
+
+    def _stop_modbus_server(self) -> None:
+        self.modbus_stop.set()
+        if self.modbus_server is not None:
+            self.modbus_server.close()
+        if self.modbus_thread is not None:
+            self.modbus_thread.join(timeout=1)
+
+    def test_baked_seed_installs_no_master_devices_and_waits_for_heartbeat(self) -> None:
+        self._start_modbus_server()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("using baked US OpenPLC seed", result.stdout)
+        self.assertIn("US OpenPLC seed heartbeat advanced", result.stdout)
+        self.assertIn("=== Starting OpenPLC ===", result.stdout)
+        self.assertTrue(self.gateway_log.is_file())
+        self.assertEqual((self.openplc / "active_program").read_text(), "substation-automation.st\n")
+        with self._database() as db:
+            self.assertEqual(
+                db.execute("SELECT File FROM Programs").fetchall(),
+                [("substation-automation.st",)],
+            )
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM Slave_dev").fetchone()[0], 0)
+            settings = dict(db.execute("SELECT Key,Value FROM Settings"))
+        self.assertEqual(settings["Modbus_port"], "502")
+        self.assertEqual(settings["Dnp3_port"], "disabled")
+        self.assertEqual(settings["Enip_port"], "disabled")
+        self.assertEqual(
+            (self.openplc / "mbconfig.cfg").read_text().splitlines()[0],
+            'Num_Devices = "0"',
+        )
+        self.assertTrue((self.root / "seed.sha256").is_file())
+
+    def test_seed_hash_failure_prevents_compilation_and_startup(self) -> None:
+        (self.seed / "substation-automation.st").write_text("changed\n", encoding="utf-8")
+
+        result = self._run()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("baked US OpenPLC seed hash verification failed", result.stderr)
+        self.assertNotIn("=== Starting OpenPLC ===", result.stdout)
+        self.assertFalse((self.root / "compiler.log").exists())
+
+    def test_database_install_failure_prevents_startup(self) -> None:
+        with self._database() as db:
+            db.execute("DROP TABLE Slave_dev")
+            db.commit()
+
+        result = self._run()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failed to install and verify the baked US OpenPLC seed database",
+                      result.stderr)
+        self.assertNotIn("=== Starting OpenPLC ===", result.stdout)
+
+    def test_workdir_program_overrides_baked_seed(self) -> None:
+        self._add_program()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Found workdir ST override: example.st", result.stdout)
+        self.assertNotIn("US OpenPLC seed heartbeat advanced", result.stdout)
+        self.assertEqual((self.openplc / "active_program").read_text(), "example.st\n")
+        self.assertEqual(len(self.sqlite_log.read_text().splitlines()), 5)
 
     def test_compile_failure_prevents_startup(self) -> None:
         self._add_program()
@@ -142,30 +325,6 @@ class OpenPLCEntrypointTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ERROR: OpenPLC database not found", result.stderr)
         self.assertNotIn("=== Starting OpenPLC ===", result.stdout)
-        self.assertFalse(self.sqlite_log.exists())
-
-    def test_successful_program_registers_and_starts(self) -> None:
-        self._add_program()
-
-        result = self._run()
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Compilation successful!", result.stdout)
-        self.assertIn("Database updated, auto-start enabled", result.stdout)
-        self.assertIn("=== Starting OpenPLC ===", result.stdout)
-        self.assertEqual((self.openplc / "active_program").read_text(), "example.st\n")
-        self.assertEqual(len(self.sqlite_log.read_text().splitlines()), 5)
-
-    def test_no_program_keeps_blank_program_behavior(self) -> None:
-        result = self._run()
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(
-            f"No ST file found in {self.workdir}, starting with blank program",
-            result.stdout,
-        )
-        self.assertIn("=== Starting OpenPLC ===", result.stdout)
-        self.assertFalse((self.root / "compiler.log").exists())
         self.assertFalse(self.sqlite_log.exists())
 
 

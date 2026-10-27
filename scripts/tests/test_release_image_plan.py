@@ -46,6 +46,9 @@ class PlannerFixture(unittest.TestCase):
         # Keep its release model present, as required for every package.
         eu_release = "lab-definitions/packages/eu-iec104-substation/compose.release.yml"
         self._write(eu_release, (ROOT / eu_release).read_text(encoding="utf-8"))
+        # The baked-in US seed also creates a package directory in this fixture.
+        us_release = "lab-definitions/packages/us-dnp3-substation/compose.release.yml"
+        self._write(us_release, (ROOT / us_release).read_text(encoding="utf-8"))
         for image in self.inventory["images"]:
             self._write(image["dockerfile"], "FROM scratch\n")
             for entry in image["inputs"]:

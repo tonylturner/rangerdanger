@@ -41,9 +41,19 @@ COPY --from=dnp3-builder /bin/dnp3cmd  /usr/local/bin/dnp3cmd
 # Copy the entrypoint script
 COPY scripts/openplc-entrypoint.sh /openplc-entrypoint.sh
 COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
+COPY lab-definitions/packages/us-dnp3-substation/seeds/openplc/ /opt/openplc-us/
 RUN chmod +x /openplc-entrypoint.sh /usr/local/bin/set-gateway.sh
+RUN cd /opt/openplc-us \
+    && sha256sum substation-automation.st install.py check_runtime.py > seed.sha256
 
-# The workdir is mounted at runtime with the ST file
+# Compile during image construction so invalid seed syntax fails the image build.
+RUN cd /root/OpenPLC_v3/webserver \
+    && cp /opt/openplc-us/substation-automation.st st_files/substation-automation.st \
+    && rm -f core/openplc \
+    && ./scripts/compile_program.sh substation-automation.st \
+    && test -x core/openplc
+
+# The runtime-mounted workdir may provide an ST override for the baked seed.
 WORKDIR /root/OpenPLC_v3/webserver
 
 ENTRYPOINT ["/openplc-entrypoint.sh"]
