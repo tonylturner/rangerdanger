@@ -175,9 +175,9 @@ RangerDanger owns fixes to its clients when the containd contract changes;
 containd defects belong upstream. Do not mask a client defect by downgrading
 below the supported minimum.
 
-Source-mode package builds use the containd `iec104` Git context (or an
-explicit `CONTAIND_SOURCE` override), not the published image. Source-mode
-success does not certify the release's containd digest.
+Source-mode package builds use the containd release tag pinned by the package
+(`v0.1.35`), or an explicit `CONTAIND_SOURCE` override, not the published
+image. Source-mode success does not certify the release's containd digest.
 The backend checks the minimum version before seeding and before adopting a
 running range after a backend restart; a 0.1.35 prerelease does not qualify.
 
