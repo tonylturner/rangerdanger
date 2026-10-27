@@ -47,7 +47,8 @@ jobs:
   eu-gates:
     name: EU gates (offline)
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # The tshark install alone has taken ten minutes on a slow apt mirror.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

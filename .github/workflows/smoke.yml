@@ -340,7 +340,8 @@ jobs:
   eu-smoke:
     name: EU IEC104 source gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # A clean run takes about 43 minutes; a slow apt mirror adds ten more.
+    timeout-minutes: 60
     env:
       EU_GATE_EVIDENCE_DIR: /tmp/eu-gate-evidence
 
