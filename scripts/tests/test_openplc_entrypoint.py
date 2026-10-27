@@ -29,8 +29,8 @@ CHECK_RUNTIME_SPEC.loader.exec_module(check_runtime)
 
 class FakeModbusSocket:
     def __init__(self, registers: tuple[int, int, int, int]) -> None:
-        status, close_output, heartbeat, spare = registers
-        body = b"\x03\x08" + struct.pack(">4H", status, close_output, heartbeat, spare)
+        # %MW0-%MW3: close request, status, close output, heartbeat.
+        body = b"\x03\x08" + struct.pack(">4H", *registers)
         self.response = struct.pack(">HHHB", 1, 0, len(body) + 1, 1) + body
 
     def __enter__(self) -> FakeModbusSocket:
@@ -250,7 +250,7 @@ class OpenPLCEntrypointTests(unittest.TestCase):
                     if len(request) != 12:
                         continue
                     heartbeat = (heartbeat + 1) & 0xFFFF
-                    body = b"\x03\x08" + struct.pack(">4H", 15, 0, heartbeat, 0)
+                    body = b"\x03\x08" + struct.pack(">4H", 0, 15, 0, heartbeat)
                     response = struct.pack(">HHHB", struct.unpack(">H", request[:2])[0],
                                            0, len(body) + 1, 1) + body
                     connection.sendall(response)
@@ -389,8 +389,8 @@ class OpenPLCRuntimeCheckTests(unittest.TestCase):
     def test_incomplete_first_read_retries_until_heartbeat_advances(self) -> None:
         clock, connection_count = self._run_with_registers([
             (0, 0, 0, 0),
-            (15, 0, 100, 0),
-            (15, 0, 101, 0),
+            (0, 15, 0, 100),
+            (0, 15, 0, 101),
         ])
         self.assertEqual(clock.now, 1.0)
         self.assertEqual(connection_count, 3)

@@ -38,7 +38,8 @@ def main():
     deadline = time.monotonic() + ATTEMPTS * POLL_INTERVAL
     while time.monotonic() < deadline:
         try:
-            status, close_output, heartbeat, _unused = read_status()
+            # Holding registers 1024-1027 are %MW0-%MW3 (see README.md).
+            _close_request, status, close_output, heartbeat = read_status()
             if status & 0x000F != 0x000F:
                 raise RuntimeError("feeder interlock status is incomplete")
             if close_output != 0:
