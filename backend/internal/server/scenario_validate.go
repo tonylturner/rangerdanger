@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -52,6 +54,7 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 	}
 
 	var input validatorInput
+	var auditErr error
 	if validator.needs(labs.CapabilityProcessElectrical) {
 		input.state, err = s.fetchRTACState(c.Request.Context(), rangeOf(c))
 		if err != nil {
@@ -60,8 +63,7 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 		}
 	}
 	if validator.needs(labs.CapabilityAuditDeviceControl) {
-		// An unreachable audit log is non-fatal; validators treat nil as empty.
-		input.audit, _ = s.fetchRTACAudit(c.Request.Context(), rangeOf(c))
+		input.audit, auditErr = s.fetchRTACAudit(c.Request.Context(), rangeOf(c))
 	}
 	s.activeConfigMu.RLock()
 	input.activeConfig = s.activeConfig
@@ -69,6 +71,7 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 	input.gen = rangeOf(c)
 
 	checks := validator.run(c.Request.Context(), s, input)
+	checks = withAuditFetchError(checks, auditErr)
 
 	// Determine overall outcome
 	outcome := "PASS"
@@ -88,6 +91,19 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 		Checks:     checks,
 		Timestamp:  time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func withAuditFetchError(checks []ValidationCheck, err error) []ValidationCheck {
+	if err == nil {
+		return checks
+	}
+	for i, check := range checks {
+		if strings.HasPrefix(check.Name, "Audit:") {
+			checks[i] = checkFail(check.Name, "RTAC audit unavailable: "+err.Error())
+			return checks
+		}
+	}
+	return append(checks, checkFail("RTAC audit", "unavailable: "+err.Error()))
 }
 
 // ── Lab 2.3-bonus: Vendor RDP Compromise ───────────────────────
@@ -156,7 +172,13 @@ func (s *Server) fetchRTACAudit(ctx context.Context, gen *lifecycle.Generation) 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read RTAC audit: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("RTAC audit returned HTTP %d", resp.StatusCode)
+	}
 	var result struct {
 		Entries []map[string]any `json:"entries"`
 	}
@@ -211,6 +233,31 @@ func intGet(m map[string]any, key string) int {
 	}
 }
 
+func intField(m map[string]any, key string) (int, bool) {
+	if m == nil {
+		return 0, false
+	}
+	v, ok := m[key]
+	if !ok {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case float64:
+		if math.IsNaN(n) || math.IsInf(n, 0) || math.Trunc(n) != n {
+			return 0, false
+		}
+		converted := int(n)
+		if float64(converted) != n {
+			return 0, false
+		}
+		return converted, true
+	default:
+		return 0, false
+	}
+}
+
 func floatGet(m map[string]any, key string) float64 {
 	if m == nil {
 		return 0
@@ -224,6 +271,27 @@ func floatGet(m map[string]any, key string) float64 {
 		return 0
 	}
 	return f
+}
+
+func floatField(m map[string]any, key string) (float64, bool) {
+	if m == nil {
+		return 0, false
+	}
+	v, ok := m[key]
+	if !ok {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case float64:
+		if math.IsNaN(n) || math.IsInf(n, 0) {
+			return 0, false
+		}
+		return n, true
+	case int:
+		return float64(n), true
+	default:
+		return 0, false
+	}
 }
 
 func itoa(n int) string {
@@ -354,7 +422,7 @@ func validateSegmentationRequirements(state map[string]any, audit []map[string]a
 	if activeConfig == "weak" {
 		checks = append(checks, ValidationCheck{"Weak baseline restored", "pass", "Weak baseline is active — ready for remediation planning and implementation"})
 	} else {
-		checks = append(checks, ValidationCheck{"Weak baseline restored", "warn", "Firewall is on " + activeConfig + " config — complete the 'Return to weak baseline' step before moving on"})
+		checks = append(checks, ValidationCheck{"Weak baseline restored", "warn", "Firewall is on " + activeConfig + " config — click Reset to Weak in the policy-actions panel to restore the baseline"})
 	}
 
 	// RTAC should still be communicating on the weak config
@@ -428,9 +496,6 @@ func validateRemediationPlanning(state map[string]any, activeConfig string) []Va
 		checks = append(checks, ValidationCheck{"Substation operational", "fail", "Substation not in normal state — reset lab before planning"})
 	}
 
-	// Planning is a student decision exercise — no automated check for plan quality
-	checks = append(checks, ValidationCheck{"Plan saved", "pass", "Remediation plan selections are saved in browser — referenced by later exercises"})
-
 	return checks
 }
 
@@ -503,8 +568,10 @@ func validateHardeningConfigurations(state map[string]any) []ValidationCheck {
 	devices := mapGet(state, "devices")
 
 	// Regulator tap near normal (Modbus override side)
-	tap := intGet(elec, "regulator_tap")
-	if tap >= -3 && tap <= 3 {
+	tap, tapAvailable := intField(elec, "regulator_tap")
+	if !tapAvailable {
+		checks = append(checks, ValidationCheck{"Regulator tap", "fail", "Tap position unavailable — cannot verify that the Modbus write was blocked"})
+	} else if tap >= -3 && tap <= 3 {
 		checks = append(checks, ValidationCheck{"Regulator tap", "pass",
 			"Tap position is " + itoa(tap) + " (normal range)"})
 	} else {
@@ -513,15 +580,18 @@ func validateHardeningConfigurations(state map[string]any) []ValidationCheck {
 	}
 
 	// Critical-load voltage within ANSI C84.1 Range A
-	critV := floatGet(elec, "critical_load_voltage_v")
-	if critV >= 114 && critV <= 126 {
+	critV, voltageAvailable := floatField(elec, "critical_load_voltage_v")
+	if !voltageAvailable {
+		checks = append(checks, ValidationCheck{"Critical load voltage", "fail", "Voltage measurement unavailable — cannot verify the critical load"})
+	} else if critV == 0 {
+		checks = append(checks, ValidationCheck{"Critical load voltage", "fail", "0V — no power"})
+	} else if critV >= 114 && critV <= 126 {
 		checks = append(checks, ValidationCheck{"Critical load voltage", "pass",
 			fmtFloat(critV) + "V — within normal range"})
-	} else if critV > 0 {
+	} else {
 		checks = append(checks, ValidationCheck{"Critical load voltage", "fail",
 			fmtFloat(critV) + "V — outside ANSI Range A"})
 	}
-
 	// Recloser closed + auto-reclose enabled (DNP3 injection side)
 	rclClosed := boolGet(elec, "recloser_closed")
 	recloseEnabled := boolGet(mapGet(devices, "recloser"), "reclose_enabled")

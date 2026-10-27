@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -144,10 +145,9 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	pcapPath := recipe.report.captureDir + "/validation-" + ts + ".pcap"
 	pcapHostPath := recipe.report.hostCaptureDir + "/validation-" + ts + ".pcap"
 	pcapCmd := fmt.Sprintf(
-		"mkdir -p %s; timeout %d tcpdump -i any -w %s 'host %s' >/dev/null 2>&1",
-		recipe.report.captureDir, validationPcapDurationSec, pcapPath, strings.Join(captureHosts, " or host "))
-	pcapOK := s.execDetached(ctx, cli, firewall, []string{"sh", "-c", pcapCmd}) == nil
-	pcapStart := time.Now()
+		"mkdir -p %s 2>/tmp/validation-%s.log && timeout %d tcpdump -i any -w %s 'host %s' >/dev/null 2>>/tmp/validation-%s.log",
+		recipe.report.captureDir, ts, validationPcapDurationSec, pcapPath, strings.Join(captureHosts, " or host "), ts)
+	pcapExecID, pcapStartErr := s.execDetached(ctx, cli, firewall, []string{"sh", "-c", pcapCmd})
 	time.Sleep(1 * time.Second) // let tcpdump open the file
 
 	// Run the probe matrix concurrently (independent containers; the PCAP
@@ -159,13 +159,35 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 
 	tally := tallyValidation(rows)
 
-	// Wait for the PCAP window to close, then analyze source IPs.
+	// Wait for tcpdump to exit, then read the capture. Starting a detached
+	// exec is not evidence that tcpdump ran successfully or wrote packets.
 	pcapSummary := "(PCAP capture unavailable)"
-	if pcapOK {
-		if remain := time.Duration(validationPcapDurationSec)*time.Second - time.Since(pcapStart); remain > 0 {
-			time.Sleep(remain)
+	pcapOK := false
+	switch {
+	case pcapStartErr != nil:
+		pcapSummary = "Capture could not start: " + pcapStartErr.Error()
+	default:
+		exitCode, waitErr := s.waitDetachedExec(ctx, cli, pcapExecID, (validationPcapDurationSec+3)*time.Second)
+		logPath := "/tmp/validation-" + ts + ".log"
+		logOutput, _, logErr := s.execCapture(ctx, cli, firewall, []string{"sh", "-c", "cat " + logPath + " 2>/dev/null; rm -f " + logPath})
+		captureErr := waitErr
+		if captureErr == nil {
+			captureErr = captureCommandError(exitCode, logOutput)
 		}
-		pcapSummary = s.analyzePcapSources(ctx, cli, firewall, pcapPath, captureNet)
+		if captureErr != nil {
+			if logErr != nil {
+				pcapSummary = fmt.Sprintf("Capture failed: %v (capture log unavailable: %v)", captureErr, logErr)
+			} else {
+				pcapSummary = "Capture failed: " + captureErr.Error()
+			}
+			break
+		}
+		pcapSummary, err = s.analyzePcapSources(ctx, cli, firewall, pcapPath, captureNet)
+		if err != nil {
+			pcapSummary = "Capture analysis failed: " + err.Error()
+			break
+		}
+		pcapOK = true
 	}
 
 	reportEnd := time.Now().UTC()
@@ -221,20 +243,118 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 
 // analyzePcapSources reads the capture on the firewall and aggregates the
 // source IPs that were actually FORWARDED toward field (direction "Out" on
-// tcpdump -i any). Same awk as validation-report.sh.
+// tcpdump -i any).
 // captureNet is the first three octets of the captured devices' /24, whose
 // own traffic the summary leaves out.
-func (s *Server) analyzePcapSources(ctx context.Context, cli *client.Client, firewall, pcapPath string, captureNet []string) string {
-	awk := `tcpdump -r ` + pcapPath + ` -nn 2>/dev/null | awk '` +
-		`/^[0-9]/ { if ($3 != "Out") next; ip=$5; n=split(ip,a,"."); if (n<4) next; ` +
-		fmt.Sprintf(`if (a[1]=="%s" && a[2]=="%s" && a[3]=="%s") next; print a[1]"."a[2]"."a[3]"."a[4] }' `, captureNet[0], captureNet[1], captureNet[2]) +
-		`| sort | uniq -c | sort -rn | head -10`
-	out, _, err := s.execCapture(ctx, cli, firewall, []string{"sh", "-c", awk})
-	out = strings.TrimRight(out, "\n")
-	if err != nil || strings.TrimSpace(out) == "" {
-		return "(no packets captured during window)"
+func (s *Server) analyzePcapSources(ctx context.Context, cli *client.Client, firewall, pcapPath string, captureNet []string) (string, error) {
+	out, exitCode, err := s.execCapture(ctx, cli, firewall, []string{"tcpdump", "-r", pcapPath, "-nn"})
+	if err != nil {
+		return "", fmt.Errorf("read PCAP: %w", err)
 	}
-	return out
+	if err := commandExecutionError(exitCode, out); err != nil {
+		return "", fmt.Errorf("read PCAP: %w", err)
+	}
+	return summarizePcapOutput(out, captureNet)
+}
+
+func summarizePcapOutput(output string, captureNet []string) (string, error) {
+	if len(captureNet) < 3 {
+		return "", fmt.Errorf("capture network must contain three octets")
+	}
+	packetCount := 0
+	sourceCounts := map[string]int{}
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		packetType := false
+		for _, field := range fields {
+			if field == "IP" || field == "IP6" {
+				packetType = true
+				break
+			}
+		}
+		if !packetType {
+			continue
+		}
+		packetCount++
+		if len(fields) < 5 || fields[2] != "Out" || fields[3] != "IP" {
+			continue
+		}
+		parts := strings.Split(strings.TrimSuffix(fields[4], ":"), ".")
+		if len(parts) < 4 {
+			continue
+		}
+		source := strings.Join(parts[:4], ".")
+		if source == strings.Join(captureNet[:3], ".") || parts[0] == captureNet[0] && parts[1] == captureNet[1] && parts[2] == captureNet[2] {
+			continue
+		}
+		sourceCounts[source]++
+	}
+	if packetCount == 0 {
+		return "", fmt.Errorf("PCAP contains no analysable packets")
+	}
+	if len(sourceCounts) == 0 {
+		return fmt.Sprintf("No forwarded source packets found among %d analysable packets.", packetCount), nil
+	}
+
+	sources := make([]string, 0, len(sourceCounts))
+	for source := range sourceCounts {
+		sources = append(sources, source)
+	}
+	sort.Slice(sources, func(i, j int) bool {
+		if sourceCounts[sources[i]] == sourceCounts[sources[j]] {
+			return sources[i] < sources[j]
+		}
+		return sourceCounts[sources[i]] > sourceCounts[sources[j]]
+	})
+	if len(sources) > 10 {
+		sources = sources[:10]
+	}
+	lines := make([]string, 0, len(sources))
+	for _, source := range sources {
+		lines = append(lines, fmt.Sprintf("%5d %s", sourceCounts[source], source))
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func captureCommandError(exitCode int, output string) error {
+	if exitCode == 0 || exitCode == 124 {
+		return nil
+	}
+	return commandExecutionError(exitCode, output)
+}
+
+func commandExecutionError(exitCode int, output string) error {
+	if exitCode == 0 {
+		return nil
+	}
+	detail := strings.TrimSpace(output)
+	if detail == "" {
+		return fmt.Errorf("command exited with status %d", exitCode)
+	}
+	return fmt.Errorf("command exited with status %d: %s", exitCode, detail)
+}
+
+func (s *Server) waitDetachedExec(ctx context.Context, cli *client.Client, execID string, timeout time.Duration) (int, error) {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		inspection, err := cli.ContainerExecInspect(ctx, execID)
+		if err != nil {
+			return -1, fmt.Errorf("inspect capture exec: %w", err)
+		}
+		if !inspection.Running {
+			return inspection.ExitCode, nil
+		}
+		select {
+		case <-ctx.Done():
+			return -1, fmt.Errorf("wait for capture exec: %w", ctx.Err())
+		case <-deadline.C:
+			return -1, fmt.Errorf("capture exec did not finish within %s", timeout)
+		case <-ticker.C:
+		}
+	}
 }
 
 // execCapture runs cmd in containerName, returns combined stdout, the exit
@@ -252,22 +372,29 @@ func (s *Server) execCapture(ctx context.Context, cli *client.Client, containerN
 	}
 	defer att.Close()
 	var outBuf, errBuf bytes.Buffer
-	_, _ = stdcopy.StdCopy(&outBuf, &errBuf, att.Reader) // blocks until exec exits
+	_, copyErr := stdcopy.StdCopy(&outBuf, &errBuf, att.Reader) // blocks until exec exits
+	output := outBuf.String() + errBuf.String()
+	if copyErr != nil {
+		return output, -1, fmt.Errorf("read exec output: %w", copyErr)
+	}
 	insp, err := cli.ContainerExecInspect(ctx, execID.ID)
 	if err != nil {
-		return outBuf.String(), -1, err
+		return output, -1, err
 	}
-	return outBuf.String(), insp.ExitCode, nil
+	return output, insp.ExitCode, nil
 }
 
 // execDetached fires a command without waiting for it (used for the
-// background tcpdump capture).
-func (s *Server) execDetached(ctx context.Context, cli *client.Client, containerName string, cmd []string) error {
+// background tcpdump capture) and returns its exec ID for completion checks.
+func (s *Server) execDetached(ctx context.Context, cli *client.Client, containerName string, cmd []string) (string, error) {
 	execID, err := cli.ContainerExecCreate(ctx, containerName, container.ExecOptions{Cmd: cmd})
 	if err != nil {
-		return err
+		return "", err
 	}
-	return cli.ContainerExecStart(ctx, execID.ID, container.ExecStartOptions{Detach: true})
+	if err := cli.ContainerExecStart(ctx, execID.ID, container.ExecStartOptions{Detach: true}); err != nil {
+		return "", err
+	}
+	return execID.ID, nil
 }
 
 func (recipe *packageRecipe) renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK bool, pcapSummary string,
@@ -290,6 +417,9 @@ func (recipe *packageRecipe) renderValidationMarkdown(active, source, hash, pcap
 	fmt.Fprintf(&b, "| **Policy** | %s (source: `%s`, sha256:%s) |\n", policyLabel, source, hash)
 	if pcapOK {
 		fmt.Fprintf(&b, "| **PCAP evidence** | `%s` |\n", pcapHostPath)
+	} else if strings.HasPrefix(pcapSummary, "Capture ") {
+		detail := strings.NewReplacer("\n", " ", "|", "/").Replace(pcapSummary)
+		fmt.Fprintf(&b, "| **PCAP evidence** | FAIL — %s |\n", detail)
 	}
 	fmt.Fprintf(&b, "| **Probe timeout** | %ds |\n\n", validationProbeTimeoutSec)
 

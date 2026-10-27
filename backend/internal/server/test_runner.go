@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
@@ -389,14 +388,11 @@ func (s *Server) resetLabState(ctx context.Context, gen *lifecycle.Generation, r
 	if err != nil {
 		problems = append(problems, "clear PCAP captures: "+err.Error())
 	} else if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
-		execCfg := container.ExecOptions{
-			Cmd: []string{"sh", "-c", "rm -f /data/captures/*.pcap /tmp/capture*.pcap 2>/dev/null; true"},
-		}
-		execID, err := dockerCli.ContainerExecCreate(ctx, firewall, execCfg)
-		if err != nil {
-			problems = append(problems, "clear PCAP captures: "+err.Error())
-		} else if err := dockerCli.ContainerExecStart(ctx, execID.ID, container.ExecStartOptions{}); err != nil {
-			problems = append(problems, "clear PCAP captures (start): "+err.Error())
+		out, exitCode, execErr := s.execCapture(ctx, dockerCli, firewall, []string{"sh", "-c", "rm -f /data/captures/*.pcap /tmp/capture*.pcap 2>/dev/null"})
+		if execErr != nil {
+			problems = append(problems, "clear PCAP captures: "+execErr.Error())
+		} else if exitErr := commandExecutionError(exitCode, out); exitErr != nil {
+			problems = append(problems, "clear PCAP captures: "+exitErr.Error())
 		}
 	} else {
 		problems = append(problems, "clear PCAP captures: Docker client not configured")
