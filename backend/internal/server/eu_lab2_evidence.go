@@ -136,25 +136,83 @@ func conduitPolls(ev conduitEvidence, start time.Time) ValidationCheck {
 	if count == 0 {
 		return checkFail(name, "missing evidence: active package station inventory unavailable (0 points)")
 	}
-	if start.IsZero() || ev.state == nil {
+	if start.IsZero() || ev.state == nil || ev.journal == nil {
 		return checkFail(name, fmt.Sprintf("missing evidence: no current CC attempt for %d station IOAs", count))
 	}
-	seen := map[int]int{}
+	expected := make(map[int]labs.IEC104Point, count)
+	for _, point := range ev.stationPoints {
+		expected[point.IOA] = point
+	}
+	seen, delivered := map[int]int{}, map[int]bool{}
 	for _, point := range ev.state.Points {
-		if badQuality(point.ccPoint) == "" && len(point.Value) > 0 && string(point.Value) != "null" && insideEvidenceWindow(point.ReceivedAt, start, ev.collectedAt) {
-			seen[point.IOA]++
+		identity, ok := expected[point.IOA]
+		if !ok {
+			continue
+		}
+		seen[point.IOA]++
+		if euStationPointDelivered(ev, identity, point, start) {
+			delivered[point.IOA] = true
 		}
 	}
 	var missing []int
 	for _, point := range ev.stationPoints {
-		if seen[point.IOA] != 1 {
+		if seen[point.IOA] != 1 || !delivered[point.IOA] {
 			missing = append(missing, point.IOA)
 		}
 	}
 	if len(missing) != 0 {
-		return checkFail(name, fmt.Sprintf("missing evidence: %d of %d station IOAs %v need unique, non-null, GOOD observations received at or after this attempt’s GI start", len(missing), count, missing))
+		return checkFail(name, fmt.Sprintf("missing evidence: %d of %d station IOAs %v need a unique fresh observation and post-GI point_good delivery with a non-null value", len(missing), count, missing))
 	}
-	return checkPass(name, fmt.Sprintf("all %d station IOAs received at or after the completed GI’s start over IEC 104; no field/process truth substituted", count))
+	return checkPass(name, fmt.Sprintf("all %d station IOAs delivered after GI; a device-reported measurement-invalid flag counts as delivered", count))
+}
+
+// euStationPointDelivered requires both protocol delivery after this
+// connection's GI and a fresh CC observation. IV/measurement_invalid is
+// device-reported quality, not evidence that the IEC 104 conduit failed.
+func euStationPointDelivered(ev conduitEvidence, identity labs.IEC104Point, point conduitPoint, start time.Time) bool {
+	valuePresent := func(value json.RawMessage) bool {
+		return len(value) > 0 && string(value) != "null"
+	}
+	if point.IOA != identity.IOA || !valuePresent(point.Value) ||
+		!insideEvidenceWindow(point.ReceivedAt, start, ev.collectedAt) {
+		return false
+	}
+	good := badQuality(point.ccPoint) == ""
+	measurementInvalid := point.Quality.IV && !point.Quality.NT && !point.Quality.SB &&
+		!point.Quality.BL && point.Quality.OV != nil && !*point.Quality.OV &&
+		point.StaleReason != nil && *point.StaleReason == "measurement_invalid"
+	if !good && !measurementInvalid {
+		return false
+	}
+
+	if ev.state == nil || ev.journal == nil || ev.state.Link.ConnectionSeq == 0 {
+		return false
+	}
+	entries := append([]journalEntry(nil), ev.journal.Entries...)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Seq < entries[j].Seq })
+	var giSeq uint64
+	for _, entry := range entries {
+		if entry.Seq < ev.journal.OldestSeq || entry.Kind != "gi_started" ||
+			entry.Detail.ConnectionSeq == nil || *entry.Detail.ConnectionSeq != ev.state.Link.ConnectionSeq ||
+			!entry.At.Equal(start) {
+			continue
+		}
+		giSeq = entry.Seq
+		break
+	}
+	if giSeq == 0 {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Seq <= giSeq || entry.Seq < ev.journal.OldestSeq ||
+			entry.Kind != "point_good" || entry.Detail.Point != identity.ID ||
+			entry.Detail.StaleReason != nil || !valuePresent(entry.Detail.Value) ||
+			!insideEvidenceWindow(entry.At, start, ev.collectedAt) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func conduitPLC(ev conduitEvidence, start time.Time) ValidationCheck {

@@ -85,7 +85,7 @@ func euSupply(state *euWorkshopProcess, now time.Time) (bool, error) {
 // Integrity requires a matched current-connection GI within the attempt cap.
 // Receipt age does not invalidate quiet GOOD status.
 func euLink(state *conduitState, journal *ccJournal, points []labs.IEC104Point, start, now time.Time) ValidationCheck {
-	const name = "CC link, GI and GOOD station observations"
+	const name = "CC link, GI and station delivery"
 	ev := conduitEvidence{state: state, journal: journal, stationPoints: points, rangeStart: start, collectedAt: now}
 	anchor, window := conduitWindow(ev)
 	if anchor.IsZero() {

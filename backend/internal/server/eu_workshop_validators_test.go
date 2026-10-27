@@ -312,6 +312,11 @@ func TestEUHardeningCollectorSnapshotsCCBeforeActiveProbes(t *testing.T) {
 	ev.cc.Link.ConnectionSeq = 2
 	ev.journal.Entries[0].At = giAt
 	ev.journal.Entries[1].At = giAt.Add(time.Millisecond)
+	for i := range ev.journal.Entries {
+		if ev.journal.Entries[i].Kind == "point_good" {
+			ev.journal.Entries[i].At = giAt.Add(2 * time.Millisecond)
+		}
+	}
 	for i := range ev.cc.Points {
 		ev.cc.Points[i].ReceivedAt = giAt.Add(2 * time.Millisecond)
 	}

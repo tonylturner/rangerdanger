@@ -17,6 +17,9 @@ RECONNECT_CALLS=0
 RECONNECT_FAIL_AT=0
 EVENTS=""
 READY_EXPR=""
+G22_STATE=""
+G22_JOURNAL=""
+G22_CLOCK=0
 eu_lab_step() { EVENTS="$EVENTS step:$2"; }
 eu_lab_exec() { :; }
 eu_api_post() {
@@ -41,7 +44,21 @@ eu_assert_unchanged_breaker() {
 }
 eu_wait_for_operator() {
   READY_EXPR="$1"
-  EVENTS="$EVENTS ready"
+}
+eu_api_get() {
+  EVENTS="$EVENTS get:$1"
+  case "$1" in
+    /api/operator/state) API_BODY="$G22_STATE" ;;
+    /api/operator/journal?after=0)
+      API_BODY="$G22_JOURNAL"
+      EVENTS="$EVENTS ready"
+      ;;
+    *) return 1 ;;
+  esac
+}
+eu_now_ms() {
+  G22_CLOCK=$((G22_CLOCK + 1))
+  printf '%s\n' "$G22_CLOCK"
 }
 # Reconnect admission/receipt boundaries have their own lesson tests.
 eu_lab_reconnect_cc() {
@@ -69,6 +86,41 @@ eu_wait_for_field() {
   fi
 }
 
+# The wait helper uses the same post-GI delivery plus latest-quality rule as
+# the backend. 2301 is a float whose current IV measurement_invalid follows a
+# non-null point_good delivery for this GI.
+NOW="2026-10-26T12:00:03Z"
+GI="2026-10-26T12:00:00Z"
+G22_STATE=$(jq -cn --slurpfile inventory "$PACKAGE/protocols/points.json" \
+  --arg now "$NOW" --arg gi "$GI" '
+  {schema:3,cache_epoch:"cc-g22",snapshot_seq:44,rendered_at:$now,
+   link:{state:"started",since:"2026-10-26T11:59:59Z",connection_seq:2,
+     gi:{state:"complete",started_at:$gi,last_complete_at:"2026-10-26T12:00:01Z",
+       next_due_at:"2026-10-26T12:15:00Z",trigger:"connect"}},
+   points:[$inventory[0].points[] as $p |
+     {id:$p.id,ioa:$p.ioa,kind:$p.kind,device:$p.source.device,
+      limits:($p.limits // null),asdu:(if $p.kind == "float" then "M_ME_NC_1"
+        elif $p.kind == "step-position" then "M_ST_NA_1"
+        elif $p.kind == "double-point" then "M_DP_NA_1" else "M_SP_NA_1" end),
+      reporting:(if $p.kind == "float" then {cyclic_ms:10000,deadband:0.1} else null end),
+      value:(if $p.kind == "float" then 20.0
+        elif $p.kind == "step-position" then {value:0,transient:false}
+        elif $p.kind == "double-point" then "closed" else true end),
+      quality:{iv:($p.ioa == 2301),nt:false,sb:false,bl:false,
+        ov:(if $p.kind == "float" or $p.kind == "step-position" then false else null end)},
+      stale_reason:(if $p.ioa == 2301 then "measurement_invalid" else null end),
+      source_time:null,received_at:"2026-10-26T12:00:02Z",cot:3}]}')
+G22_JOURNAL=$(jq -cn --slurpfile inventory "$PACKAGE/protocols/points.json" \
+  --arg gi "$GI" '
+  {cache_epoch:"cc-g22",oldest_seq:1,latest_seq:(2 + ($inventory[0].points | length)),
+   entries:([{seq:1,at:$gi,kind:"gi_started",detail:{connection_seq:2}},
+     {seq:2,at:"2026-10-26T12:00:01Z",kind:"gi_complete",detail:{connection_seq:2}}]
+     + [$inventory[0].points | to_entries[] |
+       {seq:(.key + 3),at:"2026-10-26T12:00:02Z",kind:"point_good",
+        detail:{point:.value.id,value:true}}])}')
+G22_INITIAL_STATE="$G22_STATE"
+G22_INITIAL_JOURNAL="$G22_JOURNAL"
+
 for DENIED_EXIT in 2 1; do
   FIELD_WAITS=0
   UNCHANGED_CALLS=0
@@ -91,20 +143,62 @@ for DENIED_EXIT in 2 1; do
   t_expect_eq "$UNCHANGED_CALLS" 1 "G22 prepare still proves the breaker was unchanged"
   t_expect_eq "$RECONNECT_CALLS" 2 "G22 prepare reconnects both before attack and before validation"
   case " $EVENTS " in
-    *" deny unchanged reconnect step:validate ready "*) t_ok "G22 prepare waits for GOOD CC evidence after Validate" ;;
-    *) t_not_ok "G22 prepare refreshes GOOD CC evidence after the denied retest: $EVENTS" ;;
-  esac
-  case "$READY_EXPR" in
-    *'point("plc-1-input-valid").value == true'*) \
-      t_ok "G22 final readiness requires true PLC validity" ;;
-    *) t_not_ok "G22 final readiness predicates match the validator contract: $READY_EXPR" ;;
-  esac
-  case "$READY_EXPR" in
-    *'all(.points[]; good and (.received_at | epoch) >= $gi)'*) \
-      t_ok "G22 final readiness requires post-GI GOOD receipts" ;;
-    *) t_not_ok "G22 final readiness requires post-GI GOOD receipts: $READY_EXPR" ;;
+    *" deny unchanged reconnect step:validate get:/api/operator/state get:/api/operator/journal?after=0 ready "*) t_ok "G22 prepare waits for delivered CC evidence after Validate" ;;
+    *) t_not_ok "G22 prepare refreshes delivered CC evidence after the denied retest: $EVENTS" ;;
   esac
 done
+
+if [ -z "$G22_STATE" ] || [ -z "$G22_JOURNAL" ]; then
+  t_not_ok "G22 CC readiness fixtures are valid JSON"
+else
+  t_ok "G22 CC readiness fixtures are valid JSON"
+fi
+G22_CLOCK=0
+t_run eu_lab_wait_cc_delivered 1 "G22 delivered CC wait" true
+t_expect_eq "$T_STATUS" 0 "post-GI point_good allows current IV measurement_invalid"
+G22_CLOCK=0
+t_run eu_lab_wait_good_cc
+t_expect_eq "$T_STATUS" 0 "shared student CC wait accepts delivered measurement_invalid"
+READY_EXPR=$(eu_lab_cc_delivery_predicate "$(eu_station_shape)" \
+  'point("plc-1-input-valid").value == true')
+T_OUT="$READY_EXPR"
+t_expect_out 'point("plc-1-input-valid").value == true' \
+  "G22 readiness retains the independent PLC input-valid requirement"
+for quality in nt sb bl ov; do
+  G22_STATE=$(printf '%s' "$G22_STATE" | jq -c --arg quality "$quality" '
+    (.points[] | select(.ioa == 2301)).quality[$quality] = true')
+  G22_CLOCK=0
+  t_run eu_lab_wait_cc_delivered 0 "G22 invalid quality wait" true
+  t_expect_eq "$T_STATUS" 1 "IV measurement_invalid with $quality is rejected"
+  G22_STATE=$(printf '%s' "$G22_STATE" | jq -c --arg quality "$quality" '
+    (.points[] | select(.ioa == 2301)).quality[$quality] = false')
+done
+G22_STATE=$(printf '%s' "$G22_STATE" | jq -c '
+  (.points[] | select(.ioa == 2301)) |=
+    (.quality.nt = true | .stale_reason = "link_lost")')
+G22_CLOCK=0
+t_run eu_lab_wait_cc_delivered 0 "G22 link-lost wait" true
+t_expect_eq "$T_STATUS" 1 "link_lost remains a failure"
+G22_STATE=$(printf '%s' "$G22_STATE" | jq -c '
+  (.points[] | select(.ioa == 2301)) |=
+    (.quality.nt = false | .stale_reason = "measurement_invalid")')
+G22_STATE=$(printf '%s' "$G22_STATE" | jq -c '
+  (.points[] | select(.ioa == 2301)).received_at = "2026-10-26T11:59:59Z"')
+G22_CLOCK=0
+t_run eu_lab_wait_cc_delivered 0 "G22 stale receipt wait" true
+t_expect_eq "$T_STATUS" 1 "measurement_invalid with a pre-GI receipt is rejected"
+G22_STATE="$G22_INITIAL_STATE"
+invalid_id=$(jq -er '.points[] | select(.ioa == 2301) | .id' "$PACKAGE/protocols/points.json")
+G22_JOURNAL=$(printf '%s' "$G22_JOURNAL" | jq -c --arg id "$invalid_id" '
+  .entries |= map(select(.kind != "point_good" or .detail.point != $id))')
+G22_CLOCK=0
+t_run eu_lab_wait_cc_delivered 0 "G22 missing delivery wait" true
+t_expect_eq "$T_STATUS" 1 "IV measurement_invalid without post-GI point_good fails"
+G22_STATE=$(printf '%s' "$G22_STATE" | jq -c '
+  (.points[] | select(.ioa == 2301)).quality.iv = false
+  | (.points[] | select(.ioa == 2301)).stale_reason = null')
+G22_STATE="$G22_INITIAL_STATE"
+G22_JOURNAL="$G22_INITIAL_JOURNAL"
 
 DENIED_EXIT=0
 FIELD_WAITS=0

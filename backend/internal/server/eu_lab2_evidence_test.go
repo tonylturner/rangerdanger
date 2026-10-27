@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
 func passingConduits(t *testing.T) conduitEvidence {
@@ -47,6 +48,19 @@ func passingConduits(t *testing.T) conduitEvidence {
 		}
 		point := conduitPoint{ccPoint: ccPoint{ID: identity.ID, Value: value, ReceivedAt: at("12:01:00")}, IOA: ioa}
 		ev.state.Points = append(ev.state.Points, point)
+	}
+	for i, identity := range ev.stationPoints {
+		seq := uint64(i + 3)
+		ev.journal.Entries = append(ev.journal.Entries, journalEntry{
+			Seq:  seq,
+			At:   at("12:01:02").Add(time.Duration(i) * time.Millisecond),
+			Kind: "point_good",
+			Detail: journalDetail{
+				Point: identity.ID,
+				Value: append(json.RawMessage(nil), ev.state.Points[i].Value...),
+			},
+		})
+		ev.journal.LatestSeq = seq
 	}
 
 	var err error
@@ -192,6 +206,110 @@ func TestConduitsPollsInventoryCount(t *testing.T) {
 	check = conduitPolls(ev, start)
 	if check.Status != "fail" || !strings.Contains(check.Detail, "1 of 42 station IOAs [1307]") {
 		t.Fatal(check)
+	}
+}
+
+func TestConduitsPollsAcceptsOnlyDeliveredMeasurementInvalidQuality(t *testing.T) {
+	pointIndex, identity := -1, labs.IEC104Point{}
+	base := passingConduits(t)
+	for i, expected := range base.stationPoints {
+		if expected.IOA == 2301 {
+			pointIndex, identity = i, expected
+			break
+		}
+	}
+	if pointIndex < 0 {
+		t.Fatal("station inventory missing test float IOA")
+	}
+	invalid := func(ev *conduitEvidence) {
+		reason := "measurement_invalid"
+		overflow := false
+		ev.state.Points[pointIndex].Quality.IV = true
+		ev.state.Points[pointIndex].Quality.OV = &overflow
+		ev.state.Points[pointIndex].StaleReason = &reason
+	}
+
+	ev := passingConduits(t)
+	invalid(&ev)
+	start, _ := conduitWindow(ev)
+	if check := conduitPolls(ev, start); check.Status != "pass" {
+		t.Fatalf("post-GI point_good plus fresh measurement_invalid IV failed: %+v", check)
+	}
+	if check := euLink(ev.state, ev.journal, ev.stationPoints, ev.rangeStart, ev.collectedAt); check.Status != "pass" {
+		t.Fatalf("shared euLink freshness rule rejected delivered measurement_invalid IV: %+v", check)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*conduitEvidence)
+	}{
+		{
+			name: "link_lost",
+			mutate: func(ev *conduitEvidence) {
+				invalid(ev)
+				ev.state.Points[pointIndex].Quality.NT = true
+				reason := "link_lost"
+				ev.state.Points[pointIndex].StaleReason = &reason
+			},
+		},
+		{
+			name: "no post-GI point_good delivery",
+			mutate: func(ev *conduitEvidence) {
+				invalid(ev)
+				entries := make([]journalEntry, 0, len(ev.journal.Entries))
+				for _, entry := range ev.journal.Entries {
+					if entry.Kind != "point_good" || entry.Detail.Point != identity.ID {
+						entries = append(entries, entry)
+					}
+				}
+				ev.journal.Entries = entries
+			},
+		},
+		{
+			name: "NT",
+			mutate: func(ev *conduitEvidence) {
+				invalid(ev)
+				ev.state.Points[pointIndex].Quality.NT = true
+			},
+		},
+		{
+			name: "SB",
+			mutate: func(ev *conduitEvidence) {
+				invalid(ev)
+				ev.state.Points[pointIndex].Quality.SB = true
+			},
+		},
+		{
+			name: "BL",
+			mutate: func(ev *conduitEvidence) {
+				invalid(ev)
+				ev.state.Points[pointIndex].Quality.BL = true
+			},
+		},
+		{
+			name: "OV",
+			mutate: func(ev *conduitEvidence) {
+				invalid(ev)
+				*ev.state.Points[pointIndex].Quality.OV = true
+			},
+		},
+		{
+			name: "stale receipt",
+			mutate: func(ev *conduitEvidence) {
+				invalid(ev)
+				ev.state.Points[pointIndex].ReceivedAt = at("12:00:59")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev := passingConduits(t)
+			tt.mutate(&ev)
+			start, _ := conduitWindow(ev)
+			if check := conduitPolls(ev, start); check.Status != "fail" {
+				t.Fatalf("invalid station evidence passed: %+v", check)
+			}
+		})
 	}
 }
 

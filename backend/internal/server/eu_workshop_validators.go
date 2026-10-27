@@ -234,7 +234,7 @@ func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
 	}
 	link := func() ValidationCheck {
 		if ev.ccErr != nil {
-			return checkFail("CC link, GI and GOOD station observations", ev.ccErr.Error())
+			return checkFail("CC link, GI and station delivery", ev.ccErr.Error())
 		}
 		if slot == "eu-firewall-implementation" || slot == "eu-hardening-configurations" {
 			return euWorkshopFreshLink(ev)

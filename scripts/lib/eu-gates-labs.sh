@@ -154,10 +154,100 @@ eu_lab_baseline_prepare() {
 }
 
 eu_lab_wait_good_cc() {
-  local shape
+  eu_lab_wait_cc_delivered 30 "student route current CC GI and every inventory observation delivered" true
+}
+
+# Keep the gate's polling rule aligned with the backend validator: a post-GI
+# point_good journal entry proves conduit delivery, while current quality may
+# be GOOD or a device-reported measurement-invalid IV.
+eu_lab_cc_delivery_predicate() {
+  local shape="$1" required="$2"
+  cat <<'JQ'
+    . as $state
+    | ($state.link.gi.started_at | epoch) as $gi
+    | $state.link.connection_seq as $connection
+    | ($journal.entries | sort_by(.seq)) as $entries
+    | ([$entries[] | select(.kind == "gi_started"
+        and .detail.connection_seq == $connection
+        and (.at | epoch) == $gi)] | last) as $gi_start
+    | ($state.schema == 3
+      and ($state.cache_epoch | type == "string" and length > 0)
+      and $journal.cache_epoch == $state.cache_epoch
+      and ($journal.entries | type == "array")
+      and $connection > 0
+      and $state.link.state == "started"
+      and $state.link.gi.state == "complete"
+      and ($state.link.since | epoch) <= $gi
+      and $gi >= (($state.rendered_at | epoch) - 600)
+      and $gi_start != null
+      and any($entries[];
+        .kind == "gi_complete"
+        and .detail.connection_seq == $connection
+        and .seq > $gi_start.seq
+        and (.at | epoch) >= $gi
+        and (.at | epoch) <= ($state.rendered_at | epoch))
+      and all($state.points[];
+        . as $point
+        | (.received_at | epoch) as $received
+        | ($received >= $gi and $received <= ($state.rendered_at | epoch))
+          and .value != null
+          and ((.quality.iv == false and .quality.nt == false
+                and .quality.sb == false and .quality.bl == false
+                and (.quality.ov == null or .quality.ov == false)
+                and .stale_reason == null)
+            or (.quality.iv == true and .quality.nt == false
+                and .quality.sb == false and .quality.bl == false
+                and .quality.ov == false
+                and .stale_reason == "measurement_invalid"))
+          and any($entries[];
+            .seq > $gi_start.seq
+            and (.at | epoch) >= $gi
+            and (.at | epoch) <= ($state.rendered_at | epoch)
+            and .kind == "point_good"
+            and .detail.point == $point.id
+            and .detail.value != null
+            and .detail.stale_reason == null))
+    )
+JQ
+  printf '    and ($state | (%s)) and ($state | (%s))\n' "$shape" "$required"
+}
+
+eu_lab_wait_cc_delivered() {
+  local budget="$1" label="$2" required="$3" shape predicate started_ms now_ms state journal
   shape=$(eu_station_shape) || return
-  eu_wait_for_operator "($shape) and .link.state == \"started\" and .link.gi.state == \"complete\" and all(.points[]; good)" \
-    30 "student route current CC GI and every inventory observation GOOD"
+  predicate=$(eu_lab_cc_delivery_predicate "$shape" "$required") || return
+  started_ms=$(eu_now_ms) || {
+    fail "$label cannot establish monotonic timeout"
+    return 1
+  }
+  while :; do
+    eu_api_get /api/operator/state || {
+      fail "$label could not read current CC state"
+      return 1
+    }
+    state="$API_BODY"
+    eu_assert_operator_shape "$state" "$label" || return 1
+    eu_api_get '/api/operator/journal?after=0' || {
+      fail "$label could not read the CC delivery journal"
+      return 1
+    }
+    journal="$API_BODY"
+    now_ms=$(eu_now_ms) || now_ms=""
+    if [[ "$now_ms" =~ ^[0-9]+$ ]] \
+      && [ "$((now_ms - started_ms))" -le "$((budget * 1000))" ] \
+      && printf '%s' "$state" | jq -e --argjson journal "$journal" \
+        "$EU_JQ_DEFS $predicate" >/dev/null 2>&1; then
+      API_BODY="$state"
+      return 0
+    fi
+    if [[ "$now_ms" =~ ^[0-9]+$ ]] \
+      && [ "$((now_ms - started_ms))" -ge "$((budget * 1000))" ]; then
+      break
+    fi
+    sleep 0.1
+  done
+  fail "$label did not reach delivered CC observations within ${budget}s; last state: $state; journal: $journal"
+  return 1
 }
 
 # Close the actual TCP connection, even when the new policy permits it.
@@ -281,16 +371,11 @@ eu_lab_hardening_prepare() {
 }
 
 # Wait after the served Validate step so the independent validator can snapshot
-# post-GI GOOD CC evidence before its active TCP probes.
+# post-GI delivered CC evidence before its active TCP probes.
 eu_lab_hardening_wait_good_cc() {
-  local shape
-  shape=$(eu_station_shape) || return
-  eu_wait_for_operator "(.link.gi.started_at | epoch) as \$gi
-    | ($shape) and .link.state == \"started\" and .link.gi.state == \"complete\"
-      and (.link.since | epoch) <= \$gi
-      and all(.points[]; good and (.received_at | epoch) >= \$gi)
-      and point(\"plc-1-input-valid\").value == true" \
-    15 "fresh GOOD station observations and valid PLC input before hardening validation"
+  eu_lab_wait_cc_delivered 15 \
+    "fresh station observations and valid PLC input before hardening validation" \
+    'point("plc-1-input-valid").value == true'
 }
 
 eu_lab_nmap_vendor() {
@@ -407,7 +492,7 @@ eu_lab_validation_prepare() {
 eu_lab_visibility_failed() {
   if ! printf '%s' "$API_BODY" | jq -e 'any(.checks[];
     .status == "fail" and (.name == "Fresh CC session admitted after policy commit"
-      or .name == "CC link, GI and GOOD station observations"))' >/dev/null; then
+      or .name == "CC link, GI and station delivery"))' >/dev/null; then
     fail "bad change must fail CC visibility, not merely an unrelated prerequisite: $API_BODY"
     return 1
   fi

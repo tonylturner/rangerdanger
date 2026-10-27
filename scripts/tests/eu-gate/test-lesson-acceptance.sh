@@ -74,7 +74,7 @@ eu_api_post() {
 }
 eu_validate_scenario() {
   CALLS="$CALLS validate:$1:$2"
-  API_BODY='{"checks":[{"name":"CC link, GI and GOOD station observations","status":"fail"}]}'
+  API_BODY='{"checks":[{"name":"CC link, GI and station delivery","status":"fail"}]}'
   [ "$FAIL_VALIDATION" -eq 0 ]
 }
 prepare() { CALLS="$CALLS prepare:$1"; }
