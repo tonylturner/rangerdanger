@@ -27,6 +27,14 @@
 # Start again with ./setup.sh (or ./scripts/dev-up.sh).
 
 set -euo pipefail
+# Preserve the user's stderr for timeout guidance outside probe redirects.
+exec 3>&2
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+# docker_bounded: readiness queries must not wait forever for a stalled CLI.
+# shellcheck source=scripts/lib/docker-bounded.sh
+# shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
+. "$SCRIPT_DIR/lib/docker-bounded.sh"
 
 RANGE_ONLY=0
 while [ $# -gt 0 ]; do
@@ -43,8 +51,8 @@ PROJECTS=(rangerdanger)
 WORKDIR=$(mktemp -d)
 trap 'rmdir "$WORKDIR"' EXIT
 
-project_containers() { docker ps -aq --filter "label=com.docker.compose.project=$1"; }
-project_networks()   { docker network ls -q --filter "label=com.docker.compose.project=$1"; }
+project_containers() { docker_bounded 15 ps -aq --filter "label=com.docker.compose.project=$1"; }
+project_networks()   { docker_bounded 15 network ls -q --filter "label=com.docker.compose.project=$1"; }
 project_state() {
     containers=$(project_containers "$1") && networks=$(project_networks "$1")
 }
@@ -56,7 +64,7 @@ project_volumes() {
     ids=$(project_containers "$1") || return 1
     [ -n "$ids" ] || return 0
     # shellcheck disable=SC2086 # one container id per word
-    docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}' $ids \
+    docker_bounded 15 inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}' $ids \
         | sed '/^$/d' | sort -u
 }
 
@@ -67,7 +75,7 @@ wait_for_volumes() {
     left_v=0
     [ -n "$volumes" ] || return 0
     for ((attempt = 0; attempt <= 10; attempt++)); do
-        remaining=$(docker volume ls -q) || return 1
+        remaining=$(docker_bounded 15 volume ls -q) || return 1
         left_v=0
         for volume in $volumes; do
             if grep -Fxq "$volume" <<< "$remaining"; then

@@ -25,6 +25,8 @@
 # useful for a pre-workshop "is my laptop ready?" check.
 
 set -euo pipefail
+# Preserve the user's stderr for timeout guidance outside probe redirects.
+exec 3>&2
 
 # ─── color helpers ──────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -138,25 +140,6 @@ range_compose() { # <package id> <compose args...>
         -f "$PACKAGES_DIR/$id/$RANGE_FILE_NAME" "$@"
 }
 
-# Readiness queries must not hang when Docker Desktop stops responding.
-# macOS has no timeout(1). Kill only the CLI child owned by this call;
-# image acquisition and the backend's lifecycle are not cancelled here.
-docker_bounded() { # <seconds> <docker args...>
-    local limit="$1" child watchdog rc=0
-    shift
-    docker "$@" &
-    child=$!
-    # The watchdog's sleep outlives the kill below; without the redirect it
-    # holds a caller's $(...) pipe open for the whole limit.
-    ( sleep "$limit"; kill -KILL "$child" 2>/dev/null ) >/dev/null 2>&1 &
-    watchdog=$!
-    wait "$child" 2>/dev/null || rc=$?
-    kill "$watchdog" 2>/dev/null || true
-    wait "$watchdog" 2>/dev/null || true
-    [ "$rc" -ne 137 ] || rc=124
-    return "$rc"
-}
-
 # GHCR occasionally returns transient 5xx during layer fetches — retry
 # each pull up to 3 times with backoff before giving up.
 with_pull_retry() {
@@ -180,6 +163,10 @@ with_pull_retry() {
 # shellcheck source=scripts/lib/range.sh
 # shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
 . "$ROOT_DIR/scripts/lib/range.sh"
+# docker_bounded: readiness queries must not wait forever for a stalled CLI.
+# shellcheck source=scripts/lib/docker-bounded.sh
+# shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
+. "$ROOT_DIR/scripts/lib/docker-bounded.sh"
 # docker_floor_check: the Compose and Engine versions interface_name needs.
 # shellcheck source=scripts/lib/docker-floor.sh
 # shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
@@ -209,13 +196,13 @@ esac
 say "Install root: $ROOT_DIR (mode: $MODE)"
 
 # Docker engine reachable
-if ! docker info >/dev/null 2>&1; then
+if ! docker_bounded 30 info >/dev/null 2>&1; then
     die "Docker is not running or not installed. Start Docker Desktop / dockerd, then re-run."
 fi
 say "Docker reachable"
 
 # Compose v2
-if ! docker compose version >/dev/null 2>&1; then
+if ! docker_bounded 20 compose version >/dev/null 2>&1; then
     die "Docker Compose v2 not found (this script requires the 'docker compose' subcommand, not 'docker-compose')."
 fi
 # The range Compose files pin firewall NIC names (interface_name), which
@@ -286,8 +273,8 @@ fi
 # Read /proc/meminfo as the fallback so Linux-native students still
 # get a warning if the host itself is too small.
 MEM_GB=0
-if docker info --format '{{.MemTotal}}' >/dev/null 2>&1; then
-    MEM_BYTES=$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
+if docker_bounded 30 info --format '{{.MemTotal}}' >/dev/null 2>&1; then
+    MEM_BYTES=$(docker_bounded 30 info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
     MEM_GB=$(( MEM_BYTES / 1073741824 ))
 fi
 MEM_SOURCE="Docker"
@@ -345,7 +332,7 @@ probe_port() {
 lab_held_ports() {
     local project
     for project in "$RANGE_PROJECT" "$PLATFORM_PROJECT"; do
-        docker ps --filter "label=com.docker.compose.project=$project" --format '{{.Ports}}' 2>/dev/null \
+        docker_bounded 15 ps --filter "label=com.docker.compose.project=$project" --format '{{.Ports}}' 2>/dev/null \
             | tr ',' '\n' | sed -n 's/.*:\([0-9][0-9]*\)->.*/\1/p' | sort -u | tr '\n' ' '
     done
 }
@@ -477,16 +464,22 @@ mkdir -p "$ROOT_DIR/data/proxy-routes"
 # Delivery bridges never belonged to the pre-split range. Refuse foreign
 # ownership before any migration/teardown; Compose otherwise reuses them.
 for DELIVERY_NET in rangerdanger_desk_corp rangerdanger_desk_vendor rangerdanger_desk_eng; do
-    if docker network inspect "$DELIVERY_NET" >/dev/null 2>&1; then
-        DELIVERY_OWNER=$(docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' "$DELIVERY_NET")
+    DELIVERY_NET_IDS=$(docker_bounded 15 network ls -q --filter "name=^${DELIVERY_NET}$" 2>/dev/null) \
+        || die "Could not query network $DELIVERY_NET. Docker returned an error; start or restart Docker Desktop or dockerd, then re-run."
+    if [ -n "$DELIVERY_NET_IDS" ]; then
+        DELIVERY_OWNER=$(docker_bounded 15 network inspect -f '{{index .Labels "com.docker.compose.project"}}' "$DELIVERY_NET") \
+            || die "Could not inspect network $DELIVERY_NET. Docker returned an error; start or restart Docker Desktop or dockerd, then re-run."
         [ "$DELIVERY_OWNER" = "$PLATFORM_PROJECT" ] \
             || die "Network $DELIVERY_NET exists but belongs to '${DELIVERY_OWNER:-no Compose project}', not $PLATFORM_PROJECT.
   Stop its owner or remove the unused network, then re-run. No network was removed."
     fi
 done
 MGMT_OWNER=""
-if docker network inspect "$MGMT_NET" >/dev/null 2>&1; then
-    MGMT_OWNER=$(docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' "$MGMT_NET")
+MGMT_NET_IDS=$(docker_bounded 15 network ls -q --filter "name=^${MGMT_NET}$" 2>/dev/null) \
+    || die "Could not query network $MGMT_NET. Docker returned an error; start or restart Docker Desktop or dockerd, then re-run."
+if [ -n "$MGMT_NET_IDS" ]; then
+    MGMT_OWNER=$(docker_bounded 15 network inspect -f '{{index .Labels "com.docker.compose.project"}}' "$MGMT_NET") \
+        || die "Could not inspect network $MGMT_NET. Docker returned an error; start or restart Docker Desktop or dockerd, then re-run."
     case "$MGMT_OWNER" in
         "$PLATFORM_PROJECT"|"$RANGE_PROJECT") ;;
         *) die "Network $MGMT_NET exists but belongs to '${MGMT_OWNER:-no Compose project}', not RangerDanger.
@@ -495,7 +488,7 @@ if docker network inspect "$MGMT_NET" >/dev/null 2>&1; then
 fi
 # Stopped pre-split containers can outlive their network; the platform's
 # fixed container names would collide with them.
-OLD_PLATFORM=$(docker ps -aq --filter "label=com.docker.compose.project=$RANGE_PROJECT" \
+OLD_PLATFORM=$(docker_bounded 15 ps -aq --filter "label=com.docker.compose.project=$RANGE_PROJECT" \
     --filter "label=com.docker.compose.service=backend")
 # ─── image acquisition ──────────────────────────────────────────────
 case "$MODE" in

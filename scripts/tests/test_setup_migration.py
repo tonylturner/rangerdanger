@@ -65,7 +65,9 @@ MGMT_OWNER=rangerdanger RANGE_PROJECT=rangerdanger OLD_PLATFORM=old VERSION=v2
 
     def test_port_identity_checks_both_projects(self):
         function = SOURCE.split('lab_held_ports() {', 1)[1].split('\n}', 1)[0]
-        script = '''RANGE_PROJECT=rangerdanger PLATFORM_PROJECT=rangerdanger-platform
+        script = '''set -euo pipefail
+. "$ROOT/scripts/lib/docker-bounded.sh"
+RANGE_PROJECT=rangerdanger PLATFORM_PROJECT=rangerdanger-platform
 calls=""
 docker() { case "$*" in
   *project=rangerdanger-platform*) echo '127.0.0.1:8088->8080/tcp' ;;
@@ -73,7 +75,10 @@ docker() { case "$*" in
   *) return 99 ;;
 esac; }
 lab_held_ports() {''' + function + '\n}\nlab_held_ports'
-        result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+        result = subprocess.run(
+            ["bash", "-c", script], env=dict(os.environ, ROOT=str(ROOT)),
+            capture_output=True, text=True, timeout=5,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(set(result.stdout.split()), {"8088", "9080", "2222"})
 
