@@ -25,7 +25,7 @@ name: Smoke
 
 on:
   push:
-    branches: [main, iec104, hotfix/v0.1.36-rc.1]
+    branches: [main, iec104]
   pull_request:
     branches: [main, iec104]
   workflow_dispatch:
