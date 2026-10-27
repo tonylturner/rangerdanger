@@ -246,6 +246,42 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   destination host. The tshark article no longer says tshark runs on the
   firewall.
 
+- **Validators require evidence.** Lab 2.4's report check passes only
+  after the capture finishes and the analysis gate accepts it. A failed
+  audit fetch, a missing tap or voltage reading, or 0 V now fails its
+  check, and the unconditional "Plan saved" pass is gone. Test cleanup
+  reports a failed PCAP stop instead of hiding it.
+- **Smoke totals and denial checks tell the truth.** `events-smoke` (sh and
+  ps1) and `lab-commands-smoke.ps1` count skipped checks, and a skipped
+  required check fails. The lab-command denial oracle accepts only a
+  timeout or filtered result, not "connection refused". `substation-smoke`
+  asserts that the feeder load is energized.
+- **Scenario runner state stays current.** Decision panels and step text
+  reread shared curriculum state when another panel changes it. Execute
+  Step is hidden on decision and manual steps, and Mark Complete says that
+  it is self-attested.
+- **historian-sim and OpenPLC report failures.** historian-sim reports a
+  comms error when the RTAC answers with a non-2xx status or malformed
+  JSON. The OpenPLC entrypoint exits on a compile or database failure
+  instead of starting a blank runtime.
+- **The US OpenPLC starts with a program.** The image compiles a local
+  feeder close-permissive demo at build time. At boot the entrypoint
+  checks the seed hash, installs it with no Modbus master devices, and
+  waits until the scan heartbeat advances. An ST file in `data/openplc`
+  still overrides the seed.
+- **US workstations do not forward packets, and Kali fails fast.**
+  `corp_ws`, `vendor_jump` and `eng_workstation` set
+  `net.ipv4.ip_forward=0`, as the EU webtops do. Kali exits when
+  `set-gateway.sh` cannot install its route through the firewall, instead
+  of running without it.
+- **`setup.sh` and `dev-down.sh` cannot hang on a stalled Docker CLI.**
+  Readiness queries (`info`, `ps`, `network`, `compose version`) stop after
+  a fixed limit and print recovery guidance.
+- **Curriculum claims match the range.** The EU OLTC text gives the
+  20.4 kV ±1% target with a 30 s delay. The US logging action says that
+  applying it turns on per-rule logging only; PCAP retention and syslog
+  forwarding remain advice.
+
 ### Security
 
 - **Frontend toolchain advisories cleared.** Vite and Vitest move to
