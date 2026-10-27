@@ -4,6 +4,8 @@ PROGRAM FeederInterlock
     Status AT %MW1 : WORD;
     CloseOutput AT %MW2 : UINT;
     Heartbeat AT %MW3 : UINT;
+  END_VAR
+  VAR
     ScanCount : UINT := 0;
     BusVoltageOK : BOOL := TRUE;
     BreakerOpen : BOOL := TRUE;
