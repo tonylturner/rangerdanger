@@ -1,7 +1,7 @@
 #!/bin/bash
 # OpenPLC entrypoint script that automatically loads and compiles ST programs
 
-set -e
+set -euo pipefail
 
 /usr/local/bin/set-gateway.sh
 
@@ -13,7 +13,7 @@ DB_FILE="$OPENPLC_DIR/openplc.db"
 echo "=== OpenPLC Auto-Configuration ==="
 
 # Find ST file in workdir
-ST_FILE=$(find "$WORKDIR" -maxdepth 1 -name "*.st" -type f | head -1)
+ST_FILE=$(find "$WORKDIR" -maxdepth 1 -name "*.st" -type f -print -quit)
 
 if [ -z "$ST_FILE" ]; then
     echo "No ST file found in $WORKDIR, starting with blank program"
@@ -34,29 +34,38 @@ else
         # Update active_program file
         echo "$ST_FILENAME" > "$OPENPLC_DIR/active_program"
 
-        # Update the database to register this program
-        # First, check if database exists and has the Programs table
-        if [ -f "$DB_FILE" ]; then
-            # Get program name without extension
-            PROG_NAME="${ST_FILENAME%.*}"
-
-            # Insert or update the program in the database
-            sqlite3 "$DB_FILE" "INSERT OR REPLACE INTO Programs (Name, Description, File, Date_upload) VALUES ('$PROG_NAME', 'Auto-loaded program', '$ST_FILENAME', datetime('now'));" 2>/dev/null || true
-
-            # Set this as the current program in Settings
-            sqlite3 "$DB_FILE" "UPDATE Settings SET Current_program = '$ST_FILENAME' WHERE Key = 'current_program';" 2>/dev/null || true
-            sqlite3 "$DB_FILE" "INSERT OR IGNORE INTO Settings (Key, Value) VALUES ('current_program', '$ST_FILENAME');" 2>/dev/null || true
-
-            # Enable auto-start
-            sqlite3 "$DB_FILE" "UPDATE Settings SET Value = '1' WHERE Key = 'Start_run_mode';" 2>/dev/null || true
-            sqlite3 "$DB_FILE" "INSERT OR IGNORE INTO Settings (Key, Value) VALUES ('Start_run_mode', '1');" 2>/dev/null || true
-
-            echo "Database updated, auto-start enabled"
-        else
-            echo "Warning: Database not found, program may not auto-start"
+        # Update the database to register this program.
+        if [ ! -f "$DB_FILE" ]; then
+            echo "ERROR: OpenPLC database not found at $DB_FILE; cannot register $ST_FILENAME" >&2
+            exit 1
         fi
+        PROG_NAME="${ST_FILENAME%.*}"
+
+        if ! sqlite3 "$DB_FILE" "INSERT OR REPLACE INTO Programs (Name, Description, File, Date_upload) VALUES ('$PROG_NAME', 'Auto-loaded program', '$ST_FILENAME', datetime('now'));" 2>/dev/null; then
+            echo "ERROR: Failed to register $ST_FILENAME in the OpenPLC database" >&2
+            exit 1
+        fi
+        if ! sqlite3 "$DB_FILE" "UPDATE Settings SET Current_program = '$ST_FILENAME' WHERE Key = 'current_program';" 2>/dev/null; then
+            echo "ERROR: Failed to set the current program in the OpenPLC database" >&2
+            exit 1
+        fi
+        if ! sqlite3 "$DB_FILE" "INSERT OR IGNORE INTO Settings (Key, Value) VALUES ('current_program', '$ST_FILENAME');" 2>/dev/null; then
+            echo "ERROR: Failed to register the current program setting in the OpenPLC database" >&2
+            exit 1
+        fi
+        if ! sqlite3 "$DB_FILE" "UPDATE Settings SET Value = '1' WHERE Key = 'Start_run_mode';" 2>/dev/null; then
+            echo "ERROR: Failed to enable OpenPLC auto-start in the database" >&2
+            exit 1
+        fi
+        if ! sqlite3 "$DB_FILE" "INSERT OR IGNORE INTO Settings (Key, Value) VALUES ('Start_run_mode', '1');" 2>/dev/null; then
+            echo "ERROR: Failed to register OpenPLC auto-start in the database" >&2
+            exit 1
+        fi
+
+        echo "Database updated, auto-start enabled"
     else
-        echo "Compilation failed, starting with blank program"
+        echo "ERROR: Compilation failed for $ST_FILENAME; refusing to start OpenPLC" >&2
+        exit 1
     fi
 fi
 
