@@ -157,35 +157,20 @@ eu_lab_wait_good_cc() {
   eu_lab_wait_cc_delivered 30 "student route current CC GI and every inventory observation delivered" true
 }
 
-# Keep the gate's polling rule aligned with the backend validator: current
-# observations after the matched GI prove delivery, including device-reported
-# measurement-invalid IV quality.
+# Current operator state carries the delivery evidence; the CC stamps GI state
+# and journal entries separately, so their timestamps are not an equality key.
 eu_lab_cc_delivery_predicate() {
   local shape="$1" required="$2"
   cat <<'JQ'
     . as $state
     | ($state.link.gi.started_at | epoch) as $gi
-    | $state.link.connection_seq as $connection
-    | ($journal.entries | sort_by(.seq)) as $entries
-    | ([$entries[] | select(.kind == "gi_started"
-        and .detail.connection_seq == $connection
-        and (.at | epoch) == $gi)] | last) as $gi_start
     | ($state.schema == 3
       and ($state.cache_epoch | type == "string" and length > 0)
-      and $journal.cache_epoch == $state.cache_epoch
-      and ($journal.entries | type == "array")
-      and $connection > 0
+      and $state.link.connection_seq > 0
       and $state.link.state == "started"
       and $state.link.gi.state == "complete"
       and ($state.link.since | epoch) <= $gi
       and $gi >= (($state.rendered_at | epoch) - 600)
-      and $gi_start != null
-      and any($entries[];
-        .kind == "gi_complete"
-        and .detail.connection_seq == $connection
-        and .seq > $gi_start.seq
-        and (.at | epoch) >= $gi
-        and (.at | epoch) <= ($state.rendered_at | epoch))
       and all($state.points[];
         (.received_at | epoch) as $received
         | ($received >= $gi and $received <= ($state.rendered_at | epoch))
@@ -204,7 +189,7 @@ JQ
 }
 
 eu_lab_wait_cc_delivered() {
-  local budget="$1" label="$2" required="$3" shape predicate started_ms now_ms state journal
+  local budget="$1" label="$2" required="$3" shape predicate started_ms now_ms state
   shape=$(eu_station_shape) || return
   predicate=$(eu_lab_cc_delivery_predicate "$shape" "$required") || return
   started_ms=$(eu_now_ms) || {
@@ -218,16 +203,10 @@ eu_lab_wait_cc_delivered() {
     }
     state="$API_BODY"
     eu_assert_operator_shape "$state" "$label" || return 1
-    eu_api_get '/api/operator/journal?after=0' || {
-      fail "$label could not read the CC delivery journal"
-      return 1
-    }
-    journal="$API_BODY"
     now_ms=$(eu_now_ms) || now_ms=""
     if [[ "$now_ms" =~ ^[0-9]+$ ]] \
       && [ "$((now_ms - started_ms))" -le "$((budget * 1000))" ] \
-      && printf '%s' "$state" | jq -e --argjson journal "$journal" \
-        "$EU_JQ_DEFS $predicate" >/dev/null 2>&1; then
+      && printf '%s' "$state" | jq -e "$EU_JQ_DEFS $predicate" >/dev/null 2>&1; then
       API_BODY="$state"
       return 0
     fi
@@ -237,7 +216,7 @@ eu_lab_wait_cc_delivered() {
     fi
     sleep 0.1
   done
-  fail "$label did not reach delivered CC observations within ${budget}s; last state: $state; journal: $journal"
+  fail "$label did not reach delivered CC observations within ${budget}s; last state: $state"
   return 1
 }
 

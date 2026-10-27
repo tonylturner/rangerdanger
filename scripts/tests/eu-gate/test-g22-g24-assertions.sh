@@ -19,6 +19,7 @@ EVENTS=""
 READY_EXPR=""
 G22_STATE=""
 G22_JOURNAL=""
+G22_JOURNAL_CALLS=0
 G22_CLOCK=0
 eu_lab_step() { EVENTS="$EVENTS step:$2"; }
 eu_lab_exec() { :; }
@@ -50,6 +51,7 @@ eu_api_get() {
   case "$1" in
     /api/operator/state) API_BODY="$G22_STATE" ;;
     /api/operator/journal?after=0)
+      G22_JOURNAL_CALLS=$((G22_JOURNAL_CALLS + 1))
       API_BODY="$G22_JOURNAL"
       EVENTS="$EVENTS ready"
       ;;
@@ -86,8 +88,8 @@ eu_wait_for_field() {
   fi
 }
 
-# The wait helper uses the same current-observation rule as the backend.
-# These journal fixtures model a healthy link whose GI has no point_good events.
+# The wait helper uses current operator state; the independent journal fixture
+# deliberately stamps gi_started ten microseconds after state gi.started_at.
 NOW="2026-10-26T12:00:03Z"
 GI="2026-10-26T12:00:00Z"
 G22_STATE=$(jq -cn --slurpfile inventory "$PACKAGE/protocols/points.json" \
@@ -109,9 +111,9 @@ G22_STATE=$(jq -cn --slurpfile inventory "$PACKAGE/protocols/points.json" \
         ov:(if $p.kind == "float" or $p.kind == "step-position" then false else null end)},
       stale_reason:(if $p.ioa == 2301 then "measurement_invalid" else null end),
       source_time:null,received_at:"2026-10-26T12:00:02Z",cot:3}]}')
-G22_JOURNAL=$(jq -cn --arg gi "$GI" '
+G22_JOURNAL=$(jq -cn '
   {cache_epoch:"cc-g22",oldest_seq:1,latest_seq:2,
-   entries:([{seq:1,at:$gi,kind:"gi_started",detail:{connection_seq:2}},
+   entries:([{seq:1,at:"2026-10-26T12:00:00.000010Z",kind:"gi_started",detail:{connection_seq:2}},
      {seq:2,at:"2026-10-26T12:00:01Z",kind:"gi_complete",detail:{connection_seq:2}}])}')
 G22_INITIAL_STATE="$G22_STATE"
 G22_INITIAL_JOURNAL="$G22_JOURNAL"
@@ -141,7 +143,7 @@ for DENIED_EXIT in 2 1; do
   t_expect_eq "$UNCHANGED_CALLS" 1 "G22 prepare still proves the breaker was unchanged"
   t_expect_eq "$RECONNECT_CALLS" 2 "G22 prepare reconnects both before attack and before validation"
   case " $EVENTS " in
-    *" deny unchanged reconnect step:validate get:/api/operator/state get:/api/operator/journal?after=0 ready "*) t_ok "G22 prepare waits for delivered CC evidence after Validate" ;;
+    *" deny unchanged reconnect step:validate get:/api/operator/state "*) t_ok "G22 prepare waits for delivered CC evidence after Validate" ;;
     *) t_not_ok "G22 prepare refreshes delivered CC evidence after the denied retest: $EVENTS" ;;
   esac
 done
@@ -151,14 +153,21 @@ if [ -z "$G22_STATE" ] || [ -z "$G22_JOURNAL" ]; then
 else
   t_ok "G22 CC readiness fixtures are valid JSON"
 fi
+t_run jq -e --arg gi "$GI" '
+  .entries | map(select(.kind == "gi_started"))[0].at as $journal_gi
+  | $journal_gi != $gi and $journal_gi == "2026-10-26T12:00:00.000010Z"
+' <<<"$G22_JOURNAL"
+t_expect_eq "$T_STATUS" 0 "G22 fixture separates journal and state GI timestamps by ten microseconds"
 G22_CLOCK=0
 G22_STATE="$G22_GOOD_STATE"
+G22_JOURNAL_CALLS=0
 t_run eu_lab_wait_cc_delivered 1 "G22 healthy CC wait without point_good" true
-t_expect_eq "$T_STATUS" 0 "GI-only journal accepts fresh GOOD observations"
+t_expect_eq "$T_STATUS" 0 "fresh GOOD observations pass with a microsecond-offset journal timestamp"
+t_expect_eq "$G22_JOURNAL_CALLS" 0 "delivered CC wait does not fetch the journal"
 G22_STATE="$G22_INITIAL_STATE"
 G22_CLOCK=0
 t_run eu_lab_wait_cc_delivered 1 "G22 measurement-invalid CC wait" true
-t_expect_eq "$T_STATUS" 0 "GI-only journal accepts fresh IV measurement_invalid"
+t_expect_eq "$T_STATUS" 0 "fresh IV measurement_invalid observations pass"
 G22_CLOCK=0
 t_run eu_lab_wait_good_cc
 t_expect_eq "$T_STATUS" 0 "shared student CC wait accepts delivered measurement_invalid"
@@ -176,6 +185,13 @@ for quality in nt sb bl ov; do
   G22_STATE=$(printf '%s' "$G22_STATE" | jq -c --arg quality "$quality" '
     (.points[] | select(.ioa == 2301)).quality[$quality] = false')
 done
+G22_STATE=$(printf '%s' "$G22_STATE" | jq -c '
+  (.points[] | select(.ioa == 2301)) |=
+    (.quality.iv = true | .stale_reason = null)')
+G22_CLOCK=0
+t_run eu_lab_wait_cc_delivered 0 "G22 IV without measurement-invalid reason wait" true
+t_expect_eq "$T_STATUS" 1 "IV without measurement_invalid is rejected"
+G22_STATE="$G22_INITIAL_STATE"
 G22_STATE=$(printf '%s' "$G22_STATE" | jq -c '
   (.points[] | select(.ioa == 2301)) |=
     (.quality.nt = true | .stale_reason = "link_lost")')
