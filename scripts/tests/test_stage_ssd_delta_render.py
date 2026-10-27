@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import shutil
@@ -76,8 +77,10 @@ case "${1:-}" in
         printf '{"manifest":{"digest":"sha256:%064d","manifests":[{"digest":"sha256:%064d","platform":{"os":"linux","architecture":"amd64"}},{"digest":"sha256:%064d","platform":{"os":"linux","architecture":"arm64"}}]}}' 0 1 2
         ;;
     pull|tag)
+        [ "${RD_NO_IMAGE_STAGING:-0}" = 0 ]
         ;;
     save)
+        [ "${RD_NO_IMAGE_STAGING:-0}" = 0 ]
         output=""
         while [ "$#" -gt 0 ]; do
             if [ "$1" = "-o" ]; then
@@ -142,10 +145,11 @@ urllib.request.urlopen = urlopen
         path.write_text(content, encoding="utf-8")
         path.chmod(0o755)
 
-    def _run_bash_generator(self) -> str:
+    def _run_bash_generator(self, since: str = "v1", *, all_images: bool = True) -> str:
         output = self.root / "bash-output"
         result = subprocess.run(
-            ["bash", str(ROOT / "stage-ssd-delta.sh"), str(output), "v1", "v2", "--all"],
+            ["/bin/bash", str(ROOT / "stage-ssd-delta.sh"), str(output), since, "v2"]
+            + (["--all"] if all_images else []),
             cwd=ROOT,
             env=self.env,
             capture_output=True,
@@ -239,6 +243,61 @@ if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         self._assert_literal_delta_recipe(self._run_bash_generator())
         self._assert_literal_delta_recipe(
             self._run_powershell_generator(), powershell=True)
+
+    def test_repo_only_delta_under_system_bash(self) -> None:
+        kernel = b"fixture WSL kernel\n"
+        kernel_path = self.root / "kernel"
+        kernel_path.write_bytes(kernel)
+        checksum = self.root / "kernel.sha256"
+        checksum.write_text(
+            hashlib.sha256(kernel).hexdigest() + "  rangerdanger-wsl2-kernel\n",
+            encoding="ascii",
+        )
+        self.env.update(
+            RD_NO_IMAGE_STAGING="1",
+            RD_KERNEL=str(kernel_path),
+            RD_KERNEL_SHA=str(checksum),
+        )
+        self._write_executable("curl", r"""#!/bin/bash
+set -euo pipefail
+for arg in "$@"; do
+    [ "$arg" != "--head" ] || exit 0
+done
+source="$RD_KERNEL"
+output=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        *.sha256) source="$RD_KERNEL_SHA" ;;
+        -o) shift; output="$1" ;;
+    esac
+    shift
+done
+[ -n "$output" ]
+cp "$source" "$output"
+""")
+        # Both a same-release repo refresh and an unchanged-image upgrade.
+        for since in ("v2", "v1"):
+            with self.subTest(since=since):
+                readme = self._run_bash_generator(since, all_images=False)
+                self._assert_literal_delta_recipe(readme)
+                self.assertIn(
+                    "# No image archive was created; no image load is needed.", readme)
+                self.assertNotIn('docker load -i', readme)
+                self.assertIn("# No mutable image tags need to be parked.", readme)
+                self.assertIn("# No mutable image tags need to be restored.", readme)
+                self.assertIn(
+                    f"docker image tag ghcr.io/tonylturner/rangerdanger-backend:{since} "
+                    "ghcr.io/tonylturner/rangerdanger-backend:v2", readme)
+                self.assertIn("## Unchanged (kept from prior install)", readme)
+                self.assertIn("`rangerdanger-wsl2-kernel` + `.sha256`", readme)
+                output = self.root / "bash-output"
+                self.assertEqual(
+                    {p.name for p in output.iterdir()},
+                    {"rangerdanger.tgz", "rangerdanger-wsl2-kernel",
+                     "rangerdanger-wsl2-kernel.sha256", "DELTA-README.md"},
+                )
+                self.assertEqual((output / "rangerdanger-wsl2-kernel").read_bytes(), kernel)
+                self.assertGreater((output / "rangerdanger.tgz").stat().st_size, 0)
 
 
 if __name__ == "__main__":

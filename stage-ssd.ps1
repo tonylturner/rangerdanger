@@ -61,8 +61,8 @@ $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
 # tar.exe (bsdtar) ships with Windows 10 1803+ and Windows 11. It reads the
 # saved archives' manifest.json for verification -- no Python needed.
-$TarExe = Join-Path $env:SystemRoot "System32\tar.exe"
-if (-not (Test-Path $TarExe)) {
+$TarExe = if ($env:SystemRoot) { Join-Path $env:SystemRoot "System32\tar.exe" } else { $null }
+if (-not $TarExe -or -not (Test-Path $TarExe)) {
     $tarCmd = Get-Command tar -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $tarCmd) { Die "tar.exe is required to verify the saved Docker archives (built into Windows 10 1803+ and Windows 11)." }
     $TarExe = $tarCmd.Source

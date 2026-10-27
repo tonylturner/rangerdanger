@@ -170,7 +170,7 @@ if [ "$INCLUDE_UPSTREAM" -eq 1 ] || [ "$SAVE_ALL" -eq 1 ]; then
     MEMBERSHIP_ARGS+=(--include-upstream)
 fi
 if ! CANDIDATE_DATA=$(python3 "$ROOT_DIR/scripts/release_image_plan.py" \
-    "${MEMBERSHIP_ARGS[@]}"); then
+    ${MEMBERSHIP_ARGS[@]+"${MEMBERSHIP_ARGS[@]}"}); then
     die "Release records and Compose image union disagree or lack package membership"
 fi
 CANDIDATE_IMAGES=""
@@ -311,6 +311,7 @@ manifest_value() {
 
 banner "Comparing $SINCE -> $NEW across $(echo "$CANDIDATE_IMAGES" | wc -l | tr -d ' ') candidate image(s)"
 
+# Bash 3.2 + nounset needs ${array[@]+"${array[@]}"} for empty arrays.
 CHANGED=()
 CHANGED_MANIFESTS=()
 CHANGED_SINCE_REFS=()
@@ -321,7 +322,7 @@ MISSING_SINCE=()
 UNCHANGED_SINCE_REFS=()
 UNCHANGED_NEW_REFS=()
 
-for i in "${!CANDIDATE_NEW_REFS[@]}"; do
+for i in ${CANDIDATE_NEW_REFS[@]+"${!CANDIDATE_NEW_REFS[@]}"}; do
     new="${CANDIDATE_NEW_REFS[$i]}"
     since="${CANDIDATE_OLD_REFS[$i]}"
     old_member="${CANDIDATE_OLD_MEMBERSHIP[$i]}"
@@ -406,7 +407,7 @@ say "  Changed (will be in delta):"
 if [ "${#CHANGED[@]}" -eq 0 ]; then
     echo "    (none)"
 else
-    for c in "${CHANGED[@]}"; do
+    for c in ${CHANGED[@]+"${CHANGED[@]}"}; do
         short=$(echo "$c" | sed -E 's|.*/||; s|:.*||')
         echo "    $short  ($c)"
     done
@@ -427,7 +428,7 @@ say "  Unchanged (skipped from delta):"
 if [ "${#UNCHANGED[@]}" -eq 0 ]; then
     echo "    (none)"
 else
-    printf '    %s\n' "${UNCHANGED[@]}"
+    printf '    %s\n' ${UNCHANGED[@]+"${UNCHANGED[@]}"}
 fi
 echo
 
@@ -474,7 +475,7 @@ preflight_image() {
 # CHANGED_MANIFESTS came from the digest-comparison requests above, so
 # checking platform availability here makes no additional registry call.
 if [ "${#CHANGED[@]}" -gt 0 ]; then
-    for i in "${!CHANGED[@]}"; do
+    for i in ${CHANGED[@]+"${!CHANGED[@]}"}; do
         preflight_image "${CHANGED[$i]}" "${CHANGED_MANIFESTS[$i]}" "amd64 arm64"
     done
 
@@ -503,7 +504,7 @@ stage_arch() {
     # into the arm64 delta. That way a student who only ever applies deltas
     # (e.g. from an SSD staged before binfmt was added) still ends up with
     # the qemu-x86_64 helper OpenPLC needs on arm64 Linux.
-    local to_stage=("${CHANGED[@]}")
+    local to_stage=(${CHANGED[@]+"${CHANGED[@]}"})
     [ "$arch" = "arm64" ] && to_stage+=("$BINFMT_IMAGE")
 
     if [ "${#to_stage[@]}" -eq 0 ]; then
@@ -514,10 +515,10 @@ stage_arch() {
 
     local -a pulled_tags=()
     local i preflight_index ref cross_arch
-    for img in "${to_stage[@]}"; do
+    for img in ${to_stage[@]+"${to_stage[@]}"}; do
         say "stage $arch  $img"
         preflight_index=""
-        for i in "${!PREFLIGHT_IMAGES[@]}"; do
+        for i in ${PREFLIGHT_IMAGES[@]+"${!PREFLIGHT_IMAGES[@]}"}; do
             if [ "${PREFLIGHT_IMAGES[$i]}" = "$img" ]; then
                 preflight_index="$i"
                 break
@@ -560,7 +561,7 @@ stage_arch() {
     fi
 
     say "save $arch -> $tarball"
-    docker save -o "$tarball" "${pulled_tags[@]}" \
+    docker save -o "$tarball" ${pulled_tags[@]+"${pulled_tags[@]}"} \
         || die "docker save failed for $arch"
 
     local size
@@ -636,7 +637,7 @@ banner "Write DELTA-README.md"
 UNCHANGED_SECTION=""
 if [ "${#UNCHANGED[@]}" -gt 0 ]; then
     UNCHANGED_SECTION=$'\n## Unchanged (kept from prior install)\n\n'
-    for image in "${UNCHANGED[@]}"; do
+    for image in ${UNCHANGED[@]+"${UNCHANGED[@]}"}; do
         UNCHANGED_SECTION+="- $image"$'\n'
     done
 fi
@@ -715,7 +716,7 @@ FUNCTION
 )
 README_TEMPLATE="$MEMBERSHIP_DIR/DELTA-README.template"
 APPLY_TABLE=""
-for img in "${CHANGED[@]}"; do
+for img in ${CHANGED[@]+"${CHANGED[@]}"}; do
     image_repo=$(python3 -c '
 import sys
 value = sys.argv[1].split("@", 1)[0]
@@ -756,7 +757,7 @@ fi
 
 APPLY_BACKUP_COMMANDS=""
 ROLLBACK_RESTORE_COMMANDS=""
-for i in "${!CHANGED[@]}"; do
+for i in ${CHANGED[@]+"${!CHANGED[@]}"}; do
     since_tag="${CHANGED_SINCE_REFS[$i]%@*}"
     target_tag="${CHANGED[$i]%@*}"
     [ "$since_tag" = "$target_tag" ] || continue
@@ -778,7 +779,7 @@ if [ -z "$APPLY_BACKUP_COMMANDS" ]; then
 fi
 
 APPLY_RETAG_COMMANDS=""
-for i in "${!UNCHANGED_NEW_REFS[@]}"; do
+for i in ${UNCHANGED_NEW_REFS[@]+"${!UNCHANGED_NEW_REFS[@]}"}; do
     case "${UNCHANGED_NEW_REFS[$i]}" in
         ghcr.io/tonylturner/rangerdanger-*)
             APPLY_RETAG_COMMANDS="$APPLY_RETAG_COMMANDS"'docker image tag '"${UNCHANGED_SINCE_REFS[$i]}"' '"${UNCHANGED_NEW_REFS[$i]}"'
