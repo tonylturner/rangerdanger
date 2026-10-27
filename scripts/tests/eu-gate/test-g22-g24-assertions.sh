@@ -86,9 +86,8 @@ eu_wait_for_field() {
   fi
 }
 
-# The wait helper uses the same post-GI delivery plus latest-quality rule as
-# the backend. 2301 is a float whose current IV measurement_invalid follows a
-# non-null point_good delivery for this GI.
+# The wait helper uses the same current-observation rule as the backend.
+# These journal fixtures model a healthy link whose GI has no point_good events.
 NOW="2026-10-26T12:00:03Z"
 GI="2026-10-26T12:00:00Z"
 G22_STATE=$(jq -cn --slurpfile inventory "$PACKAGE/protocols/points.json" \
@@ -110,16 +109,15 @@ G22_STATE=$(jq -cn --slurpfile inventory "$PACKAGE/protocols/points.json" \
         ov:(if $p.kind == "float" or $p.kind == "step-position" then false else null end)},
       stale_reason:(if $p.ioa == 2301 then "measurement_invalid" else null end),
       source_time:null,received_at:"2026-10-26T12:00:02Z",cot:3}]}')
-G22_JOURNAL=$(jq -cn --slurpfile inventory "$PACKAGE/protocols/points.json" \
-  --arg gi "$GI" '
-  {cache_epoch:"cc-g22",oldest_seq:1,latest_seq:(2 + ($inventory[0].points | length)),
+G22_JOURNAL=$(jq -cn --arg gi "$GI" '
+  {cache_epoch:"cc-g22",oldest_seq:1,latest_seq:2,
    entries:([{seq:1,at:$gi,kind:"gi_started",detail:{connection_seq:2}},
-     {seq:2,at:"2026-10-26T12:00:01Z",kind:"gi_complete",detail:{connection_seq:2}}]
-     + [$inventory[0].points | to_entries[] |
-       {seq:(.key + 3),at:"2026-10-26T12:00:02Z",kind:"point_good",
-        detail:{point:.value.id,value:true}}])}')
+     {seq:2,at:"2026-10-26T12:00:01Z",kind:"gi_complete",detail:{connection_seq:2}}])}')
 G22_INITIAL_STATE="$G22_STATE"
 G22_INITIAL_JOURNAL="$G22_JOURNAL"
+G22_GOOD_STATE=$(printf '%s' "$G22_INITIAL_STATE" | jq -c '
+  (.points[] | select(.ioa == 2301)) |=
+    (.quality.iv = false | .stale_reason = null)')
 
 for DENIED_EXIT in 2 1; do
   FIELD_WAITS=0
@@ -154,8 +152,13 @@ else
   t_ok "G22 CC readiness fixtures are valid JSON"
 fi
 G22_CLOCK=0
-t_run eu_lab_wait_cc_delivered 1 "G22 delivered CC wait" true
-t_expect_eq "$T_STATUS" 0 "post-GI point_good allows current IV measurement_invalid"
+G22_STATE="$G22_GOOD_STATE"
+t_run eu_lab_wait_cc_delivered 1 "G22 healthy CC wait without point_good" true
+t_expect_eq "$T_STATUS" 0 "GI-only journal accepts fresh GOOD observations"
+G22_STATE="$G22_INITIAL_STATE"
+G22_CLOCK=0
+t_run eu_lab_wait_cc_delivered 1 "G22 measurement-invalid CC wait" true
+t_expect_eq "$T_STATUS" 0 "GI-only journal accepts fresh IV measurement_invalid"
 G22_CLOCK=0
 t_run eu_lab_wait_good_cc
 t_expect_eq "$T_STATUS" 0 "shared student CC wait accepts delivered measurement_invalid"
@@ -188,15 +191,11 @@ G22_CLOCK=0
 t_run eu_lab_wait_cc_delivered 0 "G22 stale receipt wait" true
 t_expect_eq "$T_STATUS" 1 "measurement_invalid with a pre-GI receipt is rejected"
 G22_STATE="$G22_INITIAL_STATE"
-invalid_id=$(jq -er '.points[] | select(.ioa == 2301) | .id' "$PACKAGE/protocols/points.json")
-G22_JOURNAL=$(printf '%s' "$G22_JOURNAL" | jq -c --arg id "$invalid_id" '
-  .entries |= map(select(.kind != "point_good" or .detail.point != $id))')
 G22_CLOCK=0
-t_run eu_lab_wait_cc_delivered 0 "G22 missing delivery wait" true
-t_expect_eq "$T_STATUS" 1 "IV measurement_invalid without post-GI point_good fails"
-G22_STATE=$(printf '%s' "$G22_STATE" | jq -c '
-  (.points[] | select(.ioa == 2301)).quality.iv = false
-  | (.points[] | select(.ioa == 2301)).stale_reason = null')
+G22_STATE=$(printf '%s' "$G22_STATE" | jq -c \
+  '.points |= map(select(.ioa != 2301))')
+t_run eu_lab_wait_cc_delivered 0 "G22 missing station point wait" true
+t_expect_eq "$T_STATUS" 1 "a missing station point fails"
 G22_STATE="$G22_INITIAL_STATE"
 G22_JOURNAL="$G22_INITIAL_JOURNAL"
 

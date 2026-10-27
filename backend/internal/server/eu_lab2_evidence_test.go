@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
-	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
 func passingConduits(t *testing.T) conduitEvidence {
@@ -18,7 +17,7 @@ func passingConduits(t *testing.T) conduitEvidence {
 		stationPoints: gen.Package.StationPoints,
 		rangeStart:    at("12:00:00"), collectedAt: at("12:05:00"),
 		state: decodeFixture[conduitState](t, `{"schema":3,"cache_epoch":"cc-2","link":{"state":"started","connection_seq":2}}`),
-		journal: decodeFixture[ccJournal](t, `{"cache_epoch":"cc-2","oldest_seq":1,"latest_seq":6,"entries":[
+		journal: decodeFixture[ccJournal](t, `{"cache_epoch":"cc-2","oldest_seq":1,"latest_seq":2,"entries":[
    {"seq":1,"at":"2026-10-09T12:01:00Z","kind":"gi_started","detail":{"connection_seq":2,"trigger":"connect"}},
    {"seq":2,"at":"2026-10-09T12:01:01Z","kind":"gi_complete","detail":{"connection_seq":2,"trigger":"connect"}}]}`),
 		audit: decodeFixture[conduitAudit](t, `{"generation":42,"entries":[
@@ -49,20 +48,6 @@ func passingConduits(t *testing.T) conduitEvidence {
 		point := conduitPoint{ccPoint: ccPoint{ID: identity.ID, Value: value, ReceivedAt: at("12:01:00")}, IOA: ioa}
 		ev.state.Points = append(ev.state.Points, point)
 	}
-	for i, identity := range ev.stationPoints {
-		seq := uint64(i + 3)
-		ev.journal.Entries = append(ev.journal.Entries, journalEntry{
-			Seq:  seq,
-			At:   at("12:01:02").Add(time.Duration(i) * time.Millisecond),
-			Kind: "point_good",
-			Detail: journalDetail{
-				Point: identity.ID,
-				Value: append(json.RawMessage(nil), ev.state.Points[i].Value...),
-			},
-		})
-		ev.journal.LatestSeq = seq
-	}
-
 	var err error
 	ev.denies, err = conduitDenyMatrix(gen, nil)
 	if err != nil {
@@ -187,10 +172,14 @@ func TestConduitsEvidence(t *testing.T) {
 	}
 }
 
-func TestConduitsPollsInventoryCount(t *testing.T) {
+func TestConduitsPollsAcceptsHealthyGIWithoutPointGoodEvents(t *testing.T) {
 	ev := passingConduits(t)
 	if len(ev.stationPoints) != 42 || len(ev.state.Points) != 42 {
 		t.Fatalf("loaded inventory=%d, observations=%d; want 42", len(ev.stationPoints), len(ev.state.Points))
+	}
+	if len(ev.journal.Entries) != 2 || ev.journal.Entries[0].Kind != "gi_started" ||
+		ev.journal.Entries[1].Kind != "gi_complete" {
+		t.Fatalf("journal=%+v; want GI start/completion and no point_good entries", ev.journal.Entries)
 	}
 	start, _ := conduitWindow(ev)
 	check := conduitPolls(ev, start)
@@ -209,12 +198,12 @@ func TestConduitsPollsInventoryCount(t *testing.T) {
 	}
 }
 
-func TestConduitsPollsAcceptsOnlyDeliveredMeasurementInvalidQuality(t *testing.T) {
-	pointIndex, identity := -1, labs.IEC104Point{}
+func TestConduitsPollsAcceptsMeasurementInvalidQuality(t *testing.T) {
+	pointIndex := -1
 	base := passingConduits(t)
 	for i, expected := range base.stationPoints {
 		if expected.IOA == 2301 {
-			pointIndex, identity = i, expected
+			pointIndex = i
 			break
 		}
 	}
@@ -233,7 +222,7 @@ func TestConduitsPollsAcceptsOnlyDeliveredMeasurementInvalidQuality(t *testing.T
 	invalid(&ev)
 	start, _ := conduitWindow(ev)
 	if check := conduitPolls(ev, start); check.Status != "pass" {
-		t.Fatalf("post-GI point_good plus fresh measurement_invalid IV failed: %+v", check)
+		t.Fatalf("fresh measurement_invalid IV with a GI-only journal failed: %+v", check)
 	}
 	if check := euLink(ev.state, ev.journal, ev.stationPoints, ev.rangeStart, ev.collectedAt); check.Status != "pass" {
 		t.Fatalf("shared euLink freshness rule rejected delivered measurement_invalid IV: %+v", check)
@@ -250,19 +239,6 @@ func TestConduitsPollsAcceptsOnlyDeliveredMeasurementInvalidQuality(t *testing.T
 				ev.state.Points[pointIndex].Quality.NT = true
 				reason := "link_lost"
 				ev.state.Points[pointIndex].StaleReason = &reason
-			},
-		},
-		{
-			name: "no post-GI point_good delivery",
-			mutate: func(ev *conduitEvidence) {
-				invalid(ev)
-				entries := make([]journalEntry, 0, len(ev.journal.Entries))
-				for _, entry := range ev.journal.Entries {
-					if entry.Kind != "point_good" || entry.Detail.Point != identity.ID {
-						entries = append(entries, entry)
-					}
-				}
-				ev.journal.Entries = entries
 			},
 		},
 		{

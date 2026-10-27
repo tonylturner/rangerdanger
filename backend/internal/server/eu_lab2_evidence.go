@@ -136,7 +136,7 @@ func conduitPolls(ev conduitEvidence, start time.Time) ValidationCheck {
 	if count == 0 {
 		return checkFail(name, "missing evidence: active package station inventory unavailable (0 points)")
 	}
-	if start.IsZero() || ev.state == nil || ev.journal == nil {
+	if start.IsZero() || ev.state == nil {
 		return checkFail(name, fmt.Sprintf("missing evidence: no current CC attempt for %d station IOAs", count))
 	}
 	expected := make(map[int]labs.IEC104Point, count)
@@ -161,14 +161,13 @@ func conduitPolls(ev conduitEvidence, start time.Time) ValidationCheck {
 		}
 	}
 	if len(missing) != 0 {
-		return checkFail(name, fmt.Sprintf("missing evidence: %d of %d station IOAs %v need a unique fresh observation and post-GI point_good delivery with a non-null value", len(missing), count, missing))
+		return checkFail(name, fmt.Sprintf("missing evidence: %d of %d station IOAs %v need a unique fresh, non-null GOOD or measurement-invalid observation", len(missing), count, missing))
 	}
 	return checkPass(name, fmt.Sprintf("all %d station IOAs delivered after GI; a device-reported measurement-invalid flag counts as delivered", count))
 }
 
-// euStationPointDelivered requires both protocol delivery after this
-// connection's GI and a fresh CC observation. IV/measurement_invalid is
-// device-reported quality, not evidence that the IEC 104 conduit failed.
+// euStationPointDelivered accepts a fresh GOOD or device-reported
+// measurement-invalid observation as evidence of CC delivery.
 func euStationPointDelivered(ev conduitEvidence, identity labs.IEC104Point, point conduitPoint, start time.Time) bool {
 	valuePresent := func(value json.RawMessage) bool {
 		return len(value) > 0 && string(value) != "null"
@@ -184,35 +183,7 @@ func euStationPointDelivered(ev conduitEvidence, identity labs.IEC104Point, poin
 	if !good && !measurementInvalid {
 		return false
 	}
-
-	if ev.state == nil || ev.journal == nil || ev.state.Link.ConnectionSeq == 0 {
-		return false
-	}
-	entries := append([]journalEntry(nil), ev.journal.Entries...)
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Seq < entries[j].Seq })
-	var giSeq uint64
-	for _, entry := range entries {
-		if entry.Seq < ev.journal.OldestSeq || entry.Kind != "gi_started" ||
-			entry.Detail.ConnectionSeq == nil || *entry.Detail.ConnectionSeq != ev.state.Link.ConnectionSeq ||
-			!entry.At.Equal(start) {
-			continue
-		}
-		giSeq = entry.Seq
-		break
-	}
-	if giSeq == 0 {
-		return false
-	}
-	for _, entry := range entries {
-		if entry.Seq <= giSeq || entry.Seq < ev.journal.OldestSeq ||
-			entry.Kind != "point_good" || entry.Detail.Point != identity.ID ||
-			entry.Detail.StaleReason != nil || !valuePresent(entry.Detail.Value) ||
-			!insideEvidenceWindow(entry.At, start, ev.collectedAt) {
-			continue
-		}
-		return true
-	}
-	return false
+	return true
 }
 
 func conduitPLC(ev conduitEvidence, start time.Time) ValidationCheck {

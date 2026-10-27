@@ -157,9 +157,9 @@ eu_lab_wait_good_cc() {
   eu_lab_wait_cc_delivered 30 "student route current CC GI and every inventory observation delivered" true
 }
 
-# Keep the gate's polling rule aligned with the backend validator: a post-GI
-# point_good journal entry proves conduit delivery, while current quality may
-# be GOOD or a device-reported measurement-invalid IV.
+# Keep the gate's polling rule aligned with the backend validator: current
+# observations after the matched GI prove delivery, including device-reported
+# measurement-invalid IV quality.
 eu_lab_cc_delivery_predicate() {
   local shape="$1" required="$2"
   cat <<'JQ'
@@ -187,8 +187,7 @@ eu_lab_cc_delivery_predicate() {
         and (.at | epoch) >= $gi
         and (.at | epoch) <= ($state.rendered_at | epoch))
       and all($state.points[];
-        . as $point
-        | (.received_at | epoch) as $received
+        (.received_at | epoch) as $received
         | ($received >= $gi and $received <= ($state.rendered_at | epoch))
           and .value != null
           and ((.quality.iv == false and .quality.nt == false
@@ -198,15 +197,7 @@ eu_lab_cc_delivery_predicate() {
             or (.quality.iv == true and .quality.nt == false
                 and .quality.sb == false and .quality.bl == false
                 and .quality.ov == false
-                and .stale_reason == "measurement_invalid"))
-          and any($entries[];
-            .seq > $gi_start.seq
-            and (.at | epoch) >= $gi
-            and (.at | epoch) <= ($state.rendered_at | epoch)
-            and .kind == "point_good"
-            and .detail.point == $point.id
-            and .detail.value != null
-            and .detail.stale_reason == null))
+                and .stale_reason == "measurement_invalid")))
     )
 JQ
   printf '    and ($state | (%s)) and ($state | (%s))\n' "$shape" "$required"

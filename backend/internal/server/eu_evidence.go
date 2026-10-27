@@ -23,10 +23,8 @@ type euJournalEntry[D any] struct {
 }
 
 type journalDetail struct {
-	ConnectionSeq *uint64         `json:"connection_seq"`
-	Point         string          `json:"point"`
-	Value         json.RawMessage `json:"value"`
-	StaleReason   *string         `json:"stale_reason"`
+	ConnectionSeq *uint64 `json:"connection_seq"`
+	Point         string  `json:"point"`
 }
 
 type euAudit[E any] struct {
