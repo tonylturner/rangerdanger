@@ -77,6 +77,10 @@ function Invoke-SubstationSmoke([string]$Api = 'http://localhost:8088') {
         $state = Get-SubstationState
         Assert-Substation (Test-SubstationBoolean $state.physics.stale $false) 'physics is fresh' 'physics is stale after baseline reset'
         Assert-Substation (Test-SubstationBoolean $state.electrical.converged $true) 'electrical solve converged' 'electrical solve is not converged'
+        $loadsEnergized = (Test-SubstationBoolean $state.electrical.critical_load_energized $true) -and
+            (Test-SubstationBoolean $state.electrical.general_load_energized $true)
+        Assert-Substation $loadsEnergized 'solver reports critical and general loads energized' `
+            'solver does not report both critical and general loads energized'
         $recent = $false
         try {
             # Native JSON deserialization can return DateTime, not a string.

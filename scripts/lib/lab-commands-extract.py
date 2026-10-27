@@ -135,6 +135,9 @@ BAD_OUTPUT = re.compile(
     r"unknown command|command not found|illegal (?:function|data)|"
     r"usage:|authentication failed|"
     r"no such file|permission denied", re.I)
+FIREWALL_DENIAL = re.compile(r"(?:timed? out|timeout|filtered)", re.I)
+NO_ACK_STATE_SEND = re.compile(r"Result: SENT \(no acknowledgement requested\)", re.I)
+NON_DENIAL_OUTPUT = re.compile(r"(?:connection refused|no route to host)", re.I)
 
 
 def key(row):
@@ -260,12 +263,23 @@ def verdict(oracle, rc, stdout, stderr, *, control=False, frames=None):
         return rc in (0, 124, 130, 143) and frames is not None and frames > 0
     if intent == "deny":
         # nmap returns zero even for filtered ports; its semantic output
-        # (not its return code) is the denial oracle.
+        # (not its return code) is the denial oracle. A refusal means the
+        # packet reached the host, and "no route" is not firewall evidence.
+        if NON_DENIAL_OUTPUT.search(combined):
+            return False
         allowed_rc = (0, 1, 2, 124, 143) if oracle.get("zero_rc_denial") else (1, 2, 124, 143)
         if oracle.get("nmap"):
             allowed_rc = (0,)
-        return control and rc in allowed_rc and bool(
-            re.search(oracle["match"], combined, re.M))
+        matched = bool(re.search(oracle["match"], combined, re.M))
+        network_denial = bool(FIREWALL_DENIAL.search(combined))
+        # The separate no-ack state oracle proves the weak write changed
+        # device state and the hardened attempt did not. Its tool reports
+        # "sent" without waiting for an application acknowledgement; that
+        # is valid only alongside the out-of-band state comparison.
+        state_denial = bool(
+            oracle.get("state") and oracle.get("zero_rc_denial")
+            and NO_ACK_STATE_SEND.search(combined))
+        return control and rc in allowed_rc and matched and (network_denial or state_denial)
     return (rc == 0 and not re.search(r"(?:read|write).*failed", combined, re.I)
             and bool(re.search(oracle["match"], stdout, re.M)))
 

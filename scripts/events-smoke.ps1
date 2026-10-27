@@ -4,14 +4,14 @@ Events smoke test -- Windows sibling of scripts/events-smoke.sh.
 
 .DESCRIPTION
 Exercises the v0.1.25 firewall.rule.hit event pipeline + ICS DPI
-enforcement that the traffic-only smoke (firewall-smoke.ps1) does not
-cover. Three gates:
+detection/logging that the traffic-only smoke (firewall-smoke.ps1) does not
+cover. Four checks:
 
   1. L4 firewall.rule.hit event flow under improved policy.
   2. ICS template apply with hyphenated (canonical) name.
-  3. ICS DPI function-code allowlist enforcement (NFQUEUE; gracefully
-     skipped if the host kernel cannot bind NFQUEUE 101 -- common on
-     Docker Desktop's LinuxKit kernel).
+  3. Modbus DPI function-code detection/logging: the L4 source pin enforces;
+     DPI detects and logs. NFQUEUE may be unavailable on Docker Desktop.
+  4. DNP3 DPI function-code detection/logging with the same prerequisite.
 
 Assumes the rangerdanger stack is up and the backend is healthy. Run
 .\setup.ps1 first if not (the workshop-readiness gate that finishes
@@ -23,8 +23,8 @@ inside the rtac-sim container is python; that's a per-container concern,
 not a host concern.
 
 .NOTES
-Exit 0 = all gates pass (skipped gates count as pass), non-zero = at
-least one regressed. ASCII-only, BOM-free. See setup.ps1 for the
+Exit 0 = all required checks pass; optional skips are reported, and a
+required skipped check fails the run. ASCII-only, BOM-free. See setup.ps1 for the
 encoding rationale.
 #>
 
@@ -42,12 +42,20 @@ $JwtSecret    = if ($env:CONTAIND_JWT_SECRET){ $env:CONTAIND_JWT_SECRET } else {
 
 $script:fail   = 0
 $script:passed = 0
+$script:skipped = 0
+$script:requiredSkipped = 0
 $script:total  = 0
 
 function Note($msg) { Write-Host ""; Write-Host "=== $msg ===" -ForegroundColor Cyan }
 function OK($msg)   { Write-Host "  [+] $msg" -ForegroundColor Green; $script:passed++; $script:total++ }
 function Err($msg)  { Write-Host "  [x] $msg" -ForegroundColor Red;   $script:fail = 1; $script:total++ }
-function Skip($what, $why) { Write-Host "  [-] $what (skipped: $why)" -ForegroundColor DarkGray }
+function Skip($what, $why, [bool]$Required = $false) {
+    $requirement = if ($Required) { "required" } else { "optional" }
+    Write-Host "  [-] $what (skipped: $why; $requirement)" -ForegroundColor DarkGray
+    $script:skipped++
+    $script:total++
+    if ($Required) { $script:requiredSkipped++; $script:fail = 1 }
+}
 
 function ConvertTo-EventEpochNs($Timestamp) {
     # ConvertFrom-Json can materialize whole-second / tick-precision values
@@ -252,12 +260,11 @@ if ($tmplResp -match '"preview":true') {
     Err "template preview rejected hyphenated name: $tmplResp"
 }
 
-# --- Gate 3: ICS DPI FC8 enforcement (NFQUEUE) -------------------------
-Note "gate 3: ICS DPI function-code allowlist enforcement"
+# --- Gate 3: ICS DPI FC8 detection/logging (NFQUEUE) -------------------
+Note "gate 3: ICS DPI function-code detection/logging"
 
-# NFQUEUE 101 must be bound by containd; on Docker Desktop's LinuxKit
-# kernel this often fails silently and containd falls back to plain
-# accept. Skip rather than fail in that case.
+# NFQUEUE 101 is needed to collect this DPI observation. If the host
+# cannot provide it, report an optional skip rather than claiming evidence.
 $nfqStatus = & {
     $ErrorActionPreference = 'SilentlyContinue'
     (docker exec rangerdanger-firewall sh -c "cat /proc/net/netfilter/nfnetlink_queue 2>/dev/null" 2>$null) -join "`n"
@@ -265,7 +272,7 @@ $nfqStatus = & {
 $nfqAlive = ($nfqStatus -match '(?m)^\s*101\b')
 
 if (-not $nfqAlive) {
-    Skip "ICS DPI enforcement" "NFQUEUE 101 not bound (kernel/library env does not support it)"
+    Skip "ICS DPI detection/logging" "NFQUEUE 101 not bound (kernel environment does not support this optional observation)"
 } else {
     OK "NFQUEUE 101 bound by containd"
 
@@ -275,7 +282,7 @@ if (-not $nfqAlive) {
         $LASTEXITCODE
     }
     if ($hasPython -ne 0) {
-        Skip "ICS DPI enforcement" "rtac-sim lacks python3"
+        Skip "ICS DPI detection/logging" "rtac-sim lacks required python3 probe" $true
     } else {
         # Install probe inside the container. We pipe via stdin to avoid
         # a docker cp dance with temp files. The probe itself stays the
@@ -300,9 +307,7 @@ finally: s.close()
         # via `sh -c "cat > /tmp/..."` exactly the way the .sh does.
         $probePy | & docker exec -i rangerdanger-rtac-sim sh -c "cat > /tmp/_smoke_modbus.py"
 
-        # Fire FC8. DPI parses fc=8 NOT in [1..6] -> BlockFlowTemp ->
-        # entry in block_flows nft set. Verdict is added async; check
-        # the SET, not whether the packet itself was blocked.
+        # Fire FC8 from RTAC and check the resulting DPI evidence record.
         & {
             $ErrorActionPreference = 'SilentlyContinue'
             docker exec rangerdanger-rtac-sim python3 /tmp/_smoke_modbus.py 10.40.40.20 fc8 *>$null
@@ -315,14 +320,12 @@ finally: s.close()
         }
         $blockMatches = ([regex]::Matches($blockRaw, '10\.30\.30\.20.*10\.40\.40\.20.*502')).Count
         if ($blockMatches -lt 1) {
-            Err "Modbus FC8 from RTAC did not produce a block_flows entry -- Modbus DPI parser may not be wired to BlockFlowTemp"
+            Err "Modbus FC8 from RTAC did not produce DPI function-code evidence"
         } else {
-            OK "Modbus FC8 (not in allowlist [1..6]) triggered block_flows entry for 10.30.30.20.10.40.40.20.502"
+            OK "Modbus FC8 produced function-code evidence for 10.30.30.20.10.40.40.20.502"
         }
 
-        # BlockFlowTemp blocks the whole 3-tuple, so the FC8 block above also
-        # suspends the RTAC's legit FC3 reads to that relay until the 10m TTL
-        # expires. Flush it so the next gate (and the lab) start clean.
+        # Clear the DPI evidence record so the next gate starts clean.
         & {
             $ErrorActionPreference = 'SilentlyContinue'
             docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" *>$null
@@ -331,17 +334,12 @@ finally: s.close()
     }
 }
 
-# --- Gate 4: DNP3 ICS DPI function-code enforcement (NFQUEUE) ----------
-# Parallel to gate 3 but for DNP3: the hardened policy lets the RTAC poll
-# field devices on DNP3/20000, but the rule's ICS function-code allowlist
-# is [1] (Read/integrity poll) only. A Direct Operate (FC5) -- even from the
-# RTAC, which L4 source-pinning permits -- is NOT in the allowlist, so DPI
-# must parse the DNP3 function code and BlockFlowTemp it. This is the DNP3
-# half of "Modbus AND DNP3 DPI both enforce".
-Note "gate 4: DNP3 ICS DPI function-code allowlist enforcement"
+# --- Gate 4: DNP3 ICS DPI function-code detection/logging (NFQUEUE) ----
+# The L4 source pin enforces; DPI detects and logs function-code evidence.
+Note "gate 4: DNP3 ICS DPI function-code detection/logging"
 
 if (-not $nfqAlive) {
-    Skip "DNP3 ICS DPI enforcement" "NFQUEUE 101 not bound (kernel/library env does not support it)"
+    Skip "DNP3 ICS DPI detection/logging" "NFQUEUE 101 not bound (kernel environment does not support this optional observation)"
 } else {
     $hasDnp3Cmd = & {
         $ErrorActionPreference = 'SilentlyContinue'
@@ -349,7 +347,7 @@ if (-not $nfqAlive) {
         $LASTEXITCODE
     }
     if ($hasDnp3Cmd -ne 0) {
-        Skip "DNP3 ICS DPI enforcement" "rtac-sim lacks dnp3cmd"
+        Skip "DNP3 ICS DPI detection/logging" "rtac-sim lacks required dnp3cmd probe" $true
     } else {
         # Re-assert the hardened policy (a later gate could have changed it).
         try {
@@ -359,10 +357,8 @@ if (-not $nfqAlive) {
         } catch { }
         Start-Sleep -Seconds 2
 
-        # Fire a DNP3 Direct Operate (FC5) from the RTAC to the relay. DPI
-        # should parse it, see fc=5 NOT in [1], and BlockFlowTemp the flow.
-        # As in gate 3 the first packet may pass (async verdict) and actuate
-        # the point, so we restore the relay after and check the SET.
+        # Fire a DNP3 Direct Operate (FC5) and check the resulting DPI
+        # evidence record. Restore the relay afterwards.
         & {
             $ErrorActionPreference = 'SilentlyContinue'
             docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip *>$null
@@ -375,16 +371,13 @@ if (-not $nfqAlive) {
         }
         $dnp3Matches = ([regex]::Matches($dnp3BlockRaw, '10\.30\.30\.20.*10\.40\.40\.20.*20000')).Count
         if ($dnp3Matches -lt 1) {
-            Err "DNP3 FC5 (Direct Operate) from RTAC did not produce a block_flows entry -- DNP3 DPI parser may not be wired to BlockFlowTemp, or the DNP3 rule is missing its functionCode allowlist"
+            Err "DNP3 FC5 from RTAC did not produce DPI function-code evidence"
         } else {
-            OK "DNP3 FC5 (not in allowlist [1]) triggered block_flows entry for 10.30.30.20.10.40.40.20.20000"
+            OK "DNP3 FC5 produced function-code evidence for 10.30.30.20.10.40.40.20.20000"
         }
 
-        # Cleanup. The restore is itself a DNP3 FC5 (crob close), so it would
-        # be re-blocked under the hardened FC1-only policy - and could re-add
-        # a block_flows entry or be dropped outright, leaving the lab dirty.
-        # So drop back to the weak baseline FIRST (no DNP3 FC allowlist -> the
-        # close is allowed), restore the relay, THEN flush block_flows last.
+        # Restore the baseline before cleaning up the flow record, then
+        # close the relay after the dataplane has returned to weak.
         # Ending on weak also matches the lab default gate 1 moved away from.
         try {
             Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
@@ -406,10 +399,12 @@ if (-not $nfqAlive) {
 # --- Summary ------------------------------------------------------------
 Note "summary"
 Write-Host "  passed: $($script:passed) / $($script:total)"
+Write-Host "  skipped: $($script:skipped)"
+Write-Host "  required skipped: $($script:requiredSkipped)"
 if ($script:fail -eq 0) {
-    Write-Host "  ALL EVENT GATES PASSED" -ForegroundColor Green
+    Write-Host "  ALL REQUIRED EVENT CHECKS PASSED" -ForegroundColor Green
     exit 0
 } else {
-    Write-Host "  FAILED -- $($script:total - $script:passed) gate(s) regressed" -ForegroundColor Red
+    Write-Host "  FAILED -- $($script:total - $script:passed - $script:skipped) check(s) failed; $($script:requiredSkipped) required check(s) skipped" -ForegroundColor Red
     exit 1
 }

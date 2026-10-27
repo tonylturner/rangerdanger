@@ -450,7 +450,7 @@
       "oracle": {
         "intent": "deny",
         "policy": "hardened",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "\\[\\d+\\]:\\s+[-\\d.]+",
         "nmap": false
       },
@@ -536,7 +536,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "\\[\\d+\\]:\\s+[-\\d.]+",
         "nmap": false
       },
@@ -550,7 +550,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "(?s)DNP3 Outstation .*\\(addr 1\\).*\\[\\s*\\d+\\] = ",
         "nmap": false
       },
@@ -564,7 +564,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "\\[\\d+\\]:\\s+[-\\d.]+",
         "nmap": false
       },
@@ -578,7 +578,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "(?s)DNP3 Outstation .*\\(addr 1\\).*\\[\\s*\\d+\\] = ",
         "nmap": false
       },
@@ -592,7 +592,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "\\[\\d+\\]:\\s+[-\\d.]+",
         "nmap": false
       },
@@ -714,7 +714,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "Result: SUCCESS",
         "nmap": false,
         "zero_rc_denial": true
@@ -741,7 +741,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "Written \\d+ (?:references|registers|coils)",
         "nmap": false
       },
@@ -755,7 +755,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "Written \\d+ (?:references|registers|coils)",
         "nmap": false
       },
@@ -781,7 +781,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|Result: SENT \\(no acknowledgement requested\\))",
+        "match": "(?i)(?:timed? out|timeout|filtered|Result: SENT \\(no acknowledgement requested\\))",
         "control_match": "Result: SENT \\(no acknowledgement requested\\)",
         "nmap": false,
         "zero_rc_denial": true,
@@ -926,7 +926,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "(?s)DNP3 Outstation .*\\(addr 1\\).*\\[\\s*\\d+\\] = ",
         "nmap": false
       },
@@ -954,7 +954,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "(?s)DNP3 Outstation .*\\(addr 2\\).*\\[\\s*\\d+\\] = ",
         "nmap": false
       },
@@ -1104,7 +1104,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "Written \\d+ (?:references|registers|coils)",
         "nmap": false
       },

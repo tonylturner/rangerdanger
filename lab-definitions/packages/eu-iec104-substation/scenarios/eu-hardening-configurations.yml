@@ -27,7 +27,7 @@ steps:
   expected_config: weak
   node: cc-1
   description: |
-    Under weak policy confirm breaker closed, RMU1 closed/RMU2 open, OLTC remote/auto and supply present. Compare fresh CC observations with the separate **Physical System** view in [/substation](/substation). The nominal loop targets 20.0 kV ±1%, not a US low-voltage band.
+    Under weak policy confirm breaker closed, RMU1 closed/RMU2 open, OLTC remote/auto and supply present. Compare fresh CC observations with the separate **Physical System** view in [/substation](/substation). The PLC targets 20.4 kV ±1% (20.196–20.604 kV); out-of-band voltage must persist for 30 s before a tap request, not a US low-voltage band.
 
     :::hint Do not repair stale data with truth
     A completed current-connection GI and non-null GOOD observations within the attempt establish operator visibility, not continuously advancing status receipts. If the GI evidence is missing or outside ten minutes, press **Interrogate station** in the **Control Centre** and validate again. The **Physical System** view can remain correct while the CC is stale. Record both before the attack.

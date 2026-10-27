@@ -188,12 +188,34 @@ class ExtractTests(unittest.TestCase):
             extract.validate_inventory(rows, data)
 
     def test_deny_requires_control_and_real_denial(self):
-        oracle = {"intent": "deny", "match": "timed out|refused"}
+        oracle = {"intent": "deny", "match": "timed out|refused|no route to host"}
         self.assertFalse(extract.verdict(oracle, 1, "", "timed out"))
         self.assertTrue(extract.verdict(oracle, 1, "", "timed out", control=True))
+        self.assertFalse(extract.verdict(oracle, 1, "", "Connection refused", control=True))
+        self.assertFalse(extract.verdict(oracle, 1, "", "No route to host", control=True))
         self.assertFalse(extract.verdict(oracle, 127, "", "not found", control=True))
         self.assertFalse(extract.verdict(oracle, 1, "", "Illegal function", control=True))
         self.assertFalse(extract.verdict(oracle, 0, "success", "", control=True))
+
+    def test_loaded_firewall_denial_oracles_reject_refusal_and_no_route(self):
+        data = json.loads(extract.EXPECTATIONS.read_text())
+        for key, contract in data["commands"].items():
+            oracle = contract.get("oracle") or {}
+            if oracle.get("intent") != "deny":
+                continue
+            for output in ("Connection refused", "No route to host"):
+                with self.subTest(key=key, output=output):
+                    self.assertFalse(
+                        extract.verdict(oracle, 1, "", output, control=True))
+        no_ack = next(
+            c["oracle"] for c in data["commands"].values()
+            if (c.get("oracle") or {}).get("state"))
+        sent = "Result: SENT (no acknowledgement requested)"
+        self.assertTrue(extract.verdict(no_ack, 0, sent, "", control=True))
+        self.assertFalse(extract.verdict(
+            no_ack, 0, sent + "\nConnection refused", "", control=True))
+        self.assertFalse(extract.verdict(
+            no_ack, 0, sent + "\nNo route to host", "", control=True))
 
     def test_nmap_zero_rc_needs_filtered_ports_and_control(self):
         oracle = {"intent": "deny", "match": r"5900/tcp\s+filtered", "nmap": True}

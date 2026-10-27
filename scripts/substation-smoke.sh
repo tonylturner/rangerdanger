@@ -118,6 +118,14 @@ else
   err "electrical solve is not converged"
 fi
 if echo "$state" | jq -e '
+  .electrical.critical_load_energized == true
+  and .electrical.general_load_energized == true
+' >/dev/null 2>&1; then
+  ok "solver reports critical and general loads energized"
+else
+  err "solver does not report both critical and general loads energized"
+fi
+if echo "$state" | jq -e '
   (.electrical.solved_at | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) as $solved_at
   | (now - $solved_at) as $age
   | ($age >= -10 and $age <= 10)

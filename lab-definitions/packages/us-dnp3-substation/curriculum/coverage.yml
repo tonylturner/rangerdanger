@@ -73,8 +73,8 @@ groups:
     description: DNP3 DPI provides function-code visibility and detects and logs Direct Operate writes. The L4 source pin enforces field access from the RTAC source address.
     effect: semantic
   improve-logging:
-    title: Enable firewall logging and PCAP retention
-    description: Enable per-rule logging on all deny actions and critical allow rules. Without this, post-incident review is blind.
+    title: Enable per-rule firewall logging
+    description: Enable per-rule logging on deny actions and critical allows. The range does not provide rolling PCAP retention or syslog forwarding.
     effect: logging
   tighten-firewall-objects:
     title: Tighten firewall object hygiene

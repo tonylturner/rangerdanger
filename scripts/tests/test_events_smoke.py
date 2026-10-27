@@ -100,3 +100,48 @@ class EventsSmokeTests(unittest.TestCase):
                             source.index('nc -nv -w 3 10.40.40.20 502'))
             self.assertIn(call, source)
         (ROOT / "scripts/events-smoke.ps1").read_bytes().decode("ascii")
+
+    def test_shell_skip_totals_and_required_skip_failure(self):
+        source = (ROOT / "scripts/events-smoke.sh").read_text()
+        skip_function = re.search(r"(?ms)^skip\(\) \{.*?^\}", source)[0]
+        summary = source[source.index('\nnote "summary"') + 1:]
+        for required, expected in (("optional", 0), ("required", 1)):
+            with self.subTest(required=required):
+                fixture = (
+                    "fail=0 passed=0 skipped=0 required_skipped=0 total=0\n"
+                    "note() { :; }\n" + skip_function +
+                    f'\nskip "DPI" "unavailable" "{required}"\n' + summary
+                )
+                result = subprocess.run(
+                    ["bash", "-c", fixture], capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                self.assertIn("passed: 0 / 1", result.stdout)
+                self.assertIn("skipped: 1", result.stdout)
+                self.assertIn(f"required skipped: {int(required == 'required')}", result.stdout)
+
+    def test_powershell_skip_totals_and_required_skip_failure(self):
+        script = r"""
+$ErrorActionPreference = 'Stop'
+$tokens = $null; $errors = $null
+$path = "$env:REPO/scripts/events-smoke.ps1"
+$source = [IO.File]::ReadAllText($path)
+$ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw ($errors | Out-String) }
+$skipAst = $ast.Find({
+    param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Skip'
+}, $true)
+Invoke-Expression $skipAst.Extent.Text
+$script:fail = 0; $script:passed = 0; $script:skipped = 0
+$script:requiredSkipped = 0; $script:total = 0
+function Note($message) { Write-Host $message }
+Skip 'DPI' 'unavailable' ([bool]::Parse($env:REQUIRED))
+$summaryAt = $source.LastIndexOf('# --- Summary')
+Invoke-Expression $source.Substring($summaryAt)
+"""
+        for required, expected in ((False, 0), (True, 1)):
+            with self.subTest(required=required):
+                result = powershell(script, REQUIRED=str(required).lower())
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                self.assertIn("passed: 0 / 1", result.stdout)
+                self.assertIn("skipped: 1", result.stdout)
+                self.assertIn(f"required skipped: {int(required)}", result.stdout)

@@ -1,8 +1,10 @@
 """US substation state-machine fixtures; no sleeps, containers or network."""
 import json
+import re
+import subprocess
 import unittest
 
-from .test_setup_ps1_root import powershell
+from .test_setup_ps1_root import ROOT, powershell
 
 
 SUBSTATION = r"""
@@ -73,6 +75,12 @@ function Invoke-RestMethod {
     if ($env:MODE -eq 'stale-type') { $stale = 'False' }
     $converged = $env:MODE -ne 'converged'
     if ($env:MODE -eq 'converged-type') { $converged = 'True' }
+    $criticalEnergized = $env:MODE -notin @('critical-deenergized', 'critical-missing', 'critical-type')
+    $generalEnergized = $env:MODE -notin @('general-deenergized', 'general-missing', 'general-type')
+    if ($env:MODE -eq 'critical-missing') { $criticalEnergized = $null }
+    if ($env:MODE -eq 'general-missing') { $generalEnergized = $null }
+    if ($env:MODE -eq 'critical-type') { $criticalEnergized = 'True' }
+    if ($env:MODE -eq 'general-type') { $generalEnergized = 'True' }
     $cap = $script:cap
     if ($env:MODE -eq 'cap-out') { $cap = $true }
     if ($env:MODE -eq 'cap-in') { $cap = $false }
@@ -89,6 +97,7 @@ function Invoke-RestMethod {
         devices=$devices
         physics=@{stale=$stale}
         electrical=@{converged=$converged; solved_at=$stamp; power_factor=$pf;
+                     critical_load_energized=$criticalEnergized; general_load_energized=$generalEnergized;
                      capbank_switched_in=$echo; regulator_tap=$script:tap}
     }
 }
@@ -170,6 +179,12 @@ class SubstationSmokeTests(unittest.TestCase):
             "stale-type": "physics is stale after baseline reset",
             "converged": "electrical solve is not converged",
             "converged-type": "electrical solve is not converged",
+            "critical-deenergized": "solver does not report both critical and general loads energized",
+            "critical-missing": "solver does not report both critical and general loads energized",
+            "critical-type": "solver does not report both critical and general loads energized",
+            "general-deenergized": "solver does not report both critical and general loads energized",
+            "general-missing": "solver does not report both critical and general loads energized",
+            "general-type": "solver does not report both critical and general loads energized",
             "old": "timestamp is missing, invalid, or older",
             "future": "timestamp is missing, invalid, or older",
             "invalid-time": "timestamp is missing, invalid, or older",
@@ -187,6 +202,34 @@ class SubstationSmokeTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1, result.stderr)
                 self.assertIn(message, result.stdout)
                 self.assertEqual(trace["docker"][-1], "unpause")
+
+    def test_bash_baseline_requires_solver_loads_energized(self):
+        source = (ROOT / "scripts/substation-smoke.sh").read_text()
+        expressions = re.findall(
+            r'if echo "\$state" \| jq -e \'(.*?)\' >/dev/null 2>&1; then',
+            source, re.DOTALL,
+        )
+        expression = next(
+            (item for item in expressions if "critical_load_energized" in item), None)
+        self.assertIsNotNone(expression, "missing solver-energized assertion in Bash smoke")
+        fixtures = (
+            ({"electrical": {"critical_load_energized": True,
+                             "general_load_energized": True}}, 0),
+            ({"electrical": {"critical_load_energized": False,
+                             "general_load_energized": True}}, 1),
+            ({"electrical": {"critical_load_energized": True,
+                             "general_load_energized": False}}, 1),
+            ({"electrical": {"critical_load_energized": True}}, 1),
+            ({"electrical": {"critical_load_energized": "true",
+                             "general_load_energized": True}}, 1),
+        )
+        for state, expected in fixtures:
+            with self.subTest(state=state):
+                result = subprocess.run(
+                    ["jq", "-e", expression], input=json.dumps(state), text=True,
+                    capture_output=True, timeout=5,
+                )
+                self.assertEqual(result.returncode, expected, result.stderr)
 
     def test_poll_failure_branches_and_iteration_budgets(self):
         for mode, message, seconds in (
