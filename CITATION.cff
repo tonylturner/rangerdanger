@@ -14,7 +14,9 @@ abstract: >-
   validation of the hardened reference, and post-change validation
   with PCAP evidence collection. The optional 2.3-bonus lab demonstrates
   an enterprise-to-vendor-to-field pivot using RDP/VNC, showing both
-  the perimeter rule and defense-in-depth.
+  the perimeter rule and defense-in-depth. A second, selectable lab
+  environment models a European MV substation whose control centre
+  and field devices speak IEC 60870-5-104, with its own workshop.
 type: software
 authors:
   - family-names: Turner
@@ -32,6 +34,7 @@ keywords:
   - network-segmentation
   - modbus
   - dnp3
+  - iec-60870-5-104
   - scada
   - substation
 preferred-citation:

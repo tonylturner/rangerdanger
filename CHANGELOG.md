@@ -6,6 +6,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.0-rc.1] - 2026-10-27
+
+First release candidate for v0.2.0. Students choose the lab environment
+from the portal: the US DNP3 substation, or the new EU IEC 104 substation
+with its own seven-exercise workshop. This release needs containd 0.1.35
+or later and Docker Desktop 4.42 or later (Compose 2.36.0, Engine 28.1).
+The pre-release publishes images under its own tag and does not move
+`latest`; install it with `./setup.sh --version v0.2.0-rc.1`. Back up
+the complete firewall data before the first start on an existing install
+(see RELEASING.md).
+
 ### Changed
 
 - **Firewall interfaces are named after their zones, and Docker Desktop
@@ -3239,7 +3250,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.36...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.1...HEAD
+[v0.2.0-rc.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.1
 [v0.1.36]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.36
 [v0.1.35]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.35
 [v0.1.34]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.34
