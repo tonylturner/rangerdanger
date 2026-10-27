@@ -281,6 +281,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   20.4 kV ±1% target with a 30 s delay. The US logging action says that
   applying it turns on per-rule logging only; PCAP retention and syslog
   forwarding remain advice.
+- **EU CC delivery checks accept device-reported invalid measurements.**
+  An OLTC tap step briefly marks measurements invalid until the next
+  solve, so a GI could end with an IV observation and fail the lab's
+  CC link check and gate G22. A station point now counts as delivered
+  when its current observation arrived after the GI, has a value, and is
+  GOOD or IV with only the measurement-invalid reason. Lost links and
+  other quality flags still fail. The hardening
+  check reads CC state before its active TCP probes.
 
 ### Security
 
