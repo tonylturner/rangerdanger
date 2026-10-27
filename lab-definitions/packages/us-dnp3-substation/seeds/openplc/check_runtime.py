@@ -34,6 +34,7 @@ def read_status():
 
 def main():
     previous = None
+    last_error = None
     deadline = time.monotonic() + ATTEMPTS * POLL_INTERVAL
     while time.monotonic() < deadline:
         try:
@@ -46,10 +47,14 @@ def main():
                 print("US OpenPLC seed heartbeat advanced")
                 return
             previous = heartbeat
-        except OSError:
-            pass  # The local runtime may still be starting.
+            last_error = RuntimeError("seed heartbeat has not advanced")
+        except (OSError, RuntimeError, struct.error) as error:
+            last_error = error  # Early register reads may be incomplete until the first scan.
         time.sleep(min(POLL_INTERVAL, max(0, deadline - time.monotonic())))
-    raise RuntimeError("US OpenPLC seed heartbeat did not advance within 15 seconds")
+    message = "US OpenPLC seed heartbeat did not advance within 15 seconds"
+    if last_error is not None:
+        message += f": {last_error}"
+    raise RuntimeError(message) from last_error
 
 
 if __name__ == "__main__":

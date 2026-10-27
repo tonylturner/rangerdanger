@@ -100,12 +100,12 @@ trap 'exit 143' TERM
 trap 'exit 130' INT
 
 echo "Waiting for OpenPLC web server..."
-for attempt in {1..30}; do
+for attempt in {1..60}; do
     if curl -fsS --max-time 1 http://127.0.0.1:8080/ >/dev/null 2>&1; then
         break
     fi
-    if [ "$attempt" -eq 30 ]; then
-        echo "ERROR: OpenPLC web server did not become ready after 30 attempts" >&2
+    if [ "$attempt" -eq 60 ]; then
+        echo "ERROR: OpenPLC web server did not become ready after 60 attempts" >&2
         exit 1
     fi
     sleep 1

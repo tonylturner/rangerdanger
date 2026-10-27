@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 import shutil
 import socket
@@ -13,10 +14,51 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "scripts/openplc-entrypoint.sh"
 SEED_SOURCE = ROOT / "lab-definitions/packages/us-dnp3-substation/seeds/openplc"
+CHECK_RUNTIME_SOURCE = SEED_SOURCE / "check_runtime.py"
+CHECK_RUNTIME_SPEC = importlib.util.spec_from_file_location(
+    "openplc_seed_runtime_check", CHECK_RUNTIME_SOURCE)
+assert CHECK_RUNTIME_SPEC is not None and CHECK_RUNTIME_SPEC.loader is not None
+check_runtime = importlib.util.module_from_spec(CHECK_RUNTIME_SPEC)
+CHECK_RUNTIME_SPEC.loader.exec_module(check_runtime)
+
+
+class FakeModbusSocket:
+    def __init__(self, registers: tuple[int, int, int, int]) -> None:
+        status, close_output, heartbeat, spare = registers
+        body = b"\x03\x08" + struct.pack(">4H", status, close_output, heartbeat, spare)
+        self.response = struct.pack(">HHHB", 1, 0, len(body) + 1, 1) + body
+
+    def __enter__(self) -> FakeModbusSocket:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def settimeout(self, timeout: float) -> None:
+        del timeout
+
+    def sendall(self, request: bytes) -> None:
+        del request
+
+    def recv(self, size: int) -> bytes:
+        data, self.response = self.response[:size], self.response[size:]
+        return data
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, duration: float) -> None:
+        self.now += duration
 
 
 class OpenPLCEntrypointTests(unittest.TestCase):
@@ -326,6 +368,49 @@ class OpenPLCEntrypointTests(unittest.TestCase):
         self.assertIn("ERROR: OpenPLC database not found", result.stderr)
         self.assertNotIn("=== Starting OpenPLC ===", result.stdout)
         self.assertFalse(self.sqlite_log.exists())
+
+
+class OpenPLCRuntimeCheckTests(unittest.TestCase):
+    @staticmethod
+    def _run_with_registers(
+        registers: list[tuple[int, int, int, int]],
+    ) -> tuple[FakeClock, int]:
+        clock = FakeClock()
+        connections = [FakeModbusSocket(values) for values in registers]
+        with (
+            patch.object(check_runtime.socket, "create_connection",
+                         side_effect=connections) as create_connection,
+            patch.object(check_runtime.time, "monotonic", side_effect=clock.monotonic),
+            patch.object(check_runtime.time, "sleep", side_effect=clock.sleep),
+        ):
+            check_runtime.main()
+        return clock, create_connection.call_count
+
+    def test_incomplete_first_read_retries_until_heartbeat_advances(self) -> None:
+        clock, connection_count = self._run_with_registers([
+            (0, 0, 0, 0),
+            (15, 0, 100, 0),
+            (15, 0, 101, 0),
+        ])
+        self.assertEqual(clock.now, 1.0)
+        self.assertEqual(connection_count, 3)
+
+    def test_never_complete_retries_until_deadline_then_reports_last_error(self) -> None:
+        clock = FakeClock()
+        connections = [FakeModbusSocket((0, 0, 0, 0)) for _ in range(30)]
+        with (
+            patch.object(check_runtime.socket, "create_connection",
+                         side_effect=connections) as create_connection,
+            patch.object(check_runtime.time, "monotonic", side_effect=clock.monotonic),
+            patch.object(check_runtime.time, "sleep", side_effect=clock.sleep),
+            self.assertRaisesRegex(
+                RuntimeError,
+                "within 15 seconds: feeder interlock status is incomplete",
+            ),
+        ):
+            check_runtime.main()
+        self.assertEqual(create_connection.call_count, 30)
+        self.assertEqual(clock.now, 15.0)
 
 
 if __name__ == "__main__":
