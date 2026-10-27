@@ -275,7 +275,22 @@ eu_lab_hardening_prepare() {
   revision=$(eu_get_field && printf '%s' "$API_BODY" | jq -er '.devices["breaker-1"].revision') || return
   eu_lab_exec_denied kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || return
   eu_assert_unchanged_breaker "$revision" "post-hardening IEC104 retest" || return
-  eu_lab_step "$scenario" validate
+  eu_lab_reconnect_cc || return
+  eu_lab_step "$scenario" validate || return
+  eu_lab_hardening_wait_good_cc
+}
+
+# Wait after the served Validate step so the independent validator can snapshot
+# post-GI GOOD CC evidence before its active TCP probes.
+eu_lab_hardening_wait_good_cc() {
+  local shape
+  shape=$(eu_station_shape) || return
+  eu_wait_for_operator "(.link.gi.started_at | epoch) as \$gi
+    | ($shape) and .link.state == \"started\" and .link.gi.state == \"complete\"
+      and (.link.since | epoch) <= \$gi
+      and all(.points[]; good and (.received_at | epoch) >= \$gi)
+      and point(\"plc-1-input-valid\").value == true" \
+    15 "fresh GOOD station observations and valid PLC input before hardening validation"
 }
 
 eu_lab_nmap_vendor() {

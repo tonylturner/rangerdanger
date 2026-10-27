@@ -96,6 +96,13 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	if slot == "eu-baseline-assessment" {
 		ev.capture = s.checkPcapFileExists(ctx, gen)
 	}
+	// Snapshot hardening's CC evidence before its active TCP matrix. The gate
+	// waits for post-GI GOOD observations immediately before validation; these
+	// independent probes can take several seconds and let telemetry age/change
+	// before the CC snapshot is read.
+	if slot == "eu-hardening-configurations" {
+		ev.cc, ev.journal, ev.ccErr = euCC(ctx, gen)
+	}
 	// Collect current process truth after the negative probes.
 	if slot == "eu-firewall-implementation" || slot == "eu-hardening-configurations" || slot == "eu-vendor-rdp-compromise" {
 		expectations, matrixErr := s.judgingExpectations(gen)
@@ -134,7 +141,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 		if ev.ccErr == nil {
 			ev.ccErr = ev.conduits.journalErr
 		}
-	} else if slot == "eu-baseline-assessment" || slot == "eu-validation-evidence" || slot == "eu-hardening-configurations" {
+	} else if slot == "eu-baseline-assessment" || slot == "eu-validation-evidence" {
 		ev.cc, ev.journal, ev.ccErr = euCC(ctx, gen)
 	}
 	if slot == "eu-hardening-configurations" && (!ev.isPlan || !ev.foreignBreakerAllowed) {

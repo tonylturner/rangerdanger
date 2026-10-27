@@ -4,9 +4,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
+	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
 )
 
 func decodeFixture[T any](t *testing.T, data string) *T {
@@ -277,6 +285,90 @@ func TestEUValidatorScopeClaims(t *testing.T) {
 		if strings.Contains(check.Detail, "DPI") && !strings.Contains(check.Detail, "No DPI") {
 			t.Fatalf("overclaim: %+v", check)
 		}
+	}
+}
+
+func TestEUHardeningCollectorSnapshotsCCBeforeActiveProbes(t *testing.T) {
+	var mu sync.Mutex
+	ccRead, probeBeforeCC := false, false
+	_, host := euProbeDockerFixture(t, 124, "", false, func(_ string, _ container.ExecOptions) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !ccRead {
+			probeBeforeCC = true
+		}
+	})
+	t.Setenv("DOCKER_HOST", host)
+	t.Setenv("DOCKER_API_VERSION", "1.47")
+	t.Setenv("DOCKER_TLS_VERIFY", "")
+	t.Setenv("DOCKER_CERT_PATH", "")
+
+	ev := passingEUWorkshop(t, euWorkshopSlots[2])
+	now := time.Now().UTC()
+	policyAt := now.Add(-time.Minute)
+	giAt := now.Add(-time.Second)
+	ev.policyAt, ev.hardeningSince = policyAt, policyAt
+	ev.cc.Link.Since = policyAt.Add(time.Second)
+	ev.cc.Link.ConnectionSeq = 2
+	ev.journal.Entries[0].At = giAt
+	ev.journal.Entries[1].At = giAt.Add(time.Millisecond)
+	for i := range ev.cc.Points {
+		ev.cc.Points[i].ReceivedAt = giAt.Add(2 * time.Millisecond)
+	}
+	policy := []byte(`{"firewall":{"defaultAction":"DENY","rules":[]}}`)
+	hash, err := containd.FirewallHashFromBytes(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("validator changed range: %s", r.Method)
+		}
+		var body any
+		switch r.URL.Path {
+		case "/api/v1/config":
+			w.Write(policy)
+			return
+		case "/cc-1/api/journal":
+			body = ev.journal
+		case "/cc-1/api/state":
+			mu.Lock()
+			ccRead = true
+			mu.Unlock()
+			body = ev.cc
+		case "/breaker-1/api/state":
+			body = ev.devices["breaker-1"]
+		case "/breaker-1/api/audit":
+			body = ev.breakerAudit
+		case "/process/api/electrical":
+			ev.process.SolvedAt = time.Now().UTC()
+			body = ev.process
+		default:
+			t.Errorf("unexpected endpoint: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewEncoder(w).Encode(body); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer upstream.Close()
+	base := multiDeviceGeneration(t, upstream.URL)
+	gen := lifecycle.NewGeneration(base.ID, base.Package, base.Manifest, containd.NewClient(upstream.URL), base.StartedAt)
+	s := rangeServer(gen, "custom")
+	s.lastAppliedHash = hash
+	s.policyChangedAt, s.policyEvidenceSince = policyAt, policyAt
+	s.orchestrator = orchestrator.New()
+	t.Cleanup(func() { s.orchestrator.DockerClient().Close() })
+
+	collected := s.collectEUWorkshop(t.Context(), gen, euWorkshopSlots[2])
+	mu.Lock()
+	defer mu.Unlock()
+	if probeBeforeCC {
+		t.Fatal("active TCP probe started before the CC snapshot was collected")
+	}
+	if collected.ccErr != nil || euWorkshopFreshLink(collected).Status != "pass" {
+		t.Fatalf("hardening CC snapshot was not valid: err=%v check=%+v", collected.ccErr, euWorkshopFreshLink(collected))
 	}
 }
 

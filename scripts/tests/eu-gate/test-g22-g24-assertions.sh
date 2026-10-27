@@ -13,9 +13,16 @@ DENIED_EXIT=2
 DENIED_HTTP=200
 DENIED_RESPONSE=""
 UNCHANGED_CALLS=0
-eu_lab_step() { :; }
+RECONNECT_CALLS=0
+RECONNECT_FAIL_AT=0
+EVENTS=""
+READY_EXPR=""
+eu_lab_step() { EVENTS="$EVENTS step:$2"; }
 eu_lab_exec() { :; }
 eu_api_post() {
+  case "$1" in
+    /api/workshop/nodes/*) EVENTS="$EVENTS deny" ;;
+  esac
   # shellcheck disable=SC2034 # consumed by eu_lab_exec_denied
   HTTP_STATUS="$DENIED_HTTP"
   if [ -n "$DENIED_RESPONSE" ]; then
@@ -30,10 +37,18 @@ eu_get_field() {
 }
 eu_assert_unchanged_breaker() {
   UNCHANGED_CALLS=$((UNCHANGED_CALLS + 1))
+  EVENTS="$EVENTS unchanged"
 }
-eu_wait_for_operator() { :; }
+eu_wait_for_operator() {
+  READY_EXPR="$1"
+  EVENTS="$EVENTS ready"
+}
 # Reconnect admission/receipt boundaries have their own lesson tests.
-eu_lab_reconnect_cc() { :; }
+eu_lab_reconnect_cc() {
+  RECONNECT_CALLS=$((RECONNECT_CALLS + 1))
+  EVENTS="$EVENTS reconnect"
+  [ "$RECONNECT_FAIL_AT" -eq 0 ] || [ "$RECONNECT_CALLS" -ne "$RECONNECT_FAIL_AT" ]
+}
 eu_wait_for_field() {
   local field
   FIELD_WAITS=$((FIELD_WAITS + 1))
@@ -57,28 +72,70 @@ eu_wait_for_field() {
 for DENIED_EXIT in 2 1; do
   FIELD_WAITS=0
   UNCHANGED_CALLS=0
+  RECONNECT_CALLS=0
+  EVENTS=""
+  READY_EXPR=""
   t_run eu_lab_hardening_walk eu-hardening-configurations
   t_expect_eq "$T_STATUS" 0 "G22 accepts hardened retest denial with exit $DENIED_EXIT"
   t_expect_eq "$FIELD_WAITS" 2 "G22 leaves its separate restore assertion in place"
   t_expect_eq "$UNCHANGED_CALLS" 1 "G22 walk still proves the breaker was unchanged"
+  t_expect_eq "$RECONNECT_CALLS" 1 "G22 walk verifies the CC before the hardened retest"
   t_expect_no_out "protection_tripped" "G22 open assertion does not constrain protection state"
 
   UNCHANGED_CALLS=0
+  RECONNECT_CALLS=0
+  EVENTS=""
+  READY_EXPR=""
   t_run eu_lab_hardening_prepare eu-hardening-configurations
   t_expect_eq "$T_STATUS" 0 "G22 prepare accepts hardened retest denial with exit $DENIED_EXIT"
   t_expect_eq "$UNCHANGED_CALLS" 1 "G22 prepare still proves the breaker was unchanged"
+  t_expect_eq "$RECONNECT_CALLS" 2 "G22 prepare reconnects both before attack and before validation"
+  case " $EVENTS " in
+    *" deny unchanged reconnect step:validate ready "*) t_ok "G22 prepare waits for GOOD CC evidence after Validate" ;;
+    *) t_not_ok "G22 prepare refreshes GOOD CC evidence after the denied retest: $EVENTS" ;;
+  esac
+  case "$READY_EXPR" in
+    *'point("plc-1-input-valid").value == true'*) \
+      t_ok "G22 final readiness requires true PLC validity" ;;
+    *) t_not_ok "G22 final readiness predicates match the validator contract: $READY_EXPR" ;;
+  esac
+  case "$READY_EXPR" in
+    *'all(.points[]; good and (.received_at | epoch) >= $gi)'*) \
+      t_ok "G22 final readiness requires post-GI GOOD receipts" ;;
+    *) t_not_ok "G22 final readiness requires post-GI GOOD receipts: $READY_EXPR" ;;
+  esac
 done
 
 DENIED_EXIT=0
 FIELD_WAITS=0
 UNCHANGED_CALLS=0
+RECONNECT_CALLS=0
+EVENTS=""
+READY_EXPR=""
 t_run eu_lab_hardening_walk eu-hardening-configurations
 t_expect_eq "$T_STATUS" 1 "G22 rejects a hardened retest that exits successfully"
 t_expect_fails 1 "G22 reports a successful retest as not denied"
 t_expect_eq "$UNCHANGED_CALLS" 0 "G22 does not claim unchanged state after an allowed retest"
+case " $EVENTS " in
+  *" deny unchanged reconnect step:validate "*) t_not_ok "G22 walk does not refresh and validate an allowed retest" ;;
+  *) t_ok "G22 walk does not refresh and validate an allowed retest" ;;
+esac
 t_run eu_lab_hardening_prepare eu-hardening-configurations
 t_expect_eq "$T_STATUS" 1 "G22 prepare rejects a hardened retest that exits successfully"
 t_expect_fails 1 "G22 prepare reports a successful retest as not denied"
+
+DENIED_EXIT=2
+RECONNECT_CALLS=0
+RECONNECT_FAIL_AT=2
+EVENTS=""
+READY_EXPR=""
+t_run eu_lab_hardening_prepare eu-hardening-configurations
+t_expect_eq "$T_STATUS" 1 "G22 prepare fails closed when the post-retest reconnect fails"
+case " $EVENTS " in
+  *" deny unchanged reconnect "*) t_expect_no_out "step:validate" "G22 prepare does not validate after a failed post-retest reconnect" ;;
+  *) t_not_ok "G22 prepare reached its final reconnect: $EVENTS" ;;
+esac
+RECONNECT_FAIL_AT=0
 
 DENIED_EXIT=2
 DENIED_RESPONSE='{"exit_code":2,"stdout":7,"stderr":""}'
