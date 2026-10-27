@@ -169,9 +169,11 @@
       "services/corp_ws/environment/GATEWAY": "10.10.10.2",
       "services/corp_ws/networks/desk_corp_net/ipv4_address": "10.98.1.3",
       "services/corp_ws/networks/enterprise_net/ipv4_address": "10.10.10.10",
+      "services/corp_ws/sysctls/net.ipv4.ip_forward": 0,
       "services/eng_workstation/environment/GATEWAY": "10.20.20.2",
       "services/eng_workstation/networks/desk_eng_net/ipv4_address": "10.98.3.3",
       "services/eng_workstation/networks/vendor_net/ipv4_address": "10.20.20.20",
+      "services/eng_workstation/sysctls/net.ipv4.ip_forward": 0,
       "services/firewall/environment/CONTAIND_AUTO_DMZ_SUBNET": "10.20.20.0/24",
       "services/firewall/environment/CONTAIND_AUTO_LAN1_SUBNET": "10.30.30.0/24",
       "services/firewall/environment/CONTAIND_AUTO_LAN2_SUBNET": "10.40.40.0/24",
@@ -229,7 +231,8 @@
       "services/rtac_sim/sysctls/net.ipv4.ip_forward": 0,
       "services/vendor_jump/environment/GATEWAY": "10.20.20.2",
       "services/vendor_jump/networks/desk_vendor_net/ipv4_address": "10.98.2.3",
-      "services/vendor_jump/networks/vendor_net/ipv4_address": "10.20.20.10"
+      "services/vendor_jump/networks/vendor_net/ipv4_address": "10.20.20.10",
+      "services/vendor_jump/sysctls/net.ipv4.ip_forward": 0
     }
   },
   "proxy_upstreams": {

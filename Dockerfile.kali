@@ -137,4 +137,4 @@ RUN mkdir -p /home/kali/workspace
 WORKDIR /home/kali
 
 # Set containd as gateway and keep container running
-CMD ["sh", "-c", "[ -x /usr/local/bin/set-gateway.sh ] && /usr/local/bin/set-gateway.sh || true; sleep infinity"]
+CMD ["sh", "-c", "/usr/local/bin/set-gateway.sh && exec sleep infinity"]

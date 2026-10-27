@@ -112,6 +112,8 @@ services:
     restart: unless-stopped
     depends_on:
       - firewall
+    sysctls:
+      net.ipv4.ip_forward: 0
 
   kali:
     build:
@@ -162,6 +164,8 @@ services:
     restart: unless-stopped
     depends_on:
       - firewall
+    sysctls:
+      net.ipv4.ip_forward: 0
 
   eng_workstation:
     build:
@@ -190,6 +194,8 @@ services:
     restart: unless-stopped
     depends_on:
       - firewall
+    sysctls:
+      net.ipv4.ip_forward: 0
 
   fuxa_hmi:
     image: rangerdanger-fuxa-hmi

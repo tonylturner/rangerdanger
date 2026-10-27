@@ -89,6 +89,8 @@ services:
     restart: unless-stopped
     depends_on:
       - firewall
+    sysctls:
+      net.ipv4.ip_forward: 0
 
   kali:
     image: ghcr.io/tonylturner/rangerdanger-kali:${VERSION:-latest}
@@ -137,6 +139,8 @@ services:
     restart: unless-stopped
     depends_on:
       - firewall
+    sysctls:
+      net.ipv4.ip_forward: 0
 
   eng_workstation:
     image: ghcr.io/tonylturner/rangerdanger-eng-ws:${VERSION:-latest}
@@ -164,6 +168,8 @@ services:
     restart: unless-stopped
     depends_on:
       - firewall
+    sysctls:
+      net.ipv4.ip_forward: 0
 
   fuxa_hmi:
     image: ghcr.io/tonylturner/rangerdanger-fuxa-hmi:${VERSION:-latest}
