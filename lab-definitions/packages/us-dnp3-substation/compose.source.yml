@@ -3,12 +3,12 @@ name: rangerdanger
 # Complete US substation range model; relative paths resolve at the install root.
 services:
   firewall:
-    # On this branch, build containd's iec104 branch without touching published
+    # Build the containd v0.1.35 release from source without touching published
     # :latest; release compose files still describe the published image.
     image: rangerdanger-firewall
     build:
       # Set CONTAIND_SOURCE to a local containd checkout for unpushed work.
-      context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/containd.git#iec104}"
+      context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/containd.git#v0.1.35}"
       dockerfile: build/Dockerfile.mgmt
     container_name: rangerdanger-firewall
     # Same capability set as docker-compose.release.yml. Until v0.1.32

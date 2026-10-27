@@ -4,7 +4,7 @@ services:
     image: rangerdanger-firewall
     build:
       # Set CONTAIND_SOURCE to a local containd checkout for unpushed work.
-      context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/containd.git#iec104}"
+      context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/containd.git#v0.1.35}"
       dockerfile: build/Dockerfile.mgmt
     container_name: rangerdanger-firewall
     cap_add:
