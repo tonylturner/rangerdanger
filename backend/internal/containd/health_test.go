@@ -128,7 +128,20 @@ func TestWaitReadyVersionGate(t *testing.T) {
 		build   string
 		allowed bool
 	}{
-		{"0.1.32", false}, {"0.1.33", true}, {"v0.1.33+source", true}, {"0.1.33-rc.1", false}, {"0.1.34-rc.1", true}, {"1.0.0-dev", true}, {"dev", false}, {"", false}, {"0.01.33", false}, {"0.1.34-01", false}, {"0.1.34-alpha.0", true}, {"0.1.9999999999999999999999999", true},
+		{"0.1.32", false},
+		{"0.1.34", false},
+		{"0.1.35", true},
+		{"v0.1.35+source", true},
+		{"0.1.35-rc.1", false},
+		{"0.1.36-rc.1", true},
+		{"1.0.0-dev", true},
+		{"dev", false},
+		{"", false},
+		// Malformed versions must fail parsing, not merely fall below the floor.
+		{"0.01.35", false},
+		{"0.1.36-01", false},
+		{"0.1.36-alpha.0", true},
+		{"0.1.9999999999999999999999999", true},
 	} {
 		t.Run(tc.build, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

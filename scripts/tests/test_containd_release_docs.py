@@ -11,7 +11,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         for path in ("RELEASING.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
             text = " ".join((ROOT / path).read_text().split())
             with self.subTest(path=path):
-                for phrase in ("requires containd 0.1.33 or later", "0.1.7",
+                for phrase in ("requires containd 0.1.35 or later", "0.1.7",
                                "0.1.32 cannot read", "data/firewall/",
                                "data/eu-iec104-substation/firewall/",
                                "pre-upgrade", "stop the lab", "older tag",
@@ -66,5 +66,5 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                        "both must succeed", "no legacy `/config/import` fallback",
                        "NIC `device` bindings", "running configuration",
                        "seed readiness", "adoption after a backend restart",
-                       "0.1.33 prerelease"):
+                       "0.1.35 prerelease"):
             self.assertIn(phrase, text)

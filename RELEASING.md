@@ -167,7 +167,7 @@ its release twin; the package lint checks that the two agree.
 
 RangerDanger and [containd](https://github.com/tonylturner/containd)
 are co-developed by the same maintainer. **RangerDanger v0.2.0 requires
-containd 0.1.33 or later**, in release, source and offline modes; there is
+containd 0.1.35 or later**, in release, source and offline modes; there is
 no compatibility path for older builds. Release package Compose files
 reference `ghcr.io/tonylturner/containd:latest` rather than a per-release
 pinned tag. A mutable tag is not proof of the minimum version.
@@ -179,7 +179,7 @@ Source-mode package builds use the containd `iec104` Git context (or an
 explicit `CONTAIND_SOURCE` override), not the published image. Source-mode
 success does not certify the release's containd digest.
 The backend checks the minimum version before seeding and before adopting a
-running range after a backend restart; a 0.1.33 prerelease does not qualify.
+running range after a backend restart; a 0.1.35 prerelease does not qualify.
 
 ### Back up before the first 0.1.33 start
 
@@ -217,7 +217,7 @@ of class can shift behavior under you. **Mitigations for instructors:**
    ```
 
    Save that digest. If anything breaks the morning of class, compare
-   against `:latest`. A known-good digest must still meet the 0.1.33 minimum;
+   against `:latest`. A known-good digest must still meet the 0.1.35 minimum;
    if reverting across the schema migration, restore its matching data backup
    and older RangerDanger release as described above.
 
@@ -237,7 +237,7 @@ of class can shift behavior under you. **Mitigations for instructors:**
    Once staged, the SSD is immutable.
 
 If a workshop scenario demands hard determinism (regulatory audit,
-certified curriculum), pin a known-good `containd:vX.Y.Z` tag (0.1.33 or later) in both
+certified curriculum), pin a known-good `containd:vX.Y.Z` tag (0.1.35 or later) in both
 of the package's range Compose files for that engagement and document the pin in the
 engagement's README. The default `:latest` posture is for the public
 project where currency-of-fixes outweighs frozen-behavior.

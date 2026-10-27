@@ -19,8 +19,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   later: `setup.sh` and `setup.ps1` refuse older Docker with the same
   message, before they change anything.
 - Package curricula now use strict, single-purpose `curriculum/` sections; EU DPI catalog text states planning-only review with no emitted protocol rule.
-- **containd 0.1.33 or later is required.** The backend rejects older
+- **containd 0.1.35 or later is required.** The backend rejects older
   firewall builds at range start and when it adopts a running range.
+  containd 0.1.35 moved policy into its own nft table and fixed session listing.
   Policy applies keep the firewall's NIC bindings, so segmentation holds
   with the reserved management path; both packages reserve containd
   management for the backend and proxy. Policy applies use candidate and

@@ -335,8 +335,8 @@ Policy applies use only `POST /api/v1/config/candidate` followed by
 `POST /api/v1/config/commit`; both must succeed. There is no legacy
 `/config/import` fallback. Before staging, the backend copies appliance-owned
 NIC `device` bindings from the running configuration by logical interface name.
-The backend enforces the containd 0.1.33 minimum at seed readiness and range
-adoption after a backend restart; a 0.1.33 prerelease is below that floor.
+The backend enforces the containd 0.1.35 minimum at seed readiness and range
+adoption after a backend restart; a 0.1.35 prerelease is below that floor.
 
 The compile response's `label` is `weak`, `partial` or `hardened`.
 `actions` lists `{id, kind, chosen}` in catalog order (`kind` is `enforce`,

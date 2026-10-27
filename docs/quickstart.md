@@ -226,12 +226,12 @@ These tagged examples apply once v0.2.0 is published. On this branch use
 v0.2.0 rebuilds all 20 first-party images (the tag carries `[rebuild-all]`);
 this is not a repository-only hotfix.
 
-**v0.2.0 requires containd 0.1.33 or later** for online, offline and source
+**v0.2.0 requires containd 0.1.35 or later** for online, offline and source
 installs. Check the actual containd build, not just the mutable `latest` tag.
-RangerDanger owns its client fixes for the 0.1.33 contract; older containd
+RangerDanger owns its client fixes for the 0.1.35 contract; older containd
 builds are not a compatibility option.
 The backend checks the version before seeding and before adopting a running
-range after a backend restart; a 0.1.33 prerelease is too old.
+range after a backend restart; a 0.1.35 prerelease is too old.
 
 `/api/firewall/health` includes `ipv4Forwarding`, `managementBinding` and
 authenticated `managementReservation` diagnostics (or
@@ -263,7 +263,7 @@ read. For binary/schema rollback, stop the lab, replace the migrated
 directories with their complete pre-upgrade backups (do not merge database
 files), restore the matching older release and image, then restart and
 verify operations. **An older tag alone is not enough.** containd 0.1.32
-requires the older RangerDanger release too; v0.2.0 requires 0.1.33 or later.
+requires the older RangerDanger release too; v0.2.0 requires 0.1.35 or later.
 A policy import uses candidate+commit only, preserving running NIC `device`
 bindings before staging. It is not a binary/schema rollback.
 
@@ -417,7 +417,7 @@ The first source build (`./setup.sh --from-source`) pulls + compiles
 a lot. Subsequent builds reuse the layer cache. To force a clean re-pull
 of just the firewall image when containd publishes a security fix, pull
 it and restart the range on it (release mode only; source mode must rebuild
-from its containd source context). Confirm the image meets the 0.1.33 minimum
+from its containd source context). Confirm the image meets the 0.1.35 minimum
 and, before its first start, follow the [firewall backup procedure](#firewall-storage-backup-and-rollback)
 above. A pull/restart is not a rollback procedure:
 
