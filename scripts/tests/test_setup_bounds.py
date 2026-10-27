@@ -65,11 +65,14 @@ class SetupBoundsTests(unittest.TestCase):
         sleep = tools / "sleep"
         sleep.write_text(
             '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_ROOT/sleeps"\n'
-            'exec /bin/sleep 0.2\n'
+            'if [ "$*" = 1 ]; then exec /bin/sleep 0.02; fi\n'
+            'if [ "${FAKE_WATCHDOG_FAST:-0}" = 1 ]; then exec /bin/sleep 0.3; fi\n'
+            'exec /bin/sleep 1\n'
         )
         sleep.chmod(0o755)
         return dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
-                    FAKE_ROOT=str(root), FAKE_CONFIG=json.dumps(config or {}))
+                    FAKE_ROOT=str(root), FAKE_CONFIG=json.dumps(config or {}),
+                    FAKE_WATCHDOG_FAST="1" if (config or {}).get("stall") else "0")
 
     def fake_run(self, root, script, config=None):
         env = self.fake_docker_env(root, config)

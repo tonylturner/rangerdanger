@@ -55,11 +55,25 @@ class DeliveryNetworks(unittest.TestCase):
             docker = root / "docker"
             docker.write_text(
                 '#!/bin/bash\n'
-                'if [ "$1 $2" != "network inspect" ]; then exit 99; fi\n'
-                'if [ "$3" = "-f" ]; then printf "%s" "$OWNER"; exit 0; fi\n'
-                '[ "$EXISTS" = yes ]\n'
+                'if [ "$1 $2" = "network ls" ]; then\n'
+                '    [ "$FAIL_LS" != yes ] || exit 8\n'
+                '    [ "$EXISTS" != yes ] || printf "network-id\\n"\n'
+                '    exit 0\n'
+                'fi\n'
+                'if [ "$1 $2" = "network inspect" ] && [ "$3" = "-f" ]; then\n'
+                '    printf "%s" "$OWNER"\n'
+                '    exit 0\n'
+                'fi\n'
+                'exit 99\n'
             )
             docker.chmod(0o755)
+            command = (
+                'set -eu\nPLATFORM_PROJECT=rangerdanger-platform\n'
+                # Exercise the ownership loop independently of its tested
+                # timeout helper; this fixture checks only network outcomes.
+                'docker_bounded() { local limit="$1"; shift; docker "$@"; }\n'
+                'die() { printf "%s\\n" "$*" >&2; exit 1; }\n' + loop
+            )
             for owner, exists, passed in [
                 ("", "no", True),
                 ("rangerdanger-platform", "yes", True),
@@ -69,15 +83,23 @@ class DeliveryNetworks(unittest.TestCase):
             ]:
                 with self.subTest(owner=owner, exists=exists):
                     env = dict(os.environ, PATH=f"{root}:/usr/bin:/bin",
-                               OWNER=owner, EXISTS=exists)
+                               OWNER=owner, EXISTS=exists, FAIL_LS="no")
                     result = subprocess.run(
-                        ["bash", "-c", 'set -eu\nPLATFORM_PROJECT=rangerdanger-platform\n'
-                         'die() { printf "%s\\n" "$*" >&2; exit 1; }\n' + loop],
+                        ["bash", "-c", command],
                         env=env, capture_output=True, text=True, check=False,
                     )
                     self.assertEqual(result.returncode, 0 if passed else 1, result.stderr)
                     if not passed:
                         self.assertIn("No network was removed.", result.stderr)
+
+            result = subprocess.run(
+                ["bash", "-c", command],
+                env=dict(os.environ, PATH=f"{root}:/usr/bin:/bin",
+                         OWNER="", EXISTS="no", FAIL_LS="yes"),
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Could not query network rangerdanger_desk_corp", result.stderr)
 
 
 if __name__ == "__main__":

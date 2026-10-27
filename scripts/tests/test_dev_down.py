@@ -68,11 +68,14 @@ class DevDownTests(unittest.TestCase):
                 '#!/bin/sh\n'
                 'printf "%s\\n" "$*" >> "$FAKE_ROOT/watchdogs"\n'
                 'if [ "$*" = 1 ]; then printf "%s\\n" "$*" >> "$FAKE_ROOT/sleeps"; fi\n'
-                'exec /bin/sleep 0.02\n'
+                'if [ "$*" = 1 ]; then exec /bin/sleep 0.02; fi\n'
+                'if [ "${FAKE_WATCHDOG_FAST:-0}" = 1 ]; then exec /bin/sleep 0.3; fi\n'
+                'exec /bin/sleep 1\n'
             )
             sleep.chmod(0o755)
             env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
-                       FAKE_ROOT=tmp, FAKE_CONFIG=json.dumps(config or {}))
+                       FAKE_ROOT=tmp, FAKE_CONFIG=json.dumps(config or {}),
+                       FAKE_WATCHDOG_FAST="1" if (config or {}).get("stall") else "0")
             run = subprocess.run(["bash", str(ROOT / "scripts/dev-down.sh"), *args],
                                  env=env, capture_output=True, text=True, timeout=10)
             calls = [json.loads(line) for line in (root / "calls").read_text().splitlines()]
