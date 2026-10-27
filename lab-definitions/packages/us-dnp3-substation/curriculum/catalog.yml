@@ -97,9 +97,9 @@ catalog:
       - dpi
       - dnp3
   - id: improve-logging
-    title: Improve per-rule firewall logging
+    title: Improve firewall logging and PCAP retention
     why: |
-      Enable per-rule logging on deny actions and critical allows. This range does not provide rolling PCAP retention or syslog forwarding.
+      Enable per-rule logging, keep rolling PCAPs on cross-zone interfaces, and forward events to syslog. Without this, post-incident review of attempted attacks is blind. In this range, applying the plan turns on per-rule logging only; it does not add PCAP retention or syslog forwarding.
     effort_hours: 50
     roles:
       - Firewall Admin
