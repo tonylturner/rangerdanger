@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.0-rc.2] - 2026-10-28
+
+Second release candidate for v0.2.0. The frontend moves to Next.js 16
+with no visible change to the labs, and SSD staging is more robust:
+repo-only deltas work on stock macOS Bash, PowerShell staging works on
+non-Windows hosts, and a transient registry error no longer aborts a
+stage. Requirements are unchanged from rc.1. The pre-release publishes
+images under its own tag and does not move `latest`; install it with
+`./setup.sh --version v0.2.0-rc.2`.
+
 ### Changed
 
 - Upgraded the frontend to Next.js 16; ESLint 10 is deferred until its plugins support it.
@@ -3259,7 +3269,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.1...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.2...HEAD
+[v0.2.0-rc.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.2
 [v0.2.0-rc.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.1
 [v0.1.36]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.36
 [v0.1.35]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.35
