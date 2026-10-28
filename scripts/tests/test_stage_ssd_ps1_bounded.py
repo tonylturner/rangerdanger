@@ -134,7 +134,8 @@ $expected=if ($env:MODE -eq 'pull-error') { 'pull' }
     elseif ($env:MODE -eq 'tag-error') { 'pull,tag' }
     elseif ($env:ARCH -eq 'arm64') { 'pull,tag,pull,tag,save' } else { 'pull,tag,save' }
 if (($script:calls -join ',') -cne $expected) { throw 'operation ordering changed or failure ignored' }
-""", STAGER=stager, ARCH=arch, MODE=mode, WORK=tmp)
+""", STAGER=stager, ARCH=arch, MODE=mode, WORK=tmp,
+                       RD_STAGE_PULL_ATTEMPTS="1", RD_STAGE_PULL_DELAY_S="0")
                         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_stager_command_inventory_is_bounded_and_powershell_is_ascii_parseable(self):
@@ -153,7 +154,7 @@ if ($env:FILE -like 'stage-ssd*') {
     }
 }
 ConvertTo-Json -Compress -InputObject @($commands | Where-Object {
-    $_.GetCommandName() -in @('Invoke-WebRequest', 'Invoke-StageDocker', 'Invoke-StageNative', 'Invoke-DockerBounded')
+    $_.GetCommandName() -in @('Invoke-WebRequest', 'Invoke-StageDocker', 'Invoke-StagePull', 'Invoke-StageNative', 'Invoke-DockerBounded')
 } | ForEach-Object { @{name=$_.GetCommandName(); text=$_.Extent.Text} })
 """, FILE=name)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -169,6 +170,7 @@ ConvertTo-Json -Compress -InputObject @($commands | Where-Object {
                             self.assertIn("-UseBasicParsing", text)
                         else:
                             budget = (
+                                3600 if command["name"] == "Invoke-StagePull" else
                                 30 if "'compose'" in text else 120 if "'buildx'" in text else
                                 3600 if "'pull'" in text else 60 if "'tag'" in text else
                                 7200 if "'save'" in text else 600 if "'archive'" in text else

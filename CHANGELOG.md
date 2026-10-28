@@ -9,6 +9,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - SSD staging supports repo-only deltas on stock macOS Bash and finds tar under PowerShell on non-Windows hosts.
+- SSD staging retries transient image-pull failures up to three times.
 
 ## [v0.2.0-rc.1] - 2026-10-27
 

@@ -53,6 +53,7 @@ say()    { printf "%s[+]%s %s\n" "$GREEN" "$RESET" "$*"; }
 warn()   { printf "%s[!]%s %s\n" "$YELLOW" "$RESET" "$*" >&2; }
 die()    { printf "%s[✗]%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
 banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s─' $(seq 1 ${#1}))"; }
+. "$ROOT_DIR/scripts/lib/stage-pull.sh"
 
 [ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE not found — run from repo root."
 command -v python3 >/dev/null 2>&1 || die "python3 is required to verify the saved Docker archive manifests."
@@ -311,19 +312,7 @@ stage_arch() {
         elif [ "$ref" != "$img" ]; then
             say "    -> $ref"
         fi
-        # Heads-up on the large images so a multi-minute pull doesn't look
-        # like a hang (issue #81). The webtop desktop images (corp-ws,
-        # eng-ws, vendor-jump) are multi-GB; openplc is also a large pull.
-        # Everything else is quick.
-        case "$img" in
-            *rangerdanger-corp-ws*|*rangerdanger-eng-ws*|*rangerdanger-vendor-jump*)
-                say "    large image (~2-3 GB desktop) — a few minutes is normal" ;;
-            *rangerdanger-openplc*)
-                say "    large image (~1 GB) — give it a minute" ;;
-        esac
-        # Show Docker's native layer progress (no --quiet) so the operator can
-        # see bytes moving on the big pulls instead of staring at a silent line.
-        docker pull "$ref" \
+        stage_pull_image "$img" "$ref" \
             || die "docker pull failed for $ref on $arch — see Docker's error above for the cause; refusing to write a partial bundle."
         # Apply the user-friendly tag locally. The tag-target form
         # cannot include @digest (docker rejects it), so strip any

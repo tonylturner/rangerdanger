@@ -86,6 +86,7 @@ say()    { printf "%s[+]%s %s\n" "$GREEN" "$RESET" "$*"; }
 warn()   { printf "%s[!]%s %s\n" "$YELLOW" "$RESET" "$*" >&2; }
 die()    { printf "%s[x]%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
 banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s-' $(seq 1 ${#1}))"; }
+. "$ROOT_DIR/scripts/lib/stage-pull.sh"
 
 [ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE not found - run from repo root."
 command -v python3 >/dev/null 2>&1 || die "python3 is required for exact Compose image-to-service mapping."
@@ -537,15 +538,7 @@ stage_arch() {
         elif [ "$ref" != "$img" ]; then
             say "    -> $ref"
         fi
-        # Heads-up on the large images so a multi-minute pull doesn't look
-        # like a hang (issue #81); show native layer progress (no --quiet).
-        case "$img" in
-            *rangerdanger-corp-ws*|*rangerdanger-eng-ws*|*rangerdanger-vendor-jump*)
-                say "    large image (~2-3 GB desktop) — a few minutes is normal" ;;
-            *rangerdanger-openplc*)
-                say "    large image (~1 GB) — give it a minute" ;;
-        esac
-        docker pull "$ref" \
+        stage_pull_image "$img" "$ref" \
             || die "docker pull failed for new-version image $ref on $arch; see Docker's error above for the cause."
         local target_tag="${img%@*}"
         if [ "$ref" != "$target_tag" ]; then
