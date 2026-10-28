@@ -228,8 +228,13 @@ d["reconnect_interval_ms"] = 100
 print(json.dumps(d))' <"$HERE/points.test.json" >"$OUT/points.reconnect.json"
 start_cc "$CC2" "$CC2_IP" "$CC2_HTTP_IP" "$RTU_IP:2404" "$OUT/points.reconnect.json"
 cc2 wait 10 "link(s)=='started' and all_good(s)" >/dev/null || fail "CC: reconnect driver did not start"
-probe wait 5 "all_good(s)" >"$OUT/cc-state-before-pause.json"
+# Snapshot the cache after the RTU is frozen but before t1 expires. A
+# snapshot taken before the pause races the 2 s cyclic reports, which move
+# received_at and cot between the snapshot and the freeze.
 docker pause "$RTU" >/dev/null
+sleep 1
+probe wait 5 "link(s)=='started' and all_good(s)" >"$OUT/cc-state-before-pause.json" \
+  || fail "CC: link dropped before the frozen-cache snapshot"
 if probe wait 40 "link(s)!='started' and all_stale(s,'link_lost')" >"$OUT/cc-state-linklost.json" \
   && docker exec -i "$PROBE" python3 -I -c '
 import json, sys
