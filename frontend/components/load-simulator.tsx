@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendLabControl } from "../lib/api";
 import { useSubstationState } from "../lib/live-queries";
+import { useHydrated } from "../lib/use-hydrated";
 
 // Load Simulator - a training-infrastructure control for exploring the OpenDSS
 // physics engine. It drives the feeder loads (general/critical kW + PF) via the
@@ -32,7 +33,13 @@ const easeInOutQuad = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t 
 const clampPf = (p: number) => Math.max(80, Math.min(100, p));
 
 export function LoadSimulator() {
-  const [expanded, setExpanded] = useState(false);
+  const hydrated = useHydrated();
+  const savedExpanded = useMemo(
+    () => hydrated && sessionStorage.getItem("loadsim-expanded") === "1",
+    [hydrated],
+  );
+  const [expandedChoice, setExpanded] = useState<boolean | null>(null);
+  const expanded = expandedChoice ?? savedExpanded;
   const [gen, setGen] = useState(0); // 0-100 %
   const [crit, setCrit] = useState(0); // 0-100 %
   const [pf, setPf] = useState(100); // 80-100 slider (=> 0.80-1.00)
@@ -59,16 +66,11 @@ export function LoadSimulator() {
   const writesRef = useRef<Promise<void>>(Promise.resolve());
   const mountedRef = useRef(true);
 
-  // session-persistent expand/collapse
-  useEffect(() => {
-    if (sessionStorage.getItem("loadsim-expanded") === "1") setExpanded(true);
-    setNow(Date.now());
-  }, []);
-  const toggleExpand = () =>
-    setExpanded((e) => {
-      sessionStorage.setItem("loadsim-expanded", e ? "0" : "1");
-      return !e;
-    });
+  // Restore only after hydration; user changes stay in component state.
+  const toggleExpand = () => {
+    sessionStorage.setItem("loadsim-expanded", expanded ? "0" : "1");
+    setExpanded(!expanded);
+  };
 
   // live telemetry for the status string - every 500ms, even collapsed
   const elec = useSubstationState(500).data?.electrical;
@@ -79,12 +81,21 @@ export function LoadSimulator() {
   // While idle, follow telemetry rather than keeping the last override's
   // setpoints. In particular, a reset must also work when React Query
   // retains the same electrical object between polls.
+  if (elec && !engaged) {
+    const nextGen = Math.round(((elec.general_load_kw ?? 0) / GEN_MAX_KW) * 100);
+    const nextCrit = Math.round(((elec.critical_load_kw ?? 0) / CRIT_MAX_KW) * 100);
+    const nextPf = clampPf(Math.round((elec.power_factor ?? 1) * 100));
+    if (gen !== nextGen) setGen(nextGen);
+    if (crit !== nextCrit) setCrit(nextCrit);
+    if (pf !== nextPf) setPf(nextPf);
+  }
+  // Render-time telemetry adjustment never writes refs. Events and animation
+  // callbacks still mirror immediately, so a chained ramp sees its last frame.
   useEffect(() => {
-    if (!elec || engaged) return;
-    setGenV(Math.round(((elec.general_load_kw ?? 0) / GEN_MAX_KW) * 100));
-    setCritV(Math.round(((elec.critical_load_kw ?? 0) / CRIT_MAX_KW) * 100));
-    setPfV(clampPf(Math.round((elec.power_factor ?? 1) * 100)));
-  }, [elec, engaged, setGenV, setCritV, setPfV]);
+    genRef.current = gen;
+    critRef.current = crit;
+    pfRef.current = pf;
+  }, [gen, crit, pf]);
 
   // tick for the "Xs ago" audit line
   useEffect(() => {
@@ -166,26 +177,26 @@ export function LoadSimulator() {
   }, [pushOverride, setGenV, setCritV, setPfV]);
 
   // ── presets ────────────────────────────────────────────────────
-  const clickPreset = (preset: Preset) => {
-    if (preset.event) { runLoadDrop(); return; }
+  const clickPreset = (preset: Preset, at: number) => {
+    if (preset.event) { runLoadDrop(at); return; }
     if (activePreset === preset.id) {
       // deselect: sliders stay, status returns to Steady state
       cancelAnim();
       setActivePreset(null);
-      setLastChange({ label: "Steady state", ts: Date.now() });
+      setLastChange({ label: "Steady state", ts: at });
       return;
     }
     setActivePreset(preset.id);
     ramp(preset.gen, preset.crit, preset.pf * 100, 3000);
     audit("set_preset", preset.id, preset.label);
-    setLastChange({ label: `Preset: ${preset.label}`, ts: Date.now() });
+    setLastChange({ label: `Preset: ${preset.label}`, ts: at });
   };
 
   // Large load drop - single-shot event, not a steady state.
-  const runLoadDrop = () => {
+  const runLoadDrop = (at: number) => {
     cancelAnim();
     setActivePreset("loaddrop");
-    setLastChange({ label: "Large load drop", ts: Date.now() });
+    setLastChange({ label: "Large load drop", ts: at });
     audit("preset_start", "large_load_drop", "feeder heavily loaded with large customer");
     // 1. ramp to heavy load over 3s ...
     ramp(70, 65, 94, 3000, () => {
@@ -310,7 +321,7 @@ export function LoadSimulator() {
               return (
                 <button
                   key={p.id}
-                  onClick={() => clickPreset(p)}
+                  onClick={() => clickPreset(p, Date.now())}
                   disabled={resetting}
                   title={p.event ? "Simulates NERC Level 3 Alert scenario - sudden customer-initiated load reduction (May 2026)." : undefined}
                   className={`rounded-md border px-3 py-2 text-[12px] transition-colors ${presetClass(p, active)}`}

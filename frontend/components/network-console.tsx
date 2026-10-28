@@ -156,13 +156,6 @@ export function NetworkConsole() {
   const drawerVisible = viewMode.policyDim;
   const drawerExpanded = drawerVisible && activeDrawer !== null;
 
-  // If Policy view is turned off the drawer is unmounted; reset the
-  // active tab so re-enabling Policy starts fresh at the strip.
-  useEffect(() => {
-    if (!viewMode.policyDim && activeDrawer !== null) {
-      setActiveDrawer(null);
-    }
-  }, [viewMode.policyDim, activeDrawer]);
   useEffect(() => {
     if (!rfInstance || nodes.length === 0) return;
     // Wait one frame so React Flow has measured the container.
@@ -318,7 +311,11 @@ export function NetworkConsole() {
       )}
 
       <div className="relative flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
-        <ViewModeToolbar viewMode={viewMode} onChange={setViewMode} />
+        <ViewModeToolbar viewMode={viewMode} onChange={(next) => {
+          setViewMode(next);
+          // Re-enabling Policy starts fresh at the strip, not the old tab.
+          if (!next.policyDim) setActiveDrawer(null);
+        }} />
         <ReactFlow
           nodes={nodes}
           edges={edges}

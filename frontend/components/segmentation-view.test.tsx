@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { EU_PACKAGE, US_PACKAGE } from "../lib/operator-fixtures.test-util";
 import { FIREWALL_ACTIVE_KEY, NETWORK_EVENTS_KEY } from "../lib/live-queries";
 import type { PolicyComparison } from "../lib/api";
@@ -42,6 +43,51 @@ function render(
 }
 
 describe("SegmentationView", () => {
+  it("follows named active policies, retains custom fallback, and keeps a manual comparison sticky", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    client.setQueryData(["packages", "active"], US_PACKAGE);
+    client.setQueryData(FIREWALL_ACTIVE_KEY, { active_config: "weak" });
+    client.setQueryData(NETWORK_EVENTS_KEY, { events: [], source: "containd" });
+    client.setQueryData(FIREWALL_COMPARISON_KEY, comparison);
+    let tree!: ReactTestRenderer;
+    act(() => { tree = create(<QueryClientProvider client={client}><SegmentationView /></QueryClientProvider>); });
+    try {
+      const selected = () => tree.root.findByType("select").props.value;
+      const active = async (active_config: string) => act(async () => {
+        client.setQueryData(FIREWALL_ACTIVE_KEY, { active_config });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(selected()).toBe("weak");
+      await active("improved");
+      expect(selected()).toBe("improved");
+      await active("custom");
+      expect(selected()).toBe("improved");
+      act(() => tree.root.findByType("select").props.onChange({ target: { value: "weak" } }));
+      await active("improved");
+      expect(selected()).toBe("weak");
+      await active("custom");
+      expect(selected()).toBe("weak");
+      await active("improved");
+      vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+        if (url.endsWith("/firewall/apply")) return new Response(JSON.stringify({ status: "ok", active_config: "weak" }));
+        throw new TypeError("refresh unavailable");
+      }));
+      await act(async () => {
+        tree.root.findAllByType("button").find((button) => button.children.includes("Apply"))!.props.onClick();
+        await vi.waitFor(() => expect(client.getMutationCache().getAll().at(-1)?.state.status).toBe("success"));
+      });
+      // A successful apply must not snap the inspection back to stale cache.
+      expect(selected()).toBe("weak");
+      await active("weak");
+      await active("improved");
+      expect(selected()).toBe("improved");
+    } finally {
+      act(() => tree.unmount());
+      client.clear();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([EU_PACKAGE, US_PACKAGE])("labels the mixed event stream by $id's active policy, without implying DPI is enabled", (pkg) => {
     for (const policy of ["weak", "improved", "custom"]) {
       const html = render(pkg, policy);

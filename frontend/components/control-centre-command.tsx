@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { CommandOperation, CommandResult, ControlCentreLink, LinkState, OperatorPoint } from "../lib/operator-api";
 import { commandErrorText, commandOutcome, formatPointValue, formatUtcTime, pointCondition, qualityDefinition } from "../lib/operator-format";
 import { receivedAuthority, type DeviceId } from "../lib/operator-workstation";
@@ -79,7 +79,13 @@ export function SupervisoryControls({ link, points, unavailable, selected }: { l
   const inFlight = useRef(false);
   const [active, setActive] = useState<string | null>(null);
   const [state, setState] = useState<CommandPanelState>({ phase: "idle" });
-  useEffect(() => { setState((s) => s.phase === "armed" ? { phase: "idle" } : s); }, [selected]);
+  const [previousSelection, setPreviousSelection] = useState(selected);
+  // Discard only local arming before rendering a different device. In-flight
+  // commands and their late outcomes must retain their original attribution.
+  if (previousSelection !== selected) {
+    setPreviousSelection(selected);
+    if (state.phase === "armed") setState({ phase: "idle" });
+  }
   const visible = CONTROL_PANELS.filter((p) => selected === "F2" ? false : selected === "T1" ? p.point.startsWith("oltc-") : selected === "CB1" ? p.point.startsWith("feeder-") : p.point.startsWith(selected === "RMU1" ? "rmu-1-" : "rmu-2-"));
   const execute = (panel: ControlPanel, operation: CommandOperation) => {
     const feedback = points.find((p) => p.id === panel.feedback);

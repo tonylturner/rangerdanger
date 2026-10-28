@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ClipboardList } from "lucide-react";
-import { loadRemediationPlan, type RemediationPlan } from "../lib/remediation-plan";
+import { loadRemediationPlan } from "../lib/remediation-plan";
 import type { PlanProvenance } from "../lib/api";
 import { planLabel } from "../lib/policy-wording";
 import { useCurriculumScope } from "../lib/curriculum-scope";
+import { useHydrated } from "../lib/use-hydrated";
 
 type RemediationPlanBannerProps = {
   currentExerciseId: string;
@@ -23,12 +24,13 @@ type RemediationPlanBannerProps = {
 //   - the current exercise is the baseline (no plan yet)
 export function RemediationPlanBanner({ currentExerciseId, appliedPlan }: RemediationPlanBannerProps) {
   const scope = useCurriculumScope();
-  const [plan, setPlan] = useState<RemediationPlan | null>(null);
+  const hydrated = useHydrated();
+  const plan = useMemo(
+    () => hydrated && !scope.curriculum?.activities[currentExerciseId]?.hideBanner
+      ? loadRemediationPlan(scope) : null,
+    [scope, currentExerciseId, hydrated],
+  );
   const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    setPlan(loadRemediationPlan(scope));
-  }, [scope, currentExerciseId]);
 
   const binding = scope.curriculum;
   if (!binding || binding.activities[currentExerciseId]?.hideBanner) return null;

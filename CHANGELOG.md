@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Upgraded the frontend to Next.js 16; ESLint 10 is deferred until its plugins support it.
+
 ### Fixed
 
 - SSD staging supports repo-only deltas on stock macOS Bash and finds tar under PowerShell on non-Windows hosts.

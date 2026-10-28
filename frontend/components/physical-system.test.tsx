@@ -219,6 +219,25 @@ describe("Physical System presentation", () => {
 });
 
 describe("Physical System interactions", () => {
+  it("reveals on selection and availability changes without undoing a manual collapse on polling", () => {
+    const tree = mount(<PhysicalSystemScreen {...props} field={undefined} selected="CB1" revealSelected />);
+    const update = (field: FieldState | undefined, selected: "CB1" | "RMU1") =>
+      act(() => tree.update(<QueryClientProvider client={clients[0]}>
+        <PhysicalSystemScreen {...props} field={field} selected={selected} revealSelected />
+      </QueryClientProvider>));
+    update(TRUTH, "CB1");
+    expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(true);
+    act(() => button(tree, "CB1 — Feeder breaker").props.onClick());
+    const scrolls = scroll.mock.calls.length;
+    update(structuredClone(TRUTH), "CB1");
+    expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(false);
+    expect(scroll).toHaveBeenCalledTimes(scrolls);
+    update(TRUTH, "RMU1");
+    expect(tree.root.findByProps({ "aria-controls": "physical-details-RMU1" }).props["aria-expanded"]).toBe(true);
+    update(TRUTH, "CB1");
+    expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(true);
+  });
+
   it("expands from overview, keeps state and scroll fixed during polling, and discloses matching secondary rows", () => {
     const tree = mount(<PhysicalSystemScreen {...props} />);
     act(() => button(tree, "Feeder breaker").props.onClick());

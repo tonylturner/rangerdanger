@@ -114,7 +114,10 @@ describe("operator workstation interactions", () => {
     const select = (label: string) => act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith(label))!.props.onClick());
     select("CB1"); act(() => button(tree, "Confirm OPEN").props.onClick());
     expect(output(tree)).toContain("No RTU reservation"); expect(fetchMock).not.toHaveBeenCalled();
-    select("RMU1"); select("CB1"); expect(button(tree, "Execute OPEN")).toBeUndefined();
+    select("RMU1");
+    expect(button(tree, "Execute OPEN")).toBeUndefined();
+    expect(output(tree)).not.toContain("No RTU reservation");
+    select("CB1"); expect(button(tree, "Execute OPEN")).toBeUndefined();
     act(() => button(tree, "Confirm OPEN").props.onClick());
     await act(async () => {
       button(tree, "Execute OPEN").props.onClick();

@@ -339,35 +339,24 @@ export function LeftDrawerMenu({
   );
 }
 
-// Floating toolbar above the React Flow canvas. Each toggle is an
-// icon-only button (matching the exercise page header style) so the
-// strip stays compact even when the segmentation drawer is open.
-// Position is shifted past the drawer's collapsed strip so the "VIEW"
-// label is never covered.
-export function ViewModeToolbar({
-  viewMode,
-  onChange,
+function IconToggle({
+  on,
+  onClick,
+  label,
+  Icon,
+  activeBorder,
+  activeBg,
+  activeText,
 }: {
-  viewMode: ViewMode;
-  onChange: (m: ViewMode) => void;
+  on: boolean;
+  onClick: () => void;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  activeBorder: string;
+  activeBg: string;
+  activeText: string;
 }) {
-  const IconToggle = ({
-    on,
-    onClick,
-    label,
-    Icon,
-    activeBorder,
-    activeBg,
-    activeText,
-  }: {
-    on: boolean;
-    onClick: () => void;
-    label: string;
-    Icon: React.ComponentType<{ className?: string }>;
-    activeBorder: string;
-    activeBg: string;
-    activeText: string;
-  }) => (
+  return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
@@ -385,7 +374,20 @@ export function ViewModeToolbar({
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   );
+}
 
+// Floating toolbar above the React Flow canvas. Each toggle is an
+// icon-only button (matching the exercise page header style) so the
+// strip stays compact even when the segmentation drawer is open.
+// Position is shifted past the drawer's collapsed strip so the "VIEW"
+// label is never covered.
+export function ViewModeToolbar({
+  viewMode,
+  onChange,
+}: {
+  viewMode: ViewMode;
+  onChange: (m: ViewMode) => void;
+}) {
   return (
     <div className="absolute left-14 top-3 z-20 flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/85 px-2.5 py-1.5 backdrop-blur-sm">
       <span className="pl-0.5 pr-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-500">

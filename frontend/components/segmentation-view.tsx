@@ -8,7 +8,7 @@
 // Active policy and package comparison use React Query so the range
 // lifecycle clears them when one package is replaced by another.
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ApiError,
@@ -124,8 +124,8 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   // Track whether the user has manually changed the selection so we
   // don't keep snapping back to the active config when they're trying
   // to inspect a different one.
-  const [selectedPolicyId, setSelectedPolicyId] = useState<string>(HARDENED_POLICY);
-  const [userPickedPolicy, setUserPickedPolicy] = useState(false);
+  const [selection, setSelection] = useState({ id: HARDENED_POLICY, manual: false });
+  const selectedPolicyId = selection.id;
 
   // Active firewall config - shared via React Query so this drawer
   // and the top-right PolicyBadge stay in sync whichever entry point
@@ -149,22 +149,25 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
     retry: false,
   });
 
-  useEffect(() => {
-    if (!userPickedPolicy && policies.some((p) => p.id === activeConfig)) {
-      setSelectedPolicyId(activeConfig as string);
+  const [observed, setObserved] = useState<{ config: string | null; policies: PolicyMeta[] | null }>({
+    config: null, policies: null,
+  });
+  // Follow changed policy snapshots before rendering, until the student
+  // chooses a comparison. Keep the last named selection for custom policies.
+  // Applying a choice does not itself resync to an older cached snapshot.
+  if (observed.config !== activeConfig || observed.policies !== policies) {
+    setObserved({ config: activeConfig, policies });
+    if (!selection.manual && activeConfig !== null && policies.some((p) => p.id === activeConfig)) {
+      setSelection({ id: activeConfig, manual: false });
     }
-    // userPickedPolicy intentionally excluded so the initial sync
-    // happens but a manual pick stays sticky.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeConfig, policies]);
+  }
 
   // The apply refreshes every firewall view (lib/policy-apply.ts); on
   // success the inspector re-syncs with the policy now active.
   const handleApply = (config: string) => {
     apply.mutate(config, {
       onSuccess: () => {
-        setSelectedPolicyId(config);
-        setUserPickedPolicy(false);
+        setSelection({ id: config, manual: false });
       },
     });
   };
@@ -243,8 +246,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
           <select
             value={selectedMeta.id}
             onChange={(e) => {
-              setSelectedPolicyId(e.target.value);
-              setUserPickedPolicy(true);
+              setSelection({ id: e.target.value, manual: true });
             }}
             className="flex-1 rounded-sm border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-200 focus:border-slate-500 focus:outline-hidden"
           >

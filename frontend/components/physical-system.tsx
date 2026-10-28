@@ -28,13 +28,21 @@ export function PhysicalSystem({ operator, operatorUnavailable = false, now, ...
 export function PhysicalSystemScreen({ field, stateError, operator, operatorUnavailable = false, now, selected = "T1", onSelect = () => {}, revealSelected = false, audit }: Selection & {
   field: FieldState | undefined; stateError: unknown; operator: OperatorState | undefined; operatorUnavailable?: boolean; now: number; audit?: ReactNode;
 }) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const root = useRef<HTMLElement>(null);
   const available = !!field;
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(
+    () => available && revealSelected ? { [selected]: true } : {},
+  );
+  const [reveal, setReveal] = useState({ selected, revealSelected, available });
+  const root = useRef<HTMLElement>(null);
+  // Adjust expansion only when the reveal inputs change, not on each poll.
+  // Manual collapsing stays sticky until another selection/reveal transition.
+  if (reveal.selected !== selected || reveal.revealSelected !== revealSelected || reveal.available !== available) {
+    setReveal({ selected, revealSelected, available });
+    if (available && revealSelected) setExpanded({ ...expanded, [selected]: true });
+  }
   // Depend on selection and availability, never the polled snapshot identity.
   useEffect(() => {
     if (!available || !revealSelected) return;
-    setExpanded((old) => ({ ...old, [selected]: true }));
     root.current?.querySelector(`#physical-equipment-${selected}`)?.scrollIntoView({ block: "nearest" });
   }, [selected, revealSelected, available]);
   const toggle = (id: string) => setExpanded((old) => ({ ...old, [id]: !old[id] }));

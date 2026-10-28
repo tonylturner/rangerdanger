@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Terminal as TerminalIcon,
@@ -32,12 +32,15 @@ import {
 } from "../lib/scenario-description";
 import {
   decisionName,
+  curriculumKey,
   readCurriculum,
   removeCurriculum,
   writeCurriculum,
+  type CurriculumScope,
 } from "../lib/curriculum-storage";
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import { useCurriculumStorageRevision } from "../lib/use-curriculum-storage-revision";
+import { useHydrated } from "../lib/use-hydrated";
 import {
   injectDynamicContent,
 } from "../lib/scenario-runner-logic";
@@ -122,37 +125,45 @@ type DecisionBlockProps = {
   correct?: string;
 };
 
-export function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom, correct }: DecisionBlockProps) {
+export function DecisionBlock(props: DecisionBlockProps) {
   const scope = useCurriculumScope();
-  const storageName = decisionName(scenarioId, decisionId);
-  const [value, setValue] = useState<string>("");
-  const [inheritedFrom, setInheritedFrom] = useState<string>("");
+  const hydrated = useHydrated();
+  // A different decision/scope starts with its own persisted value. Keep the
+  // server snapshot empty, then initialize browser state after hydration.
+  const key = JSON.stringify([
+    curriculumKey(scope, decisionName(props.scenarioId, props.decisionId)),
+    props.options, props.defaultFrom, hydrated,
+  ]);
+  return <DecisionInput key={key} {...props} scope={scope} hydrated={hydrated} />;
+}
 
-  useEffect(() => {
+function DecisionInput({ scenarioId, decisionId, options, body, defaultFrom, correct, scope, hydrated }: DecisionBlockProps & {
+  scope: CurriculumScope; hydrated: boolean;
+}) {
+  const storageName = decisionName(scenarioId, decisionId);
+  const [answer, setAnswer] = useState(() => {
+    if (!hydrated) return { value: "", inheritedFrom: "" };
     const saved = readCurriculum(scope, storageName);
-    if (saved && options.includes(saved)) {
-      setValue(saved);
-      return;
-    }
+    if (saved && options.includes(saved)) return { value: saved, inheritedFrom: "" };
     // No saved value - try to inherit from the upstream decision.
     if (defaultFrom && defaultFrom.includes(":")) {
       const [srcScenario, srcId] = defaultFrom.split(":", 2);
       const srcVal = readCurriculum(scope, decisionName(srcScenario, srcId));
       if (srcVal && options.includes(srcVal)) {
-        setValue(srcVal);
-        setInheritedFrom(defaultFrom);
-        // Persist the inherited value so subsequent changes are
-        // tracked against THIS decision's storage name, not the
-        // upstream one. The student is now committing this verdict
-        // for this lab specifically.
-        writeCurriculum(scope, storageName, srcVal);
+        return { value: srcVal, inheritedFrom: defaultFrom };
       }
     }
-  }, [scope, storageName, options, defaultFrom]);
+    return { value: "", inheritedFrom: "" };
+  });
+  const { value, inheritedFrom } = answer;
+
+  // Persistence is external synchronization, not component-state mirroring.
+  useEffect(() => {
+    if (inheritedFrom) writeCurriculum(scope, storageName, value);
+  }, [scope, storageName, value, inheritedFrom]);
 
   const onChange = (next: string) => {
-    setValue(next);
-    setInheritedFrom("");   // student touched the dropdown - no longer "inherited"
+    setAnswer({ value: next, inheritedFrom: "" });
     if (next) {
       writeCurriculum(scope, storageName, next);
     } else {
@@ -260,14 +271,14 @@ type FindingsPanelProps = {
 
 export function FindingsPanel({ sourceScenario, title, items }: FindingsPanelProps) {
   const scope = useCurriculumScope();
-  const [values, setValues] = useState<Record<string, string>>({});
-  useEffect(() => {
+  const hydrated = useHydrated();
+  const values = useMemo(() => {
     const out: Record<string, string> = {};
     for (const it of items) {
-      out[it.id] = readCurriculum(scope, decisionName(sourceScenario, it.id)) ?? "";
+      out[it.id] = hydrated ? readCurriculum(scope, decisionName(sourceScenario, it.id)) ?? "" : "";
     }
-    setValues(out);
-  }, [scope, sourceScenario, items]);
+    return out;
+  }, [scope, sourceScenario, items, hydrated]);
 
   const anySet = items.some((it) => values[it.id]);
 

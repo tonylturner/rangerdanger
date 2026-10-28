@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useSyncExternalStore, useCallback } from "react";
 import { useCurriculumScope } from "./curriculum-scope";
 import {
   FIREWALL_TRACK,
@@ -41,33 +41,27 @@ export function useFirewallTrack(): {
   track: FirewallTrack;
   setTrack: (t: FirewallTrack) => void;
 } {
-  // Default to "guided" (not null) so the firewall labs open on the
-  // Guided path with no force-pick and no first-render flash of the
-  // technical block. A returning student's saved choice is restored in
-  // the effect below.
+  // The server/hydration snapshot stays guided. React checks the scoped
+  // browser snapshot on mount and when either storage event fires.
   const scope = useCurriculumScope();
-  const [track, setTrackState] = useState<FirewallTrack>("guided");
-
-  useEffect(() => {
-    setTrackState(readTrack(scope));
+  const subscribe = useCallback((onChange: () => void) => {
     const key = curriculumKey(scope, FIREWALL_TRACK);
     const onStorage = (e: StorageEvent) => {
-      if (e.key === key) setTrackState(readTrack(scope));
+      if (e.key === key) onChange();
     };
-    const onCustom = () => setTrackState(readTrack(scope));
     window.addEventListener("storage", onStorage);
-    window.addEventListener(TRACK_CHANGED_EVENT, onCustom);
+    window.addEventListener(TRACK_CHANGED_EVENT, onChange);
     return () => {
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener(TRACK_CHANGED_EVENT, onCustom);
+      window.removeEventListener(TRACK_CHANGED_EVENT, onChange);
     };
   }, [scope]);
+  const track = useSyncExternalStore(subscribe, () => readTrack(scope), () => "guided" as const);
 
   const setTrack = useCallback((t: FirewallTrack) => {
     if (typeof window === "undefined") return;
     if (t === null) removeCurriculum(scope, FIREWALL_TRACK);
     else writeCurriculum(scope, FIREWALL_TRACK, t);
-    setTrackState(t);
     // Custom event so other components in the same tab pick up the
     // change immediately (the storage event only fires cross-tab).
     window.dispatchEvent(new Event(TRACK_CHANGED_EVENT));

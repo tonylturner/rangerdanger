@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { createPortal } from "react-dom";
 import { EdgeLabelRenderer, EdgeProps, getBezierPath } from "reactflow";
 import { TRAFFIC_LABEL_HEIGHT, trafficLabelWidth } from "../lib/network-graph";
@@ -21,9 +21,9 @@ function MapTooltip({
   y: number;
   children: React.ReactNode;
 }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  if (!mounted || !visible) return null;
+  // Visibility is enabled only by a pointer event on a mounted edge, so the
+  // portal cannot be opened during SSR or the initial hydration render.
+  if (!visible) return null;
   return createPortal(
     <div
       className="pointer-events-none fixed z-60 rounded-lg border border-slate-700 px-3 py-2 text-[11px] text-slate-100 shadow-2xl"
