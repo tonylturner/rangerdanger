@@ -6,6 +6,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The containd CLI console in the embedded firewall UI connects again, and
+  PCAP downloads save the capture instead of an HTML page. The proxy smoke
+  test now checks that both paths reach the containd API.
+
 ## [v0.2.0-rc.3] - 2026-10-28
 
 Third release candidate for v0.2.0. It fixes SSD delta apply: a delta

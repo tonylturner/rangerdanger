@@ -3,15 +3,15 @@ import json
 import re
 import unittest
 
-from .test_containd_ui_prefix import AUTODETECT_CASES, ROOT, probe
+from .test_containd_ui_prefix import AUTODETECT_CASES, DOUBLE_PREFIXED, ROOT, SERVED, probe
 from .test_setup_ps1_root import powershell
 
 
 GOOD_CHUNK = (
     'window.location.pathname.startsWith("/containd/") ? "/containd" : "";'
-    'fetch("/api/v1/auth/me"); "/containd/api/v1/cli/ws";'
-    '"/containd/api/v1/pcap/download/capture";'
+    'fetch("/api/v1/auth/me");' + SERVED
 )
+CLI, PCAP = probe.API_ROUTES
 
 PROBE = r"""
 $ErrorActionPreference = 'Stop'
@@ -33,10 +33,24 @@ function Invoke-WebRequest {
         if ($Method -ne 'POST' -or $ContentType -ne 'application/json' -or
             $credentials.username -cne 'containd' -or $credentials.password -cne 'containd') { throw 'login lost' }
     }
-    if ($path -eq '/containd/api/v1/auth/me' -and $Headers.Authorization -cne 'Bearer lab-token') { throw 'bearer lost' }
+    if ($path -in @('/containd/api/v1/auth/me', $env:CLI, $env:PCAP) -and
+        ($Headers.Authorization -cne 'Bearer lab-token' -or $Method)) { throw 'bearer lost' }
     $item = $fixture.PSObject.Properties[$path].Value
     if (-not $item) { throw "unexpected request $path" }
     if ($item.error) { throw $item.error }
+    if ($item.raise) {
+        $media = ([string]$item.type -split ';', 2)[0]
+        if ($item.raise -eq 'legacy') {
+            # Windows PowerShell 5.1 shape: WebException.Response is an HttpWebResponse.
+            $exception = New-Object Exception 'The remote server returned an error.'
+            $response = [pscustomobject]@{ StatusCode = [Net.HttpStatusCode][int]$item.status; ContentType = $item.type }
+            $exception | Add-Member -NotePropertyName Response -NotePropertyValue $response
+            throw $exception
+        }
+        $message = New-Object Net.Http.HttpResponseMessage ([Net.HttpStatusCode][int]$item.status)
+        $message.Content = New-Object Net.Http.StringContent ([string]$item.body, [Text.Encoding]::UTF8, $media)
+        throw (New-Object Microsoft.PowerShell.Commands.HttpResponseException 'Response status code does not indicate success.', $message)
+    }
     $bytes = [Text.Encoding]::UTF8.GetBytes([string]$item.body)
     if ($item.invalidUtf8) { $bytes = [byte[]]@(255) }
     $stream = New-Object IO.MemoryStream
@@ -57,12 +71,19 @@ def fixture():
         "/containd/_next/static/main.js": dict(status=200, type="application/javascript", body=GOOD_CHUNK),
         "/containd/api/v1/auth/login": dict(status=200, type="application/json", body='{"token":"lab-token"}'),
         "/containd/api/v1/auth/me": dict(status=200, type="application/json", body='{"username":"containd"}'),
+        # Real Invoke-WebRequest throws on a 4xx; the API's live refusals.
+        CLI: dict(status=400, type="text/plain; charset=utf-8", body="Bad Request", raise_="ps7"),
+        PCAP: dict(status=400, type="application/json; charset=utf-8",
+                   body='{"error":"engine pcap download status 404"}', raise_="ps7"),
     }
 
 
 class ContaindProbeTests(unittest.TestCase):
     def run_probe(self, data, origin="http://localhost:8088/"):
-        return powershell(PROBE, FIXTURE=json.dumps(data), ORIGIN=origin)
+        for item in data.values():
+            if "raise_" in item:
+                item["raise"] = item.pop("raise_")
+        return powershell(PROBE, FIXTURE=json.dumps(data), ORIGIN=origin, CLI=CLI, PCAP=PCAP)
 
     def test_autodetect_regex_is_identical_to_python(self):
         text = (ROOT / "scripts/lib/containd-ui-probe.ps1").read_text()
@@ -95,13 +116,17 @@ class ContaindProbeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("1 chunks", result.stdout)
         self.assertIn("username=containd", result.stdout)
+        self.assertIn("400 from the containd API, not the UI page", result.stdout)
         self.assertEqual(result.stdout.count("static/main.js"), 1)
+        self.assertTrue(result.stdout.rstrip().endswith(f"/containd/api/v1/auth/me,{CLI},{PCAP}"), result.stdout)
 
     def test_bundle_assertions(self):
         for body, message in (
             (GOOD_CHUNK + '"/containd/containd/api/v1/auth/me"', "double /containd/"),
             (GOOD_CHUNK + '"/containd/api/v1/auth/me"', "runtime-based API literal"),
             (GOOD_CHUNK + '"/containd/api/v1/pcap/download"', "runtime-based API literal"),
+            (GOOD_CHUNK + DOUBLE_PREFIXED[0], "runtime-based API literal"),
+            (GOOD_CHUNK + DOUBLE_PREFIXED[1], "runtime-based API literal"),
             ('fetch("/api/v1/auth/me")', "runtime API-base autodetect"),
             ('window.location.pathname.startsWith("/containd/") ? "/containd" : ""', "unprefixed auth/me"),
             (GOOD_CHUNK.upper(), "runtime API-base autodetect"),
@@ -174,8 +199,39 @@ class ContaindProbeTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 1, result.stderr)
                     self.assertIn(message, result.stdout)
 
+    def test_api_route_refusals_in_both_powershell_shapes_pass(self):
+        for raise_ in ("ps7", "legacy", None):
+            with self.subTest(raise_=raise_):
+                data = fixture()
+                for path in (CLI, PCAP):
+                    data[path].pop("raise_")
+                    if raise_:
+                        data[path]["raise_"] = raise_
+                result = self.run_probe(data)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("400 from the containd API", result.stdout)
+
+    def test_api_routes_answered_by_the_ui_page_or_not_refused_fail(self):
+        for path in (CLI, PCAP):
+            for change, message in (
+                (dict(status=200, type="text/html; charset=utf-8", raise_=None), "expected a 400 refusal"),
+                (dict(type="text/html"), "expected a 400 refusal"),
+                (dict(type="text/html", raise_="legacy"), "expected a 400 refusal"),
+                (dict(status=401, type="application/json"), "expected a 400 refusal"),
+                (dict(status=302, raise_=None), "expected a 400 refusal"),
+                (dict(error="fixture timeout"), "fixture timeout"),
+            ):
+                with self.subTest(path=path, change=change):
+                    data = fixture()
+                    data[path].update(change)
+                    if data[path]["raise_"] is None:
+                        data[path].pop("raise_")
+                    result = self.run_probe(data)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn(message, result.stdout)
+
     def test_each_fetch_rejects_status_mime_timeout_and_invalid_utf8(self):
-        for path in fixture():
+        for path in (path for path in fixture() if path not in (CLI, PCAP)):
             for change, message in (
                 (dict(status=302), "expected 200"),
                 (dict(status=401), "expected 200"),

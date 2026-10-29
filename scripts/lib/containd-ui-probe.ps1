@@ -1,4 +1,4 @@
-# Embedded bundle and authenticated session conformance. Dot-source, then call
+# Embedded bundle, authenticated session and API routing conformance. Dot-source, then call
 # Invoke-ContaindUiProbe. No Python, Docker, IE engine or policy changes.
 # ASCII-only, BOM-free; Windows PowerShell 5.1 compatible.
 
@@ -37,7 +37,7 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     }
     $authority = [regex]::Match($Origin, '^[^:]+://([^/]+)$').Groups[1].Value
     $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-    function Get-ProbeBody([string]$Path, [string[]]$Types, [string]$Data = '', [string]$Token = '') {
+    function Get-ProbeRequest([string]$Path, [string]$Data = '', [string]$Token = '') {
         $headers = @{ 'Accept-Encoding' = 'identity' }
         if ($Token) { $headers.Authorization = "Bearer $Token" }
         $request = @{
@@ -45,6 +45,10 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
             TimeoutSec = 15; UseBasicParsing = $true; MaximumRedirection = 0; ErrorAction = 'Stop'
         }
         if ($Data) { $request.Method = 'POST'; $request.Body = $Data; $request.ContentType = 'application/json' }
+        $request
+    }
+    function Get-ProbeBody([string]$Path, [string[]]$Types, [string]$Data = '', [string]$Token = '') {
+        $request = Get-ProbeRequest $Path $Data $Token
         $response = Invoke-WebRequest @request
         $type = ([string]$response.Headers['Content-Type'] -split ';', 2)[0].Trim().ToLowerInvariant()
         if ($response.StatusCode -ne 200 -or $type -notin $Types) {
@@ -75,13 +79,9 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     foreach ($path in ($paths | Sort-Object)) {
         $body = Get-ProbeBody $path @('application/javascript', 'text/javascript')
         if ($body.Contains('/containd/containd/')) { throw "${path}: double /containd/ prefix" }
-        foreach ($match in [regex]::Matches($body, '(["''])(/containd/api/[^"'']*)\1')) {
-            $literal = $match.Groups[2].Value
-            if ($literal -cne '/containd/api/v1/cli/ws' -and
-                -not $literal.StartsWith('/containd/api/v1/pcap/download/', [StringComparison]::Ordinal)) {
-                throw "${path}: runtime-based API literal was rewritten: $literal"
-            }
-        }
+        # containd adds its API base at runtime, so no proxy-prefixed API literal is allowed.
+        $match = [regex]::Match($body, '(["''])(/containd/api/[^"'']*)\1')
+        if ($match.Success) { throw "${path}: runtime-based API literal was rewritten: $($match.Groups[2].Value)" }
         # Direct pathname detection or the optional-path fallback in 0.1.33.
         # The backreference requires the fallback to test and return the same identifier.
         if ($body -cmatch '(?:window\.location\.pathname|\(\s*null\s*!=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\?\s*\1\s*:\s*window\.location\.pathname\s*\))\.startsWith\(\s*["'']/containd/["'']\s*\)\s*\?\s*["'']/containd["'']') { $autodetect = $true }
@@ -113,4 +113,29 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         throw "${mePath}: JSON does not identify the logged-in lab user"
     }
     Write-Host "PASS $loginPath -> ${mePath}: 200 application/json, username=containd"
+
+    # The paths the CLI console and PCAP download build from the runtime base. Without an
+    # Upgrade header, or for a capture that does not exist, the API refuses with a 400;
+    # a double-prefixed path instead gets the UI page (200 text/html).
+    $apiRoutes = @('/containd/api/v1/cli/ws', '/containd/api/v1/pcap/download/rangerdanger-probe-missing.pcap')
+    foreach ($route in $apiRoutes) {
+        $request = Get-ProbeRequest $route '' $token
+        try {
+            $response = Invoke-WebRequest @request
+            $type = [string]$response.Headers['Content-Type']
+        } catch {
+            # Windows PowerShell 5.1 throws a WebException carrying an HttpWebResponse;
+            # PowerShell 7 an HttpResponseException carrying an HttpResponseMessage.
+            $response = $_.Exception.Response
+            if (-not $response) { throw }
+            if ($response.PSObject.Properties['ContentType']) { $type = [string]$response.ContentType }
+            else { $type = [string]$response.Content.Headers.ContentType }
+        }
+        $status = [int]$response.StatusCode
+        $type = ($type -split ';', 2)[0].Trim().ToLowerInvariant()
+        if ($status -ne 400 -or $type -eq 'text/html') {
+            throw "${route}: expected a 400 refusal from the containd API, got $status $type"
+        }
+    }
+    Write-Host "PASS $($apiRoutes -join ', '): 400 from the containd API, not the UI page"
 }

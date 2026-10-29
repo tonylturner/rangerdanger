@@ -21,10 +21,11 @@ probe = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(probe)
 
 PACKAGES = ("eu-iec104-substation", "us-dnp3-substation")
-API_FILTERS = {
-    '"/api/v1/pcap/download/': '"/containd/api/v1/pcap/download/',
-    '"/api/v1/cli/ws': '"/containd/api/v1/cli/ws',
-}
+OLD_BYPASSES = (
+    '\nsub_filter \'"/api/v1/pcap/download/\' \'"/containd/api/v1/pcap/download/\';\n',
+    '\nsub_filter \'"/api/v1/cli/ws\' \'"/containd/api/v1/cli/ws\';\n',
+    '\nsub_filter \'"/api/\' \'"/containd/api/\';\n',
+)
 RUNTIME = (
     'function a(e){return(null!=e?e:window.location.pathname).startsWith("/containd/")?"/containd":""};'
     'U("/api/v1/auth/me");'
@@ -45,9 +46,16 @@ AUTODETECT_CASES = (
     ('(null!=e?e:window.location.pathname).startsWith("/containd/")?"/other":""', False),
     ('"/containd"; fetch("/api/v1/auth/me");', False),
 )
-BYPASSES = (
-    'function q(e){return"/api/v1/pcap/download/".concat(e)};'
-    'a.concat(window.location.host,"/api/v1/cli/ws");'
+# The served containd bundle passes these literals to its base helpers
+# (Sw adds the /containd API base, Le the ws:// origin plus that base).
+SERVED = (
+    'function w(e){return(0,r.Sw)("/api/v1/pcap/download/".concat(encodeURIComponent(e)))};'
+    't=(0,i.Le)("/api/v1/cli/ws",window.location.protocol,window.location.host);'
+)
+# What the removed proxy rewrites made of it: the base was added twice.
+DOUBLE_PREFIXED = (
+    'function w(e){return(0,r.Sw)("/containd/api/v1/pcap/download/".concat(encodeURIComponent(e)))};',
+    't=(0,i.Le)("/containd/api/v1/cli/ws",window.location.protocol,window.location.host);',
 )
 
 
@@ -63,30 +71,32 @@ def guard_routes(text):
         (source, target) for source, target in filters(text)
         if source.lstrip("\"'").startswith("/api/")
     ]
-    if len(api) != len(API_FILTERS) or dict(api) != API_FILTERS:
-        raise ValueError(f"only the two API-base bypass rewrites are allowed: {api}")
+    if api:
+        raise ValueError(f"containd adds its API base at runtime; no API rewrite is allowed: {api}")
 
 
 class RoutesTests(unittest.TestCase):
-    def test_both_packages_allow_only_the_two_api_base_bypasses(self):
+    def test_both_packages_leave_every_api_literal_to_the_runtime_base(self):
         for package in PACKAGES:
             with self.subTest(package=package):
                 text = (ROOT / f"lab-definitions/packages/{package}/nginx.routes.conf").read_text()
                 guard_routes(text)
                 # Model nginx's literal substitutions using the actual directives.
-                body = RUNTIME + BYPASSES
+                body = RUNTIME + SERVED
                 for source, target in filters(text):
                     body = body.replace(source, target)
-                self.assertIn(RUNTIME, body)
-                self.assertIn('"/containd/api/v1/pcap/download/".concat', body)
-                self.assertIn('window.location.host,"/containd/api/v1/cli/ws"', body)
+                self.assertEqual(body, RUNTIME + SERVED)
                 probe.check_chunks({"fixture.js": body})
-                # Demonstrate that adding the old directive fails both defenses.
-                broken = text + '\nsub_filter \'"/api/\' \'"/containd/api/\';\n'
-                with self.assertRaises(ValueError):
-                    guard_routes(broken)
-                with self.assertRaises(probe.ProbeError):
-                    probe.check_chunks({"fixture.js": body.replace('"/api/', '"/containd/api/')})
+                # Re-adding a removed directive fails both defenses.
+                for old in OLD_BYPASSES:
+                    with self.subTest(old=old):
+                        with self.assertRaises(ValueError):
+                            guard_routes(text + old)
+                        broken = body
+                        for source, target in filters(old):
+                            broken = broken.replace(source, target)
+                        with self.assertRaisesRegex(probe.ProbeError, "runtime-based API literal"):
+                            probe.check_chunks({"fixture.js": broken})
 
     def test_guard_rejects_broad_filter_with_alternate_whitespace_and_quotes(self):
         with self.assertRaises(ValueError):
@@ -104,19 +114,23 @@ class ChunkTests(unittest.TestCase):
                     with self.assertRaisesRegex(probe.ProbeError, "runtime API-base autodetect"):
                         probe.check_chunks(chunks)
 
-    def test_unmodified_runtime_calls_and_narrow_rewrites_pass(self):
-        probe.check_chunks({
-            "shared.js": RUNTIME,
-            "console.js": '"/containd/api/v1/cli/ws"',
-            "pcap.js": '"/containd/api/v1/pcap/download/".concat(e)',
-        })
+    def test_unprefixed_literals_for_the_runtime_base_pass(self):
+        probe.check_chunks({"shared.js": RUNTIME, "console.js": SERVED})
+
+    def test_served_bundle_with_prefixed_literal_for_the_base_helper_fails(self):
+        # Regression: the CLI websocket and PCAP download resolved to /containd/containd/api/...
+        for body in DOUBLE_PREFIXED:
+            with self.subTest(body=body), self.assertRaisesRegex(
+                probe.ProbeError, "runtime-based API literal was rewritten"
+            ):
+                probe.check_chunks({"shared.js": RUNTIME, "console.js": body})
 
     def test_every_chunk_is_checked_not_just_the_first(self):
         for body in (
             'U("/containd/api/v1/events")',
             "U('/containd/api/v1/auth/me')",
-            '"/containd/api/v1/cli/ws/extra"',
-            '"/containd/api/v1/pcap/download-not-allowed"',
+            '"/containd/api/v1/cli/ws"',
+            '"/containd/api/v1/pcap/download/".concat(e)',
             '"/containd/containd/api/v1/auth/me"',
         ):
             with self.subTest(body=body), self.assertRaises(probe.ProbeError):
@@ -136,6 +150,9 @@ class Response(io.BytesIO):
         self.headers["Content-Type"] = content_type
 
 
+REFUSED = ("Bad Request", "text/plain; charset=utf-8", 400)
+
+
 class ProbeTests(unittest.TestCase):
     def setUp(self):
         self.responses = {
@@ -146,13 +163,15 @@ class ProbeTests(unittest.TestCase):
                 "text/html", 200,
             ),
             "/containd/_next/static/chunks/shared.js": (RUNTIME, "application/javascript", 200),
-            "/containd/_next/static/chunks/console.js": (
-                '"/containd/api/v1/cli/ws"', "text/javascript", 200,
-            ),
+            "/containd/_next/static/chunks/console.js": (SERVED, "text/javascript", 200),
             "/containd/api/v1/auth/login": (
                 '{"token":"test-token","user":{"username":"containd"}}', "application/json", 200,
             ),
             "/containd/api/v1/auth/me": ('{"username":"containd"}', "application/json", 200),
+            probe.API_ROUTES[0]: REFUSED,
+            probe.API_ROUTES[1]: (
+                '{"error":"engine pcap download status 404"}', "application/json", 400,
+            ),
         }
         self.requests = []
 
@@ -161,7 +180,10 @@ class ProbeTests(unittest.TestCase):
         self.assertTrue(request.full_url.startswith("http://127.0.0.1:8088/containd/"))
         path = request.full_url.removeprefix("http://127.0.0.1:8088")
         self.requests.append(request)
-        return Response(*self.responses[path])
+        response = self.responses[path]
+        if isinstance(response, Exception):
+            raise response
+        return Response(*response)
 
     def run_probe(self):
         output = io.StringIO()
@@ -170,17 +192,45 @@ class ProbeTests(unittest.TestCase):
             probe.probe("http://127.0.0.1:8088/")
         return output.getvalue()
 
-    def test_probes_all_chunks_then_logs_in_and_reads_me_as_json(self):
+    def test_probes_all_chunks_then_logs_in_reads_me_and_checks_api_routes(self):
         output = self.run_probe()
         self.assertIn("2 chunks", output)
         self.assertIn("/containd/api/v1/auth/me: 200 application/json", output)
-        self.assertEqual(len(self.requests), 5)
-        login, me = self.requests[-2:]
+        self.assertIn("400 from the containd API", output)
+        self.assertEqual(len(self.requests), 7)
+        login, me, cli, pcap = self.requests[-4:]
         self.assertEqual(login.get_method(), "POST")
         self.assertEqual(json.loads(login.data), {"username": "containd", "password": "containd"})
-        self.assertEqual(me.get_method(), "GET")
-        self.assertEqual(me.get_header("Authorization"), "Bearer test-token")
+        for request, path in ((me, "/containd/api/v1/auth/me"), (cli, probe.API_ROUTES[0]),
+                              (pcap, probe.API_ROUTES[1])):
+            self.assertEqual(request.get_method(), "GET")
+            self.assertEqual(request.full_url, "http://127.0.0.1:8088" + path)
+            self.assertEqual(request.get_header("Authorization"), "Bearer test-token")
         self.assertTrue(all("/containd/containd/" not in req.full_url for req in self.requests))
+
+    def test_api_route_refusal_raised_by_urllib_passes(self):
+        headers = Message()
+        headers["Content-Type"] = "text/plain; charset=utf-8"
+        self.responses[probe.API_ROUTES[0]] = HTTPError(
+            "http://127.0.0.1:8088" + probe.API_ROUTES[0], 400, "Bad Request", headers,
+            io.BytesIO(b"Bad Request"),
+        )
+        self.assertIn("400 from the containd API", self.run_probe())
+
+    def test_api_routes_answered_by_the_ui_page_or_not_refused_fail(self):
+        for path in probe.API_ROUTES:
+            for response in (
+                ("<html>containd</html>", "text/html; charset=utf-8", 200),
+                ("<html>Bad Request</html>", "text/html", 400),
+                ('{"error":"login required"}', "application/json", 401),
+                ("[]", "application/json", 200),
+                HTTPError("http://127.0.0.1:8088" + path, 302, "Found", Message(), io.BytesIO()),
+            ):
+                with self.subTest(path=path, response=response):
+                    self.responses[path] = response
+                    with self.assertRaisesRegex(probe.ProbeError, "expected a 400 refusal"):
+                        self.run_probe()
+            self.responses[path] = REFUSED
 
     def test_200_html_fallback_is_not_a_session_success(self):
         self.responses["/containd/api/v1/auth/me"] = ("<html>fallback</html>", "text/html", 200)
