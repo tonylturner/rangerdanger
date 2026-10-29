@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.0-rc.3] - 2026-10-28
+
+Third release candidate for v0.2.0. It fixes SSD delta apply: a delta
+staged from rc.2 stopped with a false teardown error on a real install.
+Stage deltas from this tag, not from rc.2. Requirements are unchanged
+from rc.1. The pre-release publishes images under its own tag and does
+not move `latest`; install it with `./setup.sh --version v0.2.0-rc.3`.
+
 ### Fixed
 
 - Applying an SSD delta no longer stops with "Could not stop and verify
@@ -3276,7 +3284,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.2...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.3...HEAD
+[v0.2.0-rc.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.3
 [v0.2.0-rc.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.2
 [v0.2.0-rc.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.1
 [v0.1.36]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.36
