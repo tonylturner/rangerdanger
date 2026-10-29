@@ -17,7 +17,17 @@ SERVER = "/usr/src/app/FUXA/server"
 BOOT = r"""
 const assert = require('node:assert/strict');
 const {spawn} = require('node:child_process');
-assert.equal(require('modbus-serial/package.json').version, '8.0.19');
+const fs = require('node:fs');
+const path = require('node:path');
+const lock = require('/opt/rangerdanger/fuxa/plugin/package-lock.json');
+for (const [location, entry] of Object.entries(lock.packages)) {
+    if (!location) continue;
+    const installed = JSON.parse(fs.readFileSync(
+        path.join(process.cwd(), location, 'package.json'), 'utf8'));
+    assert.equal(installed.version, entry.version, location);
+}
+assert.ok(fs.statSync('node_modules/modbus-serial').isDirectory());
+assert.ok(!fs.lstatSync('node_modules/modbus-serial').isSymbolicLink());
 const child = spawn('node', ['main.js'], {stdio: ['ignore', 'pipe', 'pipe']});
 let logs = '';
 for (const stream of [child.stdout, child.stderr]) {

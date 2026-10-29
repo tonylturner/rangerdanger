@@ -8,9 +8,22 @@ including settings-only or damaged projects, is preserved byte-for-byte.
 `_logs` does not affect installation. Restarting never upgrades or resets
 a user project. Back up user data before deliberately removing it to reseed.
 No download or remote service is needed to install the starter.
-The base image omits the optional Modbus transport plugin; the Dockerfile
-installs `modbus-serial` 8.0.19 (the pinned FUXA registry's version) at build
-time, not at boot.
+The base image omits the optional Modbus transport plugin. Its isolated
+`plugin/package.json` and `plugin/package-lock.json` lock `modbus-serial`
+8.0.19 (the pinned FUXA registry's version) and every transitive package
+with registry integrity hashes. The Dockerfile uses `npm ci` with nested
+installation, then moves the complete self-contained `modbus-serial`
+directory into FUXA's `server/node_modules`. FUXA's normal package scanner
+discovers that directory and its adapter's `require('modbus-serial')`
+resolves it; plugin dependencies resolve inside its nested `node_modules`,
+not from FUXA's other packages. No symlink, runtime download, or manifest
+rewrite is needed. The build verifies that FUXA's original `package.json`
+and `package-lock.json` are unchanged.
+
+To intentionally refresh the lock, run `npm install --package-lock-only
+--install-strategy=nested --ignore-scripts --no-audit --no-fund --prefix
+lab-definitions/packages/us-dnp3-substation/seeds/fuxa/plugin` and review
+the generated lock. Normal builds never update it.
 
 The **US substation — RTAC monitor** view reads Modbus TCP from
 `10.30.30.20:502`, unit 1, every two seconds. It adds no inter-zone flow.

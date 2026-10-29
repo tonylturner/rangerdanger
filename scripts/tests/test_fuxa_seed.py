@@ -102,6 +102,37 @@ class FuxaSeedTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("existing data", result.stdout)
 
+    def test_plugin_lock_contains_integrity_for_the_complete_nested_tree(self):
+        manifest = json.loads((SEED / "plugin/package.json").read_text())
+        lock = json.loads((SEED / "plugin/package-lock.json").read_text())
+        self.assertTrue(manifest["private"])
+        self.assertEqual(lock["lockfileVersion"], 3)
+        self.assertEqual(lock["packages"][""]["dependencies"], manifest["dependencies"])
+        module = "node_modules/modbus-serial"
+        self.assertEqual(
+            lock["packages"][module]["version"],
+            manifest["dependencies"]["modbus-serial"],
+        )
+        packages = {key: value for key, value in lock["packages"].items() if key}
+        self.assertGreater(len(packages), 1)
+        for name, package in packages.items():
+            with self.subTest(package=name):
+                self.assertTrue(name == module or name.startswith(module + "/node_modules/"))
+                self.assertRegex(package["version"], r"^\d+\.\d+\.\d+$")
+                self.assertTrue(package["resolved"].startswith("https://registry.npmjs.org/"))
+                self.assertRegex(package["integrity"], r"^sha512-[A-Za-z0-9+/]+={0,2}$")
+
+    def test_image_installs_only_from_the_isolated_lock(self):
+        dockerfile = (ROOT / "Dockerfile.fuxa-hmi").read_text()
+        self.assertIn("npm ci --prefix /opt/rangerdanger/fuxa/plugin", dockerfile)
+        self.assertIn("--install-strategy=nested", dockerfile)
+        self.assertNotIn("npm install ", dockerfile)
+        self.assertIn(
+            "mv /opt/rangerdanger/fuxa/plugin/node_modules/modbus-serial node_modules/",
+            dockerfile,
+        )
+        self.assertIn("sha256sum -c /tmp/fuxa-manifests.sha256", dockerfile)
+
     def test_project_registers_and_read_only_view(self):
         project = json.loads((SEED / "starter.fuxap").read_text())
         device, = project["devices"].values()
