@@ -38,6 +38,7 @@ var (
 	ErrBadHeaderCRC  = errors.New("dnp3: header CRC mismatch")
 	ErrBadBlockCRC   = errors.New("dnp3: data block CRC mismatch")
 	ErrFrameTooShort = errors.New("dnp3: frame too short")
+	ErrFrameTooLarge = errors.New("dnp3: link payload exceeds 250 octets")
 )
 
 // ReadLinkFrame reads a single DNP3 link frame from r.
@@ -120,8 +121,12 @@ func ReadLinkFrame(r io.Reader) (*LinkFrame, error) {
 }
 
 // WriteLinkFrame writes a DNP3 link frame to w with proper CRCs.
+// Payloads over 250 octets return ErrFrameTooLarge without writing any bytes.
 func WriteLinkFrame(w io.Writer, f *LinkFrame) error {
 	userDataLen := len(f.Payload)
+	if userDataLen > 250 {
+		return ErrFrameTooLarge
+	}
 	length := byte(5 + userDataLen) // control(1) + dest(2) + src(2) + user data
 
 	// Build header without CRC
@@ -171,5 +176,5 @@ func (f *LinkFrame) IsFromMaster() bool {
 
 // MakeResponseControl builds a control byte for an outstation response.
 func MakeResponseControl() uint8 {
-	return ctrlFCUnconfirmedData // DIR=0, PRM=0, FC=4
+	return ctrlPRM | ctrlFCUnconfirmedData // DIR=0, PRM=1, FC=4
 }

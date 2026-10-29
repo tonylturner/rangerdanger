@@ -1,5 +1,6 @@
-import { afterEach, expect, it } from "vitest";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+// @vitest-environment jsdom
+import { render } from "@testing-library/react";
+import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FEEDER_STATE } from "../lib/operator-fixtures.test-util";
@@ -11,13 +12,8 @@ import { AbnormalSummary } from "./control-centre-view";
 import { DeviceFaceplate } from "./control-centre-faceplate";
 import { PointTable } from "./control-centre-points";
 
-const trees: ReactTestRenderer[] = [];
-afterEach(() => { act(() => trees.splice(0).forEach((tree) => tree.unmount())); });
 function schematic(state = FEEDER_STATE) {
-  let tree!: ReactTestRenderer;
-  act(() => { tree = create(<FeederOneLine read={controlCentreObservations(state.points)} />); });
-  trees.push(tree);
-  return tree.root;
+  return render(<FeederOneLine read={controlCentreObservations(state.points)} />).container;
 }
 
 it.each(Object.entries(SWITCH_NORMALS))("%s uses solid amber for all known off-normal positions, not stale data", (device, { id, normal }) => {
@@ -27,19 +23,21 @@ it.each(Object.entries(SWITCH_NORMALS))("%s uses solid amber for all known off-n
     p.value = value;
     const offNormal = value !== normal;
     const root = schematic(state);
-    const node = root.findByProps({ "data-device": device });
-    expect(node.props["data-off-normal"]).toBe(String(offNormal));
-    const rect = device === "F2" ? node : node.findAllByType("rect").find((r) => r.props.width === "40")!;
-    expect(rect.props.stroke).toBe(offNormal ? "#fbbf24" : "#cbd5e1");
-    expect(rect.props.strokeDasharray).toBeUndefined();
-    expect(rect.props.fill).toBe(value === "closed" ? "#cbd5e1" : "#0f172a");
-    const label = (device === "F2" ? node.parent! : node).findAllByType("text").find((n) => n.children.some((c) => typeof c === "string" && c.includes(`${value.toUpperCase()} · GOOD`)))!;
-    expect(label.props.fill).toBe(offNormal ? "#fbbf24" : "#cbd5e1");
+    const node = root.querySelector(`[data-device="${device}"]`)!;
+    expect(node.getAttribute("data-off-normal")).toBe(String(offNormal));
+    const rect = device === "F2" ? node : node.querySelector('rect[width="40"]')!;
+    expect(rect.getAttribute("stroke")).toBe(offNormal ? "#fbbf24" : "#cbd5e1");
+    expect(rect.getAttribute("stroke-dasharray")).toBeNull();
+    expect(rect.getAttribute("fill")).toBe(value === "closed" ? "#cbd5e1" : "#0f172a");
+    const label = [...(device === "F2" ? node.parentElement! : node).querySelectorAll("text")].find((n) => n.textContent?.includes(`${value.toUpperCase()} · GOOD`))!;
+    expect(label.getAttribute("fill")).toBe(offNormal ? "#fbbf24" : "#cbd5e1");
     p.quality.nt = true;
-    const staleNode = schematic(state).findByProps({ "data-device": device });
-    expect(staleNode.props["data-off-normal"]).toBe("false");
-    const staleRect = device === "F2" ? staleNode : staleNode.findAllByType("rect").find((r) => r.props.width === "40")!;
-    expect(staleRect.props).toMatchObject({ stroke: "#fbbf24", strokeDasharray: "5 3", fill: "url(#cc-unknown)" });
+    const staleNode = schematic(state).querySelector(`[data-device="${device}"]`)!;
+    expect(staleNode.getAttribute("data-off-normal")).toBe("false");
+    const staleRect = device === "F2" ? staleNode : staleNode.querySelector('rect[width="40"]')!;
+    expect(staleRect.getAttribute("stroke")).toBe("#fbbf24");
+    expect(staleRect.getAttribute("stroke-dasharray")).toBe("5 3");
+    expect(staleRect.getAttribute("fill")).toBe("url(#cc-unknown)");
   }
 });
 
@@ -49,23 +47,23 @@ it.each([
   const state = structuredClone(FEEDER_STATE);
   const p = state.points.find((p) => p.id === id)!;
   p.value = false;
-  expect(schematic(state).findByProps({ "data-device": device }).props["data-off-normal"]).toBe("true");
+  expect(schematic(state).querySelector(`[data-device="${device}"]`)?.getAttribute("data-off-normal")).toBe("true");
   p.quality.iv = true;
-  expect(schematic(state).findByProps({ "data-device": device }).props["data-off-normal"]).toBe("false");
+  expect(schematic(state).querySelector(`[data-device="${device}"]`)?.getAttribute("data-off-normal")).toBe("false");
 });
 
 it("counts, orders and distinguishes alarms from off-normal conditions, including cached snapshots", () => {
   const state = structuredClone(FEEDER_STATE);
   for (const id of ["feeder-breaker-position", "f2-position"]) state.points.find((p) => p.id === id)!.value = "open";
   state.points.find((p) => p.id === "rmu-1-source-kv")!.value = 0;
-  let tree!: ReactTestRenderer;
-  act(() => { tree = create(<AbnormalSummary state={state} cached />); });
-  trees.push(tree);
-  expect(tree.root.findByType("section").props).toMatchObject({ "data-alarm-count": 1, "data-off-normal-count": 2 });
-  const entries = tree.root.findAllByType("li");
-  expect(entries.map((n) => n.props["data-condition-kind"])).toEqual(["alarm", "off-normal", "off-normal"]);
-  expect(entries[0].props.className).toBe("text-rose-300");
-  expect(entries[1].props.className).toBe("text-amber-200");
+  const tree = render(<AbnormalSummary state={state} cached />);
+  const section = tree.container.querySelector("section")!;
+  expect(section.getAttribute("data-alarm-count")).toBe("1");
+  expect(section.getAttribute("data-off-normal-count")).toBe("2");
+  const entries = [...tree.container.querySelectorAll("li")];
+  expect(entries.map((n) => n.getAttribute("data-condition-kind"))).toEqual(["alarm", "off-normal", "off-normal"]);
+  expect(entries[0].className).toBe("text-rose-300");
+  expect(entries[1].className).toBe("text-amber-200");
   expect(renderToStaticMarkup(<AbnormalSummary state={state} cached />)).toContain("1 alarm · 2 off-normal in cached snapshot");
   expect(renderToStaticMarkup(<AbnormalSummary state={FEEDER_STATE} />)).toContain("No alarms in GOOD observations");
 });

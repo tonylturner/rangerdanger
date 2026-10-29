@@ -117,6 +117,13 @@ func Poll(cfg *MasterConfig) *PollResult {
 			return fmt.Errorf("read: %w", err)
 		}
 
+		if respFrame.Dest != cfg.MasterAddr || respFrame.Source != cfg.OutstationAddr {
+			return fmt.Errorf("response address mismatch: destination %d source %d", respFrame.Dest, respFrame.Source)
+		}
+		if respFrame.Control != MakeResponseControl() {
+			return fmt.Errorf("unexpected response link control: 0x%02x", respFrame.Control)
+		}
+
 		// Reassemble transport
 		tr := &TransportReader{}
 		appData := tr.ProcessSegment(respFrame.Payload)
@@ -130,6 +137,9 @@ func Poll(cfg *MasterConfig) *PollResult {
 			return fmt.Errorf("parse APDU: %w", err)
 		}
 
+		if respAPDU.FuncCode != FCResponse || respAPDU.Control != acFIR|acFIN {
+			return fmt.Errorf("unexpected response function/control: 0x%02x/0x%02x", respAPDU.FuncCode, respAPDU.Control)
+		}
 		result.IIN = respAPDU.IIN
 
 		// Extract point values from response objects

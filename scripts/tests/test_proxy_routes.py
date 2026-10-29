@@ -100,7 +100,7 @@ class Location:
             path = rewritten
         returned = self.directive("return")
         if returned and returned[0] == "302":
-            target = returned[1].replace("$is_args$args", f"?{args}" if args else "")
+            target = returned[1].replace("$is_args$args", f"?{args}" if args else "").replace("$uri", path)
             return "redirect", target
         upstream = self.directive("proxy_pass")[0]
         if upstream == "$u":
@@ -194,6 +194,11 @@ class ProxyRoutesTests(unittest.TestCase):
                     self.route(f"/containd/icons/{name}.svg"), ("proxy", f"{CONTAIND_UPSTREAM}icons/{name}.svg")
                 )
         self.assertEqual(self.route("/icons"), ("proxy", "http://frontend/icons"))
+
+    def test_top_level_containd_pages_redirect_into_the_embedded_ui(self):
+        for page in ("identities", "ids", "firewall"):
+            with self.subTest(page=page):
+                self.assertEqual(self.route(f"/{page}/"), ("redirect", f"/containd/{page}/"))
 
     def test_nothing_else_in_the_repo_claims_the_icons_prefix(self):
         self.assertFalse((ROOT / "frontend/public/icons").exists())

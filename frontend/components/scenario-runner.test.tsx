@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { Scenario } from "../lib/api";
@@ -43,43 +44,45 @@ const scenario: Scenario = {
   ],
 };
 
-afterEach(() => vi.unstubAllGlobals());
+const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  if (originalStorage) Object.defineProperty(window, "localStorage", originalStorage);
+  else Reflect.deleteProperty(window, "localStorage");
+});
 
 describe("Reset Progress", () => {
   it.each(["us-dnp3-substation", "eu-iec104-substation"])(
-    "returns %s from Summary to the first usable step and preserves other records", (packageId) => {
+    "returns %s from Summary to the first usable step and preserves other records", async (packageId) => {
       scope.packageId = packageId;
-      vi.stubGlobal("window", Object.assign(new EventTarget(), { localStorage: memoryStorage(), confirm: () => true }));
-      vi.stubGlobal("document", new EventTarget());
+      Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
+      vi.spyOn(window, "confirm").mockReturnValue(true);
       const client = new QueryClient();
       saveProgress(scope, scenario.id, { completedStepIds: ["first", "second"], notes: "old", cmdLog: ["old"] });
       saveProgress(scope, "another", { completedStepIds: ["kept"], notes: "keep", cmdLog: [] });
-      let tree!: ReactTestRenderer;
-      act(() => { tree = create(<QueryClientProvider client={client}><ScenarioRunner scenario={scenario} onExit={() => {}} /></QueryClientProvider>); });
-      const click = (label: string) => act(() => tree.root.findByProps({ "aria-label": label }).props.onClick());
+      const tree = render(<QueryClientProvider client={client}><ScenarioRunner scenario={scenario} onExit={() => {}} /></QueryClientProvider>);
+      const click = (label: string) => fireEvent.click(tree.getByRole("button", { name: label }));
       try {
-        expect(tree.root.findAllByType("button").some((button) => button.children.includes("Execute Step"))).toBe(false);
-        expect(JSON.stringify(tree.toJSON())).toContain("Mark Complete is self-attested; it does not run a system check.");
+        expect(tree.queryByRole("button", { name: "Execute Step" })).toBeNull();
+        expect(tree.container.textContent).toContain("Mark Complete is self-attested; it does not run a system check.");
         click("View Summary");
-        expect(JSON.stringify(tree.toJSON())).toContain("Steps marked complete");
-        expect(JSON.stringify(tree.toJSON())).toContain("Mark Complete is self-attested; it does not run a system check.");
+        expect(tree.container.textContent).toContain("Steps marked complete");
+        expect(tree.container.textContent).toContain("Mark Complete is self-attested; it does not run a system check.");
         click("Reset Progress");
-        expect(JSON.stringify(tree.toJSON())).not.toContain("Exercise Summary");
-        expect(JSON.stringify(tree.toJSON())).toContain("First instruction");
-        expect(tree.root.findAllByType("button").some((button) => button.children.includes("Execute Step"))).toBe(false);
-        expect(tree.root.findByType("textarea").props.value).toBe("");
+        expect(tree.container.textContent).not.toContain("Exercise Summary");
+        expect(tree.container.innerHTML).toContain("First instruction");
+        expect(tree.queryByRole("button", { name: "Execute Step" })).toBeNull();
+        expect((tree.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
         expect(loadProgress(scope, scenario)).toEqual({ completedStepIds: [], notes: "", cmdLog: [] });
         expect(loadProgress(scope, { id: "another", steps: [{ id: "kept", title: "", description: "" }] }).notes).toBe("keep");
-        const complete = tree.root.findAllByType("button").find((b) => b.children.includes("Mark Complete"))!;
-        act(() => complete.props.onClick());
-        expect(JSON.stringify(tree.toJSON())).toContain("Second instruction");
-        expect(tree.root.findAllByType("button").some((button) => button.children.includes("Execute Step"))).toBe(false);
-        const completeManual = tree.root.findAllByType("button").find((b) => b.children.includes("Mark Complete"))!;
-        act(() => completeManual.props.onClick());
-        expect(JSON.stringify(tree.toJSON())).toContain("Third instruction");
-        expect(tree.root.findAllByType("button").some((button) => button.children.includes("Execute Step"))).toBe(true);
+        fireEvent.click(tree.getByRole("button", { name: /Mark Complete/ }));
+        expect(tree.container.innerHTML).toContain("Second instruction");
+        expect(tree.queryByRole("button", { name: "Execute Step" })).toBeNull();
+        fireEvent.click(tree.getByRole("button", { name: /Mark Complete/ }));
+        expect(tree.container.innerHTML).toContain("Third instruction");
+        await waitFor(() => expect(tree.getByRole("button", { name: "Execute Step" })).toBeTruthy());
       } finally {
-        act(() => tree.unmount());
         client.clear();
       }
     },

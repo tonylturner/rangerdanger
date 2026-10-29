@@ -1,6 +1,7 @@
+// @vitest-environment jsdom
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import type { ViewMode } from "../lib/network-console-data";
 import { describe, expect, it, vi } from "vitest";
 import { NetworkConsole } from "./network-console";
@@ -42,19 +43,14 @@ vi.mock("./network-drawers", () => ({
 
 describe("NetworkConsole IEC 104 explanation", () => {
   it("clears the active drawer in the policy-toggle event", () => {
-    let tree!: ReactTestRenderer;
-    act(() => { tree = create(<NetworkConsole />); });
-    try {
-      const toggle = () => act(() => tree.root.findByProps({ "aria-label": "Toggle policy" }).props.onClick());
-      act(() => tree.root.findByProps({ "aria-label": "Open drawer" }).props.onClick());
-      expect(tree.root.findByProps({ "aria-label": "Open drawer" }).props["data-active"]).toBe("traffic");
-      toggle();
-      expect(tree.root.findAllByProps({ "aria-label": "Open drawer" })).toHaveLength(0);
-      toggle();
-      expect(tree.root.findByProps({ "aria-label": "Open drawer" }).props["data-active"]).toBe(null);
-    } finally {
-      act(() => tree.unmount());
-    }
+    render(<NetworkConsole />);
+    const toggle = () => fireEvent.click(screen.getByLabelText("Toggle policy"));
+    fireEvent.click(screen.getByLabelText("Open drawer"));
+    expect(screen.getByLabelText("Open drawer").getAttribute("data-active")).toBe("traffic");
+    toggle();
+    expect(screen.queryAllByLabelText("Open drawer")).toHaveLength(0);
+    toggle();
+    expect(screen.getByLabelText("Open drawer").getAttribute("data-active")).toBe(null);
   });
 
   it("explains event/cyclic reporting and operator GI without expiring quiet status", () => {

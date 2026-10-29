@@ -56,6 +56,7 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
         "rangerdanger-historian-eu": common | {
             ("dir", "services/historian-eu")},
         "rangerdanger-fuxa-hmi": {
+            ("dir", "lab-definitions/packages/us-dnp3-substation/seeds/fuxa"),
             ("file", "scripts/set-gateway.sh"),
             ("file", "scripts/fuxa-entrypoint.sh"),
         },

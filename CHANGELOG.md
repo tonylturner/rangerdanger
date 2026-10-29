@@ -6,9 +6,32 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A fresh US install opens FUXA with a read-only RTAC monitor showing six
+  live substation values. An existing FUXA project is never overwritten.
+  The FUXA image installs its Modbus driver from a committed lockfile.
+
 ### Changed
 
+- The frontend runs on React 19. Component tests use React Testing
+  Library with jsdom.
 - CI and release workflows now run on Ubuntu 26.04 GitHub-hosted runners.
+
+### Fixed
+
+- The containd CLI console in the embedded firewall UI connects again, and
+  PCAP downloads save the capture instead of an HTML page. The proxy smoke
+  test now checks that both paths reach the containd API.
+- DNP3 traffic from the simulated field devices is now well-formed in
+  Wireshark: responses use the correct link function, analog commands
+  carry value then status (a -16 setpoint arrives as -16), control replies
+  echo the command, select-before-operate checks the selected value,
+  restart and unsupported-function indications use the right bits, and
+  class 1-3 polls no longer return static data.
+- The Identities link in the embedded firewall UI opens the containd
+  Identities page instead of a portal "not found" page. The proxy smoke test
+  now fails on any containd link that leaves the embedded UI.
 
 ## [v0.2.0-rc.3] - 2026-10-28
 

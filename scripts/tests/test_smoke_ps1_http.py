@@ -6,7 +6,10 @@ import threading
 import unittest
 
 from .test_setup_ps1_root import powershell
-from .test_smoke_ps1_probe import GOOD_CHUNK
+from .test_smoke_ps1_probe import CLI, GOOD_CHUNK, PCAP, RUNTIME_SCRIPT
+
+# A webpack runtime with no on-demand chunks: this fixture covers the HTTP session.
+EMPTY_RUNTIME = 'r.u=e=>"static/chunks/"+e+"."+({})[e]+".js",r.p="/containd/_next/";'
 
 
 @contextmanager
@@ -31,10 +34,17 @@ def portal(mode):
         def do_GET(self):
             seen.append(self.path)
             if self.path == "/containd/":
-                self.reply(200, "text/html", '<script src="_next/static/main.js"></script>',
+                self.reply(200, "text/html", '<script src="_next/static/main.js"></script>' + RUNTIME_SCRIPT,
                            **{"Set-Cookie": "session=fixture; Path=/containd/; HttpOnly"})
             elif self.path == "/containd/_next/static/main.js":
                 self.reply(200, "application/javascript", GOOD_CHUNK)
+            elif self.path == "/containd/_next/static/webpack.js":
+                self.reply(200, "application/javascript", EMPTY_RUNTIME)
+            elif self.path in (CLI, PCAP):
+                # The containd API refuses a plain GET to the websocket and a missing capture.
+                if self.headers.get("Authorization") != "Bearer lab-token":
+                    errors.append(f"bearer missing on {self.path}")
+                self.reply(400, "application/json", '{"error":"bad request"}')
             elif self.path == "/containd/api/v1/auth/me":
                 if self.headers.get("Cookie") != "session=fixture":
                     errors.append("cookie missing on me")
@@ -87,5 +97,7 @@ catch { Write-Output "FAIL: $_"; exit 1 }
                 self.assertEqual(result.returncode, 0 if mode == "ok" else 1, result.stdout + result.stderr)
                 self.assertEqual(errors, [])
                 self.assertEqual(seen, [
-                    "/containd/", "/containd/_next/static/main.js", "/containd/api/v1/auth/login",
-                ] + ([] if mode == "auth" else ["/containd/api/v1/auth/me"]))
+                    "/containd/", "/containd/_next/static/main.js", "/containd/_next/static/webpack.js",
+                    "/containd/api/v1/auth/login",
+                ] + {"ok": ["/containd/api/v1/auth/me", CLI, PCAP],
+                     "redirect": ["/containd/api/v1/auth/me"], "auth": []}[mode])

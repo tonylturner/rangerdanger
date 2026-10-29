@@ -43,7 +43,7 @@
       {
         "id": "hmi-scada-fuxa",
         "title": "HMI, SCADA, and the Lab's Substation Panel",
-        "sha256": "077ad9c2fcea7a3db458b05ef6357693cdd463c1fbb40911591fa7807eeebb5b"
+        "sha256": "4bb5919c0bc0fb49a2e95a3e9f555f14c719a9d7bd0a5cda1fd0e07a3fae9898"
       },
       {
         "id": "plc-ladder-openplc",

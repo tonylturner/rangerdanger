@@ -175,30 +175,24 @@ func TestIntegrityPollReadsPoints(t *testing.T) {
 	}
 }
 
-// TestDeviceRestartReportedOncePerDevice pins that IIN1.7 Device Restart is
-// device-wide state, not per-connection: it appears on the first response
-// after start and is cleared thereafter, even though each Poll opens a fresh
-// TCP connection. A per-connection flag would re-report restart on every poll,
-// making any per-connection master think the outstation rebooted constantly.
-func TestDeviceRestartReportedOncePerDevice(t *testing.T) {
+// Device Restart is device-wide and remains set across connections until WRITE.
+func TestDeviceRestartPersistsUntilWrite(t *testing.T) {
 	ts := newTestOutstation(t)
 	cfg := &MasterConfig{MasterAddr: 100, OutstationAddr: 1, Endpoint: ts.addr, Timeout: 2 * time.Second}
-
-	first := Poll(cfg)
-	if first.Error != nil {
-		t.Fatalf("first poll: %v", first.Error)
+	for i := 0; i < 2; i++ {
+		r := Poll(cfg)
+		if r.Error != nil || r.IIN != 0x8000 {
+			t.Fatalf("poll %d: %+v", i, r)
+		}
 	}
-	if first.IIN&(uint16(IIN1DeviceRestart)<<8) == 0 {
-		t.Errorf("first poll: expected Device Restart bit, got 0x%04X", first.IIN)
+	// G80V1, 8-bit range 7..7, packed value false.
+	r := sendAPDU(t, ts.addr, 0, []byte{0xc0, 2, 80, 1, 0, 7, 7, 0}, true)
+	if r.IIN != 0 {
+		t.Fatalf("clear response IIN=%04x", r.IIN)
 	}
-
-	// Second poll opens a new connection; Device Restart must NOT recur.
-	second := Poll(cfg)
-	if second.Error != nil {
-		t.Fatalf("second poll: %v", second.Error)
-	}
-	if second.IIN&(uint16(IIN1DeviceRestart)<<8) != 0 {
-		t.Errorf("second poll (new connection): Device Restart must not recur, got 0x%04X", second.IIN)
+	r2 := Poll(cfg)
+	if r2.Error != nil || r2.IIN != 0 {
+		t.Fatalf("after clearing: %+v", r2)
 	}
 }
 
@@ -301,9 +295,9 @@ func TestOperateWithoutSelectFails(t *testing.T) {
 
 func TestUnknownFunctionCodeSetsIIN(t *testing.T) {
 	ts := newTestOutstation(t)
-	// FC 0x10 is not implemented — outstation must set IIN1.0 (No Func Code).
+	// FC 0x10 is not implemented — outstation must set IIN2.0 (No Func Code).
 	resp := sendAPDU(t, ts.addr, 0, []byte{0xC0, 0x10}, true)
-	if resp.IIN&(uint16(IIN1NoFuncCode)<<8) == 0 {
+	if resp.IIN != 0x8001 {
 		t.Errorf("expected No-Func-Code IIN bit, got 0x%04X", resp.IIN)
 	}
 }

@@ -94,6 +94,7 @@
       "platforms": ["linux/amd64", "linux/arm64"],
       "always_build": false,
       "inputs": [
+        {"kind": "dir", "path": "lab-definitions/packages/us-dnp3-substation/seeds/fuxa"},
         {"kind": "file", "path": "scripts/set-gateway.sh"},
         {"kind": "file", "path": "scripts/fuxa-entrypoint.sh"}
       ]

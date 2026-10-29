@@ -19,6 +19,9 @@
 package dnp3wire
 
 import (
+	"bytes"
+	"encoding/hex"
+	"io"
 	"net"
 	"sync"
 	"testing"
@@ -311,5 +314,66 @@ func TestRelaySelectBeforeOperate(t *testing.T) {
 	defer st.mu.Unlock()
 	if st.breakerClosed {
 		t.Errorf("breaker should be open after SBO trip")
+	}
+}
+
+// TestSimulatorProfileByteVectors compares full frames, including CRCs, against
+// literal IEEE 1815 layout vectors. No library encoder/decoder produces the
+// expected bytes. Point counts mirror the five simulator DNP3 entry points;
+// deterministic values exercise flags, negative floats and multiblock CRCs.
+func TestSimulatorProfileByteVectors(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		addr           uint16
+		bi, bo, ai, ao int
+		wire           string
+	}{
+		{"relay", 1, 4, 1, 2, 0, "0564284464000100fe36c0c08180000102000003810181010a0219d0000000811e0500000101000080c1010084f700c03f2ca8"},
+		{"recloser", 2, 4, 2, 1, 0, "0564244464000200e751c0c08180000102000003810181010a0219d000000181011e0500000001000080c1778f"},
+		{"regulator", 3, 2, 1, 2, 1, "056430446400030006cfc0c0818000010200000181010a0200006aaf00811e0500000101000080c1010000c081ad3f280300000001000080c1295a"},
+		{"capbank", 4, 5, 3, 2, 0, "05642b44640004002a39c0c0818000010200000481018101810ad73a020000028101811e0500000101000080d448c1010000c03f3381"},
+		{"rtac", 10, 15, 0, 8, 0, "05644b4464000a006e25c0c0818000010200000e8101810181019a408101810181018101811e050000070100832c0080c1010000c03f01000080c1010000770ec03f01000080c1010000c03f01000080d00dc1010000c03f3381"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &dnp3go.OutstationConfig{OutstationAddr: tc.addr, AcceptAnyMaster: true}
+			for i := 0; i < tc.bi; i++ {
+				v := i%2 == 0
+				cfg.BinaryInputs = append(cfg.BinaryInputs, dnp3go.BinaryPoint{Index: uint16(i), Read: func() bool { return v }})
+			}
+			for i := 0; i < tc.bo; i++ {
+				v := i%2 == 0
+				cfg.BinaryOutputs = append(cfg.BinaryOutputs, dnp3go.BinaryOutputPoint{Index: uint16(i), Read: func() bool { return v }})
+			}
+			for i := 0; i < tc.ai; i++ {
+				v := float32(-16)
+				if i%2 != 0 {
+					v = 1.5
+				}
+				cfg.AnalogInputs = append(cfg.AnalogInputs, dnp3go.AnalogPoint{Index: uint16(i), Read: func() float32 { return v }})
+			}
+			for i := 0; i < tc.ao; i++ {
+				v := float32(-16)
+				if i%2 != 0 {
+					v = 1.5
+				}
+				cfg.AnalogOutputs = append(cfg.AnalogOutputs, dnp3go.AnalogOutputPoint{Index: uint16(i), Read: func() float32 { return v }})
+			}
+			conn := dial(t, listenEphemeral(t, cfg))
+			// Request bytes intentionally remain FC01 G60V1 qualifier 0x06.
+			if err := dnp3go.WriteLinkFrame(conn, &dnp3go.LinkFrame{Control: 0xc4, Dest: tc.addr, Source: 100, Payload: []byte{0xc0, 0xc0, 1, 60, 1, 6}}); err != nil {
+				t.Fatal(err)
+			}
+			want, err := hex.DecodeString(tc.wire)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := make([]byte, len(want))
+			if _, err := io.ReadFull(conn, got); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatalf("got %x\nwant %x", got, want)
+			}
+		})
 	}
 }
