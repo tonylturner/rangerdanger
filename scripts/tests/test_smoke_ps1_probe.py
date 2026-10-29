@@ -4,7 +4,8 @@ import re
 import unittest
 
 from .test_containd_ui_prefix import (
-    AUTODETECT_CASES, CLI_CHUNK, DOUBLE_PREFIXED, ON_DEMAND, ROOT, SERVED, WEBPACK, WEBPACK_CASES, probe,
+    AUTODETECT_CASES, CLI_CHUNK, DOUBLE_PREFIXED, NAV, ON_DEMAND, ROOT, ROUTE_CASES, ROUTE_CHUNKS,
+    ROUTE_FAILURES, ROUTE_PAGES, ROUTE_REQUESTS, SERVED, TOO_MANY_ROUTES, USERS, WEBPACK, WEBPACK_CASES, probe,
 )
 from .test_setup_ps1_root import powershell
 
@@ -70,6 +71,24 @@ try {
     exit 1
 }
 """
+ROUTES = r"""
+$ErrorActionPreference = 'Stop'
+. "$env:REPO/scripts/lib/containd-ui-probe.ps1"
+foreach ($body in ($env:BODIES | ConvertFrom-Json)) {
+    $chunks = New-Object Collections.Specialized.OrderedDictionary ([StringComparer]::Ordinal)
+    $chunks['a.js'] = [string]$body
+    Write-Output (ConvertTo-Json -Compress -InputObject @(Get-ContaindRoutePages $chunks))
+}
+"""
+
+
+def with_routes(data):
+    data["/containd/_next/static/main.js"]["body"] += NAV
+    for path, body in ROUTE_PAGES.items():
+        data[path] = dict(status=200, type="text/html; charset=utf-8", body=body)
+    for path, body in ROUTE_CHUNKS.items():
+        data[path] = dict(status=200, type="application/javascript", body=body)
+    return data
 
 
 def fixture():
@@ -112,6 +131,64 @@ class ContaindProbeTests(unittest.TestCase):
                 match = re.search(rf"^    \${name} = '((?:''|[^'])*)'$", text, re.M)
                 self.assertIsNotNone(match)
                 self.assertEqual(match.group(1).replace("''", "'"), pattern.pattern)
+
+    def test_route_patterns_are_identical_to_python(self):
+        text = (ROOT / "scripts/lib/containd-ui-probe.ps1").read_text()
+        for name, pattern in (("containdRoute", probe.CONTAIND_ROUTE), ("linkRoute", probe.LINK_ROUTE)):
+            with self.subTest(name=name):
+                match = re.search(rf"^    \${name} = '((?:''|[^'])*)'$", text, re.M)
+                self.assertIsNotNone(match)
+                self.assertEqual(match.group(1).replace("''", "'"), pattern.pattern)
+        match = re.search(r"^    \$notRoutes = @\(((?:'[^']*'(?:, )?)*)\)$", text, re.M)
+        self.assertIsNotNone(match)
+        self.assertEqual(tuple(re.findall(r"'([^']*)'", match.group(1))), probe.NOT_ROUTES)
+        self.assertIn(f"$maxRoutePages = {probe.MAX_ROUTE_PAGES}\n", text)
+
+    def test_route_pages_from_path_literals_match_python(self):
+        result = powershell(ROUTES, BODIES=json.dumps([body for body, _ in ROUTE_CASES]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual([json.loads(line) for line in result.stdout.splitlines()],
+                         [pages for _, pages in ROUTE_CASES])
+
+    def test_route_pages_are_crawled_in_python_order(self):
+        result = self.run_probe(with_routes(fixture()))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("7 chunks (2 on demand), 4 route pages", result.stdout)
+        self.assertIn(
+            "REQUESTS=/containd/,/containd/_next/static/main.js,/containd/_next/static/webpack.js,"
+            + ",".join(list(ON_DEMAND) + ROUTE_REQUESTS) + ",/containd/api/v1/auth/login,", result.stdout,
+        )
+
+    def test_bad_literal_only_in_a_route_page_chunk_fails_before_login(self):
+        # Regression: a route's page chunk loads only from that route's HTML, here a
+        # route that only another route's page chunk names.
+        data = with_routes(fixture())
+        data[USERS]["body"] = DOUBLE_PREFIXED[0]
+        result = self.run_probe(data)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(
+            "app/system/users/page-c3.js: runtime-based API literal was rewritten: /containd/api/v1/pcap/download/\n",
+            result.stdout,
+        )
+        self.assertNotIn("/containd/api/v1/auth/login", result.stdout)
+
+    def test_route_pages_and_their_chunks_keep_the_fetch_and_path_guards(self):
+        for path, (body, content_type, status), message in ROUTE_FAILURES:
+            with self.subTest(path=path, body=body, status=status):
+                data = with_routes(fixture())
+                data[path] = dict(status=status, type=content_type, body=body)
+                result = self.run_probe(data)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(message, result.stdout)
+                self.assertNotIn("/containd/api/v1/auth/login", result.stdout)
+
+    def test_route_crawl_is_bounded(self):
+        data = fixture()
+        data["/containd/_next/static/main.js"]["body"] += TOO_MANY_ROUTES
+        result = self.run_probe(data)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f"more than {probe.MAX_ROUTE_PAGES} route pages", result.stdout)
+        self.assertNotIn("/containd/r", result.stdout.split("REQUESTS=")[-1])
 
     def test_webpack_runtime_shapes_match_python(self):
         for body, message in WEBPACK_CASES:

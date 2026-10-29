@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Check the embedded containd bundle, session and API routing without changing range policy.
 
-The bundle check covers the chunks the page loads and those its webpack runtime loads on demand.
+The bundle check covers the chunks the page loads, those its webpack runtime loads on demand,
+and the chunks of every route page the bundle names.
 
 Standalone (EU or US): python3 scripts/lib/containd-ui-probe.py http://127.0.0.1:8088
 Uses the documented public lab account, containd/containd. No Docker required.
@@ -82,6 +83,31 @@ def ondemand_chunks(chunks):
     return [f"{prefix}{names.get(chunk, chunk)}.{digest}.js" for chunk, digest in CHUNK_HASH.findall(match.group(4))]
 
 
+# App-router page chunks (app/<route>/page-*.js) load only from their own route's HTML.
+# Routes come from the bundle's path literals: proxy-prefixed ones ("/containd/alerts/",
+# "/containd/login?reason=") and root-relative link targets (href:"/identities/").
+CONTAIND_ROUTE = re.compile(r'''(["'])/containd/([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"']*)?\1''')
+LINK_ROUTE = re.compile(
+    r'''href:(["'])/(?!containd[/?#"'])([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"']*)?\1'''
+)
+# Not app-router pages: assets, the API, a double prefix, and containd's documentation,
+# which is a separate static site whose scripts live outside /_next/static/.
+NOT_ROUTES = ("_next", "api", "containd", "docs")
+MAX_ROUTE_PAGES = 200
+
+
+def route_pages(chunks):
+    """Route pages the chunks name, as sorted /containd/<route>/ paths."""
+    routes = set()
+    for body in chunks.values():
+        for pattern in (CONTAIND_ROUTE, LINK_ROUTE):
+            for match in pattern.finditer(body):
+                route = match.group(2)
+                if route.split("/", 1)[0] not in NOT_ROUTES:
+                    routes.add(f"/containd/{route}/")
+    return sorted(routes)
+
+
 def check_chunks(chunks):
     """containd adds its API base at runtime, so no chunk may carry a proxy-prefixed API literal."""
     for path, body in chunks.items():
@@ -130,10 +156,12 @@ def probe(base):
         return url.path + ("?" + url.query if url.query else "")
 
     scripts = {"application/javascript", "text/javascript"}
-    page = fetch("/containd/", {"text/html"})
-    parser = Scripts()
-    parser.feed(page)
-    paths = {chunk_path(source, "embedded script source") for source in parser.sources}
+    def page_chunks(path):
+        parser = Scripts()
+        parser.feed(fetch(path, {"text/html"}))
+        return {chunk_path(source, "embedded script source") for source in parser.sources}
+
+    paths = page_chunks("/containd/")
     if not paths:
         raise ProbeError("containd page contains no JavaScript chunks")
     chunks = {path: fetch(path, scripts) for path in sorted(paths)}
@@ -143,9 +171,20 @@ def probe(base):
         if path not in chunks:
             chunks[path] = fetch(path, scripts)
             ondemand += 1
+    # Each round fetches the newly named route pages, then their new chunks, which may name more.
+    visited = set()
+    while pending := [page for page in route_pages(chunks) if page not in visited]:
+        if len(visited) + len(pending) > MAX_ROUTE_PAGES:
+            raise ProbeError(f"chunks name more than {MAX_ROUTE_PAGES} route pages")
+        found = set()
+        for page in pending:
+            visited.add(page)
+            found |= page_chunks(page)
+        for path in sorted(found - chunks.keys()):
+            chunks[path] = fetch(path, scripts)
     check_chunks(chunks)
     print(
-        f"PASS containd UI: {len(chunks)} chunks ({ondemand} on demand), "
+        f"PASS containd UI: {len(chunks)} chunks ({ondemand} on demand), {len(visited)} route pages, "
         "runtime API base intact, no double prefix"
     )
 

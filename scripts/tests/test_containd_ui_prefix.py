@@ -87,6 +87,60 @@ WEBPACK_CASES = (
     (WEBPACK.replace('"e868780c":e', '"e868780c":t'), "0 webpack runtime chunk maps"),
 )
 
+# Route-page literals and the pages they name (shared with the PowerShell probe tests).
+ROUTE_CASES = (
+    ('href:"/containd/alerts/"', ["/containd/alerts/"]),
+    ("x='/containd/system/services/dns/'", ["/containd/system/services/dns/"]),
+    ('location.href="/containd/login?reason=logout";"/containd/login"', ["/containd/login/"]),
+    ('"/containd/config/?tab=diff";"/containd/config#top"', ["/containd/config/"]),
+    ('href:"/identities/";href:\'/a_b/c-d\'', ["/containd/a_b/c-d/", "/containd/identities/"]),
+    ('href:"/";"/identities/";href:"/containd";href:"/containd/"', []),
+    ('"/containd/";"/containd";"/containd/_next/static/media/";"/containd/api/v1/cli/ws"', []),
+    ('"/containd/containd/alerts/";"/containd/docs/ics-dpi/";href:"/docs/"', []),
+    ('"/containd/logo.svg";"/containd/a b/";"/containd/alerts/\';`/containd/alerts/`', []),
+    # Code-point order, as Python sorts: a culture-aware sort would differ on both.
+    ('"/containd/zones/";"/containd/Zones/";"/containd/ab/";"/containd/a-c/"',
+     ["/containd/Zones/", "/containd/a-c/", "/containd/ab/", "/containd/zones/"]),
+)
+# A fake app-router site. The nav names three routes (one root-relative link, one with a
+# query) plus documentation, which is not crawled; the alerts page chunk names a fourth
+# route, reachable only in the second round; the login page loads no scripts.
+NAV = (
+    'h=[{href:"/containd/alerts/"},{href:"/identities/"},{href:"/"},{href:"/containd/docs/x/"}];'
+    'location.href="/containd/login?reason=logout";'
+)
+ALERTS, IDENTITIES, USERS = (
+    f"/containd/_next/static/chunks/app/{route}/page-{digest}.js"
+    for route, digest in (("alerts", "a1"), ("identities", "b2"), ("system/users", "c3"))
+)
+ROUTE_PAGES = {
+    "/containd/alerts/": f'<script src="{ALERTS}"></script><script src="{IDENTITIES}"></script>',
+    "/containd/identities/": f'<script src="{IDENTITIES}"></script>',
+    "/containd/login/": "<html>no scripts</html>",
+    "/containd/system/users/": f'<script src="{USERS}"></script>',
+}
+ROUTE_CHUNKS = {
+    ALERTS: 'n=(0,s.Sw)("/api/v1/alerts");r.push("/containd/system/users/");',
+    IDENTITIES: '(0,s.Sw)("/api/v1/identities");',
+    USERS: '(0,s.Sw)("/api/v1/users");',
+}
+# The crawl's requests after the on-demand chunks, round by round.
+ROUTE_REQUESTS = [
+    "/containd/alerts/", "/containd/identities/", "/containd/login/", ALERTS, IDENTITIES,
+    "/containd/system/users/", USERS,
+]
+# A route page or route chunk the proxy serves wrongly, and the failure it must give.
+ROUTE_FAILURES = (
+    ("/containd/identities/", ("<html></html>", "text/plain", 200), "expected 200"),
+    ("/containd/identities/", ("<html>not found</html>", "text/html", 404), "expected 200"),
+    ("/containd/identities/", ('<script src="../assets/javascripts/bundle.js"></script>', "text/html", 200),
+     "embedded script source: ../assets/javascripts/bundle.js"),
+    ("/containd/system/users/", ('<script src="http://elsewhere/containd/_next/static/x.js"></script>',
+                                 "text/html", 200), "embedded script source: http://elsewhere/"),
+    (USERS, ("<html>fallback</html>", "text/html", 200), "expected 200"),
+)
+TOO_MANY_ROUTES = "".join(f'"/containd/r{index}/";' for index in range(probe.MAX_ROUTE_PAGES + 1))
+
 
 def filters(text):
     return [
@@ -176,6 +230,15 @@ class ChunkTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(probe.ProbeError, "2 webpack runtime chunk maps"):
             probe.ondemand_chunks({"a.js": WEBPACK, "b.js": WEBPACK})
+
+    def test_route_pages_from_path_literals(self):
+        for body, pages in ROUTE_CASES:
+            with self.subTest(body=body):
+                self.assertEqual(probe.route_pages({"a.js": body}), pages)
+        self.assertEqual(
+            probe.route_pages({"a.js": 'href:"/identities/"', "b.js": '"/containd/identities/"'}),
+            ["/containd/identities/"],
+        )
 
     def test_no_autodetect_or_no_auth_call_is_incomplete(self):
         for body in ("", 'U("/api/v1/auth/me")', RUNTIME.split(";")[0]):
@@ -281,6 +344,50 @@ class ProbeTests(unittest.TestCase):
                     with self.assertRaisesRegex(probe.ProbeError, re.escape(message)):
                         self.run_probe()
                     self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
+
+    def add_routes(self):
+        self.responses["/containd/_next/static/chunks/console.js"] = (SERVED + NAV, "text/javascript", 200)
+        for path, body in ROUTE_PAGES.items():
+            self.responses[path] = (body, "text/html; charset=utf-8", 200)
+        for path, body in ROUTE_CHUNKS.items():
+            self.responses[path] = (body, "application/javascript", 200)
+
+    def test_route_pages_named_by_the_bundle_are_crawled_round_by_round(self):
+        self.add_routes()
+        output = self.run_probe()
+        self.assertIn("8 chunks (2 on demand), 4 route pages", output)
+        paths = [req.full_url.removeprefix("http://127.0.0.1:8088") for req in self.requests]
+        self.assertEqual(paths[4:6], list(ON_DEMAND))
+        self.assertEqual(paths[6:-4], ROUTE_REQUESTS)
+        self.assertTrue(all(req.get_method() == "GET" for req in self.requests[:-4]))
+
+    def test_bad_literal_only_in_a_route_page_chunk_fails_before_login(self):
+        # Regression: a route's page chunk loads only from that route's HTML, here a
+        # route that only another route's page chunk names.
+        self.add_routes()
+        self.responses[USERS] = (DOUBLE_PREFIXED[0], "application/javascript", 200)
+        with self.assertRaisesRegex(
+            probe.ProbeError,
+            "app/system/users/page-c3.js: runtime-based API literal was rewritten: /containd/api/v1/pcap/download/$",
+        ):
+            self.run_probe()
+        self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
+
+    def test_route_pages_and_their_chunks_keep_the_fetch_and_path_guards(self):
+        for path, response, message in ROUTE_FAILURES:
+            with self.subTest(path=path, response=response):
+                self.requests = []
+                self.add_routes()
+                self.responses[path] = response
+                with self.assertRaisesRegex(probe.ProbeError, re.escape(message)):
+                    self.run_probe()
+                self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
+
+    def test_route_crawl_is_bounded(self):
+        self.responses["/containd/_next/static/chunks/console.js"] = (SERVED + TOO_MANY_ROUTES, "text/javascript", 200)
+        with self.assertRaisesRegex(probe.ProbeError, f"more than {probe.MAX_ROUTE_PAGES} route pages"):
+            self.run_probe()
+        self.assertFalse(any("/containd/r" in req.full_url for req in self.requests))
 
     def test_api_route_refusal_raised_by_urllib_passes(self):
         headers = Message()

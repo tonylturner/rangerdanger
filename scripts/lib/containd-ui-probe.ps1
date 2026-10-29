@@ -62,6 +62,30 @@ function Get-ContaindOnDemandChunks($Chunks) {
     }
 }
 
+function Get-ContaindRoutePages($Chunks) {
+    # App-router page chunks (app/<route>/page-*.js) load only from their own route's HTML.
+    # Routes come from the bundle's path literals: proxy-prefixed ones ("/containd/alerts/",
+    # "/containd/login?reason=") and root-relative link targets (href:"/identities/").
+    # Returns /containd/<route>/ paths in ordinal order.
+    $containdRoute = '(["''])/containd/([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"'']*)?\1'
+    $linkRoute = 'href:(["''])/(?!containd[/?#"''])([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"'']*)?\1'
+    # Not app-router pages: assets, the API, a double prefix, and containd's documentation,
+    # which is a separate static site whose scripts live outside /_next/static/.
+    $notRoutes = @('_next', 'api', 'containd', 'docs')
+    $routes = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($body in $Chunks.Values) {
+        foreach ($pattern in @($containdRoute, $linkRoute)) {
+            foreach ($match in [regex]::Matches([string]$body, $pattern)) {
+                $route = $match.Groups[2].Value
+                if ($route.Split('/')[0] -cnotin $notRoutes) { $null = $routes.Add("/containd/$route/") }
+            }
+        }
+    }
+    $sorted = [string[]]@($routes)
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    $sorted
+}
+
 function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     $Origin = $Origin.TrimEnd('/')
     $base = $null
@@ -106,19 +130,41 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         $url.PathAndQuery
     }
 
-    $scripts = @('application/javascript', 'text/javascript')
-    $page = Get-ProbeBody '/containd/' @('text/html')
-    $paths = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
-    foreach ($source in @(Get-ContaindScriptSources $page)) {
-        $null = $paths.Add((Get-ProbeChunkPath $source 'embedded script source'))
+    function Get-ProbePageChunks([string]$Path) {
+        $html = Get-ProbeBody $Path @('text/html')
+        foreach ($source in @(Get-ContaindScriptSources $html)) { Get-ProbeChunkPath $source 'embedded script source' }
     }
+    function Get-OrdinalSorted($Items) {
+        # Sort-Object is culture-aware; the Python oracle sorts by code point.
+        $sorted = [string[]]@($Items)
+        [Array]::Sort($sorted, [StringComparer]::Ordinal)
+        $sorted
+    }
+
+    $scripts = @('application/javascript', 'text/javascript')
+    $maxRoutePages = 200
+    $paths = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($path in @(Get-ProbePageChunks '/containd/')) { $null = $paths.Add($path) }
     if (-not $paths.Count) { throw 'containd page contains no JavaScript chunks' }
     $chunks = New-Object Collections.Specialized.OrderedDictionary ([StringComparer]::Ordinal)
-    foreach ($path in ($paths | Sort-Object)) { $chunks[$path] = Get-ProbeBody $path $scripts }
+    foreach ($path in @(Get-OrdinalSorted $paths)) { $chunks[$path] = Get-ProbeBody $path $scripts }
     $onDemand = 0
     foreach ($source in @(Get-ContaindOnDemandChunks $chunks)) {
         $path = Get-ProbeChunkPath $source 'on-demand chunk'
         if (-not $chunks.Contains($path)) { $chunks[$path] = Get-ProbeBody $path $scripts; $onDemand++ }
+    }
+    # Each round fetches the newly named route pages, then their new chunks, which may name more.
+    $visited = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    while ($true) {
+        $pending = @(Get-ContaindRoutePages $chunks | Where-Object { -not $visited.Contains($_) })
+        if (-not $pending.Count) { break }
+        if ($visited.Count + $pending.Count -gt $maxRoutePages) { throw "Chunks name more than $maxRoutePages route pages" }
+        $found = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+        foreach ($page in $pending) {
+            $null = $visited.Add($page)
+            foreach ($path in @(Get-ProbePageChunks $page)) { if (-not $chunks.Contains($path)) { $null = $found.Add($path) } }
+        }
+        foreach ($path in @(Get-OrdinalSorted $found)) { $chunks[$path] = Get-ProbeBody $path $scripts }
     }
     $autodetect = $false
     $authMe = $false
@@ -136,7 +182,7 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     }
     if (-not $autodetect) { throw 'Chunks do not contain the /containd/ runtime API-base autodetect' }
     if (-not $authMe) { throw 'Chunks do not contain the unprefixed auth/me call' }
-    Write-Host "PASS containd UI: $($chunks.Count) chunks ($onDemand on demand), runtime API base intact, no double prefix"
+    Write-Host "PASS containd UI: $($chunks.Count) chunks ($onDemand on demand), $($visited.Count) route pages, runtime API base intact, no double prefix"
 
     function Get-ProbeJsonProperty([string]$Json, [string]$Name) {
         # ConvertFrom-Json enumerates arrays and PS member lookup folds case;
