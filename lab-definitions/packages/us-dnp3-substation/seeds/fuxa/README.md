@@ -43,6 +43,11 @@ The register authority is `services/rtac-sim/modbus.go`. FUXA uses a
 separate memory selector (400000 holding, 300000 input) and one-based
 addresses; it subtracts one before sending the request. Values remain
 unknown until the RTAC is reachable; the view does not seed live values.
+Widgets bind to bare tag IDs (for example `t_breaker`), exactly as emitted
+by the pinned server's `device-values` event. The viewer subscribes with
+those same IDs; a legacy `device^~^tag` binding receives no values with
+FUXA's default `broadcastAll: false`. Device connection retries are handled
+by FUXA itself, including when the RTAC starts after FUXA.
 The fixed-size native FUXA canvas has no scaling viewBox.
 
 This optional monitor is not the workshop's primary HMI. Use
@@ -53,10 +58,25 @@ Validation:
 
 ```sh
 python3 -m unittest scripts.tests.test_fuxa_seed
+python3 -m unittest scripts.tests.test_fuxa_seed_live
 docker build -f Dockerfile.fuxa-hmi -t rdfuxa-seed-x .
 python3 scripts/tests/test_fuxa_seed_boot.py rdfuxa-seed-x
+# Optional: US range running, with an already-local Python client image.
+python3 scripts/tests/test_fuxa_seed_boot.py rdfuxa-seed-x \
+  --live-client-image rangerdanger-eng_workstation
 docker image rm rdfuxa-seed-x
 ```
 
 The boot check uses isolated, automatically removed, network-none
 containers and temporary data mounts; it never starts the range.
+It also starts the full FUXA runtime before its loopback Modbus fixture
+and checks the viewer's Socket.IO subscription after connection recovery.
+The live check is read-only and skips when no US FUXA service is running.
+It loads the actual project, subscribes using its widget bindings, and
+requires all six numeric values on two successive polls with newer timestamps.
+Set `FUXA_LIVE_URL` to check an isolated container's HTTP endpoint instead.
+The opt-in image check reuses that same test against a freshly seeded,
+disposable FUXA runtime on port 1882 in the live HMI's network namespace,
+reading the real RTAC. It publishes no host ports, mounts no live data,
+does not run the gateway entrypoint, and removes both of its containers.
+It never swaps or restarts a live service or changes its network settings.

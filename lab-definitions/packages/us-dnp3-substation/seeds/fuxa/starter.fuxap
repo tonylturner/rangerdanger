@@ -106,7 +106,7 @@
             "property": {
               "events": [],
               "variable": "Breaker closed",
-              "variableId": "rd_rtac^~^t_breaker",
+              "variableId": "t_breaker",
               "variableSrc": "rd_rtac",
               "ranges": []
             }
@@ -119,7 +119,7 @@
             "property": {
               "events": [],
               "variable": "Recloser closed",
-              "variableId": "rd_rtac^~^t_recloser",
+              "variableId": "t_recloser",
               "variableSrc": "rd_rtac",
               "ranges": []
             }
@@ -132,7 +132,7 @@
             "property": {
               "events": [],
               "variable": "Auto-reclose enabled",
-              "variableId": "rd_rtac^~^t_reclose",
+              "variableId": "t_reclose",
               "variableSrc": "rd_rtac",
               "ranges": []
             }
@@ -145,7 +145,7 @@
             "property": {
               "events": [],
               "variable": "Regulator tap",
-              "variableId": "rd_rtac^~^t_tap",
+              "variableId": "t_tap",
               "variableSrc": "rd_rtac",
               "ranges": []
             }
@@ -158,7 +158,7 @@
             "property": {
               "events": [],
               "variable": "Bus voltage (V)",
-              "variableId": "rd_rtac^~^t_voltage",
+              "variableId": "t_voltage",
               "variableSrc": "rd_rtac",
               "ranges": []
             }
@@ -171,7 +171,7 @@
             "property": {
               "events": [],
               "variable": "Feeder current (A)",
-              "variableId": "rd_rtac^~^t_current",
+              "variableId": "t_current",
               "variableSrc": "rd_rtac",
               "ranges": []
             }

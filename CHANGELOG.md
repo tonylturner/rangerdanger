@@ -6,6 +6,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- CI and release workflows now run on Ubuntu 26.04 GitHub-hosted runners.
+
+## [v0.2.0-rc.4] - 2026-10-29
+
+Fourth release candidate for v0.2.0. The frontend moves to React 19,
+FUXA ships a read-only RTAC starter monitor, the simulated DNP3 devices
+send well-formed traffic, and the embedded containd console, PCAP
+download and Identities link work through the portal. Requirements are
+unchanged from rc.1. The pre-release publishes images under its own tag
+and does not move `latest`; install it with
+`./setup.sh --version v0.2.0-rc.4`.
+
 ### Added
 
 - A fresh US install opens FUXA with a read-only RTAC monitor showing six
@@ -16,13 +30,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The frontend runs on React 19. Component tests use React Testing
   Library with jsdom.
-- CI and release workflows now run on Ubuntu 26.04 GitHub-hosted runners.
 
 ### Fixed
 
 - The containd CLI console in the embedded firewall UI connects again, and
   PCAP downloads save the capture instead of an HTML page. The proxy smoke
-  test now checks that both paths reach the containd API.
+  test now checks that both paths reach the containd API and performs a real
+  CLI websocket upgrade. Both packages preserve the portal's Host port so
+  the console's browser Origin matches.
 - DNP3 traffic from the simulated field devices is now well-formed in
   Wireshark: responses use the correct link function, analog commands
   carry value then status (a -16 setpoint arrives as -16), control replies
@@ -3311,7 +3326,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.3...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.4...HEAD
+[v0.2.0-rc.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.4
 [v0.2.0-rc.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.3
 [v0.2.0-rc.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.2
 [v0.2.0-rc.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.1

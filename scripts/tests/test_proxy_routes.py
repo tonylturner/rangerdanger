@@ -165,6 +165,15 @@ class ProxyRoutesTests(unittest.TestCase):
         self.assertEqual(self.route("/containd/_next/static/chunks/main-app.js"),
                          ("proxy", CONTAIND_UPSTREAM + "_next/static/chunks/main-app.js"))
 
+    def test_containd_preserves_host_port_for_browser_origin(self):
+        # API and CLI websocket share the UI location; the password guard only returns 403.
+        for path in ("/containd/", "/containd/api/v1/auth/me", "/containd/api/v1/cli/ws"):
+            with self.subTest(path=path):
+                location = select(self.locations, path)
+                self.assertEqual(location.pattern, "/containd/")
+                self.assertIn(("proxy_set_header", ["Host", "$http_host"], None), location.children)
+                self.assertNotIn(("proxy_set_header", ["Host", "$host"], None), location.children)
+
     def test_openplc_map_link_uses_the_shipped_openplc_route(self):
         topology = (ROOT / "backend/internal/server/topology.go").read_text()
         case = topology.split('case "openplc":', 1)[1].split('case ', 1)[0]

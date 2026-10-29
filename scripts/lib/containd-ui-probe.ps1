@@ -109,6 +109,72 @@ function Get-ContaindRoutePages($Chunks) {
     $sorted
 }
 
+function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
+    # A raw HTTP/1.1 handshake exposes refusal status on both PS 5.1 and 7.
+    # Close immediately after headers: no CLI commands or websocket frame reads.
+    $url = [uri]$Origin
+    $authority = [regex]::Match($Origin, '^[^:]+://([^/]+)$').Groups[1].Value
+    $path = '/containd/api/v1/cli/ws'
+    if ($Token -match '[\r\n]') { throw "${path}: invalid token header" }
+    $client = New-Object Net.Sockets.TcpClient
+    $stream = $null
+    try {
+        $connect = $client.ConnectAsync($url.DnsSafeHost, $url.Port)
+        if (-not $connect.Wait(15000)) { throw "${path}: connection timeout" }
+        $null = $connect.GetAwaiter().GetResult()
+        $stream = $client.GetStream()
+        $stream.ReadTimeout = 15000
+        $stream.WriteTimeout = 15000
+        if ($url.Scheme -eq 'https') {
+            $stream = New-Object Net.Security.SslStream $stream, $false
+            $tls = $stream.AuthenticateAsClientAsync($url.DnsSafeHost)
+            if (-not $tls.Wait(15000)) { throw "${path}: TLS timeout" }
+            $null = $tls.GetAwaiter().GetResult()
+        }
+        $key = [Convert]::ToBase64String([Guid]::NewGuid().ToByteArray())
+        $request = "GET $path HTTP/1.1`r`nHost: $authority`r`nOrigin: $Origin`r`nAuthorization: Bearer $Token`r`n" +
+            "Connection: Upgrade`r`nUpgrade: websocket`r`nSec-WebSocket-Version: 13`r`nSec-WebSocket-Key: $key`r`n`r`n"
+        $bytes = [Text.Encoding]::ASCII.GetBytes($request)
+        $stream.Write($bytes, 0, $bytes.Length)
+        $header = New-Object Text.StringBuilder
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        while (-not $header.ToString().EndsWith("`r`n`r`n", [StringComparison]::Ordinal)) {
+            $remaining = 15000 - [int]$timer.ElapsedMilliseconds
+            if ($remaining -le 0) { throw "${path}: upgrade timeout" }
+            $stream.ReadTimeout = $remaining
+            $byte = $stream.ReadByte()
+            if ($byte -lt 0) { throw "${path}: incomplete upgrade response" }
+            $null = $header.Append([char]$byte)
+            if ($header.Length -gt 16384) { throw "${path}: oversized upgrade response" }
+        }
+        $lines = $header.ToString() -split "`r`n"
+        if ($lines[0] -notmatch '^HTTP/1\.1 101(?: |$)') {
+            throw "${path}: expected websocket 101, got $($lines[0])"
+        }
+        $headers = @{}
+        foreach ($line in $lines[1..($lines.Length - 1)]) {
+            if ($line.Contains(':')) {
+                $pair = $line -split ':', 2
+                $headers[$pair[0].ToLowerInvariant()] = $pair[1].Trim()
+            }
+        }
+        $sha = [Security.Cryptography.SHA1]::Create()
+        try {
+            $accept = [Convert]::ToBase64String($sha.ComputeHash(
+                [Text.Encoding]::ASCII.GetBytes($key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')))
+        } finally { $sha.Dispose() }
+        $connections = @(([string]$headers['connection'] -split ',') | ForEach-Object { $_.Trim() })
+        if ($headers['upgrade'] -ine 'websocket' -or 'Upgrade' -notin $connections -or
+            $headers['sec-websocket-accept'] -cne $accept) {
+            throw "${path}: invalid websocket upgrade headers"
+        }
+    } finally {
+        if ($stream) { $stream.Dispose() }
+        $client.Close()
+    }
+    Write-Host "PASS ${path}: websocket 101 with browser Origin $Origin"
+}
+
 function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     $Origin = $Origin.TrimEnd('/')
     $base = $null
@@ -258,4 +324,5 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         }
     }
     Write-Host "PASS $($apiRoutes -join ', '): 400 from the containd API, not the UI page"
+    Confirm-ContaindCliUpgrade $Origin $token
 }
