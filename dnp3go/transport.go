@@ -57,9 +57,9 @@ func (t *TransportReader) ProcessSegment(data []byte) []byte {
 	return nil
 }
 
-// WrapTransport wraps an application-layer message in transport segment(s).
-// For simplicity and typical ICS message sizes, this produces a single
-// segment with FIR=1, FIN=1.
+// WrapTransport wraps an application-layer message in one FIR=1, FIN=1 segment.
+// This sender does not segment large messages: WriteLinkFrame rejects the
+// resulting payload if appData exceeds 249 octets.
 func WrapTransport(appData []byte, seq uint8) []byte {
 	header := tpFIR | tpFIN | (seq & tpSEQ)
 	out := make([]byte, 1+len(appData))

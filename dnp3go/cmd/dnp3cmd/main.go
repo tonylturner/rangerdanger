@@ -240,8 +240,8 @@ func buildAnalogAPDU(funcCode, seq, index uint8, value float32) []byte {
 		index,                       // Point index
 	}
 	ao := make([]byte, 5)
-	ao[0] = 0 // status
-	binary.LittleEndian.PutUint32(ao[1:], math.Float32bits(value))
+	binary.LittleEndian.PutUint32(ao[:4], math.Float32bits(value))
+	ao[4] = 0 // status
 	return append(apdu, ao...)
 }
 
@@ -347,7 +347,7 @@ func readControlStatus(conn net.Conn) (controlStatus, error) {
 	}
 	lastIIN = respAPDU.IIN
 
-	// IIN1.7 (Device Restart, 0x8000) is informational on first contact, not
+	// IIN1.7 (Device Restart, 0x8000) is informational until explicitly cleared, not
 	// an error — mask it before checking for real fault bits.
 	if respAPDU.IIN&^(uint16(dnp3go.IIN1DeviceRestart)<<8) != 0 {
 		return statusOutstaErr, nil

@@ -18,9 +18,23 @@ Supported function codes:
 | FC | Direction | Purpose |
 |----|-----------|---------|
 | 1 (Read) | Master → Outstation | Class 0 / 1 / 2 / 3 polls |
+| 2 (Write) | Master → Outstation | Clear Device Restart with G80V1, index 7 = false |
 | 3 (Select) | Master → Outstation | Pre-arm a control point |
 | 4 (Operate) | Master → Outstation | Operate after select |
 | 5 (Direct Operate) | Master → Outstation | Operate without select |
+| 6 (Direct Operate No Ack) | Master → Outstation | Operate without a response |
+
+Class 0 returns static data; Class 1/2/3 return empty event responses (there
+is no event buffer). Device Restart remains set until a master writes the
+clear; polling alone does not acknowledge it. The lab's read-only polling
+observers intentionally leave it set.
+
+The sender supports one transport segment per application fragment.
+`WriteLinkFrame` returns `ErrFrameTooLarge` before writing any bytes when
+the payload exceeds 250 octets (249 application octets plus transport).
+An outstation whose response exceeds that limit logs the error and closes
+the connection, rather than emitting a wrapped length. This is not full
+IEEE 1815 conformance certification; see [wire behavior](../docs/dnp3-wire.md).
 
 ## CLI tools
 

@@ -11,6 +11,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The containd CLI console in the embedded firewall UI connects again, and
   PCAP downloads save the capture instead of an HTML page. The proxy smoke
   test now checks that both paths reach the containd API.
+- DNP3 traffic from the simulated field devices is now well-formed in
+  Wireshark: responses use the correct link function, analog commands
+  carry value then status (a -16 setpoint arrives as -16), control replies
+  echo the command, select-before-operate checks the selected value,
+  restart and unsupported-function indications use the right bits, and
+  class 1-3 polls no longer return static data.
 
 ## [v0.2.0-rc.3] - 2026-10-28
 

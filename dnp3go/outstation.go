@@ -1,9 +1,9 @@
 package dnp3go
 
 import (
+	"bytes"
 	"log"
 	"net"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -53,13 +53,8 @@ type OutstationConfig struct {
 	// Logger for protocol events. If nil, uses log.Printf.
 	Logger func(format string, args ...any)
 
-	// restartReported is device-wide (not per-connection) runtime state:
-	// IIN1.7 (Device Restart) is reported on the first response after the
-	// outstation starts, then cleared once any master has seen it. Keeping
-	// it here rather than in connState means a master that opens a fresh
-	// connection per poll (as Poll does) sees Device Restart exactly once,
-	// not on every connection.
-	restartReported atomic.Bool
+	// Device-wide IIN1.7 stays asserted until a valid G80V1 clearing write.
+	restartCleared atomic.Bool
 }
 
 func (c *OutstationConfig) logf(format string, args ...any) {
@@ -72,18 +67,26 @@ func (c *OutstationConfig) logf(format string, args ...any) {
 
 // sboEntry tracks a pending Select-Before-Operate.
 type sboEntry struct {
-	group       uint8
-	index       uint16
-	controlCode uint8
-	value       float32
-	expires     time.Time
+	group   uint8
+	index   uint16
+	data    []byte // exact selected wire object, including CROB count/times
+	expires time.Time
 }
 
-// connState holds per-connection state.
+// connState is owned by the connection's single serving goroutine.
 type connState struct {
-	mu      sync.Mutex
-	pending *sboEntry
-	txSeq   uint8 // transport sequence counter
+	pending []*sboEntry
+	txSeq   uint8
+}
+
+func (cs *connState) takeSelection(group uint8, index uint16) *sboEntry {
+	for i, p := range cs.pending {
+		if p.group == group && p.index == index {
+			cs.pending = append(cs.pending[:i], cs.pending[i+1:]...)
+			return p
+		}
+	}
+	return nil
 }
 
 // ListenAndServe starts a DNP3 TCP outstation on the given address (e.g., ":20000").
@@ -143,8 +146,11 @@ func handleConn(conn net.Conn, cfg *OutstationConfig) {
 
 		// Parse application layer
 		apdu, err := ParseAPDU(appData)
-		if err != nil {
+		if err != nil && (len(appData) < 2 || appData[1] != FCWrite) {
 			continue
+		}
+		if err != nil {
+			apdu = &APDU{Control: appData[0], FuncCode: FCWrite}
 		}
 
 		// Dispatch by function code
@@ -157,8 +163,7 @@ func handleConn(conn net.Conn, cfg *OutstationConfig) {
 		case FCDirectOperate:
 			respObjects, iin = handleDirectOperate(cfg, apdu)
 		case FCDirectOperateNoAck:
-			// Direct Operate, No Acknowledge: perform the control but send
-			// no response. Used by attackers/operators that don't want a reply.
+			// Direct Operate, No Acknowledge performs the control without a reply.
 			handleDirectOperate(cfg, apdu)
 			continue
 		case FCSelect:
@@ -166,18 +171,16 @@ func handleConn(conn net.Conn, cfg *OutstationConfig) {
 		case FCOperate:
 			respObjects, iin = handleOperate(cfg, cs, apdu)
 		case FCWrite:
-			// Accept but do nothing — return empty response
-			iin = 0
+			if err != nil {
+				iin = IIN2ParamError
+			} else {
+				iin = handleWrite(cfg, apdu)
+			}
 		default:
-			iin = uint16(IIN1NoFuncCode) << 8
+			iin = IIN2NoFuncCode
 		}
 
-		// IIN1.7 Device Restart: reported on the first response after the
-		// outstation (re)starts, then cleared once any master has seen it. The
-		// flag is device-wide, so a master that opens a fresh connection per
-		// request sees it exactly once, not on every connection. CompareAndSwap
-		// reports the bit to whichever connection responds first.
-		if cfg.restartReported.CompareAndSwap(false, true) {
+		if !cfg.restartCleared.Load() {
 			iin |= uint16(IIN1DeviceRestart) << 8
 		}
 
@@ -185,10 +188,8 @@ func handleConn(conn net.Conn, cfg *OutstationConfig) {
 		reqSeq := apdu.Control & acSEQ
 		respAPDU := BuildResponse(reqSeq, iin, respObjects)
 
-		cs.mu.Lock()
 		tpData := WrapTransport(respAPDU, cs.txSeq)
 		cs.txSeq = (cs.txSeq + 1) & tpSEQ
-		cs.mu.Unlock()
 
 		respFrame := &LinkFrame{
 			Control: MakeResponseControl(),
@@ -198,12 +199,32 @@ func handleConn(conn net.Conn, cfg *OutstationConfig) {
 		}
 
 		if err := WriteLinkFrame(conn, respFrame); err != nil {
+			cfg.logf("response write: %v", err)
 			return
 		}
 	}
 }
 
 // ── Function Code Handlers ───────────────────────────────────────
+
+// handleWrite supports clearing Device Restart only. Validate the entire write
+// before changing device state; malformed/unsupported writes cannot clear it.
+func handleWrite(cfg *OutstationConfig, apdu *APDU) uint16 {
+	if len(apdu.Objects) == 0 {
+		return IIN2ParamError
+	}
+	for _, oh := range apdu.Objects {
+		if oh.Group != 80 || oh.Variation != 1 {
+			return IIN2ObjectUnknown
+		}
+		if (oh.Qualifier != QualStartStop8 && oh.Qualifier != QualStartStop16) ||
+			oh.Start != 7 || oh.Stop != 7 || len(oh.Data) != 1 || oh.Data[0] != 0 {
+			return IIN2ParamError
+		}
+	}
+	cfg.restartCleared.Store(true)
+	return 0
+}
 
 func handleRead(cfg *OutstationConfig, apdu *APDU) ([]byte, uint16) {
 	var out []byte
@@ -213,7 +234,7 @@ func handleRead(cfg *OutstationConfig, apdu *APDU) ([]byte, uint16) {
 		switch {
 		case oh.Group == GroupClassData && oh.Variation >= VarClass0 && oh.Variation <= VarClass3:
 			// Class 0 = all static data; class 1-3 = events (return empty)
-			if oh.Variation == VarClass0 || oh.Variation == VarClass1 {
+			if oh.Variation == VarClass0 {
 				out = append(out, encodeAllStatic(cfg)...)
 			}
 			// Class 1-3 events: no event buffering, return nothing extra
@@ -249,7 +270,7 @@ func handleDirectOperate(cfg *OutstationConfig, apdu *APDU) ([]byte, uint16) {
 					continue
 				}
 				status := operateBinaryOutput(cfg, po.Index, cc)
-				out = append(out, EncodeCROBResponse(po.Index, cc, status)...)
+				out = append(out, EncodeCROBResponse(po.Index, po.Data, status)...)
 			}
 
 		case oh.Group == GroupAnalogOutputCmd && oh.Variation == VarAOCmdFloat:
@@ -273,120 +294,62 @@ func handleDirectOperate(cfg *OutstationConfig, apdu *APDU) ([]byte, uint16) {
 }
 
 func handleSelect(cfg *OutstationConfig, cs *connState, apdu *APDU) ([]byte, uint16) {
-	var out []byte
-
-	for _, oh := range apdu.Objects {
-		switch {
-		case oh.Group == GroupCROB && oh.Variation == VarCROB:
-			for _, po := range oh.PrefixedData {
-				cc, ok := ParseCROB(po.Data)
-				if !ok {
-					continue
-				}
-				// Validate the point exists
-				found := false
-				for _, bp := range cfg.BinaryOutputs {
-					if bp.Index == po.Index {
-						found = true
-						break
-					}
-				}
-				status := uint8(CROBStatusSuccess)
-				if !found {
-					status = CROBStatusNotSupported
-				} else {
-					cs.mu.Lock()
-					cs.pending = &sboEntry{
-						group:       GroupCROB,
-						index:       po.Index,
-						controlCode: cc,
-						expires:     time.Now().Add(5 * time.Second),
-					}
-					cs.mu.Unlock()
-				}
-				out = append(out, EncodeCROBResponse(po.Index, cc, status)...)
-			}
-
-		case oh.Group == GroupAnalogOutputCmd && oh.Variation == VarAOCmdFloat:
-			for _, po := range oh.PrefixedData {
-				val, ok := ParseAnalogOutputCmd(po.Data)
-				if !ok {
-					continue
-				}
-				found := false
-				for _, ap := range cfg.AnalogOutputs {
-					if ap.Index == po.Index {
-						found = true
-						break
-					}
-				}
-				status := uint8(0)
-				if !found {
-					status = CROBStatusNotSupported
-				} else {
-					cs.mu.Lock()
-					cs.pending = &sboEntry{
-						group:   GroupAnalogOutputCmd,
-						index:   po.Index,
-						value:   val,
-						expires: time.Now().Add(5 * time.Second),
-					}
-					cs.mu.Unlock()
-				}
-				out = append(out, EncodeAnalogOutputResponse(po.Index, val, status)...)
-			}
-		}
-	}
-
-	return out, 0
+	cs.pending = nil // a new SELECT replaces any earlier selection
+	return handleSBO(cfg, cs, apdu, true)
 }
 
 func handleOperate(cfg *OutstationConfig, cs *connState, apdu *APDU) ([]byte, uint16) {
+	defer func() { cs.pending = nil }()
+	return handleSBO(cfg, cs, apdu, false)
+}
+
+func handleSBO(cfg *OutstationConfig, cs *connState, apdu *APDU, selectOnly bool) ([]byte, uint16) {
 	var out []byte
-
+	var iin uint16
 	for _, oh := range apdu.Objects {
-		switch {
-		case oh.Group == GroupCROB && oh.Variation == VarCROB:
-			for _, po := range oh.PrefixedData {
-				cc, ok := ParseCROB(po.Data)
-				if !ok {
-					continue
+		if (oh.Group != GroupCROB || oh.Variation != VarCROB) &&
+			(oh.Group != GroupAnalogOutputCmd || oh.Variation != VarAOCmdFloat) {
+			iin |= IIN2ObjectUnknown
+			continue
+		}
+		for _, po := range oh.PrefixedData {
+			status := uint8(CROBStatusNoSelect)
+			if selectOnly {
+				status = CROBStatusNotSupported
+				found := false
+				if oh.Group == GroupCROB {
+					for _, p := range cfg.BinaryOutputs {
+						found = found || p.Index == po.Index
+					}
+				} else {
+					for _, p := range cfg.AnalogOutputs {
+						found = found || p.Index == po.Index
+					}
 				}
-				cs.mu.Lock()
-				p := cs.pending
-				cs.pending = nil
-				cs.mu.Unlock()
-
-				status := uint8(CROBStatusNoSelect)
-				if p != nil && p.group == GroupCROB && p.index == po.Index &&
-					p.controlCode == cc && time.Now().Before(p.expires) {
-					status = operateBinaryOutput(cfg, po.Index, cc)
+				if found {
+					status = CROBStatusSuccess
+					cs.pending = append(cs.pending, &sboEntry{
+						group: oh.Group, index: po.Index, data: append([]byte(nil), po.Data...),
+						expires: time.Now().Add(5 * time.Second),
+					})
 				}
-				out = append(out, EncodeCROBResponse(po.Index, cc, status)...)
+			} else {
+				p := cs.takeSelection(oh.Group, po.Index)
+				// IEEE 1815 command status NO_SELECT (2): no matching SELECT.
+				// Compare wire bytes, including float bits and CROB count/times.
+				if p != nil && bytes.Equal(p.data, po.Data) && time.Now().Before(p.expires) {
+					if oh.Group == GroupCROB {
+						status = operateBinaryOutput(cfg, po.Index, po.Data[0])
+					} else {
+						value, _ := ParseAnalogOutputCmd(po.Data)
+						status = operateAnalogOutput(cfg, po.Index, value)
+					}
+				}
 			}
-
-		case oh.Group == GroupAnalogOutputCmd && oh.Variation == VarAOCmdFloat:
-			for _, po := range oh.PrefixedData {
-				val, ok := ParseAnalogOutputCmd(po.Data)
-				if !ok {
-					continue
-				}
-				cs.mu.Lock()
-				p := cs.pending
-				cs.pending = nil
-				cs.mu.Unlock()
-
-				status := uint8(CROBStatusNoSelect)
-				if p != nil && p.group == GroupAnalogOutputCmd && p.index == po.Index &&
-					time.Now().Before(p.expires) {
-					status = operateAnalogOutput(cfg, po.Index, val)
-				}
-				out = append(out, EncodeAnalogOutputResponse(po.Index, val, status)...)
-			}
+			out = append(out, encodeCommandResponse(oh.Group, oh.Variation, po.Index, po.Data, status)...)
 		}
 	}
-
-	return out, 0
+	return out, iin
 }
 
 // ── Point Access Helpers ─────────────────────────────────────────
