@@ -6,6 +6,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Applying an SSD delta no longer stops with "Could not stop and verify
+  both RangerDanger projects" after the lab shut down cleanly. The same
+  check in the rollback recipe is fixed too. The Bash and PowerShell
+  stagers now write identical delta README recipes.
+
 ## [v0.2.0-rc.2] - 2026-10-28
 
 Second release candidate for v0.2.0. The frontend moves to Next.js 16
