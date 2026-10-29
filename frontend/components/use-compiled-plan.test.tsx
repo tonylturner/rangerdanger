@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlanProvenance } from "../lib/api";
 import { useCompiledPlan } from "../lib/use-compiled-plan";
@@ -9,23 +10,27 @@ import type { CurriculumScope } from "../lib/curriculum-storage";
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { saveRemediationPlan } from "../lib/remediation-plan";
 
-let panel: ReactTestRenderer;
+let panel: ReturnType<typeof render>;
 let client: QueryClient;
-afterEach(() => { act(() => panel?.unmount()); client?.clear(); vi.unstubAllGlobals(); });
+const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
+afterEach(() => {
+  panel?.unmount();
+  client?.clear();
+  vi.unstubAllGlobals();
+  if (originalStorage) Object.defineProperty(window, "localStorage", originalStorage);
+  else Reflect.deleteProperty(window, "localStorage");
+});
 
 function View({ scope, applied }: { scope: CurriculumScope; applied?: PlanProvenance }) {
   const query = useCompiledPlan(scope, true, applied, !!applied);
   return <div>{query.error?.message ?? query.data?.policyHash ?? "loading"}</div>;
 }
 const scope: CurriculumScope = { packageId: US_PLANS[0].packageId, revision: US_PLANS[0].revision, curriculum: US_CURRICULUM };
-async function mount(applied?: PlanProvenance) {
+async function mount(applied?: PlanProvenance, expectedText = applied?.policyHash ?? US_PLANS[0].policyHash) {
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  vi.stubGlobal("window", Object.assign(new EventTarget(), { localStorage: memoryStorage() }));
-  vi.stubGlobal("document", new EventTarget());
-  await act(async () => {
-    panel = create(<QueryClientProvider client={client}><View scope={scope} applied={applied} /></QueryClientProvider>);
-  });
-  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+  Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
+  panel = render(<QueryClientProvider client={client}><View scope={scope} applied={applied} /></QueryClientProvider>);
+  await waitFor(() => expect(panel.container.textContent).toContain(expectedText));
 }
 
 describe("compiled plan reads", () => {
@@ -34,7 +39,7 @@ describe("compiled plan reads", () => {
     vi.stubGlobal("fetch", fetch);
     await mount();
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ packageId: scope.packageId, revision: scope.revision, actionIds: [] });
-    expect(JSON.stringify(panel.toJSON())).toContain(US_PLANS[0].policyHash);
+    expect(panel.container.textContent).toContain(US_PLANS[0].policyHash);
   });
   it("uses applied provenance, never draft edits, for proof expectations", async () => {
     const plan = US_PLANS[1];
@@ -43,15 +48,15 @@ describe("compiled plan reads", () => {
     vi.stubGlobal("fetch", fetch);
     await mount(applied);
     saveRemediationPlan(scope, { exerciseId: "draft", selectedActionIds: ["modbus-dpi"], savedAt: "now" });
-    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    fireEvent(window, new Event("focus"));
     expect(JSON.parse(fetch.mock.calls[0][1].body).actionIds).toEqual(applied.actionIds);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("rejects a compile response whose hash differs from the applied snapshot", async () => {
     const plan = US_PLANS[0];
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(plan))));
-    await mount({ packageId: plan.packageId, revision: plan.revision, actionIds: [], label: plan.label, policyHash: `${plan.policyHash}-different`, appliedAt: "now" });
-    expect(JSON.stringify(panel.toJSON())).toContain("no longer matches the applied plan hash");
+    await mount({ packageId: plan.packageId, revision: plan.revision, actionIds: [], label: plan.label, policyHash: `${plan.policyHash}-different`, appliedAt: "now" }, "no longer matches the applied plan hash");
+    expect(panel.container.textContent).toContain("no longer matches the applied plan hash");
   });
   it("does not reuse draft IDs after a package switch", async () => {
     const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(US_PLANS[0])))
@@ -60,7 +65,8 @@ describe("compiled plan reads", () => {
     await mount();
     const euScope = { packageId: EU_PLANS[0].packageId, revision: EU_PLANS[0].revision, curriculum: fixtureCurriculum("lab-definitions/packages/eu-iec104-substation") };
     saveRemediationPlan(euScope, { exerciseId: "draft", selectedActionIds: ["iec104-dpi"], savedAt: "now" });
-    await act(async () => { panel.update(<QueryClientProvider client={client}><View scope={euScope} /></QueryClientProvider>); });
+    panel.rerender(<QueryClientProvider client={client}><View scope={euScope} /></QueryClientProvider>);
+    await waitFor(() => expect(panel.container.textContent).toContain(EU_PLANS[0].policyHash));
     expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ packageId: euScope.packageId, revision: euScope.revision, actionIds: ["iec104-dpi"] });
   });
 });

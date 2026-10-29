@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import euFixture from "../../backend/internal/labs/testdata/eu-flow-graph.json";
 import type { LabGraph, ZoneRuleSummary } from "../lib/api";
@@ -13,8 +14,7 @@ import { TrafficMatrixView } from "./traffic-matrix-view";
 import { ActiveFlowsPanel } from "./network-drawers";
 import { TooltipProvider } from "./ui/tooltip";
 
-// This Node-renderer test exercises flow selection, not tooltip DOM events.
-// Radix's unmount effects access window/document even with closed tooltips.
+// This test exercises flow selection without Radix's tooltip DOM events.
 vi.mock("./ui/tooltip", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
   Tooltip: ({ children }: { children: ReactNode }) => children,
@@ -87,24 +87,23 @@ describe("EU flow meaning", () => {
   it("opens flow evidence with a native keyboard-accessible button, independently of transient map highlighting", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     client.setQueryData(["pcap-status"], { capturing: false, files: [] });
-    let tree!: ReactTestRenderer;
-    act(() => { tree = create(<QueryClientProvider client={client}><TooltipProvider><TrafficMatrixView context={context} ruleSummaries={rules} /></TooltipProvider></QueryClientProvider>); });
-    const row = () => tree.root.findByProps({ "aria-label": "Inspect flow cc-1 to rtu-1" });
+    const tree = render(<QueryClientProvider client={client}><TooltipProvider><TrafficMatrixView context={context} ruleSummaries={rules} /></TooltipProvider></QueryClientProvider>);
+    const row = () => screen.getByRole("button", { name: "Inspect flow cc-1 to rtu-1" });
     try {
-      expect(row().props["aria-expanded"]).toBe(false);
-      expect(row().type).toBe("button");
-      expect(row().props.className).toContain("focus-visible:outline-solid");
-      act(() => row().props.onClick());
-      expect(row().props["aria-expanded"]).toBe(true);
-      expect(tree.root.findAllByProps({ "aria-label": "Flow evidence cc-1 to rtu-1" })).toHaveLength(1);
-      act(() => row().parent!.props.onMouseLeave());
-      expect(row().props["aria-expanded"]).toBe(true);
-      act(() => row().props.onClick());
-      expect(row().props["aria-expanded"]).toBe(false);
-      act(() => row().props.onClick());
-      expect(row().props["aria-expanded"]).toBe(true);
+      expect(row().getAttribute("aria-expanded")).toBe("false");
+      expect(row().tagName.toLowerCase()).toBe("button");
+      expect(row().className).toContain("focus-visible:outline-solid");
+      fireEvent.click(row());
+      expect(row().getAttribute("aria-expanded")).toBe("true");
+      expect(screen.getAllByLabelText("Flow evidence cc-1 to rtu-1")).toHaveLength(1);
+      fireEvent.mouseLeave(row().parentElement!);
+      expect(row().getAttribute("aria-expanded")).toBe("true");
+      fireEvent.click(row());
+      expect(row().getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(row());
+      expect(row().getAttribute("aria-expanded")).toBe("true");
     } finally {
-      act(() => tree.unmount());
+      tree.unmount();
       client.clear();
     }
   });

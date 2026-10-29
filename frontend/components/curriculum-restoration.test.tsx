@@ -1,6 +1,7 @@
+// @vitest-environment jsdom
+import { fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ReactNode } from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { CurriculumScopeProvider, scopeOf } from "../lib/curriculum-scope";
 import { US_CURRICULUM } from "../lib/curriculum-storage.test-util";
 import { curriculumKey, decisionName, FIREWALL_TRACK, readCurriculum, writeCurriculum } from "../lib/curriculum-storage";
@@ -20,25 +21,20 @@ const pkg = { ...US_PACKAGE, curriculum: US_CURRICULUM };
 const scope = scopeOf(pkg);
 const wrap = (children: ReactNode, revision = pkg.revision) =>
   <CurriculumScopeProvider pkg={{ ...pkg, revision }}>{children}</CurriculumScopeProvider>;
-const output = (tree: ReactTestRenderer) => JSON.stringify(tree.toJSON());
-let tree: ReactTestRenderer | undefined;
-let browser: EventTarget & { localStorage: Storage };
+const output = (tree: ReturnType<typeof render>) => tree.container.innerHTML;
+const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
 
 beforeEach(() => {
-  browser = Object.assign(new EventTarget(), { localStorage: memoryStorage() });
-  vi.stubGlobal("window", browser);
+  Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
 });
 afterEach(() => {
-  act(() => tree?.unmount());
-  tree = undefined;
   vi.unstubAllGlobals();
+  if (originalStorage) Object.defineProperty(window, "localStorage", originalStorage);
+  else Reflect.deleteProperty(window, "localStorage");
 });
 
 function mount(children: ReactNode) {
-  let mounted!: ReactTestRenderer;
-  act(() => { mounted = create(wrap(children)); });
-  tree = mounted;
-  return mounted;
+  return render(wrap(children));
 }
 
 function TrackChoice() {
@@ -52,29 +48,31 @@ describe("curriculum restoration", () => {
     const decision = (id: string, options = ["ALLOW", "BLOCK"]) =>
       <DecisionBlock scenarioId="requirements" decisionId={id} options={options} body="Decision" />;
     const mounted = mount(decision("first"));
-    expect(mounted.root.findByType("select").props.value).toBe("BLOCK");
-    act(() => mounted.update(wrap(decision("second"))));
-    expect(mounted.root.findByType("select").props.value).toBe("");
-    act(() => mounted.root.findByType("select").props.onChange({ target: { value: "ALLOW" } }));
+    const select = () => mounted.container.querySelector("select") as HTMLSelectElement;
+    expect(select().value).toBe("BLOCK");
+    mounted.rerender(wrap(decision("second")));
+    expect(select().value).toBe("");
+    fireEvent.change(select(), { target: { value: "ALLOW" } });
     expect(readCurriculum(scope, decisionName("requirements", "second"))).toBe("ALLOW");
-    act(() => mounted.update(wrap(decision("second", ["BLOCK"]))));
-    expect(mounted.root.findByType("select").props.value).toBe("");
-    act(() => mounted.update(wrap(decision("first"), pkg.revision + 1)));
-    expect(mounted.root.findByType("select").props.value).toBe("");
+    mounted.rerender(wrap(decision("second", ["BLOCK"])));
+    expect(select().value).toBe("");
+    mounted.rerender(wrap(decision("first"), pkg.revision + 1));
+    expect(select().value).toBe("");
   });
 
   it("inherits once, persists to the destination, and clears provenance on manual editing", () => {
     writeCurriculum(scope, decisionName("upstream", "finding"), "BLOCK");
     const mounted = mount(<DecisionBlock scenarioId="design" decisionId="verdict" options={["ALLOW", "BLOCK"]}
       defaultFrom="upstream:finding" body="Verdict" />);
-    expect(mounted.root.findByType("select").props.value).toBe("BLOCK");
+    const select = () => mounted.container.querySelector("select") as HTMLSelectElement;
+    expect(select().value).toBe("BLOCK");
     expect(readCurriculum(scope, decisionName("design", "verdict"))).toBe("BLOCK");
     expect(output(mounted)).toContain("inherited from earlier lab");
-    act(() => mounted.root.findByType("select").props.onChange({ target: { value: "ALLOW" } }));
+    fireEvent.change(select(), { target: { value: "ALLOW" } });
     expect(output(mounted)).not.toContain("inherited from earlier lab");
     expect(readCurriculum(scope, decisionName("design", "verdict"))).toBe("ALLOW");
-    act(() => mounted.root.findByType("button").props.onClick());
-    expect(mounted.root.findByType("select").props.value).toBe("");
+    fireEvent.click(mounted.container.querySelector("button")!);
+    expect(select().value).toBe("");
     expect(readCurriculum(scope, decisionName("design", "verdict"))).toBe(null);
   });
 
@@ -85,10 +83,10 @@ describe("curriculum restoration", () => {
       <FindingsPanel sourceScenario={sourceScenario} title="Findings" items={[{ id: "finding", label: "Recorded finding" }]} />;
     const mounted = mount(findings("first"));
     expect(output(mounted)).toContain("BLOCK");
-    act(() => mounted.update(wrap(findings("second"))));
+    mounted.rerender(wrap(findings("second")));
     expect(output(mounted)).toContain("ALLOW");
     expect(output(mounted)).not.toContain("BLOCK");
-    act(() => mounted.update(wrap(findings("second"), pkg.revision + 1)));
+    mounted.rerender(wrap(findings("second"), pkg.revision + 1));
     expect(output(mounted)).not.toContain("ALLOW");
   });
 
@@ -97,35 +95,35 @@ describe("curriculum restoration", () => {
     saveRemediationPlan(scope, plan);
     const banner = (id: string) => <RemediationPlanBanner currentExerciseId={id} />;
     const mounted = mount(banner(US_CURRICULUM.roles.hardening));
-    const actionCount = () => mounted.root.findAllByType("div").find((node) => node.children.includes(" action"))!.children.join("");
+    const actionCount = () => [...mounted.container.querySelectorAll("div")].find((node) => /^\d+ actions? planned$/.test(node.textContent ?? ""))!.textContent;
     expect(output(mounted)).toContain("Your Remediation Plan");
     expect(actionCount()).toBe("1 action planned");
     expect(output(mounted)).not.toContain("No remediation plan on file");
     saveRemediationPlan(scope, { ...plan, selectedActionIds: [] });
     const nextExercise = Object.entries(US_CURRICULUM.activities)
       .find(([id, activity]) => !activity.hideBanner && id !== US_CURRICULUM.roles.hardening)![0];
-    act(() => mounted.update(wrap(banner(nextExercise))));
+    mounted.rerender(wrap(banner(nextExercise)));
     expect(actionCount()).toBe("0 actions planned");
-    act(() => mounted.update(wrap(banner(US_CURRICULUM.roles.hardening), pkg.revision + 1)));
+    mounted.rerender(wrap(banner(US_CURRICULUM.roles.hardening), pkg.revision + 1));
     expect(output(mounted)).toContain("No remediation plan on file");
-    act(() => mounted.update(wrap(banner(US_CURRICULUM.roles.planning))));
-    expect(mounted.toJSON()).toBe(null);
+    mounted.rerender(wrap(banner(US_CURRICULUM.roles.planning)));
+    expect(mounted.container.innerHTML).toBe("");
   });
 
   it("restores the saved track and synchronizes both tabs and scopes", () => {
     writeCurriculum(scope, FIREWALL_TRACK, "technical");
     const choices = <><TrackChoice /><TrackChoice /></>;
     const mounted = mount(choices);
-    const tracks = () => mounted.root.findAllByType("button").map((button) => button.props["data-track"]);
+    const tracks = () => [...mounted.container.querySelectorAll("button")].map((button) => button.getAttribute("data-track"));
     expect(tracks()).toEqual(["technical", "technical"]);
-    act(() => mounted.root.findAllByType("button")[0].props.onClick());
+    fireEvent.click(mounted.container.querySelector("button")!);
     expect(tracks()).toEqual(["guided", "guided"]);
-    browser.localStorage.setItem(curriculumKey(scope, FIREWALL_TRACK), "technical");
+    window.localStorage.setItem(curriculumKey(scope, FIREWALL_TRACK), "technical");
     const event = new Event("storage");
     Object.defineProperty(event, "key", { value: curriculumKey(scope, FIREWALL_TRACK) });
-    act(() => { browser.dispatchEvent(event); });
+    fireEvent(window, event);
     expect(tracks()).toEqual(["technical", "technical"]);
-    act(() => mounted.update(wrap(choices, pkg.revision + 1)));
+    mounted.rerender(wrap(choices, pkg.revision + 1));
     expect(tracks()).toEqual(["guided", "guided"]);
   });
 });

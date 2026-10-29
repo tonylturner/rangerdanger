@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
+import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CurriculumBinding, PackageSummary } from "../lib/api";
 import { CurriculumScopeProvider } from "../lib/curriculum-scope";
 import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test-util";
@@ -23,6 +24,9 @@ vi.mock("next/link", async () => {
 });
 
 const EU = fixtureCurriculum("backend/internal/labs/testdata/curriculum-eu");
+beforeEach(() => vi.stubGlobal("localStorage", memoryStorage()));
+afterEach(() => vi.unstubAllGlobals());
+
 function render(binding?: CurriculumBinding) {
   const pkg: PackageSummary = { id: "fixture", revision: 3, title: "Fixture", active: true, operator_view: "eu-iec104", policies: [], curriculum: binding };
   return renderToStaticMarkup(
@@ -85,8 +89,8 @@ describe("package-bound curriculum presentation", () => {
 describe("live shared curriculum panels", () => {
   it("updates decisions in the same tab and plan coverage from another tab", () => {
     const storage = memoryStorage();
-    const browser = Object.assign(new EventTarget(), { localStorage: storage });
-    vi.stubGlobal("window", browser);
+    const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
+    Object.defineProperty(window, "localStorage", { configurable: true, value: storage });
     const pkg: PackageSummary = {
       id: "fixture",
       revision: 3,
@@ -97,44 +101,34 @@ describe("live shared curriculum panels", () => {
       curriculum: US_CURRICULUM,
     };
     const scope = { packageId: pkg.id, revision: pkg.revision, curriculum: pkg.curriculum };
-    let tree!: ReactTestRenderer;
-
     const dispatchCrossTabStorage = (key: string) => {
       const event = new Event("storage");
       Object.defineProperty(event, "key", { value: key });
-      act(() => { browser.dispatchEvent(event); });
+      fireEvent(window, event);
     };
 
     try {
-      act(() => {
-        tree = create(
-          <CurriculumScopeProvider pkg={pkg}>
-            <>
-              <DecisionPanel exerciseId={US_CURRICULUM.roles.planning} />
-              <PlanCoveragePanel title="Coverage" />
-            </>
-          </CurriculumScopeProvider>,
-        );
-      });
-
-      const enterpriseFieldAction = () => tree.root.findAllByType("button").find((button) =>
-        button.findAllByType("div").some((div) => div.children.includes("Block enterprise → field direct access")),
+      const tree = rtlRender(
+        <CurriculumScopeProvider pkg={pkg}>
+          <>
+            <DecisionPanel exerciseId={US_CURRICULUM.roles.planning} />
+            <PlanCoveragePanel title="Coverage" />
+          </>
+        </CurriculumScopeProvider>,
       );
       const requirementKey = curriculumKey(
         scope,
         decisionName(US_CURRICULUM.roles.requirements, "enterprise-to-field"),
       );
-      act(() => {
-        // The same-tab write event refreshes both readers.
-        writeCurriculum(
-          scope,
-          decisionName(US_CURRICULUM.roles.requirements, "enterprise-to-field"),
-          "BLOCK",
-        );
-      });
-      expect(JSON.stringify(tree.toJSON())).toContain("BLOCK");
-      expect(JSON.stringify(tree.toJSON())).toContain("deferred");
-      expect(JSON.stringify(tree.toJSON())).toContain("Current selection coverage only, not firewall proof");
+      // The same-tab write event refreshes both readers.
+      act(() => writeCurriculum(
+        scope,
+        decisionName(US_CURRICULUM.roles.requirements, "enterprise-to-field"),
+        "BLOCK",
+      ));
+      expect(tree.container.textContent).toContain("BLOCK");
+      expect(tree.container.textContent).toContain("deferred");
+      expect(tree.container.textContent).toContain("Current selection coverage only, not firewall proof");
 
       storage.setItem(
         curriculumKey(scope, REMEDIATION_PLAN),
@@ -145,18 +139,19 @@ describe("live shared curriculum panels", () => {
         }),
       );
       dispatchCrossTabStorage(curriculumKey(scope, REMEDIATION_PLAN));
-      expect(JSON.stringify(tree.toJSON())).toContain("planned actions selected");
-      expect(JSON.stringify(tree.toJSON())).not.toContain("deferred. Implementing actions");
-      expect(enterpriseFieldAction()?.props.className).toContain("border-sky-600");
+      expect(tree.container.textContent).toContain("planned actions selected");
+      expect(tree.container.textContent).not.toContain("deferred. Implementing actions");
+      expect(screen.getByRole("button", { name: /Block enterprise → field direct access/ }).className).toContain("border-sky-600");
 
       storage.setItem(requirementKey, "ALLOW");
       dispatchCrossTabStorage(requirementKey);
-      expect(JSON.stringify(tree.toJSON())).toContain("ALLOW");
-      expect(JSON.stringify(tree.toJSON())).toContain("design says ALLOW");
-      expect(JSON.stringify(tree.toJSON())).not.toContain("BLOCK, planned actions selected");
+      expect(tree.container.textContent).toContain("ALLOW");
+      expect(tree.container.textContent).toContain("design says ALLOW");
+      expect(tree.container.textContent).not.toContain("BLOCK, planned actions selected");
     } finally {
-      act(() => tree.unmount());
-      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+      if (originalStorage) Object.defineProperty(window, "localStorage", originalStorage);
+      else Reflect.deleteProperty(window, "localStorage");
     }
   });
 });

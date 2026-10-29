@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
+import { act, fireEvent, render, waitFor, type RenderResult } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { FieldState, OperatorState, ProcessElectrical } from "../lib/operator-api";
 import initialProcess from "../lib/fixtures/process-initial.json";
@@ -16,21 +17,25 @@ import { EquipmentCard } from "./physical-system-equipment";
 import { ControlCentreScreen, ControlCentreView } from "./control-centre-view";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-const clients: QueryClient[] = [], trees: ReactTestRenderer[] = [];
-const scroll = vi.fn(), selector = vi.fn(() => ({ scrollIntoView: scroll }));
+const clients: QueryClient[] = [];
+const scrollTargets: Element[] = [];
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value(this: Element) { scrollTargets.push(this); },
+});
 function mount(node: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
-  let tree!: ReactTestRenderer;
-  act(() => { tree = create(<QueryClientProvider client={client}>{node}</QueryClientProvider>, { createNodeMock: () => ({ querySelector: selector }) }); });
-  trees.push(tree); return tree;
+  return render(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
 }
 const props = { field: TRUTH, stateError: null, operator: FEEDER_STATE, now: NOW };
-const output = (tree: ReactTestRenderer) => JSON.stringify(tree.toJSON());
-const button = (tree: ReactTestRenderer, label: string) => tree.root.findAllByType("button").find((b) => b.children.map((c) => typeof c === "string" ? c : JSON.stringify(c.props.children)).join("").includes(label))!;
+const output = (tree: RenderResult) => tree.container.innerHTML;
+const button = (tree: RenderResult, label: string) => [...tree.container.querySelectorAll("button")].find((b) => b.textContent?.includes(label))!;
 afterEach(() => {
-  act(() => trees.splice(0).forEach((tree) => tree.unmount()));
   clients.splice(0).forEach((client) => client.clear());
-  vi.unstubAllGlobals(); vi.clearAllMocks();
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+  scrollTargets.length = 0;
+  window.history.replaceState(null, "", "/");
 });
 function normalField() {
   const field = oracleFixture(EU_ORACLE[12]).field;
@@ -78,9 +83,9 @@ describe("Physical System presentation", () => {
     expect(physicalAbnormalities(field).some((a) => a.id === "clock")).toBe(false);
     expect(output(tree)).toContain("No active physical abnormalities");
     expect(output(tree)).not.toContain("Time-sync warning");
-    act(() => button(tree, "Advanced diagnostics").props.onClick());
-    const stationTime = tree.root.findAllByType("h4").find((h) => h.children.join("") === "Station time")!.parent!;
-    expect(stationTime.findByType("p").children.join("")).toBe("No station clock declared.");
+    fireEvent.click(button(tree, "Advanced diagnostics"));
+    const stationTime = [...tree.container.querySelectorAll("h4")].find((h) => h.textContent === "Station time")!.parentElement!;
+    expect(stationTime.querySelector("p")?.textContent).toBe("No station clock declared.");
     expect(output(tree)).toContain("Device diagnostics");
     expect(output(tree)).not.toContain("Time-sync warning");
   });
@@ -137,10 +142,10 @@ describe("Physical System presentation", () => {
     const p = operator.points.find((p) => p.id === "rmu-2-source-kv")!;
     p.quality = { ...p.quality, iv: true, nt: true }; p.stale_reason = "link_lost";
     const tree = mount(<PhysicalSystemScreen {...props} field={field} operator={operator} />);
-    const row = tree.root.findAll((n) => n.props["data-comparison"] === p.id)[0];
-    expect(row.props["data-status"]).toBe("STALE");
+    const row = tree.container.querySelector(`[data-comparison="${p.id}"]`)!;
+    expect(row.getAttribute("data-status")).toBe("STALE");
     expect(output(tree)).toContain("CC↔RTU link lost");
-    expect(button(tree, "All comparable points (35)").props["aria-expanded"]).toBe(false);
+    expect(button(tree, "All comparable points (35)").getAttribute("aria-expanded")).toBe("false");
   });
   it("never turns null into zero and distinguishes validity, freshness, energization and known positions", () => {
     const field = structuredClone(TRUTH);
@@ -197,8 +202,8 @@ describe("Physical System presentation", () => {
     ]);
     const card = text(renderToStaticMarkup(<EquipmentCard id="F2" title="F2" device={f2} open onToggle={() => {}} stale={false} />));
     const diagnostics = mount(<PhysicalDiagnostics field={field} audit={null} />);
-    const group = diagnostics.root.findAllByType("h4").find((h) => h.children.join("") === "f2-breaker")!.parent!;
-    const details = group.findAllByType("span").map((span) => span.children.join("")).join(" ");
+    const group = [...diagnostics.container.querySelectorAll("h4")].find((h) => h.textContent === "f2-breaker")!.parentElement!;
+    const details = [...group.querySelectorAll("span")].map((span) => span.textContent).join(" ");
     for (const value of ["Protection tripped YES", "Lockout YES", "Protection picked up YES", "Instantaneous pickup 2000 A", "Last trip current 2010.0 A"]) expect(card).toContain(value);
     for (const value of ["Protection tripped YES", "Lockout YES", "Protection picked up YES", "Instantaneous pickup 2000 A", "Last trip current 2010.0 A", "overcurrent"]) expect(details).toContain(value);
     expect(details).not.toContain("3000 A");
@@ -222,66 +227,65 @@ describe("Physical System interactions", () => {
   it("reveals on selection and availability changes without undoing a manual collapse on polling", () => {
     const tree = mount(<PhysicalSystemScreen {...props} field={undefined} selected="CB1" revealSelected />);
     const update = (field: FieldState | undefined, selected: "CB1" | "RMU1") =>
-      act(() => tree.update(<QueryClientProvider client={clients[0]}>
+      tree.rerender(<QueryClientProvider client={clients[0]}>
         <PhysicalSystemScreen {...props} field={field} selected={selected} revealSelected />
-      </QueryClientProvider>));
+      </QueryClientProvider>);
     update(TRUTH, "CB1");
-    expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(true);
-    act(() => button(tree, "CB1 — Feeder breaker").props.onClick());
-    const scrolls = scroll.mock.calls.length;
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(button(tree, "CB1 — Feeder breaker"));
+    const scrolls = scrollTargets.length;
     update(structuredClone(TRUTH), "CB1");
-    expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(false);
-    expect(scroll).toHaveBeenCalledTimes(scrolls);
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("false");
+    expect(scrollTargets).toHaveLength(scrolls);
     update(TRUTH, "RMU1");
-    expect(tree.root.findByProps({ "aria-controls": "physical-details-RMU1" }).props["aria-expanded"]).toBe(true);
+    expect(tree.container.querySelector('[aria-controls="physical-details-RMU1"]')?.getAttribute("aria-expanded")).toBe("true");
     update(TRUTH, "CB1");
-    expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(true);
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
   });
 
   it("expands from overview, keeps state and scroll fixed during polling, and discloses matching secondary rows", () => {
     const tree = mount(<PhysicalSystemScreen {...props} />);
-    act(() => button(tree, "Feeder breaker").props.onClick());
-    expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(true);
-    act(() => button(tree, "Advanced diagnostics").props.onClick());
-    const calls = scroll.mock.calls.length;
-    act(() => tree.update(<QueryClientProvider client={clients[0]}><PhysicalSystemScreen {...props} field={structuredClone(TRUTH)} /></QueryClientProvider>));
-    expect(button(tree, "Advanced diagnostics").props["aria-expanded"]).toBe(true);
-    expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(true);
-    expect(scroll).toHaveBeenCalledTimes(calls);
-    act(() => button(tree, "SCADA agreement").props.onClick());
-    expect(button(tree, "All comparable points (35)").props["aria-expanded"]).toBe(true);
+    fireEvent.click(button(tree, "Feeder breaker"));
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(button(tree, "Advanced diagnostics"));
+    const calls = scrollTargets.length;
+    tree.rerender(<QueryClientProvider client={clients[0]}><PhysicalSystemScreen {...props} field={structuredClone(TRUTH)} /></QueryClientProvider>);
+    expect(button(tree, "Advanced diagnostics").getAttribute("aria-expanded")).toBe("true");
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
+    expect(scrollTargets).toHaveLength(calls);
+    fireEvent.click(button(tree, "SCADA agreement"));
+    expect(button(tree, "All comparable points (35)").getAttribute("aria-expanded")).toBe("true");
   });
   it("shares device selection across views in both directions", async () => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : url.includes("journal") ? JOURNAL : FEEDER_STATE)));
     vi.stubGlobal("fetch", fetchMock);
-    const location = { search: "", href: "http://localhost/substation" };
-    vi.stubGlobal("window", { location, history: { pushState: (_: unknown, _title: string, url: URL) => { location.search = url.search; location.href = url.href; } }, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+    window.history.replaceState(null, "", "/substation");
     const tree = mount(<ControlCentreView />);
-    await act(async () => {
-      await vi.waitFor(() => expect(tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("CB1:"))).toBeDefined());
-    });
-    act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("CB1:"))!.props.onClick());
-    act(() => button(tree, "Physical System").props.onClick());
-    await act(async () => {
-      await vi.waitFor(() => expect(button(tree, "CB1 — Feeder breaker")?.props["aria-expanded"]).toBe(true));
-    });
-    expect(location.search).toBe("?view=physical-system");
-    expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(true);
-    expect(selector).toHaveBeenCalledWith("#physical-equipment-CB1");
-    expect(tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("CB1:"))!.props["aria-pressed"]).toBe(true);
-    act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("RMU2 ·"))!.props.onClick());
-    act(() => button(tree, "Control Centre").props.onClick());
+    const breaker = () => tree.container.querySelector<SVGGElement>('g[role="button"][aria-label^="CB1:"]')!;
+    await waitFor(() => expect(breaker()).not.toBeNull());
+    fireEvent.click(breaker());
+    fireEvent.click(button(tree, "Physical System"));
+    await waitFor(() => expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true"));
+    expect(window.location.search).toBe("?view=physical-system");
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
+    const cb1 = () => tree.container.querySelector("#physical-equipment-CB1");
+    await waitFor(() => expect(cb1()).not.toBeNull());
+    await waitFor(() => expect(scrollTargets).toContain(cb1()));
+    expect(breaker().getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(tree.container.querySelector<SVGGElement>('g[role="button"][aria-label^="RMU2 ·"]')!);
+    fireEvent.click(button(tree, "Control Centre"));
     expect(output(tree)).toContain("RMU2 faceplate");
-    act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("F2 indication"))!.props.onClick());
-    act(() => button(tree, "Physical System").props.onClick());
-    await act(async () => {
-      await vi.waitFor(() => expect(button(tree, "F2 — Alternative feeder")?.props["aria-expanded"]).toBe(true));
-    });
-    expect(button(tree, "F2 — Alternative feeder").props["aria-expanded"]).toBe(true);
-    expect(selector).toHaveBeenCalledWith("#physical-equipment-F2");
-    act(() => button(tree, "Control Centre").props.onClick());
+    fireEvent.click(tree.container.querySelector<SVGGElement>('g[role="button"][aria-label^="F2 indication"]')!);
+    fireEvent.click(button(tree, "Physical System"));
+    await waitFor(() => expect(button(tree, "F2 — Alternative feeder").getAttribute("aria-expanded")).toBe("true"));
+    expect(button(tree, "F2 — Alternative feeder").getAttribute("aria-expanded")).toBe("true");
+    const f2 = () => tree.container.querySelector("#physical-equipment-F2");
+    await waitFor(() => expect(f2()).not.toBeNull());
+    await waitFor(() => expect(scrollTargets).toContain(f2()));
+    fireEvent.click(button(tree, "Control Centre"));
     expect(output(tree)).toContain("F2 faceplate");
-    expect(button(tree, "Confirm")).toBeUndefined();
+    expect(tree.container.querySelectorAll("button").length).toBeGreaterThan(0);
+    expect([...tree.container.querySelectorAll("button")].some((entry) => entry.textContent?.includes("Confirm"))).toBe(false);
   });
   it("retains audit evidence on audit failure independently of physical and SCADA availability", async () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => {
@@ -289,14 +293,10 @@ describe("Physical System interactions", () => {
       throw new Error("audit offline");
     }));
     const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
-    await act(async () => {
-      await vi.waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
-    });
+    await waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
     clients[0].setQueryData(["field", "audit", "breaker-1"], AUDIT);
-    await act(async () => {
-      button(tree, "Advanced diagnostics").props.onClick();
-    });
-    await vi.waitFor(() => expect(output(tree)).toContain("audit offline"));
+    fireEvent.click(button(tree, "Advanced diagnostics"));
+    await waitFor(() => expect(output(tree)).toContain("audit offline"));
     expect(output(tree)).toContain("Showing the last answer.");
     expect(output(tree)).toContain("rejected");
     expect(output(tree)).not.toContain("Physical system unavailable");
@@ -306,20 +306,16 @@ describe("Physical System interactions", () => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : AUDIT)));
     vi.stubGlobal("fetch", fetchMock);
     const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
-    await act(async () => {
-      await vi.waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
-    });
-    expect(fetchMock.mock.calls.some(([url]) => url.includes("audit"))).toBe(false);
-    await act(async () => { button(tree, "Advanced diagnostics").props.onClick(); });
-    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=breaker-1"))).toBe(true));
-    await act(async () => {
-      tree.root.findByType("select").props.onChange({ target: { value: device } });
-    });
-    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith(`device=${device}`))).toBe(true));
+    await waitFor(() => expect(output(tree)).toContain("Equipment overview"));
+    expect(fetchMock.mock.calls.some(([url]) => url.includes("/field/audit"))).toBe(false);
+    fireEvent.click(button(tree, "Advanced diagnostics"));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=breaker-1"))).toBe(true));
+    fireEvent.change(tree.container.querySelector('select[aria-label="Audit device"]')!, { target: { value: device } });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith(`device=${device}`))).toBe(true));
     expect(fetchMock.mock.calls.some(([url]) => url.endsWith(`device=${device}`))).toBe(true);
     act(() => { clients[0].setQueryData(["field", "state"], structuredClone(TRUTH)); });
-    expect(tree.root.findByType("select").props.value).toBe(device);
-    act(() => button(tree, "Advanced diagnostics").props.onClick());
+    expect((tree.container.querySelector('select[aria-label="Audit device"]') as HTMLSelectElement).value).toBe(device);
+    fireEvent.click(button(tree, "Advanced diagnostics"));
     expect(clients[0].getQueryCache().findAll({ queryKey: ["field", "audit"] }).every((q) => q.getObserversCount() === 0)).toBe(true);
   });
 });

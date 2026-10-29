@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
+import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { EU_PACKAGE, US_PACKAGE } from "../lib/operator-fixtures.test-util";
 import { FIREWALL_ACTIVE_KEY, NETWORK_EVENTS_KEY } from "../lib/live-queries";
 import type { PolicyComparison } from "../lib/api";
@@ -23,7 +24,7 @@ const comparison: PolicyComparison = {
   summary: "1 rule(s) tightened",
 };
 
-function render(
+function renderText(
   pkg: typeof EU_PACKAGE | typeof US_PACKAGE,
   activeConfig: string | null,
   withComparison = true,
@@ -49,10 +50,9 @@ describe("SegmentationView", () => {
     client.setQueryData(FIREWALL_ACTIVE_KEY, { active_config: "weak" });
     client.setQueryData(NETWORK_EVENTS_KEY, { events: [], source: "containd" });
     client.setQueryData(FIREWALL_COMPARISON_KEY, comparison);
-    let tree!: ReactTestRenderer;
-    act(() => { tree = create(<QueryClientProvider client={client}><SegmentationView /></QueryClientProvider>); });
+    const tree = rtlRender(<QueryClientProvider client={client}><SegmentationView /></QueryClientProvider>);
     try {
-      const selected = () => tree.root.findByType("select").props.value;
+      const selected = () => (screen.getByRole("combobox") as HTMLSelectElement).value;
       const active = async (active_config: string) => act(async () => {
         client.setQueryData(FIREWALL_ACTIVE_KEY, { active_config });
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -62,7 +62,7 @@ describe("SegmentationView", () => {
       expect(selected()).toBe("improved");
       await active("custom");
       expect(selected()).toBe("improved");
-      act(() => tree.root.findByType("select").props.onChange({ target: { value: "weak" } }));
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "weak" } });
       await active("improved");
       expect(selected()).toBe("weak");
       await active("custom");
@@ -72,17 +72,15 @@ describe("SegmentationView", () => {
         if (url.endsWith("/firewall/apply")) return new Response(JSON.stringify({ status: "ok", active_config: "weak" }));
         throw new TypeError("refresh unavailable");
       }));
-      await act(async () => {
-        tree.root.findAllByType("button").find((button) => button.children.includes("Apply"))!.props.onClick();
-        await vi.waitFor(() => expect(client.getMutationCache().getAll().at(-1)?.state.status).toBe("success"));
-      });
+      fireEvent.click(screen.getByRole("button", { name: /Apply/ }));
+      await waitFor(() => expect(client.getMutationCache().getAll().at(-1)?.state.status).toBe("success"));
       // A successful apply must not snap the inspection back to stale cache.
       expect(selected()).toBe("weak");
       await active("weak");
       await active("improved");
       expect(selected()).toBe("improved");
     } finally {
-      act(() => tree.unmount());
+      tree.unmount();
       client.clear();
       vi.unstubAllGlobals();
     }
@@ -90,31 +88,31 @@ describe("SegmentationView", () => {
 
   it.each([EU_PACKAGE, US_PACKAGE])("labels the mixed event stream by $id's active policy, without implying DPI is enabled", (pkg) => {
     for (const policy of ["weak", "improved", "custom"]) {
-      const html = render(pkg, policy);
+      const html = renderText(pkg, policy);
       const label = policy === "custom" ? "Custom policy"
         : pkg === US_PACKAGE ? (policy === "weak" ? "Weak Baseline" : "Hardened Segmentation") : policy;
       expect(html).toContain(`Live Firewall Events · ${label}`);
       expect(html).not.toContain("Live DPI Events");
     }
-    expect(render(pkg, null)).toContain("Live Firewall Events · Policy loading…");
+    expect(renderText(pkg, null)).toContain("Live Firewall Events · Policy loading…");
   });
 
   it("uses EU-specific named policy descriptions", () => {
-    const weak = render(EU_PACKAGE, "weak");
+    const weak = renderText(EU_PACKAGE, "weak");
     expect(weak).toContain(
       "Enterprise, vendor, and Control Centre sources can reach the RTU over IEC 104",
     );
     expect(weak).toContain("any station-zone host can reach the feeder breaker over Modbus TCP");
     expect(weak).not.toContain("RTAC");
 
-    const improved = render(EU_PACKAGE, "improved");
+    const improved = renderText(EU_PACKAGE, "improved");
     expect(improved).toContain("Only the Control Centre (10.60.60.20/32)");
     expect(improved).toContain("TCP/2404");
     expect(improved).toContain("TCP/502");
   });
 
   it("shows a custom active policy without baseline metadata or an active diff claim", () => {
-    const html = render(US_PACKAGE, "custom");
+    const html = renderText(US_PACKAGE, "custom");
     expect(html).toContain("Active Policy Custom policy");
     expect(html).not.toContain("All zones can reach field devices directly");
     expect(html).not.toMatch(/\d+ changes? vs active/);
@@ -126,7 +124,7 @@ describe("SegmentationView", () => {
   it("keeps policy controls visible while comparison is loading", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
     try {
-      const html = render(US_PACKAGE, "weak", false);
+      const html = renderText(US_PACKAGE, "weak", false);
       expect(html).toContain("Loading named policy comparison");
       expect(html).toContain("Apply");
     } finally {

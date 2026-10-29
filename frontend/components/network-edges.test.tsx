@@ -1,7 +1,7 @@
+// @vitest-environment jsdom
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { createPortal } from "react-dom";
+import { fireEvent, render } from "@testing-library/react";
 import { getBezierPath, Position, type EdgeProps, type Node } from "reactflow";
 import { describe, expect, it, vi } from "vitest";
 import { edgeTypes } from "./network-edges";
@@ -11,15 +11,11 @@ import type { LabGraph } from "../lib/api";
 import euFixture from "../../backend/internal/labs/testdata/eu-flow-graph.json";
 import usFixture from "../../backend/internal/labs/testdata/us-flow-graph.json";
 
-// React Flow's label portal requires a mounted canvas; keep its children
-// in the SSR output so geometry is testable without a browser.
+// Keep edge labels in the rendered tree; the policy tooltip uses the real
+// document body portal below.
 vi.mock("reactflow", async (importOriginal) => ({
   ...await importOriginal<typeof import("reactflow")>(),
   EdgeLabelRenderer: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-vi.mock("react-dom", async (importOriginal) => ({
-  ...await importOriginal<typeof import("react-dom")>(),
-  createPortal: vi.fn((children: React.ReactNode) => children),
 }));
 
 const base: EdgeProps = {
@@ -30,25 +26,15 @@ const base: EdgeProps = {
 
 describe("PolicyEdge", () => {
   it("opens the body portal only after hover and closes it on leave", () => {
-    const body = {};
-    vi.stubGlobal("document", { body });
-    let tree!: ReactTestRenderer;
-    act(() => { tree = create(<svg><edgeTypes.policyEdge {...base} data={{
+    const tree = render(<svg><edgeTypes.policyEdge {...base} data={{
       label: "Inbound policy", zoneMeta: { label: "Field", role: "Field devices", subnet: "fixture", fwIp: "fixture", description: "Field interface details" },
-    }} /></svg>); });
-    try {
-      const hitPath = () => tree.root.findAllByType("path").find((path) => path.props.onMouseEnter)!;
-      expect(createPortal).not.toHaveBeenCalled();
-      act(() => hitPath().props.onMouseEnter({ clientX: 20, clientY: 30 }));
-      expect(createPortal).toHaveBeenLastCalledWith(expect.anything(), body);
-      expect(JSON.stringify(tree.toJSON())).toContain("Field interface details");
-      act(() => hitPath().props.onMouseLeave());
-      expect(JSON.stringify(tree.toJSON())).not.toContain("Field interface details");
-    } finally {
-      act(() => tree.unmount());
-      vi.unstubAllGlobals();
-      vi.mocked(createPortal).mockClear();
-    }
+    }} /></svg>);
+    const hitPath = () => tree.container.querySelector('path[stroke="transparent"]')!;
+    expect(document.body.textContent).not.toContain("Field interface details");
+    fireEvent.mouseEnter(hitPath(), { clientX: 20, clientY: 30 });
+    expect(document.body.textContent).toContain("Field interface details");
+    fireEvent.mouseLeave(hitPath());
+    expect(document.body.textContent).not.toContain("Field interface details");
   });
 
   it.each([
