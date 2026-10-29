@@ -37,7 +37,7 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: Lint workflows (including embedded shell)
         # v1.7.12's runner-label catalog predates ubuntu-26.04 GA.
-        run: actionlint -ignore 'label "ubuntu-26\.04(-arm)?" is unknown' .github/workflows/*.yml
+        run: actionlint .github/workflows/*.yml
       - name: Lint tracked shell scripts
         run: git ls-files -z -- '*.sh' | xargs -0 shellcheck -x -S warning
       - name: Check base image pins

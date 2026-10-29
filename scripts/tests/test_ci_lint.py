@@ -30,10 +30,10 @@ class CILintTests(unittest.TestCase):
             'sudo install -m 0755 "$tmp/shellcheck-v0.11.0/shellcheck" /usr/local/bin/shellcheck',
             commands,
         )
-        self.assertIn(
-            "actionlint -ignore 'label \"ubuntu-26\\.04(-arm)?\" is unknown' "
-            ".github/workflows/*.yml",
-            commands,
+        self.assertIn("actionlint .github/workflows/*.yml", commands)
+        config = yaml.safe_load((ROOT / ".github/actionlint.yaml").read_text())
+        self.assertEqual(
+            config["self-hosted-runner"]["labels"], ["ubuntu-26.04", "ubuntu-26.04-arm"]
         )
         self.assertIn("git ls-files -z -- '*.sh' | xargs -0 shellcheck -x -S warning", commands)
         for step in job["steps"]:

@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- CI and release workflows now run on Ubuntu 26.04 GitHub-hosted runners.
+
 ## [v0.2.0-rc.3] - 2026-10-28
 
 Third release candidate for v0.2.0. It fixes SSD delta apply: a delta
