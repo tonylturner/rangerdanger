@@ -564,7 +564,7 @@ if ($kernelPublished) {
 }
 Banner "Write DELTA-README.md"
 $unchangedList = if ($unchanged.Count -gt 0) {
-    "## Unchanged (kept from prior install)`n`n" + (($unchanged | ForEach-Object { "- $_" }) -join "`n")
+    "`n## Unchanged (kept from prior install)`n`n" + (($unchanged | ForEach-Object { "- $_" }) -join "`n")
 } else { "" }
 $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
@@ -578,7 +578,7 @@ $applyTableRows = foreach ($img in $changed) {
 }
 # The shell writes each row with a trailing newline, so the table block
 # ends with one and the kernel row below it starts a fresh block.
-$applyTable = ($applyTableRows -join "`n") + "`n"
+$applyTable = if ($changed.Count -gt 0) { ($applyTableRows -join "`n") + "`n" } else { "" }
 
 $applyLoadCommand = if ($changed.Count -gt 0) {
     'ARCH=$(uname -m | sed ''s/x86_64/amd64/;s/aarch64/arm64/'')
@@ -629,15 +629,9 @@ if ($applyRetagCommands.Count -eq 0) {
     $applyRetagText = $applyRetagCommands -join "`n"
 }
 
-$applyBlock = @'
-set -e
-# Set this to the directory containing this delta bundle.
-DELTA_DIR="/path/to/delta-__NEW__"
-cd ~/rangerdanger
-test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
-
+$recipeFunctions = @'
 compose_down_project() {
-    project="$1"
+    local project="$1" compose_dir range_containers volume_names remaining_volumes volume
     compose_dir=$(mktemp -d) || return 1
     volume_names=""
     if [ "$project" = "rangerdanger" ]; then
@@ -672,6 +666,7 @@ compose_down_project() {
 }
 
 start_platform_and_selected_range() {
+    local ready attempt range_status phase
     RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
         --project-directory "$PWD" -f docker-compose.release.yml \
         up -d --pull never || return 1
@@ -703,6 +698,15 @@ start_platform_and_selected_range() {
     echo "Selected range did not become ready." >&2
     return 1
 }
+'@
+
+$applyBlock = @'
+set -e
+# Set this to the directory containing this delta bundle.
+DELTA_DIR="/path/to/delta-__NEW__"
+cd ~/rangerdanger
+test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
+__RECIPE_FUNCTIONS__
 
 # Only apply a delta to the version it was built from. Check before stopping
 # services or touching the install so a wrong or repeated delta is harmless.
@@ -763,11 +767,12 @@ NEW_VERSION=__NEW__ awk '
   END { if (!replaced) print "VERSION=" version }
 ' .env > .env.delta.tmp && mv .env.delta.tmp .env
 
-# Start the platform from local images without contacting GHCR, then ask
-# its backend to select the package recorded for this installation.
+# Start the platform from local images without contacting GHCR, then have
+# its backend select the recorded package through the normal range API.
 start_platform_and_selected_range
 '@
-$applyBlock = $applyBlock.Replace('__SINCE__', $Since).
+$applyBlock = $applyBlock.Replace('__RECIPE_FUNCTIONS__', $recipeFunctions).
+    Replace('__SINCE__', $Since).
     Replace('__NEW__', $New).
     Replace('__APPLY_BACKUP__', $applyBackupText).
     Replace('__APPLY_LOAD__', $applyLoadCommand).
@@ -776,72 +781,8 @@ $applyBlock = $applyBlock.Replace('__SINCE__', $Since).
 $rollbackBlock = @'
 set -e
 cd ~/rangerdanger
-compose_down_project() {
-    project="$1"
-    compose_dir=$(mktemp -d) || return 1
-    volume_names=""
-    if [ "$project" = "rangerdanger" ]; then
-        range_containers=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || return 1
-        if [ -n "$range_containers" ]; then
-            volume_names=$(printf '%s\n' "$range_containers" |
-                xargs docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}') || return 1
-        fi
-        if ! (cd "$compose_dir" && docker compose -p "$project" down -v --remove-orphans); then
-            rmdir "$compose_dir"
-            return 1
-        fi
-    elif ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
-        rmdir "$compose_dir"
-        return 1
-    fi
-    rmdir "$compose_dir"
-    [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] \
-        || { echo "Containers remain for Compose project $project." >&2; return 1; }
-    [ -z "$(docker network ls -q --filter "label=com.docker.compose.project=$project")" ] \
-        || { echo "Networks remain for Compose project $project." >&2; return 1; }
-    if [ "$project" = "rangerdanger" ]; then
-        remaining_volumes=$(docker volume ls -q) || return 1
-        while IFS= read -r volume; do
-            [ -n "$volume" ] || continue
-            printf '%s\n' "$remaining_volumes" | grep -Fxq "$volume" && {
-                echo "Range volume $volume remains after teardown." >&2
-                return 1
-            }
-        done <<< "$volume_names"
-    fi
-}
-start_platform_and_selected_range() {
-    RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
-        --project-directory "$PWD" -f docker-compose.release.yml \
-        up -d --pull never || return 1
-    ready=0
-    for attempt in $(seq 1 120); do
-        if curl -fsS --max-time 5 http://127.0.0.1:8088/api/health >/dev/null; then
-            ready=1
-            break
-        fi
-        sleep 2
-    done
-    [ "$ready" -eq 1 ] || { echo "Platform API did not become ready." >&2; return 1; }
-    curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
-        -d '{}' http://127.0.0.1:8088/api/range >/dev/null || return 1
-    for attempt in $(seq 1 150); do
-        range_status=$(curl -fsS --max-time 5 http://127.0.0.1:8088/api/range) || {
-            sleep 2
-            continue
-        }
-        phase=$(printf '%s' "$range_status" | python3 -c \
-            'import json,sys; print(json.load(sys.stdin).get("phase", ""))') || return 1
-        [ "$phase" = "ready" ] && return 0
-        if [ "$phase" = "failed" ]; then
-            echo "Selected range failed to start: $range_status" >&2
-            return 1
-        fi
-        sleep 2
-    done
-    echo "Selected range did not become ready." >&2
-    return 1
-}
+__RECIPE_FUNCTIONS__
+
 test -f "../rangerdanger.before-__NEW__.tar.gz" || {
     echo "Rollback snapshot not found beside ~/rangerdanger." >&2
     exit 1
@@ -859,7 +800,8 @@ cd rangerdanger
 __ROLLBACK_RESTORE__
 start_platform_and_selected_range
 '@
-$rollbackBlock = $rollbackBlock.Replace('__NEW__', $New).
+$rollbackBlock = $rollbackBlock.Replace('__RECIPE_FUNCTIONS__', $recipeFunctions).
+    Replace('__NEW__', $New).
     Replace('__ROLLBACK_RESTORE__', $rollbackRestoreText)
 
 $readme = @"
@@ -918,7 +860,7 @@ the rollback window closes:
 $rollbackBlock
 ``````
 "@
-# Write LF and no BOM. This file carries a /bin/sh recipe the student runs
+# Write LF and no BOM. This file carries a bash/zsh recipe the student runs
 # on Linux or macOS, and a Windows checkout gives the here-strings above
 # CRLF, which `sh` reads as part of each value it compares.
 [System.IO.File]::WriteAllText(

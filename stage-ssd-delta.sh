@@ -634,7 +634,10 @@ if [ "${#UNCHANGED[@]}" -gt 0 ]; then
         UNCHANGED_SECTION+="- $image"$'\n'
     done
 fi
-COMPOSE_DOWN_FUNCTION=$(cat <<'FUNCTION'
+# Bash 3.2 folds backslash-newlines in quoted heredocs inside $(...).
+# Write literal recipe text directly; the Python renderer reads it unchanged.
+RECIPE_FUNCTIONS="$MEMBERSHIP_DIR/recipe-functions.sh"
+cat > "$RECIPE_FUNCTIONS" <<'FUNCTIONS'
 compose_down_project() {
     local project="$1" compose_dir range_containers volume_names remaining_volumes volume
     compose_dir=$(mktemp -d) || return 1
@@ -669,9 +672,7 @@ compose_down_project() {
         done <<< "$volume_names"
     fi
 }
-FUNCTION
-)
-START_PLATFORM_FUNCTION=$(cat <<'FUNCTION'
+
 start_platform_and_selected_range() {
     local ready attempt range_status phase
     RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
@@ -705,8 +706,7 @@ start_platform_and_selected_range() {
     echo "Selected range did not become ready." >&2
     return 1
 }
-FUNCTION
-)
+FUNCTIONS
 README_TEMPLATE="$MEMBERSHIP_DIR/DELTA-README.template"
 APPLY_TABLE=""
 for img in ${CHANGED[@]+"${CHANGED[@]}"}; do
@@ -806,8 +806,7 @@ set -e
 DELTA_DIR="/path/to/delta-__NEW__"
 cd ~/rangerdanger
 test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
-__COMPOSE_DOWN_FUNCTION__
-__START_PLATFORM_FUNCTION__
+__RECIPE_FUNCTIONS__
 # Only apply a delta to the version it was built from. Check before stopping
 # services or touching the install so a wrong or repeated delta is harmless.
 CURRENT_VERSION=\$(awk '/^VERSION=/ { sub(/^VERSION=/, ""); print; exit }' .env)
@@ -906,8 +905,7 @@ the rollback window closes:
 \`\`\`sh
 set -e
 cd ~/rangerdanger
-__COMPOSE_DOWN_FUNCTION__
-__START_PLATFORM_FUNCTION__
+__RECIPE_FUNCTIONS__
 test -f "../rangerdanger.before-__NEW__.tar.gz" || {
     echo "Rollback snapshot not found beside ~/rangerdanger." >&2
     exit 1
@@ -931,7 +929,7 @@ python3 - "$README_TEMPLATE" "$OUT/DELTA-README.md" "$SINCE" "$NEW" \
     "$APPLY_TABLE" "$KERNEL_README_ROW" "$UNCHANGED_SECTION" \
     "$APPLY_BACKUP_COMMANDS" "$APPLY_LOAD_COMMAND" "$APPLY_RETAG_COMMANDS" \
     "$BINFMT_IMAGE" "$ROLLBACK_RESTORE_COMMANDS" \
-    "$COMPOSE_DOWN_FUNCTION" "$START_PLATFORM_FUNCTION" \
+    "$RECIPE_FUNCTIONS" \
     <<'PY' || die "Could not render DELTA-README.md"
 from datetime import datetime, timezone
 from pathlib import Path
@@ -940,8 +938,7 @@ import sys
 (
     template_path, output_path, since, new, apply_table, kernel_row,
     unchanged_section, backup_commands, load_command, retag_commands,
-    binfmt_image, rollback_commands, compose_down_function,
-    start_platform_function,
+    binfmt_image, rollback_commands, recipe_functions_path,
 ) = sys.argv[1:]
 template = Path(template_path).read_text(encoding="utf-8")
 template = template.replace(r"\$", "$").replace(r"\`", "`")
@@ -951,14 +948,13 @@ replacements = {
     "__NEW__": new,
     "__APPLY_TABLE__": apply_table,
     "__KERNEL_README_ROW__": kernel_row,
-    "__UNCHANGED_SECTION__": unchanged_section,
-    "__APPLY_BACKUP_COMMANDS__": backup_commands,
+    "__UNCHANGED_SECTION__": unchanged_section.rstrip("\n"),
+    "__APPLY_BACKUP_COMMANDS__": backup_commands.rstrip("\n"),
     "__APPLY_LOAD_COMMAND__": load_command,
-    "__APPLY_RETAG_COMMANDS__": retag_commands,
+    "__APPLY_RETAG_COMMANDS__": retag_commands.rstrip("\n"),
     "__BINFMT_IMAGE__": binfmt_image,
-    "__ROLLBACK_RESTORE_COMMANDS__": rollback_commands,
-    "__COMPOSE_DOWN_FUNCTION__": compose_down_function + "\n",
-    "__START_PLATFORM_FUNCTION__": start_platform_function + "\n",
+    "__ROLLBACK_RESTORE_COMMANDS__": rollback_commands.rstrip("\n"),
+    "__RECIPE_FUNCTIONS__": Path(recipe_functions_path).read_text(encoding="utf-8"),
 }
 for token, value in replacements.items():
     template = template.replace(token, value)

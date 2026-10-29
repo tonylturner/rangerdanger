@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -145,11 +146,14 @@ urllib.request.urlopen = urlopen
         path.write_text(content, encoding="utf-8")
         path.chmod(0o755)
 
-    def _run_bash_generator(self, since: str = "v1", *, all_images: bool = True) -> str:
+    def _run_bash_generator(
+        self, since: str = "v1", *, all_images: bool = True, include: str = "",
+    ) -> str:
         output = self.root / "bash-output"
         result = subprocess.run(
             ["/bin/bash", str(ROOT / "stage-ssd-delta.sh"), str(output), since, "v2"]
-            + (["--all"] if all_images else []),
+            + (["--all"] if all_images else [])
+            + (["--include", include] if include else []),
             cwd=ROOT,
             env=self.env,
             capture_output=True,
@@ -158,9 +162,11 @@ urllib.request.urlopen = urlopen
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        return (output / "DELTA-README.md").read_text(encoding="utf-8")
+        return (output / "DELTA-README.md").read_bytes().decode("utf-8")
 
-    def _run_powershell_generator(self) -> str:
+    def _run_powershell_generator(
+        self, since: str = "v1", *, all_images: bool = True, include: str = "",
+    ) -> str:
         pwsh = shutil.which("pwsh")
         if not pwsh:
             self.skipTest("pwsh is unavailable; PowerShell render cannot run")
@@ -181,15 +187,27 @@ function Invoke-WebRequest {
         Copy-Item (Join-Path $env:RD_RECORD_DIR "$($Matches[1]).json") $OutFile
         return
     }
+    if ($env:RD_KERNEL) {
+        if ($Method -eq 'Head') { return @{ StatusCode = 200 } }
+        $source = if ($Uri.EndsWith('.sha256')) { $env:RD_KERNEL_SHA } else { $env:RD_KERNEL }
+        Copy-Item $source $OutFile
+        return
+    }
     throw "stub: optional kernel asset is not published"
 }
+$options = @{}
+if ($env:RD_ALL -eq '1') { $options.All = $true }
+if ($env:RD_INCLUDE) { $options.Include = $env:RD_INCLUDE }
 & (Join-Path $env:RD_REPO "stage-ssd-delta.ps1") `
-    -OutDir $env:RD_OUT -Since v1 -New v2 -All
+    -OutDir $env:RD_OUT -Since $env:RD_SINCE -New v2 @options
 if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 """.strip(),
             encoding="utf-8",
         )
-        env = dict(self.env, RD_REPO=str(ROOT), RD_OUT=str(output))
+        env = dict(
+            self.env, RD_REPO=str(ROOT), RD_OUT=str(output), RD_SINCE=since,
+            RD_ALL="1" if all_images else "0", RD_INCLUDE=include,
+        )
         result = subprocess.run(
             [pwsh, "-NoLogo", "-NoProfile", "-File", str(driver)],
             cwd=ROOT,
@@ -200,9 +218,9 @@ if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        return (output / "DELTA-README.md").read_text(encoding="utf-8")
+        return (output / "DELTA-README.md").read_bytes().decode("utf-8")
 
-    def _assert_literal_delta_recipe(self, readme: str, powershell: bool = False) -> None:
+    def _assert_literal_delta_recipe(self, readme: str) -> None:
         self.assertEqual(
             readme.count('docker compose -p "$project" down -v --remove-orphans'),
             2,
@@ -211,13 +229,9 @@ if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             readme.count('docker compose -p "$project" down --remove-orphans'),
             2,
         )
-        expected_project = (
-            'project="$1"\n    compose_dir=$(mktemp -d)'
-            if powershell else
-            'local project="$1" compose_dir range_containers volume_names remaining_volumes volume'
-        )
         for literal in (
-            expected_project,
+            'local project="$1" compose_dir range_containers volume_names remaining_volumes volume',
+            'local ready attempt range_status phase',
             'compose_dir=$(mktemp -d) || return 1',
             'range_containers=$(docker ps -aq --filter "label=com.docker.compose.project=$project")',
             'range_status=$(curl -fsS --max-time 5 http://127.0.0.1:8088/api/range)',
@@ -242,9 +256,61 @@ if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     def test_both_generators_render_literal_recipe_and_scoped_volume_teardown(self) -> None:
         self._assert_literal_delta_recipe(self._run_bash_generator())
         self._assert_literal_delta_recipe(
-            self._run_powershell_generator(), powershell=True)
+            self._run_powershell_generator())
 
-    def test_repo_only_delta_under_system_bash(self) -> None:
+    def test_readme_byte_parity_and_shell_syntax(self) -> None:
+        # Cover empty/nonempty tables, unchanged tags, mutable-tag backups,
+        # and the optional kernel row without contacting Docker or a registry.
+        cases = (
+            ("all", "v1", True, ""),
+            ("repo-only", "v1", False, ""),
+            ("same-release", "v2", False, ""),
+            ("mixed-with-kernel", "v1", False, "backend"),
+        )
+        for name, since, all_images, include in cases:
+            with self.subTest(case=name):
+                if name == "mixed-with-kernel":
+                    self._enable_kernel_asset()
+                bash = self._run_bash_generator(since, all_images=all_images, include=include)
+                powershell = self._run_powershell_generator(
+                    since, all_images=all_images, include=include)
+                if name == "all":
+                    self.assertIn(":before-v2", bash)
+                elif name == "mixed-with-kernel":
+                    self.assertIn("`rangerdanger-wsl2-kernel` + `.sha256`", bash)
+                    self.assertIn("docker image tag ghcr.io/", bash)
+                else:
+                    self.assertIn("# No image archive was created;", bash)
+                normalized = []
+                for readme in (bash, powershell):
+                    value, count = re.subn(
+                        rb"(?m)^Staged \S+ (?=for upgrade from )",
+                        b"Staged <timestamp> ", readme.encode("utf-8"),
+                    )
+                    self.assertEqual(count, 1)
+                    normalized.append(value)
+                self.assertEqual(*normalized)
+                blocks = re.findall(r"```sh\n(.*?)\n```", bash, flags=re.DOTALL)
+                self.assertEqual(len(blocks), 2)
+                source = (ROOT / "stage-ssd-delta.sh").read_text(encoding="utf-8")
+                for function in ("compose_down_project", "start_platform_and_selected_range"):
+                    literal = re.search(
+                        rf"(?m)^{function}\(\) \{{\n.*?^\}}", source, flags=re.DOTALL,
+                    )
+                    self.assertIsNotNone(literal)
+                    for block in blocks:
+                        self.assertIn(literal.group(), block)
+                for shell in ("/bin/bash", shutil.which("zsh")):
+                    if not shell:
+                        continue  # zsh is not installed on every Linux CI host.
+                    for block in blocks:
+                        result = subprocess.run(
+                            [shell, "-n"], input=block, text=True,
+                            capture_output=True, timeout=10, check=False,
+                        )
+                        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def _enable_kernel_asset(self) -> bytes:
         kernel = b"fixture WSL kernel\n"
         kernel_path = self.root / "kernel"
         kernel_path.write_bytes(kernel)
@@ -254,7 +320,6 @@ if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             encoding="ascii",
         )
         self.env.update(
-            RD_NO_IMAGE_STAGING="1",
             RD_KERNEL=str(kernel_path),
             RD_KERNEL_SHA=str(checksum),
         )
@@ -275,6 +340,11 @@ done
 [ -n "$output" ]
 cp "$source" "$output"
 """)
+        return kernel
+
+    def test_repo_only_delta_under_system_bash(self) -> None:
+        kernel = self._enable_kernel_asset()
+        self.env["RD_NO_IMAGE_STAGING"] = "1"
         # Both a same-release repo refresh and an unchanged-image upgrade.
         for since in ("v2", "v1"):
             with self.subTest(since=since):
