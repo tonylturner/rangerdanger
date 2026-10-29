@@ -5,7 +5,8 @@ import unittest
 
 from .test_containd_ui_prefix import (
     AUTODETECT_CASES, CLI_CHUNK, DOUBLE_PREFIXED, NAV, ON_DEMAND, ROOT, ROUTE_CASES, ROUTE_CHUNKS,
-    ROUTE_FAILURES, ROUTE_PAGES, ROUTE_REQUESTS, SERVED, TOO_MANY_ROUTES, USERS, WEBPACK, WEBPACK_CASES, probe,
+    ROUTE_FAILURES, ROUTE_PAGES, ROUTE_REQUESTS, SERVED, TOO_MANY_ROUTES, UNREWRITTEN_CASES, USERS, WEBPACK,
+    WEBPACK_CASES, probe,
 )
 from .test_setup_ps1_root import powershell
 
@@ -134,14 +135,17 @@ class ContaindProbeTests(unittest.TestCase):
 
     def test_route_patterns_are_identical_to_python(self):
         text = (ROOT / "scripts/lib/containd-ui-probe.ps1").read_text()
-        for name, pattern in (("containdRoute", probe.CONTAIND_ROUTE), ("linkRoute", probe.LINK_ROUTE)):
+        for name, pattern in (("containdRoute", probe.CONTAIND_ROUTE), ("linkRoute", probe.LINK_ROUTE),
+                              ("flightLink", probe.FLIGHT_LINK)):
             with self.subTest(name=name):
                 match = re.search(rf"^    \${name} = '((?:''|[^'])*)'$", text, re.M)
                 self.assertIsNotNone(match)
                 self.assertEqual(match.group(1).replace("''", "'"), pattern.pattern)
-        match = re.search(r"^    \$notRoutes = @\(((?:'[^']*'(?:, )?)*)\)$", text, re.M)
-        self.assertIsNotNone(match)
-        self.assertEqual(tuple(re.findall(r"'([^']*)'", match.group(1))), probe.NOT_ROUTES)
+        for name, names in (("notRoutes", probe.NOT_ROUTES), ("linkExempt", probe.LINK_EXEMPT)):
+            with self.subTest(name=name):
+                match = re.search(rf"^    \${name} = @\(((?:'[^']*'(?:, )?)*)\)$", text, re.M)
+                self.assertIsNotNone(match)
+                self.assertEqual(tuple(re.findall(r"'([^']*)'", match.group(1))), names)
         self.assertIn(f"$maxRoutePages = {probe.MAX_ROUTE_PAGES}\n", text)
 
     def test_route_pages_from_path_literals_match_python(self):
@@ -171,6 +175,43 @@ class ContaindProbeTests(unittest.TestCase):
             result.stdout,
         )
         self.assertNotIn("/containd/api/v1/auth/login", result.stdout)
+
+    def test_unrewritten_route_links_match_python(self):
+        for body, literal in UNREWRITTEN_CASES:
+            with self.subTest(body=body):
+                # The links name routes the probe crawls, so serve the fake route site too.
+                data = with_routes(fixture())
+                data["/containd/_next/static/main.js"]["body"] += body
+                result = self.run_probe(data)
+                self.assertEqual(result.returncode, 0 if literal is None else 1, result.stdout + result.stderr)
+                self.assertIn("7 chunks (2 on demand), 4 route pages" if literal is None else (
+                    "FAIL containd UI: /containd/_next/static/main.js: chunk has a route link the proxy did not "
+                    f"rewrite: {literal}\n"), result.stdout)
+
+    def test_served_nav_with_an_unrewritten_route_link_fails_naming_it(self):
+        # Regression: the proxy rewrote no "/identities link, so the UI link left containd.
+        data = with_routes(fixture())
+        data["/containd/_next/static/main.js"]["body"] = data["/containd/_next/static/main.js"]["body"].replace(
+            '"/containd/identities/"', '"/identities/"')
+        result = self.run_probe(data)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('/containd/_next/static/main.js: chunk has a route link the proxy did not rewrite: '
+                      'href:"/identities/"\n', result.stdout)
+        self.assertNotIn("/containd/api/v1/auth/login", result.stdout)
+
+    def test_route_and_root_pages_with_an_unrewritten_route_link_fail(self):
+        for path in ("/containd/", "/containd/identities/", "/containd/login/"):
+            for link, literal in (('<a href="/identities/">', 'href="/identities/"'),
+                                  ('<script>self.__next_f.push([1,"{\\"href\\":\\"/zones/\\"}"])</script>',
+                                   '\\"href\\":\\"/zones/\\"')):
+                with self.subTest(path=path, link=link):
+                    data = with_routes(fixture())
+                    data[path]["body"] += link
+                    result = self.run_probe(data)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn(f"FAIL containd UI: {path}: page has a route link the proxy did not rewrite: "
+                                  f"{literal}\n", result.stdout)
+                    self.assertNotIn("/containd/api/v1/auth/login", result.stdout)
 
     def test_route_pages_and_their_chunks_keep_the_fetch_and_path_guards(self):
         for path, (body, content_type, status), message in ROUTE_FAILURES:

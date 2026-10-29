@@ -62,23 +62,46 @@ function Get-ContaindOnDemandChunks($Chunks) {
     }
 }
 
+function Get-ContaindLinkRoutes([string]$Body) {
+    # Root-relative link targets: href:"/identities/" in a chunk, href="/identities/" in HTML,
+    # then the same link inside an inline React Server Components payload, where quotes are escaped.
+    $linkRoute = 'href[:=](["''])/(?!containd[/?#"''])([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"'']*)?\1'
+    $flightLink = '\\"href\\":\\"/(?!containd[/?#\\])([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"\\]*)?\\"'
+    foreach ($match in [regex]::Matches($Body, $linkRoute)) {
+        [pscustomobject]@{ Route = $match.Groups[2].Value; Literal = $match.Value; Escaped = $false }
+    }
+    foreach ($match in [regex]::Matches($Body, $flightLink)) {
+        [pscustomobject]@{ Route = $match.Groups[1].Value; Literal = $match.Value; Escaped = $true }
+    }
+}
+
+function Confirm-ContaindLinksRewritten($Documents, [string]$Kind) {
+    # In the proxied UI every route link must carry /containd/; a bare one leaves the UI.
+    # Root-relative links that are not routes: assets and the API.
+    $linkExempt = @('_next', 'api')
+    foreach ($entry in $Documents.GetEnumerator()) {
+        $link = Get-ContaindLinkRoutes ([string]$entry.Value) |
+            Where-Object { $_.Route.Split('/')[0] -cnotin $linkExempt } | Select-Object -First 1
+        if ($link) { throw "$($entry.Key): $Kind has a route link the proxy did not rewrite: $($link.Literal)" }
+    }
+}
+
 function Get-ContaindRoutePages($Chunks) {
     # App-router page chunks (app/<route>/page-*.js) load only from their own route's HTML.
     # Routes come from the bundle's path literals: proxy-prefixed ones ("/containd/alerts/",
     # "/containd/login?reason=") and root-relative link targets (href:"/identities/").
+    # A root-relative link is also a proxy defect: the route list's sub_filter missed it.
     # Returns /containd/<route>/ paths in ordinal order.
     $containdRoute = '(["''])/containd/([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"'']*)?\1'
-    $linkRoute = 'href:(["''])/(?!containd[/?#"''])([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"'']*)?\1'
     # Not app-router pages: assets, the API, a double prefix, and containd's documentation,
     # which is a separate static site whose scripts live outside /_next/static/.
     $notRoutes = @('_next', 'api', 'containd', 'docs')
     $routes = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($body in $Chunks.Values) {
-        foreach ($pattern in @($containdRoute, $linkRoute)) {
-            foreach ($match in [regex]::Matches([string]$body, $pattern)) {
-                $route = $match.Groups[2].Value
-                if ($route.Split('/')[0] -cnotin $notRoutes) { $null = $routes.Add("/containd/$route/") }
-            }
+        $named = @(foreach ($match in [regex]::Matches([string]$body, $containdRoute)) { $match.Groups[2].Value }) +
+            @(Get-ContaindLinkRoutes ([string]$body) | Where-Object { -not $_.Escaped } | ForEach-Object { $_.Route })
+        foreach ($route in $named) {
+            if ($route.Split('/')[0] -cnotin $notRoutes) { $null = $routes.Add("/containd/$route/") }
         }
     }
     $sorted = [string[]]@($routes)
@@ -132,6 +155,7 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
 
     function Get-ProbePageChunks([string]$Path) {
         $html = Get-ProbeBody $Path @('text/html')
+        $pages[$Path] = $html
         foreach ($source in @(Get-ContaindScriptSources $html)) { Get-ProbeChunkPath $source 'embedded script source' }
     }
     function Get-OrdinalSorted($Items) {
@@ -143,6 +167,7 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
 
     $scripts = @('application/javascript', 'text/javascript')
     $maxRoutePages = 200
+    $pages = New-Object Collections.Specialized.OrderedDictionary ([StringComparer]::Ordinal)
     $paths = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($path in @(Get-ProbePageChunks '/containd/')) { $null = $paths.Add($path) }
     if (-not $paths.Count) { throw 'containd page contains no JavaScript chunks' }
@@ -180,8 +205,10 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         if ($body -cmatch '(?:window\.location\.pathname|\(\s*null\s*!=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\?\s*\1\s*:\s*window\.location\.pathname\s*\))\.startsWith\(\s*["'']/containd/["'']\s*\)\s*\?\s*["'']/containd["'']') { $autodetect = $true }
         if ($body -cmatch '["'']/api/v1/auth/me["'']') { $authMe = $true }
     }
+    Confirm-ContaindLinksRewritten $chunks 'chunk'
     if (-not $autodetect) { throw 'Chunks do not contain the /containd/ runtime API-base autodetect' }
     if (-not $authMe) { throw 'Chunks do not contain the unprefixed auth/me call' }
+    Confirm-ContaindLinksRewritten $pages 'page'
     Write-Host "PASS containd UI: $($chunks.Count) chunks ($onDemand on demand), $($visited.Count) route pages, runtime API base intact, no double prefix"
 
     function Get-ProbeJsonProperty([string]$Json, [string]$Name) {

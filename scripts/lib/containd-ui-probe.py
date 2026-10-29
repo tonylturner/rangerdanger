@@ -86,13 +86,20 @@ def ondemand_chunks(chunks):
 # App-router page chunks (app/<route>/page-*.js) load only from their own route's HTML.
 # Routes come from the bundle's path literals: proxy-prefixed ones ("/containd/alerts/",
 # "/containd/login?reason=") and root-relative link targets (href:"/identities/").
+# A root-relative link is also a proxy defect: the route list's sub_filter missed it.
 CONTAIND_ROUTE = re.compile(r'''(["'])/containd/([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"']*)?\1''')
 LINK_ROUTE = re.compile(
-    r'''href:(["'])/(?!containd[/?#"'])([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"']*)?\1'''
+    r'''href[:=](["'])/(?!containd[/?#"'])([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"']*)?\1'''
 )
 # Not app-router pages: assets, the API, a double prefix, and containd's documentation,
 # which is a separate static site whose scripts live outside /_next/static/.
 NOT_ROUTES = ("_next", "api", "containd", "docs")
+# The same link inside an inline React Server Components payload, where quotes are escaped.
+FLIGHT_LINK = re.compile(
+    r'''\\"href\\":\\"/(?!containd[/?#\\])([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)/?(?:[?#][^"\\]*)?\\"'''
+)
+# Root-relative links that are not routes: assets and the API.
+LINK_EXEMPT = ("_next", "api")
 MAX_ROUTE_PAGES = 200
 
 
@@ -108,6 +115,22 @@ def route_pages(chunks):
     return sorted(routes)
 
 
+def unrewritten_links(body):
+    """Root-relative route links in a chunk or page, as the literals that carry them."""
+    for pattern, group in ((LINK_ROUTE, 2), (FLIGHT_LINK, 1)):
+        for match in pattern.finditer(body):
+            if match.group(group).split("/", 1)[0] not in LINK_EXEMPT:
+                yield match.group(0)
+
+
+def check_links(documents, kind):
+    """In the proxied UI every route link must carry /containd/; a bare one leaves the UI."""
+    for path, body in documents.items():
+        link = next(unrewritten_links(body), None)
+        if link:
+            raise ProbeError(f"{path}: {kind} has a route link the proxy did not rewrite: {link}")
+
+
 def check_chunks(chunks):
     """containd adds its API base at runtime, so no chunk may carry a proxy-prefixed API literal."""
     for path, body in chunks.items():
@@ -116,6 +139,7 @@ def check_chunks(chunks):
         match = PREFIXED_API.search(body)
         if match:
             raise ProbeError(f"{path}: runtime-based API literal was rewritten: {match.group(2)}")
+    check_links(chunks, "chunk")
     if not any(AUTODETECT.search(body) for body in chunks.values()):
         raise ProbeError("chunks do not contain the /containd/ runtime API-base autodetect")
     if not any(re.search(r"""["']/api/v1/auth/me["']""", body) for body in chunks.values()):
@@ -156,9 +180,12 @@ def probe(base):
         return url.path + ("?" + url.query if url.query else "")
 
     scripts = {"application/javascript", "text/javascript"}
+    pages = {}
+
     def page_chunks(path):
         parser = Scripts()
-        parser.feed(fetch(path, {"text/html"}))
+        pages[path] = fetch(path, {"text/html"})
+        parser.feed(pages[path])
         return {chunk_path(source, "embedded script source") for source in parser.sources}
 
     paths = page_chunks("/containd/")
@@ -183,6 +210,7 @@ def probe(base):
         for path in sorted(found - chunks.keys()):
             chunks[path] = fetch(path, scripts)
     check_chunks(chunks)
+    check_links(pages, "page")
     print(
         f"PASS containd UI: {len(chunks)} chunks ({ondemand} on demand), {len(visited)} route pages, "
         "runtime API base intact, no double prefix"

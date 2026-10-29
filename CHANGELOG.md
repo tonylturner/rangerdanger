@@ -28,6 +28,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   echo the command, select-before-operate checks the selected value,
   restart and unsupported-function indications use the right bits, and
   class 1-3 polls no longer return static data.
+- The Identities link in the embedded firewall UI opens the containd
+  Identities page instead of a portal "not found" page. The proxy smoke test
+  now fails on any containd link that leaves the embedded UI.
 
 ## [v0.2.0-rc.3] - 2026-10-28
 

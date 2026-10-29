@@ -102,11 +102,11 @@ ROUTE_CASES = (
     ('"/containd/zones/";"/containd/Zones/";"/containd/ab/";"/containd/a-c/"',
      ["/containd/Zones/", "/containd/a-c/", "/containd/ab/", "/containd/zones/"]),
 )
-# A fake app-router site. The nav names three routes (one root-relative link, one with a
-# query) plus documentation, which is not crawled; the alerts page chunk names a fourth
-# route, reachable only in the second round; the login page loads no scripts.
+# A fake app-router site as a correct proxy serves it. The nav names three routes (one
+# with a query) plus documentation, which is not crawled; the alerts page chunk names a
+# fourth route, reachable only in the second round; the login page loads no scripts.
 NAV = (
-    'h=[{href:"/containd/alerts/"},{href:"/identities/"},{href:"/"},{href:"/containd/docs/x/"}];'
+    'h=[{href:"/containd/alerts/"},{href:"/containd/identities/"},{href:"/"},{href:"/containd/docs/x/"}];'
     'location.href="/containd/login?reason=logout";'
 )
 ALERTS, IDENTITIES, USERS = (
@@ -138,6 +138,18 @@ ROUTE_FAILURES = (
     ("/containd/system/users/", ('<script src="http://elsewhere/containd/_next/static/x.js"></script>',
                                  "text/html", 200), "embedded script source: http://elsewhere/"),
     (USERS, ("<html>fallback</html>", "text/html", 200), "expected 200"),
+)
+# Root-relative route links the proxy did not rewrite, and the literal the probe must name
+# (None passes). Shared with the PowerShell probe tests.
+UNREWRITTEN_CASES = (
+    ('h=[{href:"/identities/"}]', 'href:"/identities/"'),
+    ("{href:'/system/users'}", "href:'/system/users'"),
+    ('<a class="x" href="/alerts/?tab=1">', 'href="/alerts/?tab=1"'),
+    ('self.__next_f.push([1,"{\\"href\\":\\"/identities/\\"}"])', '\\"href\\":\\"/identities/\\"'),
+    ('href:"/docs/"', 'href:"/docs/"'),
+    ('href:"/containd/identities/";href:"/containd";href:"/";href:"/_next/static/x/"', None),
+    ('href:"/api/v1/pcap/download/x";\\"href\\":\\"/containd/zones/\\"', None),
+    ('href:"/logo.svg";href:"https://example.com/identities/";"/identities/";href:"/a b/"', None),
 )
 TOO_MANY_ROUTES = "".join(f'"/containd/r{index}/";' for index in range(probe.MAX_ROUTE_PAGES + 1))
 
@@ -180,6 +192,36 @@ class RoutesTests(unittest.TestCase):
                             broken = broken.replace(source, target)
                         with self.assertRaisesRegex(probe.ProbeError, "runtime-based API literal"):
                             probe.check_chunks({"fixture.js": broken})
+
+    def test_route_redirects_and_rewrites_cover_the_served_route_links(self):
+        for package in PACKAGES:
+            with self.subTest(package=package):
+                text = (ROOT / f"lab-definitions/packages/{package}/nginx.routes.conf").read_text()
+                redirect = re.search(r"(?m)^\s*location ~ \^/\(([a-z|]+)\)\(/\.\*\)\?\$ \{$", text)
+                self.assertIsNotNone(redirect)
+                redirects = redirect.group(1).split("|")
+                rewrites = [
+                    source[2:] for source, target in filters(text)
+                    if re.fullmatch(r'"/[a-z]+', source) and target == '"/containd/' + source[2:]
+                ]
+                self.assertEqual(redirects, sorted(redirects))
+                self.assertEqual(rewrites, sorted(rewrites))
+                self.assertIn("identities", redirects)
+                # /assets is FUXA's at the portal root; /login has its own exact redirect.
+                self.assertEqual(sorted(set(rewrites) - set(redirects)), ["assets", "login"])
+                self.assertEqual(set(redirects) - set(rewrites), set())
+                # The served nav links, rewritten by the actual directives, stay in the UI.
+                nav = "".join(f'{{href:"/{route}/"}},' for route in rewrites)
+                body = nav
+                for source, target in filters(text):
+                    body = body.replace(source, target)
+                probe.check_links({"nav.js": body}, "chunk")
+                missing = nav
+                for source, target in filters(text):
+                    if source != '"/identities':
+                        missing = missing.replace(source, target)
+                with self.assertRaisesRegex(probe.ProbeError, 'route link the proxy did not rewrite: href:"/identities/"'):
+                    probe.check_links({"nav.js": missing}, "chunk")
 
     def test_guard_rejects_broad_filter_with_alternate_whitespace_and_quotes(self):
         with self.assertRaises(ValueError):
@@ -239,6 +281,19 @@ class ChunkTests(unittest.TestCase):
             probe.route_pages({"a.js": 'href:"/identities/"', "b.js": '"/containd/identities/"'}),
             ["/containd/identities/"],
         )
+
+    def test_unrewritten_route_links_fail_naming_the_literal(self):
+        for body, literal in UNREWRITTEN_CASES:
+            with self.subTest(body=body):
+                chunks = {"shared.js": RUNTIME, "nav.js": body}
+                if literal is None:
+                    probe.check_chunks(chunks)
+                else:
+                    with self.assertRaisesRegex(
+                        probe.ProbeError,
+                        "^nav.js: chunk has a route link the proxy did not rewrite: " + re.escape(literal) + "$",
+                    ):
+                        probe.check_chunks(chunks)
 
     def test_no_autodetect_or_no_auth_call_is_incomplete(self):
         for body in ("", 'U("/api/v1/auth/me")', RUNTIME.split(";")[0]):
@@ -372,6 +427,36 @@ class ProbeTests(unittest.TestCase):
         ):
             self.run_probe()
         self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
+
+    def test_served_nav_with_an_unrewritten_route_link_fails_naming_it(self):
+        # Regression: the proxy rewrote no "/identities link, so the UI link left containd.
+        self.add_routes()
+        self.responses["/containd/_next/static/chunks/console.js"] = (
+            SERVED + NAV.replace('"/containd/identities/"', '"/identities/"'), "text/javascript", 200,
+        )
+        with self.assertRaisesRegex(
+            probe.ProbeError,
+            '^/containd/_next/static/chunks/console.js: chunk has a route link the proxy did not rewrite: '
+            'href:"/identities/"$',
+        ):
+            self.run_probe()
+        self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
+
+    def test_route_and_root_pages_with_an_unrewritten_route_link_fail(self):
+        for path in ("/containd/", "/containd/identities/", "/containd/login/"):
+            for link in ('<a href="/identities/">', '<script>self.__next_f.push([1,"{\\"href\\":\\"/zones/\\"}"])</script>'):
+                with self.subTest(path=path, link=link):
+                    self.setUp()
+                    self.add_routes()
+                    body, content_type, status = self.responses[path]
+                    self.responses[path] = (body + link, content_type, status)
+                    literal = re.search(r'href="/[^"]*"|\\"href\\":\\"/[^\\]*\\"', link).group(0)
+                    with self.assertRaisesRegex(
+                        probe.ProbeError,
+                        f"^{re.escape(path)}: page has a route link the proxy did not rewrite: {re.escape(literal)}$",
+                    ):
+                        self.run_probe()
+                    self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
 
     def test_route_pages_and_their_chunks_keep_the_fetch_and_path_guards(self):
         for path, response, message in ROUTE_FAILURES:
