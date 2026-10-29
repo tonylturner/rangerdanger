@@ -3,7 +3,9 @@ import json
 import re
 import unittest
 
-from .test_containd_ui_prefix import AUTODETECT_CASES, DOUBLE_PREFIXED, ROOT, SERVED, probe
+from .test_containd_ui_prefix import (
+    AUTODETECT_CASES, CLI_CHUNK, DOUBLE_PREFIXED, ON_DEMAND, ROOT, SERVED, WEBPACK, WEBPACK_CASES, probe,
+)
 from .test_setup_ps1_root import powershell
 
 
@@ -12,6 +14,7 @@ GOOD_CHUNK = (
     'fetch("/api/v1/auth/me");' + SERVED
 )
 CLI, PCAP = probe.API_ROUTES
+RUNTIME_SCRIPT = '<script src="/containd/_next/static/webpack.js"></script>'
 
 PROBE = r"""
 $ErrorActionPreference = 'Stop'
@@ -61,14 +64,22 @@ try {
     Invoke-ContaindUiProbe $env:ORIGIN
     Write-Output ('REQUESTS=' + ($script:seen -join ','))
     exit 0
-} catch { Write-Output "FAIL containd UI: $_"; exit 1 }
+} catch {
+    Write-Output "FAIL containd UI: $_"
+    Write-Output ('REQUESTS=' + ($script:seen -join ','))
+    exit 1
+}
 """
 
 
 def fixture():
     return {
-        "/containd/": dict(status=200, type="text/html", body='<script src="/containd/_next/static/main.js"></script>'),
+        "/containd/": dict(status=200, type="text/html",
+                           body='<script src="/containd/_next/static/main.js"></script>' + RUNTIME_SCRIPT),
         "/containd/_next/static/main.js": dict(status=200, type="application/javascript", body=GOOD_CHUNK),
+        "/containd/_next/static/webpack.js": dict(status=200, type="application/javascript", body=WEBPACK),
+        ON_DEMAND[0]: dict(status=200, type="application/javascript", body=""),
+        ON_DEMAND[1]: dict(status=200, type="text/javascript; charset=utf-8", body=CLI_CHUNK),
         "/containd/api/v1/auth/login": dict(status=200, type="application/json", body='{"token":"lab-token"}'),
         "/containd/api/v1/auth/me": dict(status=200, type="application/json", body='{"username":"containd"}'),
         # Real Invoke-WebRequest throws on a 4xx; the API's live refusals.
@@ -93,6 +104,46 @@ class ContaindProbeTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1).replace("''", "'"), probe.AUTODETECT.pattern)
 
+    def test_webpack_runtime_regexes_are_identical_to_python(self):
+        text = (ROOT / "scripts/lib/containd-ui-probe.ps1").read_text()
+        for name, pattern in (("webpackChunks", probe.WEBPACK_CHUNKS), ("chunkName", probe.CHUNK_NAME),
+                              ("chunkHash", probe.CHUNK_HASH), ("publicPath", probe.PUBLIC_PATH)):
+            with self.subTest(name=name):
+                match = re.search(rf"^    \${name} = '((?:''|[^'])*)'$", text, re.M)
+                self.assertIsNotNone(match)
+                self.assertEqual(match.group(1).replace("''", "'"), pattern.pattern)
+
+    def test_webpack_runtime_shapes_match_python(self):
+        for body, message in WEBPACK_CASES:
+            with self.subTest(body=body):
+                data = fixture()
+                data["/containd/_next/static/webpack.js"]["body"] = body
+                result = self.run_probe(data)
+                self.assertEqual(result.returncode, 0 if message is None else 1, result.stdout + result.stderr)
+                self.assertIn("4 chunks (2 on demand)" if message is None else message, result.stdout)
+                if message is not None:
+                    self.assertNotIn("/containd/api/v1/auth/login", result.stdout)
+
+    def test_on_demand_chunks_are_fetched_in_map_order_after_page_chunks(self):
+        result = self.run_probe(fixture())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "REQUESTS=/containd/,/containd/_next/static/main.js,/containd/_next/static/webpack.js,"
+            + ",".join(ON_DEMAND) + ",/containd/api/v1/auth/login", result.stdout,
+        )
+
+    def test_bad_literal_only_in_an_on_demand_chunk_fails_before_login(self):
+        # Regression: the CLI console chunk is not a page script; only the runtime map names it.
+        data = fixture()
+        data[ON_DEMAND[1]]["body"] = DOUBLE_PREFIXED[1]
+        result = self.run_probe(data)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(
+            "6625.caa6f620978d1981.js: runtime-based API literal was rewritten: /containd/api/v1/cli/ws\n",
+            result.stdout,
+        )
+        self.assertNotIn("/containd/api/v1/auth/login", result.stdout)
+
     def test_pathname_autodetect_shapes_match_python(self):
         for body, accepted in AUTODETECT_CASES:
             with self.subTest(body=body):
@@ -100,7 +151,7 @@ class ContaindProbeTests(unittest.TestCase):
                 data["/containd/_next/static/main.js"]["body"] = body + ';U("/api/v1/auth/me");'
                 result = self.run_probe(data)
                 self.assertEqual(result.returncode, 0 if accepted else 1, result.stdout + result.stderr)
-                self.assertIn("1 chunks" if accepted else "runtime API-base autodetect", result.stdout)
+                self.assertIn("4 chunks" if accepted else "runtime API-base autodetect", result.stdout)
 
     def test_pass_session_bounds_mime_parameters_and_unique_chunks(self):
         data = fixture()
@@ -110,11 +161,11 @@ class ContaindProbeTests(unittest.TestCase):
 <script>const text = '<script src="wrong.js">';</script>
 <SCRIPT data-note=">" SRC="_next/static/main.js"></SCRIPT>
 <script src="/containd/_next/static/main.js"></script>
-"""
+""" + RUNTIME_SCRIPT
         data["/containd/_next/static/main.js"]["type"] = "text/javascript; charset=utf-8"
         result = self.run_probe(data)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("1 chunks", result.stdout)
+        self.assertIn("4 chunks (2 on demand)", result.stdout)
         self.assertIn("username=containd", result.stdout)
         self.assertIn("400 from the containd API, not the UI page", result.stdout)
         self.assertEqual(result.stdout.count("static/main.js"), 1)
@@ -144,7 +195,7 @@ class ContaindProbeTests(unittest.TestCase):
                 data = fixture()
                 data["/containd/"]["body"] = (
                     '<script src="_next/static/main.js"/>'
-                    '<script src="_next/static/second.js"></script>'
+                    '<script src="_next/static/second.js"></script>' + RUNTIME_SCRIPT
                 )
                 data["/containd/_next/static/main.js"]["body"] = (
                     'window.location.pathname.startsWith("/containd/") ? "/containd" : ""'
@@ -155,7 +206,7 @@ class ContaindProbeTests(unittest.TestCase):
                 )
                 result = self.run_probe(data)
                 self.assertEqual(result.returncode, 1 if invalid else 0, result.stdout + result.stderr)
-                self.assertIn("runtime-based API literal" if invalid else "2 chunks", result.stdout)
+                self.assertIn("runtime-based API literal" if invalid else "5 chunks", result.stdout)
 
     def test_missing_bundle_and_script_origin_path_extension(self):
         for source in (None, "https://elsewhere.invalid/containd/_next/static/x.js",
@@ -174,12 +225,12 @@ class ContaindProbeTests(unittest.TestCase):
         data = fixture()
         data["/containd/"]["body"] = (
             "<script src='_next/static/main.js?a=1&amp;b=2'></script>"
-            "<script src=/containd/_next/static/main.js?a=1&amp;b=2></script>"
+            "<script src=/containd/_next/static/main.js?a=1&amp;b=2></script>" + RUNTIME_SCRIPT
         )
         data["/containd/_next/static/main.js?a=1&b=2"] = data.pop("/containd/_next/static/main.js")
         result = self.run_probe(data)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("1 chunks", result.stdout)
+        self.assertIn("4 chunks (2 on demand)", result.stdout)
 
     def test_auth_failure_token_and_identity_types_json(self):
         for path, bodies, message in (

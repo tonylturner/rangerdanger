@@ -28,6 +28,40 @@ function Get-ContaindScriptSources([string]$Html) {
     }
 }
 
+function Get-ContaindOnDemandChunks($Chunks) {
+    # The served webpack runtime, black-box (current bundle):
+    #   r.p="/containd/_next/",r.u=e=>"static/chunks/"+(3888===e?"e868780c":e)+"."+({747:"5cee...",...})[e]+".js"
+    # Ids not named in the optional ===-chain use the id as the name. Any other
+    # shape fails rather than skipping chunks. Returns chunk URLs in map order.
+    $webpackChunks = '(?<![\w$])([A-Za-z_$][\w$]*)\.u=([A-Za-z_$][\w$]*)=>"static/chunks/"\+(\2|\((?:\d+===\2\?"[\w-]+":)+\2\))\+"\."\+\((\{(?:\d+:"[\w-]+"(?:,\d+:"[\w-]+")*)?\})\)\[\2\]\+"\.js"'
+    $chunkName = '(\d+)===[A-Za-z_$][\w$]*\?"([\w-]+)"'
+    $chunkHash = '(\d+):"([\w-]+)"'
+    $publicPath = '(?<![\w$])([A-Za-z_$][\w$]*)\.p="([^"]*)"'
+    $runtimes = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($entry in $Chunks.GetEnumerator()) {
+        foreach ($match in [regex]::Matches([string]$entry.Value, $webpackChunks)) {
+            $runtimes.Add([pscustomobject]@{ Path = $entry.Key; Body = [string]$entry.Value; Match = $match })
+        }
+    }
+    if ($runtimes.Count -ne 1) { throw "Chunks contain $($runtimes.Count) webpack runtime chunk maps, expected 1" }
+    $runtime = $runtimes[0]
+    $public = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($found in [regex]::Matches($runtime.Body, $publicPath)) {
+        if ($found.Groups[1].Value -ceq $runtime.Match.Groups[1].Value) { $null = $public.Add($found.Groups[2].Value) }
+    }
+    if ($public.Count -ne 1) { throw "$($runtime.Path): webpack runtime does not set exactly one public path" }
+    $prefix = "$(@($public)[0])static/chunks/"
+    $names = @{}
+    foreach ($found in [regex]::Matches($runtime.Match.Groups[3].Value, $chunkName)) {
+        if (-not $names.ContainsKey($found.Groups[1].Value)) { $names[$found.Groups[1].Value] = $found.Groups[2].Value }
+    }
+    foreach ($found in [regex]::Matches($runtime.Match.Groups[4].Value, $chunkHash)) {
+        $chunk = $found.Groups[1].Value
+        $name = if ($names.ContainsKey($chunk)) { $names[$chunk] } else { $chunk }
+        "$prefix$name.$($found.Groups[2].Value).js"
+    }
+}
+
 function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     $Origin = $Origin.TrimEnd('/')
     $base = $null
@@ -59,25 +93,38 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         $utf8.GetString($response.RawContentStream.ToArray())
     }
 
-    $page = Get-ProbeBody '/containd/' @('text/html')
-    $paths = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
-    foreach ($source in @(Get-ContaindScriptSources $page)) {
-        $url = New-Object uri (New-Object uri "$Origin/containd/"), $source
+    function Get-ProbeChunkPath([string]$Source, [string]$Kind) {
+        $url = New-Object uri (New-Object uri "$Origin/containd/"), $Source
         # Uri.Authority canonicalizes case/default ports; urlsplit's netloc
         # comparison in the reference probe deliberately does not.
         $scriptAuthority = [regex]::Match($url.OriginalString, '^[^:]+://([^/?#]+)').Groups[1].Value
         if ($url.Scheme -cne $base.Scheme -or $scriptAuthority -cne $authority -or
             -not $url.AbsolutePath.StartsWith('/containd/_next/static/', [StringComparison]::Ordinal) -or
             -not $url.AbsolutePath.EndsWith('.js', [StringComparison]::Ordinal)) {
-            throw "Unexpected embedded script source: $source"
+            throw "Unexpected ${Kind}: $Source"
         }
-        $null = $paths.Add($url.PathAndQuery)
+        $url.PathAndQuery
+    }
+
+    $scripts = @('application/javascript', 'text/javascript')
+    $page = Get-ProbeBody '/containd/' @('text/html')
+    $paths = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($source in @(Get-ContaindScriptSources $page)) {
+        $null = $paths.Add((Get-ProbeChunkPath $source 'embedded script source'))
     }
     if (-not $paths.Count) { throw 'containd page contains no JavaScript chunks' }
+    $chunks = New-Object Collections.Specialized.OrderedDictionary ([StringComparer]::Ordinal)
+    foreach ($path in ($paths | Sort-Object)) { $chunks[$path] = Get-ProbeBody $path $scripts }
+    $onDemand = 0
+    foreach ($source in @(Get-ContaindOnDemandChunks $chunks)) {
+        $path = Get-ProbeChunkPath $source 'on-demand chunk'
+        if (-not $chunks.Contains($path)) { $chunks[$path] = Get-ProbeBody $path $scripts; $onDemand++ }
+    }
     $autodetect = $false
     $authMe = $false
-    foreach ($path in ($paths | Sort-Object)) {
-        $body = Get-ProbeBody $path @('application/javascript', 'text/javascript')
+    foreach ($entry in $chunks.GetEnumerator()) {
+        $path = $entry.Key
+        $body = [string]$entry.Value
         if ($body.Contains('/containd/containd/')) { throw "${path}: double /containd/ prefix" }
         # containd adds its API base at runtime, so no proxy-prefixed API literal is allowed.
         $match = [regex]::Match($body, '(["''])(/containd/api/[^"'']*)\1')
@@ -89,7 +136,7 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     }
     if (-not $autodetect) { throw 'Chunks do not contain the /containd/ runtime API-base autodetect' }
     if (-not $authMe) { throw 'Chunks do not contain the unprefixed auth/me call' }
-    Write-Host "PASS containd UI: $($paths.Count) chunks, runtime API base intact, no double prefix"
+    Write-Host "PASS containd UI: $($chunks.Count) chunks ($onDemand on demand), runtime API base intact, no double prefix"
 
     function Get-ProbeJsonProperty([string]$Json, [string]$Name) {
         # ConvertFrom-Json enumerates arrays and PS member lookup folds case;

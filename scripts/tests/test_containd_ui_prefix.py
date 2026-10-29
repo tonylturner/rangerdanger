@@ -57,6 +57,35 @@ DOUBLE_PREFIXED = (
     'function w(e){return(0,r.Sw)("/containd/api/v1/pcap/download/".concat(encodeURIComponent(e)))};',
     't=(0,i.Le)("/containd/api/v1/cli/ws",window.location.protocol,window.location.host);',
 )
+# The served webpack runtime (with its CSS map); chunk 3888 has a named file, 6625 is the CLI console.
+WEBPACK = (
+    'r.u=e=>"static/chunks/"+(3888===e?"e868780c":e)+"."'
+    '+({3888:"cd737c579891689c",6625:"caa6f620978d1981"})[e]+".js",'
+    'r.miniCssF=e=>"static/css/"+({3786:"659eccb5db697b76"})[e]+".css",r.p="/containd/_next/",'
+)
+ON_DEMAND = (
+    "/containd/_next/static/chunks/e868780c.cd737c579891689c.js",
+    "/containd/_next/static/chunks/6625.caa6f620978d1981.js",
+)
+CLI_CHUNK = DOUBLE_PREFIXED[1].replace('"/containd/api/', '"/api/')
+# Shared with the native PowerShell probe tests: runtime shapes and the failure they
+# must give (None passes). Unknown shapes fail rather than skip on-demand chunks.
+WEBPACK_CASES = (
+    (WEBPACK, None),
+    ('t.p="/elsewhere/",' + WEBPACK, None),
+    (WEBPACK + 'r.p="/containd/_next/";', None),
+    # The first ===-test for an id decides its name, as in the JavaScript conditional chain.
+    (WEBPACK.replace('(3888===e?"e868780c":e)', '(3888===e?"e868780c":3888===e?"later":e)'), None),
+    ("", "0 webpack runtime chunk maps, expected 1"),
+    (WEBPACK + WEBPACK, "2 webpack runtime chunk maps, expected 1"),
+    (WEBPACK.replace('r.p="/containd/_next/",', ""), "exactly one public path"),
+    (WEBPACK + 'r.p="/other/";', "exactly one public path"),
+    (WEBPACK.replace('"/containd/_next/"', '"/_next/"'), "on-demand chunk: /_next/static/chunks/"),
+    (WEBPACK.replace("r.u=e=>", "r.u=function(e){return ").replace('".js",r.miniCssF', '".js"},r.miniCssF'),
+     "0 webpack runtime chunk maps"),
+    (WEBPACK.replace('6625:"caa6f620978d1981"', '6625:"../../x"'), "0 webpack runtime chunk maps"),
+    (WEBPACK.replace('"e868780c":e', '"e868780c":t'), "0 webpack runtime chunk maps"),
+)
 
 
 def filters(text):
@@ -136,6 +165,18 @@ class ChunkTests(unittest.TestCase):
             with self.subTest(body=body), self.assertRaises(probe.ProbeError):
                 probe.check_chunks({"shared.js": RUNTIME, "bad.js": body})
 
+    def test_ondemand_chunks_follow_the_runtime_chunk_map(self):
+        self.assertEqual(probe.ondemand_chunks({"a.js": RUNTIME, "webpack.js": WEBPACK}), list(ON_DEMAND))
+        self.assertEqual(
+            probe.ondemand_chunks({"w.js": 'n.p="/p/",n.u=t=>"static/chunks/"+t+"."+({})[t]+".js"'}), [],
+        )
+        self.assertEqual(
+            probe.ondemand_chunks({"w.js": 'n.p="/p/";n.u=t=>"static/chunks/"+t+"."+({1:"a",22:"b"})[t]+".js"'}),
+            ["/p/static/chunks/1.a.js", "/p/static/chunks/22.b.js"],
+        )
+        with self.assertRaisesRegex(probe.ProbeError, "2 webpack runtime chunk maps"):
+            probe.ondemand_chunks({"a.js": WEBPACK, "b.js": WEBPACK})
+
     def test_no_autodetect_or_no_auth_call_is_incomplete(self):
         for body in ("", 'U("/api/v1/auth/me")', RUNTIME.split(";")[0]):
             with self.subTest(body=body), self.assertRaises(probe.ProbeError):
@@ -159,11 +200,15 @@ class ProbeTests(unittest.TestCase):
             "/containd/": (
                 '<script src="/containd/_next/static/chunks/shared.js"></script>'
                 '<script src="/containd/_next/static/chunks/console.js"></script>'
-                '<script src="/containd/_next/static/chunks/shared.js"></script>',
+                '<script src="/containd/_next/static/chunks/shared.js"></script>'
+                '<script src="/containd/_next/static/chunks/webpack.js"></script>',
                 "text/html", 200,
             ),
             "/containd/_next/static/chunks/shared.js": (RUNTIME, "application/javascript", 200),
             "/containd/_next/static/chunks/console.js": (SERVED, "text/javascript", 200),
+            "/containd/_next/static/chunks/webpack.js": (WEBPACK, "application/javascript", 200),
+            ON_DEMAND[0]: ("", "application/javascript", 200),
+            ON_DEMAND[1]: (CLI_CHUNK, "application/javascript", 200),
             "/containd/api/v1/auth/login": (
                 '{"token":"test-token","user":{"username":"containd"}}', "application/json", 200,
             ),
@@ -194,10 +239,12 @@ class ProbeTests(unittest.TestCase):
 
     def test_probes_all_chunks_then_logs_in_reads_me_and_checks_api_routes(self):
         output = self.run_probe()
-        self.assertIn("2 chunks", output)
+        self.assertIn("5 chunks (2 on demand)", output)
         self.assertIn("/containd/api/v1/auth/me: 200 application/json", output)
         self.assertIn("400 from the containd API", output)
-        self.assertEqual(len(self.requests), 7)
+        self.assertEqual(len(self.requests), 10)
+        self.assertEqual([req.full_url.removeprefix("http://127.0.0.1:8088") for req in self.requests[4:6]],
+                         list(ON_DEMAND))
         login, me, cli, pcap = self.requests[-4:]
         self.assertEqual(login.get_method(), "POST")
         self.assertEqual(json.loads(login.data), {"username": "containd", "password": "containd"})
@@ -207,6 +254,33 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(request.full_url, "http://127.0.0.1:8088" + path)
             self.assertEqual(request.get_header("Authorization"), "Bearer test-token")
         self.assertTrue(all("/containd/containd/" not in req.full_url for req in self.requests))
+
+    def test_bad_literal_only_in_an_on_demand_chunk_fails_before_login(self):
+        # Regression: the CLI console chunk is not a page script; only the runtime map names it.
+        self.responses[ON_DEMAND[1]] = (DOUBLE_PREFIXED[1], "application/javascript", 200)
+        with self.assertRaisesRegex(
+            probe.ProbeError,
+            "6625.caa6f620978d1981.js: runtime-based API literal was rewritten: /containd/api/v1/cli/ws$",
+        ):
+            self.run_probe()
+        self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
+
+    def test_on_demand_chunk_must_be_served_as_javascript(self):
+        self.responses[ON_DEMAND[0]] = ("<html>fallback</html>", "text/html", 200)
+        with self.assertRaisesRegex(probe.ProbeError, "e868780c.cd737c579891689c.js: expected 200"):
+            self.run_probe()
+
+    def test_webpack_runtime_shapes(self):
+        for body, message in WEBPACK_CASES:
+            with self.subTest(body=body):
+                self.requests = []
+                self.responses["/containd/_next/static/chunks/webpack.js"] = (body, "text/javascript", 200)
+                if message is None:
+                    self.assertIn("5 chunks (2 on demand)", self.run_probe())
+                else:
+                    with self.assertRaisesRegex(probe.ProbeError, re.escape(message)):
+                        self.run_probe()
+                    self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
 
     def test_api_route_refusal_raised_by_urllib_passes(self):
         headers = Message()

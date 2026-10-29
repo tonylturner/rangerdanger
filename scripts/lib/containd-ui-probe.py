@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Check the embedded containd bundle, session and API routing without changing range policy.
 
+The bundle check covers the chunks the page loads and those its webpack runtime loads on demand.
+
 Standalone (EU or US): python3 scripts/lib/containd-ui-probe.py http://127.0.0.1:8088
 Uses the documented public lab account, containd/containd. No Docker required.
 """
@@ -51,6 +53,35 @@ API_ROUTES = (
 )
 
 
+# The served webpack runtime, black-box (current bundle):
+#   r.p="/containd/_next/",r.u=e=>"static/chunks/"+(3888===e?"e868780c":e)+"."+({747:"5cee...",...})[e]+".js"
+# The chunk-URL function maps each on-demand chunk id to a file; ids not named in the
+# optional ===-chain use the id as the name. Any other shape fails rather than skipping chunks.
+WEBPACK_CHUNKS = re.compile(
+    r'(?<![\w$])([A-Za-z_$][\w$]*)\.u=([A-Za-z_$][\w$]*)=>"static/chunks/"\+(\2|\((?:\d+===\2\?"[\w-]+":)+\2\))\+"\."\+\((\{(?:\d+:"[\w-]+"(?:,\d+:"[\w-]+")*)?\})\)\[\2\]\+"\.js"'
+)
+CHUNK_NAME = re.compile(r'(\d+)===[A-Za-z_$][\w$]*\?"([\w-]+)"')
+CHUNK_HASH = re.compile(r'(\d+):"([\w-]+)"')
+PUBLIC_PATH = re.compile(r'(?<![\w$])([A-Za-z_$][\w$]*)\.p="([^"]*)"')
+
+
+def ondemand_chunks(chunks):
+    """Chunk URLs the webpack runtime loads on demand (the CLI console is one), in map order."""
+    runtimes = [
+        (path, body, match) for path, body in chunks.items() for match in WEBPACK_CHUNKS.finditer(body)
+    ]
+    if len(runtimes) != 1:
+        raise ProbeError(f"chunks contain {len(runtimes)} webpack runtime chunk maps, expected 1")
+    path, body, match = runtimes[0]
+    public = {found.group(2) for found in PUBLIC_PATH.finditer(body) if found.group(1) == match.group(1)}
+    if len(public) != 1:
+        raise ProbeError(f"{path}: webpack runtime does not set exactly one public path")
+    prefix = public.pop() + "static/chunks/"
+    # The first ===-test for an id decides its name, as in the JavaScript conditional chain.
+    names = dict(reversed(CHUNK_NAME.findall(match.group(3))))
+    return [f"{prefix}{names.get(chunk, chunk)}.{digest}.js" for chunk, digest in CHUNK_HASH.findall(match.group(4))]
+
+
 def check_chunks(chunks):
     """containd adds its API base at runtime, so no chunk may carry a proxy-prefixed API literal."""
     for path, body in chunks.items():
@@ -90,25 +121,33 @@ def probe(base):
             body = response.read().decode("utf-8")
         return body
 
-    page = fetch("/containd/", {"text/html"})
-    parser = Scripts()
-    parser.feed(page)
-    paths = set()
-    for source in parser.sources:
+    def chunk_path(source, kind):
         url = urlsplit(urljoin(base + "/containd/", source))
         if (url.scheme, url.netloc) != (origin.scheme, origin.netloc) or not (
             url.path.startswith("/containd/_next/static/") and url.path.endswith(".js")
         ):
-            raise ProbeError(f"unexpected embedded script source: {source}")
-        paths.add(url.path + ("?" + url.query if url.query else ""))
+            raise ProbeError(f"unexpected {kind}: {source}")
+        return url.path + ("?" + url.query if url.query else "")
+
+    scripts = {"application/javascript", "text/javascript"}
+    page = fetch("/containd/", {"text/html"})
+    parser = Scripts()
+    parser.feed(page)
+    paths = {chunk_path(source, "embedded script source") for source in parser.sources}
     if not paths:
         raise ProbeError("containd page contains no JavaScript chunks")
-    chunks = {
-        path: fetch(path, {"application/javascript", "text/javascript"})
-        for path in sorted(paths)
-    }
+    chunks = {path: fetch(path, scripts) for path in sorted(paths)}
+    ondemand = 0
+    for source in ondemand_chunks(chunks):
+        path = chunk_path(source, "on-demand chunk")
+        if path not in chunks:
+            chunks[path] = fetch(path, scripts)
+            ondemand += 1
     check_chunks(chunks)
-    print(f"PASS containd UI: {len(chunks)} chunks, runtime API base intact, no double prefix")
+    print(
+        f"PASS containd UI: {len(chunks)} chunks ({ondemand} on demand), "
+        "runtime API base intact, no double prefix"
+    )
 
     login_path = "/containd/api/v1/auth/login"
     login = json.loads(fetch(
