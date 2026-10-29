@@ -9,9 +9,13 @@ Uses the documented public lab account, containd/containd. No Docker required.
 """
 
 import argparse
+import base64
+import hashlib
+from http.client import HTTPConnection, HTTPSConnection
 from html.parser import HTMLParser
 from http.cookiejar import CookieJar
 import json
+import os
 import re
 import sys
 from urllib.error import HTTPError, URLError
@@ -21,6 +25,38 @@ from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, bu
 
 class ProbeError(ValueError):
     """An incomplete check is a failure, never a pass."""
+
+
+def cli_upgrade(origin, token):
+    """Authenticate a browser-origin handshake, then close without sending CLI commands."""
+    url = urlsplit(origin)
+    connection = (HTTPSConnection if url.scheme == "https" else HTTPConnection)(
+        url.hostname, url.port, timeout=15,
+    )
+    path = "/containd/api/v1/cli/ws"
+    key = base64.b64encode(os.urandom(16)).decode("ascii")
+    try:
+        connection.request("GET", path, headers={
+            "Host": url.netloc, "Origin": origin, "Authorization": f"Bearer {token}",
+            "Connection": "Upgrade", "Upgrade": "websocket",
+            "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": key,
+        })
+        response = connection.getresponse()
+        with response:
+            if response.status != 101:
+                raise ProbeError(f"{path}: expected websocket 101, got {response.status} {response.reason}")
+            accept = base64.b64encode(hashlib.sha1(
+                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+            ).digest()).decode("ascii")
+            if (response.getheader("Upgrade", "").lower() != "websocket"
+                    or "upgrade" not in {
+                        part.strip().lower() for part in response.getheader("Connection", "").split(",")
+                    }
+                    or response.getheader("Sec-WebSocket-Accept") != accept):
+                raise ProbeError(f"{path}: invalid websocket upgrade headers")
+    finally:
+        connection.close()
+    print(f"PASS {path}: websocket 101 with browser Origin {origin}")
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -239,6 +275,7 @@ def probe(base):
         if status != 400 or content_type == "text/html":
             raise ProbeError(f"{path}: expected a 400 refusal from the containd API, got {status} {content_type}")
     print(f"PASS {', '.join(API_ROUTES)}: 400 from the containd API, not the UI page")
+    cli_upgrade(base, login["token"])
 
 
 def main():

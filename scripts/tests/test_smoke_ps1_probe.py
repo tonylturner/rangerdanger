@@ -24,6 +24,13 @@ $ErrorActionPreference = 'Stop'
 $fixture = $env:FIXTURE | ConvertFrom-Json
 $script:session = $null
 $script:seen = @()
+function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
+    if ($Origin -cne $env:ORIGIN.TrimEnd('/') -or $Token -cne 'lab-token') { throw 'upgrade origin/token lost' }
+    if ($env:WS_STATUS -ne '101') {
+        throw "/containd/api/v1/cli/ws: expected websocket 101, got $env:WS_STATUS"
+    }
+    Write-Host 'PASS websocket 101'
+}
 function Invoke-WebRequest {
     param($Uri, $Headers, $WebSession, $TimeoutSec, $UseBasicParsing,
           $MaximumRedirection, $ErrorAction, $Method, $Body, $ContentType)
@@ -110,11 +117,19 @@ def fixture():
 
 
 class ContaindProbeTests(unittest.TestCase):
-    def run_probe(self, data, origin="http://localhost:8088/"):
+    def run_probe(self, data, origin="http://localhost:8088/", ws_status=101):
         for item in data.values():
             if "raise_" in item:
                 item["raise"] = item.pop("raise_")
-        return powershell(PROBE, FIXTURE=json.dumps(data), ORIGIN=origin, CLI=CLI, PCAP=PCAP)
+        return powershell(PROBE, FIXTURE=json.dumps(data), ORIGIN=origin, CLI=CLI, PCAP=PCAP,
+                          WS_STATUS=str(ws_status))
+
+    def test_cli_upgrade_refusal_or_ui_fallback_is_not_success(self):
+        for status in (403, 401, 400, 200, 302):
+            with self.subTest(status=status):
+                result = self.run_probe(fixture(), ws_status=status)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(f"expected websocket 101, got {status}", result.stdout)
 
     def test_autodetect_regex_is_identical_to_python(self):
         text = (ROOT / "scripts/lib/containd-ui-probe.ps1").read_text()

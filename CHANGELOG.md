@@ -21,7 +21,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The containd CLI console in the embedded firewall UI connects again, and
   PCAP downloads save the capture instead of an HTML page. The proxy smoke
-  test now checks that both paths reach the containd API.
+  test now checks that both paths reach the containd API and performs a real
+  CLI websocket upgrade. Both packages preserve the portal's Host port so
+  the console's browser Origin matches.
 - DNP3 traffic from the simulated field devices is now well-formed in
   Wireshark: responses use the correct link function, analog commands
   carry value then status (a -16 setpoint arrives as -16), control replies
