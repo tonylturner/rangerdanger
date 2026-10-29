@@ -6,6 +6,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A fresh US install opens FUXA with a read-only RTAC monitor showing six
+  live substation values. An existing FUXA project is never overwritten.
+  The FUXA image installs its Modbus driver from a committed lockfile.
+
+### Changed
+
+- The frontend runs on React 19. Component tests use React Testing
+  Library with jsdom.
+
 ### Fixed
 
 - The containd CLI console in the embedded firewall UI connects again, and
