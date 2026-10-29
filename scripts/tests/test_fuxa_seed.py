@@ -5,14 +5,42 @@ import json
 import subprocess
 import tempfile
 import unittest
+import urllib.error
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest.mock import patch
+
+from scripts.tests import test_fuxa_seed_live as live
 
 ROOT = Path(__file__).resolve().parents[2]
 SEED = ROOT / "lab-definitions/packages/us-dnp3-substation/seeds/fuxa"
 
 
 class FuxaSeedTests(unittest.TestCase):
+    def test_live_check_skips_only_a_confirmed_absent_us_range(self):
+        for state in (
+            {"phase": "none"},
+            {"phase": "ready", "package": "eu-iec104-substation"},
+        ):
+            with self.subTest(state=state), patch.object(
+                live.ViewerClient, "request", side_effect=[
+                    urllib.error.HTTPError("test", 502, "no upstream", {}, None),
+                    json.dumps(state),
+                ],
+            ):
+                with self.assertRaises(unittest.SkipTest):
+                    live.FuxaSeedLiveTests(
+                        "test_viewer_receives_six_fresh_read_only_values").debug()
+
+    def test_live_check_does_not_skip_an_unavailable_active_us_hmi(self):
+        with patch.object(live.ViewerClient, "request", side_effect=[
+            urllib.error.HTTPError("test", 502, "no upstream", {}, None),
+            json.dumps({"phase": "ready", "package": "us-dnp3-substation"}),
+        ]):
+            with self.assertRaises(urllib.error.HTTPError):
+                live.FuxaSeedLiveTests(
+                    "test_viewer_receives_six_fresh_read_only_values").debug()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -167,7 +195,9 @@ class FuxaSeedTests(unittest.TestCase):
             self.assertEqual(prop["events"], [])
             self.assertEqual(prop["variableSrc"], device["id"])
             bindings.add(prop["variableId"])
-        self.assertEqual(bindings, {device["id"] + "^~^" + key for key in expected})
+        # The pinned viewer subscribes and matches device-values using bare tag
+        # IDs. A device-qualified legacy ID silently filters out every value.
+        self.assertEqual(bindings, set(expected))
         self.assertNotIn("value", device["tags"]["t_breaker"])
         self.assertIn("/substation", view["svgcontent"])
 
