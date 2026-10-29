@@ -258,6 +258,90 @@ if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         self._assert_literal_delta_recipe(
             self._run_powershell_generator())
 
+    def test_rendered_teardown_returns_success_only_when_range_volumes_are_gone(self) -> None:
+        readmes = {
+            "bash": self._run_bash_generator(),
+            "powershell": self._run_powershell_generator(),
+        }
+        # Replace the staging stub only after both READMEs have been rendered.
+        self._write_executable("docker", r"""#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$RD_DOCKER_CALLS"
+case "$*" in
+    "ps -aq --filter label=com.docker.compose.project=rangerdanger")
+        if [ ! -f "$RD_TEARDOWN_STATE" ]; then
+            printf 'range-container-a\nrange-container-b\n'
+        fi
+        ;;
+    inspect*)
+        [ "$2" = "--format" ]
+        [ "$4" = "range-container-a" ]
+        [ "$5" = "range-container-b" ]
+        # The recipe's command substitution strips the final newline.
+        printf 'range-data\nrange-captures\n'
+        ;;
+    "compose -p rangerdanger down -v --remove-orphans")
+        touch "$RD_TEARDOWN_STATE"
+        ;;
+    "network ls -q --filter label=com.docker.compose.project=rangerdanger")
+        ;;
+    "volume ls -q")
+        [ -f "$RD_TEARDOWN_STATE" ]
+        printf 'platform-data\nrange-data-other\n'
+        if [ -n "$RD_REMAINING_VOLUME" ]; then
+            printf '%s\n' "$RD_REMAINING_VOLUME"
+        fi
+        ;;
+    *)
+        echo "unexpected docker invocation: $*" >&2
+        exit 2
+        ;;
+esac
+""")
+        state = self.root / "teardown-complete"
+        calls = self.root / "docker-calls"
+        for generator, readme in readmes.items():
+            functions = re.findall(
+                r"(?m)^compose_down_project\(\) \{\n.*?^\}", readme, flags=re.DOTALL,
+            )
+            self.assertEqual(len(functions), 2)
+            for block, function in zip(("apply", "rollback"), functions):
+                # Apply guards the call with `if`; rollback runs under set -e.
+                invocation = (
+                    "if compose_down_project rangerdanger; then exit 0; else exit $?; fi"
+                    if block == "apply" else "compose_down_project rangerdanger"
+                )
+                for shell in ("/bin/bash", shutil.which("zsh")):
+                    if not shell:
+                        continue
+                    for remaining in ("", "range-data", "range-captures"):
+                        with self.subTest(
+                            generator=generator, block=block, shell=shell, remaining=remaining,
+                        ):
+                            state.unlink(missing_ok=True)
+                            calls.unlink(missing_ok=True)
+                            result = subprocess.run(
+                                [shell, "-f", "-c", f"set -e\n{function}\n{invocation}\n"],
+                                cwd=self.root,
+                                env=dict(
+                                    self.env, RD_TEARDOWN_STATE=str(state),
+                                    RD_DOCKER_CALLS=str(calls), RD_REMAINING_VOLUME=remaining,
+                                ),
+                                capture_output=True, text=True, timeout=10, check=False,
+                            )
+                            self.assertEqual(
+                                result.returncode, 1 if remaining else 0,
+                                result.stdout + result.stderr,
+                            )
+                            self.assertEqual(
+                                result.stderr,
+                                f"Range volume {remaining} remains after teardown.\n"
+                                if remaining else "",
+                            )
+                            self.assertEqual(result.stdout, "")
+                            self.assertTrue(state.is_file())
+                            self.assertIn("volume ls -q\n", calls.read_text(encoding="utf-8"))
+
     def test_readme_byte_parity_and_shell_syntax(self) -> None:
         # Cover empty/nonempty tables, unchanged tags, mutable-tag backups,
         # and the optional kernel row without contacting Docker or a registry.

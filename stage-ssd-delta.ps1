@@ -657,12 +657,13 @@ compose_down_project() {
         remaining_volumes=$(docker volume ls -q) || return 1
         while IFS= read -r volume; do
             [ -n "$volume" ] || continue
-            printf '%s\n' "$remaining_volumes" | grep -Fxq "$volume" && {
+            if printf '%s\n' "$remaining_volumes" | grep -Fxq "$volume"; then
                 echo "Range volume $volume remains after teardown." >&2
                 return 1
-            }
+            fi
         done <<< "$volume_names"
     fi
+    return 0
 }
 
 start_platform_and_selected_range() {
