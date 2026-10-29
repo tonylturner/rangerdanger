@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.0-rc.4] - 2026-10-29
+
+Fourth release candidate for v0.2.0. The frontend moves to React 19,
+FUXA ships a read-only RTAC starter monitor, the simulated DNP3 devices
+send well-formed traffic, and the embedded containd console, PCAP
+download and Identities link work through the portal. Requirements are
+unchanged from rc.1. The pre-release publishes images under its own tag
+and does not move `latest`; install it with
+`./setup.sh --version v0.2.0-rc.4`.
+
 ### Added
 
 - A fresh US install opens FUXA with a read-only RTAC monitor showing six
@@ -3312,7 +3322,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.3...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.4...HEAD
+[v0.2.0-rc.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.4
 [v0.2.0-rc.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.3
 [v0.2.0-rc.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.2
 [v0.2.0-rc.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.1
