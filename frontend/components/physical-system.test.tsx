@@ -295,8 +295,10 @@ describe("Physical System interactions", () => {
     clients[0].setQueryData(["field", "audit", "breaker-1"], AUDIT);
     await act(async () => {
       button(tree, "Advanced diagnostics").props.onClick();
-      await vi.waitFor(() => expect(clients[0].getQueryState(["field", "audit", "breaker-1"])?.error).toMatchObject({ message: "audit offline" }));
     });
+    await vi.waitFor(() => expect(clients[0].getQueryState(["field", "audit", "breaker-1"])?.error).toMatchObject({ message: "audit offline" }));
+    // Flush the concurrent renderer's subscription notification after the query cache settles.
+    await act(async () => {});
     expect(output(tree)).toContain("audit offline");
     expect(output(tree)).toContain("Showing the last answer.");
     expect(output(tree)).toContain("rejected");
@@ -311,14 +313,12 @@ describe("Physical System interactions", () => {
       await vi.waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
     });
     expect(fetchMock.mock.calls.some(([url]) => url.includes("audit"))).toBe(false);
-    await act(async () => {
-      button(tree, "Advanced diagnostics").props.onClick();
-      await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=breaker-1"))).toBe(true));
-    });
+    await act(async () => { button(tree, "Advanced diagnostics").props.onClick(); });
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=breaker-1"))).toBe(true));
     await act(async () => {
       tree.root.findByType("select").props.onChange({ target: { value: device } });
-      await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith(`device=${device}`))).toBe(true));
     });
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith(`device=${device}`))).toBe(true));
     expect(fetchMock.mock.calls.some(([url]) => url.endsWith(`device=${device}`))).toBe(true);
     act(() => { clients[0].setQueryData(["field", "state"], structuredClone(TRUTH)); });
     expect(tree.root.findByType("select").props.value).toBe(device);

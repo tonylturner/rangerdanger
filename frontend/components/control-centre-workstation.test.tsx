@@ -144,8 +144,8 @@ describe("operator workstation interactions", () => {
     await act(async () => {
       tree = create(<QueryClientProvider client={client}><RunnerOperatorStatus resolution={resolveOperatorView(EU_PACKAGE, null)} /></QueryClientProvider>);
       mounted.push(tree);
-      await vi.waitFor(() => expect(output(tree)).toContain("operator proxy offline"));
     });
+    await vi.waitFor(() => expect(output(tree)).toContain("operator proxy offline"));
     expect(output(tree)).toContain("Operator API unavailable");
     expect(output(tree)).toContain("Cached snapshot");
     expect(output(tree)).toContain("operator proxy offline");
@@ -229,16 +229,12 @@ it("queries each selected device audit with an independent cache identity", asyn
     await vi.waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
   });
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/field/audit"))).toBe(false);
-  await act(async () => {
-    button(tree, "Advanced diagnostics").props.onClick();
-    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/field/audit?after=0&device=breaker-1"))).toBe(true));
-  });
+  await act(async () => { button(tree, "Advanced diagnostics").props.onClick(); });
+  await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/field/audit?after=0&device=breaker-1"))).toBe(true));
   expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/field/audit?after=0&device=breaker-1"))).toBe(true);
   for (const device of ["rmu-1", "rmu-2", "oltc-1", "f2-breaker"]) {
-    await act(async () => {
-      tree.root.findByProps({ "aria-label": "Audit device" }).props.onChange({ target: { value: device } });
-      await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(`/field/audit?after=0&device=${device}`))).toBe(true));
-    });
+    await act(async () => { tree.root.findByProps({ "aria-label": "Audit device" }).props.onChange({ target: { value: device } }); });
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(`/field/audit?after=0&device=${device}`))).toBe(true));
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(`/field/audit?after=0&device=${device}`))).toBe(true);
   }
   expect(clients.at(-1)!.getQueryCache().findAll({ queryKey: ["field", "audit"] })).toHaveLength(5);
