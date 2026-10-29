@@ -296,10 +296,7 @@ describe("Physical System interactions", () => {
     await act(async () => {
       button(tree, "Advanced diagnostics").props.onClick();
     });
-    await vi.waitFor(() => expect(clients[0].getQueryState(["field", "audit", "breaker-1"])?.error).toMatchObject({ message: "audit offline" }));
-    // Flush the concurrent renderer's subscription notification after the query cache settles.
-    await act(async () => {});
-    expect(output(tree)).toContain("audit offline");
+    await vi.waitFor(() => expect(output(tree)).toContain("audit offline"));
     expect(output(tree)).toContain("Showing the last answer.");
     expect(output(tree)).toContain("rejected");
     expect(output(tree)).not.toContain("Physical system unavailable");
