@@ -11,5 +11,11 @@ COPY scripts/fuxa-entrypoint.sh /usr/local/bin/fuxa-entrypoint.sh
 RUN chmod +x /usr/local/bin/set-gateway.sh /usr/local/bin/fuxa-entrypoint.sh
 
 WORKDIR /usr/src/app/FUXA/server
+# Upstream ships the Modbus adapter but not its optional transport plugin.
+# Install the version declared by the pinned runtime's plugin registry.
+RUN npm install --omit=dev --no-audit --no-fund --save-exact modbus-serial@8.0.19
+COPY lab-definitions/packages/us-dnp3-substation/seeds/fuxa/ /opt/rangerdanger/fuxa/
+# Use the pinned runtime's own importer/schema, not a hand-maintained SQLite copy.
+RUN node /opt/rangerdanger/fuxa/bake.js
 ENTRYPOINT ["/usr/local/bin/fuxa-entrypoint.sh"]
 CMD ["node", "main.js"]
