@@ -40,7 +40,7 @@ env:
 jobs:
   plan:
     name: Plan image builds and promotions
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       commit: ${{ steps.commit.outputs.commit }}
@@ -176,7 +176,7 @@ jobs:
   publish:
     name: ${{ matrix.image }}
     needs: plan
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -450,9 +450,9 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - platform: linux/arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     steps:
       - name: Resolve target tag
         id: tag
@@ -583,7 +583,7 @@ jobs:
   frontend-merge:
     name: rangerdanger-frontend (merge)
     needs: [plan, frontend]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Resolve target tag
         id: tag
@@ -791,7 +791,7 @@ jobs:
     name: Alert on release failure
     needs: [plan, publish, frontend, frontend-merge, github-release]
     if: failure()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       issues: write
       contents: read

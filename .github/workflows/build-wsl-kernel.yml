@@ -34,7 +34,7 @@ permissions:
 jobs:
   build:
     name: Build kernel + attach to release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
 
     env:
@@ -42,6 +42,8 @@ jobs:
       # When triggered manually, use the release_tag input.
       RELEASE_TAG: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref_name }}
       KERNEL_TAG:  ${{ github.event.inputs.kernel_tag != '' && github.event.inputs.kernel_tag || 'linux-msft-wsl-5.15.153.1' }}
+      CC: gcc-14
+      HOSTCC: gcc-14
 
     steps:
       - uses: actions/checkout@v5
@@ -60,7 +62,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
               build-essential libssl-dev libelf-dev flex bison bc \
-              dwarves cpio kmod python3 git ca-certificates
+              dwarves cpio kmod python3 git ca-certificates gcc-14
 
       - name: Clone WSL2 kernel source
         run: |
@@ -109,6 +111,7 @@ jobs:
 
       - name: Build bzImage
         working-directory: kernel
+        # This kernel tag predates C23-safe flags; use GCC 14 rather than 26.04's GCC 15 default.
         # Reproducible-build env vars: SOURCE_DATE_EPOCH normalizes
         # timestamps inside the binary; KBUILD_BUILD_* normalize the
         # `uname -v` version string the kernel reports at runtime so

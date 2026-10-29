@@ -44,7 +44,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         extracted = json.loads(encoded.replace("inputs.override", "needs.plan.outputs.override"))
         job.update(extracted)
         digest = hashlib.sha256(json.dumps(workflow, sort_keys=True).encode()).hexdigest()
-        self.assertEqual(digest, "103f307c377cc06c2f2d330491b08e78e8b8ef0a0d4a09007ab706d9a603ed2a")
+        self.assertEqual(digest, "1ca3a05f942556bddd2a9ea2f5d3f207d2a395bf464769c234e76fefbd1740ad")
         self.assertLess(len((ROOT / ".github/workflows/release.yml").read_text().splitlines()), 1000)
         self.assertLess(len(RECORD_WORKFLOW.read_text().splitlines()), 1000)
 

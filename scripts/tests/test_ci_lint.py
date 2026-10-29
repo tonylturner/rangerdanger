@@ -30,7 +30,11 @@ class CILintTests(unittest.TestCase):
             'sudo install -m 0755 "$tmp/shellcheck-v0.11.0/shellcheck" /usr/local/bin/shellcheck',
             commands,
         )
-        self.assertIn("actionlint .github/workflows/*.yml", commands)
+        self.assertIn(
+            "actionlint -ignore 'label \"ubuntu-26\\.04(-arm)?\" is unknown' "
+            ".github/workflows/*.yml",
+            commands,
+        )
         self.assertIn("git ls-files -z -- '*.sh' | xargs -0 shellcheck -x -S warning", commands)
         for step in job["steps"]:
             self.assertFalse(step.get("continue-on-error", False))
