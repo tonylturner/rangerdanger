@@ -84,7 +84,10 @@ jobs:
           # Append the overlay.
           cat ../rangerdanger/wsl-kernel/config-overlay >> .config
           # Resolve dependencies (auto-answer new options with defaults).
-          make olddefconfig
+          # The kernel Makefile assigns CC itself, so the toolchain must be a
+          # make argument; an environment CC is ignored.
+          make CC="$CC" HOSTCC="$HOSTCC" olddefconfig
+          grep -E '^CONFIG_CC_VERSION_TEXT="gcc-14 ' .config
           # Surface the resolved values for the keys we care about so
           # the build log proves they ended up enabled.
           echo "--- resolved values ---"
@@ -123,7 +126,7 @@ jobs:
           KBUILD_BUILD_HOST:      rangerdanger-ci
           KBUILD_BUILD_USER:      rangerdanger
         run: |
-          make -j"$(nproc)" bzImage
+          make -j"$(nproc)" CC="$CC" HOSTCC="$HOSTCC" bzImage
           ls -lh arch/x86/boot/bzImage
 
       - name: Sanity-check resulting kernel
