@@ -42,7 +42,7 @@ env:
 jobs:
   smoke:
     name: docker compose up + health check
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
 
     steps:
@@ -339,7 +339,7 @@ jobs:
 
   eu-smoke:
     name: EU IEC104 source gate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # A clean run takes about 43 minutes; a slow apt mirror adds ten more.
     timeout-minutes: 60
     env:

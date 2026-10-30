@@ -24,7 +24,7 @@ jobs:
   github-release:
     # Keep incomplete image mappings in a draft, even after job failures.
     name: GitHub Release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Resolve target tag
         id: tag

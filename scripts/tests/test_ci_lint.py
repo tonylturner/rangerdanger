@@ -31,6 +31,10 @@ class CILintTests(unittest.TestCase):
             commands,
         )
         self.assertIn("actionlint .github/workflows/*.yml", commands)
+        config = yaml.safe_load((ROOT / ".github/actionlint.yaml").read_text())
+        self.assertEqual(
+            config["self-hosted-runner"]["labels"], ["ubuntu-26.04", "ubuntu-26.04-arm"]
+        )
         self.assertIn("git ls-files -z -- '*.sh' | xargs -0 shellcheck -x -S warning", commands)
         for step in job["steps"]:
             self.assertFalse(step.get("continue-on-error", False))

@@ -12,7 +12,7 @@ permissions:
 jobs:
   lint:
     name: Workflow and shell lint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     env:
       # Also applies to ShellCheck subprocesses launched by actionlint.
@@ -36,6 +36,7 @@ jobs:
           sudo install -m 0755 "$tmp/shellcheck-v0.11.0/shellcheck" /usr/local/bin/shellcheck
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: Lint workflows (including embedded shell)
+        # v1.7.12's runner-label catalog predates ubuntu-26.04 GA.
         run: actionlint .github/workflows/*.yml
       - name: Lint tracked shell scripts
         run: git ls-files -z -- '*.sh' | xargs -0 shellcheck -x -S warning
@@ -46,7 +47,7 @@ jobs:
 
   eu-gates:
     name: EU gates (offline)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # The tshark install alone has taken ten minutes on a slow apt mirror.
     timeout-minutes: 20
     steps:
@@ -61,7 +62,7 @@ jobs:
 
   iec104:
     name: IEC 104 reference and differential conformance
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -72,9 +73,13 @@ jobs:
           python-version: "3.12"
       - name: Install TShark 4.6 decoder
         run: |
-          sudo add-apt-repository -y ppa:wireshark-dev/stable
+          # Ubuntu 26.04 ships TShark 4.6.
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tshark
+          # Its AppArmor profile lets tshark read only system and /tmp files;
+          # the comparator reads committed and generated captures in the checkout.
+          echo "file r $GITHUB_WORKSPACE/**," | sudo tee /etc/apparmor.d/local/tshark
+          sudo apparmor_parser -r /etc/apparmor.d/tshark
           # Comparator tests use the same explicit decoder path as macOS.
           sudo mkdir -p /opt/homebrew/bin
           sudo ln -s "$(command -v tshark)" /opt/homebrew/bin/tshark
@@ -142,7 +147,7 @@ jobs:
 
   release-tooling:
     name: Release image planner and input guard
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -157,7 +162,7 @@ jobs:
 
   backend:
     name: Backend (Go)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -192,7 +197,7 @@ jobs:
 
   services:
     name: Services (Go)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -220,7 +225,7 @@ jobs:
 
   opendss-sim:
     name: opendss-sim (Python)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -235,7 +240,7 @@ jobs:
 
   dnp3go:
     name: dnp3go library (Go)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -263,7 +268,7 @@ jobs:
 
   iec104go:
     name: iec104go library (Go)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
@@ -291,7 +296,7 @@ jobs:
 
   frontend:
     name: Frontend (Next.js)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -317,7 +322,7 @@ jobs:
 
   compose-validate:
     name: Compose validate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - name: docker compose config
@@ -329,7 +334,7 @@ jobs:
     # new finding: add a triage entry to security-known-issues.md and
     # add its GOID to ALLOWED in scripts/govulncheck-gate.sh.
     name: Go vulnerability scan
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
