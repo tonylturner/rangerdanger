@@ -21,6 +21,17 @@ required names before decoding hierarchical PDML; it does not parse flattened
 set `--timeout` to change that bound). The time comparison tolerance defaults
 to 1000 ms and can be changed with `--cp56-tolerance-ms`.
 
+On Ubuntu 26.04, AppArmor confines `/usr/bin/tshark` to system and `/tmp`
+files, so it cannot read captures in a checkout under your home directory.
+Allow the checkout in the profile's site-local file, as CI does:
+
+```bash
+echo "file r $PWD/**," | sudo tee /etc/apparmor.d/local/tshark
+sudo apparmor_parser -r /etc/apparmor.d/tshark
+```
+
+Run it from the repository root.
+
 The command always writes `report.json` and `report.md` on a completed
 comparison. Exit status is 0 for a pass, 1 for protocol/decode/allow-list
 differences, and 2 for a tool or input error.
