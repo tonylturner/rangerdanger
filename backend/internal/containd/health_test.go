@@ -176,17 +176,21 @@ func TestWaitReadyVersionGate(t *testing.T) {
 	}{
 		{"0.1.32", false},
 		{"0.1.34", false},
-		{"0.1.35", true},
-		{"v0.1.35+source", true},
+		{"0.1.35", false},
+		{"v0.1.35+source", false},
 		{"0.1.35-rc.1", false},
-		{"0.1.36-rc.1", true},
+		{"0.1.36", true},
+		{"v0.1.36+source", true},
+		{"0.1.36-rc.1", false},
+		{"0.1.37-rc.1", true},
 		{"1.0.0-dev", true},
 		{"dev", false},
 		{"", false},
 		// Malformed versions must fail parsing, not merely fall below the floor.
 		{"0.01.35", false},
 		{"0.1.36-01", false},
-		{"0.1.36-alpha.0", true},
+		{"0.1.36-alpha.0", false},
+		{"0.1.37-alpha.0", true},
 		{"0.1.9999999999999999999999999", true},
 	} {
 		t.Run(tc.build, func(t *testing.T) {
