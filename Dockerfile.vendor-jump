@@ -8,7 +8,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
  && CGO_ENABLED=0 go build -o /bin/dnp3cmd  ./cmd/dnp3cmd
 
 # webtop ubuntu-xfce pinned by digest (A7).
-FROM linuxserver/webtop:ubuntu-xfce@sha256:7c96ba2aa2771b14453fc0e6974aa76f0a1359d25eaab7bf00dceced7f03a111
+FROM linuxserver/webtop:ubuntu-xfce@sha256:432475b977d9ff06f8f8adfb9608541bbde51a566ac0cbe62af44f33265e1a37
 
 # OT vendor-tools + remote-access services.
 #
@@ -24,7 +24,9 @@ FROM linuxserver/webtop:ubuntu-xfce@sha256:7c96ba2aa2771b14453fc0e6974aa76f0a135
 #   docs/lab-credentials.md). Bootstrap script
 #   /custom-cont-init.d/01-vendor-services.sh creates the user and
 #   starts the daemons on first boot.
+# The current webtop snapshot still predates Ubuntu's Brotli fix.
 RUN apt-get update && \
+    apt-get install -y --only-upgrade libbrotli1 && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         mbpoll \
         python3 \
