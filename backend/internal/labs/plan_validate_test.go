@@ -107,6 +107,51 @@ func TestPlanSemanticValidation(t *testing.T) {
 	}
 }
 
+func TestPlanICSVocabulary(t *testing.T) {
+	unit := uint8(1)
+	for _, tc := range []struct {
+		name      string
+		predicate PlanICS
+		want      string
+	}{
+		{"empty", PlanICS{}, ""},
+		{"modbus inherit", PlanICS{Protocol: "modbus"}, ""},
+		{"modbus monitor", PlanICS{Protocol: "modbus", Mode: "monitor"}, ""},
+		{"modbus enforce", PlanICS{Protocol: "modbus", Mode: "enforce"}, ""},
+		{"modbus selectors", PlanICS{Protocol: "modbus", UnitID: &unit, Addresses: []string{"0-10"}}, ""},
+		{"dnp3 inherit", PlanICS{Protocol: "dnp3", FunctionCode: []int{1}}, ""},
+		{"dnp3 monitor", PlanICS{Protocol: "dnp3", Mode: "monitor"}, ""},
+		{"dnp3 enforce", PlanICS{Protocol: "dnp3", Mode: "enforce"}, ""},
+		{"learn", PlanICS{Protocol: "modbus", Mode: "learn"}, "invalid ics mode"},
+		{"literal inherit", PlanICS{Protocol: "modbus", Mode: "inherit"}, "invalid ics mode"},
+		{"protocol-less monitor", PlanICS{Mode: "monitor"}, "mode requires a protocol"},
+		{"protocol-less enforce", PlanICS{Mode: "enforce"}, "mode requires a protocol"},
+		{"protocol-less unit", PlanICS{UnitID: &unit}, "unitId is Modbus-only"},
+		{"dnp3 unit", PlanICS{Protocol: "dnp3", UnitID: &unit}, "unitId is Modbus-only"},
+		{"dnp3 addresses", PlanICS{Protocol: "dnp3", Addresses: []string{"1"}}, "unsupported groups"},
+		{"protocol-less addresses", PlanICS{Addresses: []string{"1"}}, "addresses require modbus"},
+		{"object classes", PlanICS{Protocol: "modbus", ObjectClasses: []uint16{1}}, "unsupported cip"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validatePlanICS(tc.predicate)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+	for _, protocol := range []string{"s7comm", "mms", "bacnet", "opcua", "cip", "iec104"} {
+		t.Run(protocol, func(t *testing.T) {
+			if err := validatePlanICS(PlanICS{Protocol: protocol}); err == nil || !strings.Contains(err.Error(), "invalid ics protocol") {
+				t.Fatalf("error = %v, want unsupported protocol", err)
+			}
+		})
+	}
+}
+
 func TestPlanStrictLoader(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

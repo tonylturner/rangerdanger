@@ -711,13 +711,28 @@ export type CurriculumBinding = {
 };
 
 export type PlanICS = {
-  protocol?: string;
   functionCode?: number[];
-  unitId?: number;
-  addresses?: string[];
-  objectClasses?: number[];
+  objectClasses?: never; // CIP is not supported by plans.
   readOnly?: boolean;
   writeOnly?: boolean;
-  direction?: string;
-  mode?: string;
-};
+  direction?: "" | "request" | "response";
+} & (
+  | {
+      protocol: "modbus";
+      unitId?: number;
+      addresses?: string[];
+      mode?: "" | "monitor" | "enforce"; // Empty/absent inherits the envelope.
+    }
+  | {
+      protocol: "dnp3";
+      unitId?: never;
+      addresses?: never; // Point indexes need groups, which plans cannot express.
+      mode?: "" | "monitor" | "enforce";
+    }
+  | {
+      protocol?: "";
+      unitId?: never;
+      addresses?: never;
+      mode?: "";
+    }
+);

@@ -202,6 +202,41 @@ func TestPlanRequiredPredicateIndependentOfLogging(t *testing.T) {
 	}
 }
 
+func TestCompileShippedUSICSOverlaysUnchanged(t *testing.T) {
+	pkg := planPackage(t, "us-dnp3-substation")
+	compiled := mustCompilePlan(t, pkg, []string{"pin-rtac-to-field", "modbus-dpi", "dnp3-dpi"})
+	var document struct {
+		Dataplane struct {
+			DPIMode string `json:"dpiMode"`
+		} `json:"dataplane"`
+		Firewall struct {
+			Rules []PlanRule `json:"rules"`
+		} `json:"firewall"`
+	}
+	if err := json.Unmarshal(compiled.Config, &document); err != nil {
+		t.Fatal(err)
+	}
+	if document.Dataplane.DPIMode != "enforce" {
+		t.Fatalf("shipped envelope mode changed: %q", document.Dataplane.DPIMode)
+	}
+	checked := 0
+	for _, action := range []string{"modbus-dpi", "dnp3-dpi"} {
+		for id, predicate := range pkg.Curriculum.Plan.Detect[action].ICS {
+			if predicate.Mode != "" {
+				t.Fatalf("shipped overlay %s no longer inherits mode", id)
+			}
+			index := slices.IndexFunc(document.Firewall.Rules, func(r PlanRule) bool { return r.ID == id })
+			if index < 0 || !reflect.DeepEqual(document.Firewall.Rules[index].ICS, &predicate) {
+				t.Fatalf("overlay %s changed in exported policy", id)
+			}
+			checked++
+		}
+	}
+	if checked != 2 {
+		t.Fatalf("checked %d shipped overlays, want 2", checked)
+	}
+}
+
 func TestPlanDoesNotReadDisplayFields(t *testing.T) {
 	pkg := planPackage(t, "eu-iec104-substation")
 	want := mustCompilePlan(t, pkg, nil)

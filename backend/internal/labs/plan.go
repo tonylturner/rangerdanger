@@ -55,7 +55,10 @@ type PlanProtocol struct {
 	Port string `yaml:"port,omitempty" json:"port,omitempty"`
 }
 
-// PlanICS is containd's configuration predicate, without display-only fields.
+// PlanICS is the plan's limited containd predicate (Modbus and DNP3 only).
+// UnitID and Addresses are Modbus-only; DNP3 point groups are not modeled.
+// ObjectClasses cannot be used until plans support CIP.
+// Empty Mode inherits the policy envelope; overrides are monitor or enforce.
 // The L4 source pin enforces; DPI detects and logs.
 type PlanICS struct {
 	Protocol      string   `yaml:"protocol,omitempty" json:"protocol,omitempty"`

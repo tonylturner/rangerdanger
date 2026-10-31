@@ -253,14 +253,28 @@ func validatePlanICS(predicate PlanICS) error {
 			return fmt.Errorf("ics functionCode must be in 0..255")
 		}
 	}
-	if !slices.Contains([]string{"", "modbus", "dnp3", "cip", "s7comm", "mms", "bacnet", "opcua"}, predicate.Protocol) {
+	if !slices.Contains([]string{"", "modbus", "dnp3"}, predicate.Protocol) {
 		return fmt.Errorf("invalid ics protocol %q", predicate.Protocol)
 	}
 	if !slices.Contains([]string{"", "request", "response"}, predicate.Direction) {
 		return fmt.Errorf("invalid ics direction %q", predicate.Direction)
 	}
-	if !slices.Contains([]string{"", "learn", "enforce"}, predicate.Mode) {
+	if !slices.Contains([]string{"", "monitor", "enforce"}, predicate.Mode) {
 		return fmt.Errorf("invalid ics mode %q", predicate.Mode)
+	}
+	if predicate.Mode != "" && predicate.Protocol == "" {
+		return fmt.Errorf("ics mode requires a protocol")
+	}
+	if predicate.UnitID != nil && predicate.Protocol != "modbus" {
+		return fmt.Errorf("ics unitId is Modbus-only")
+	}
+	// DNP3 addresses are point indexes requiring groups, which PlanICS cannot
+	// express. Never reinterpret station addresses as point indexes.
+	if len(predicate.Addresses) != 0 && predicate.Protocol != "modbus" {
+		return fmt.Errorf("ics addresses require modbus; DNP3 point indexes require unsupported groups")
+	}
+	if len(predicate.ObjectClasses) != 0 {
+		return fmt.Errorf("ics objectClasses require unsupported cip")
 	}
 	if predicate.ReadOnly && predicate.WriteOnly {
 		return fmt.Errorf("ics cannot be both readOnly and writeOnly")
