@@ -147,14 +147,14 @@ eu_gate_G0() {
     EPHEMERAL_LOW=$(printf '%s' "$ephemeral_range" | awk '{print $1}')
     EPHEMERAL_HIGH=$(printf '%s' "$ephemeral_range" | awk '{print $2}')
     if [ "$EPHEMERAL_LOW" -lt "$EPHEMERAL_HIGH" ]; then
-      printf 'G0 evidence: containd image digest=%s kernel=%s nf_conntrack_tcp_loose=%s ephemeral_ports=%s-%s\n' \
+      printf 'G0 evidence: containd image ID=%s kernel=%s nf_conntrack_tcp_loose=%s ephemeral_ports=%s-%s\n' \
         "$image_id" "$kernel" "$tcp_loose" "$EPHEMERAL_LOW" "$EPHEMERAL_HIGH"
-      pass "G0 kernel, containd image digest, tcp_loose=1 and ephemeral-port range recorded"
+      pass "G0 kernel, containd image ID, tcp_loose=1 and ephemeral-port range recorded"
     else
       fail "G0 ephemeral-port range is invalid: $ephemeral_range"
     fi
   else
-    fail "G0 missing or invalid digest/kernel/tcp_loose/ephemeral-range evidence: digest=$image_id kernel=$kernel tcp_loose=$tcp_loose ephemeral=$ephemeral_range"
+    fail "G0 missing or invalid image ID/kernel/tcp_loose/ephemeral-range evidence: image ID=$image_id kernel=$kernel tcp_loose=$tcp_loose ephemeral=$ephemeral_range"
   fi
   if ! eu_make_firewall_token; then
     fail "G0 could not create containd admin token"

@@ -25,6 +25,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- EU readiness evidence labels the firewall's local image ID accurately,
+  rather than calling it an image digest.
 - Session kills now report containd's deletion and revocation outcomes,
   including partial failures; EU lessons describe the default 60-second
   exact-tuple revocation and fresh-source-port reconnection semantics.
