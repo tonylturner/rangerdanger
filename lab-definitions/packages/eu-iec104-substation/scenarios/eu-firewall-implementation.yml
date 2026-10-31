@@ -55,7 +55,7 @@ steps:
   title: Verify access to containd
   expected_config: weak
   description: |
-    Open containd through its portal link (local HTTP 9080); lab credentials are containd / containd. Alternatively use **fw-1**, enter `containd cli`, then `show running-config`. Retain weak as rollback before edits.
+    Open containd through the portal's `/containd/` link; lab credentials are containd / containd. Alternatively use **fw-1**, enter `containd cli`, then `show running-config`. Retain weak as rollback before edits.
 
     :::hint Do not move management
     Management is out of band. Do not add teaching-to-management allows, routing exceptions or new host ports to make a test pass.
