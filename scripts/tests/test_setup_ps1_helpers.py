@@ -7,6 +7,28 @@ from .test_setup_ps1_root import ROOT, powershell
 
 
 class WindowsHostHelperTests(unittest.TestCase):
+    def test_arm64_kernel_remediation_refuses_but_supported_kernel_proceeds(self):
+        for probe in (0, 1):
+            with self.subTest(probe=probe):
+                result = powershell("""
+$ErrorActionPreference = 'Stop'
+$t=$null; $e=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile("$env:REPO/setup.ps1", [ref]$t, [ref]$e)
+foreach ($f in $ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]}, $true)) {
+    Invoke-Expression $f.Extent.Text
+}
+function Get-KernelProbeResult { [int]$env:PROBE }
+function Die($Message) { throw $Message }
+$arch='arm64'; $kernelProbeEnabled=$true
+$failed=$false
+try { Invoke-KernelStep } catch {
+    if ($_ -notmatch 'published WSL2 kernel is x86_64 only') { throw }
+    $failed=$true
+}
+if ($failed -ne ($env:PROBE -eq '1')) { throw 'ARM64 remediation outcome changed' }
+""", PROBE=str(probe))
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_kernel_probe_uses_local_image_and_never_falls_back_online_when_offline(self):
         for offline, cached in ((True, True), (True, False), (False, False)):
             with self.subTest(offline=offline, cached=cached):
