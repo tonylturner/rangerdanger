@@ -11,12 +11,22 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         for path in ("RELEASING.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
             text = " ".join((ROOT / path).read_text().split())
             with self.subTest(path=path):
-                for phrase in ("requires containd 0.1.35 or later", "0.1.7",
-                               "0.1.32 cannot read", "data/firewall/",
+                for phrase in ("data/firewall/",
                                "data/eu-iec104-substation/firewall/",
                                "pre-upgrade", "stop the lab", "older tag",
                                "RangerDanger owns"):
                     self.assertIn(phrase.lower(), text.lower())
+                self.assertRegex(text, r"requires containd 0\.1\.(?:35|36) or later")
+                self.assertRegex(text, r"schema.{0,60}0\.1\.(?:7|9)")
+                self.assertRegex(text, r"(?:0\.1\.32 cannot read|0\.1\.35 and earlier cannot read)")
+        workshop = " ".join((ROOT / "docs/workshop-ssd.md").read_text().split()).lower()
+        for phrase in ("requires containd 0.1.36 or later", "schema migrates one-way to 0.1.9",
+                       "0.1.35 and earlier cannot read", "--include-upstream --include containd",
+                       "record the saved image identity", "matching pre-upgrade data",
+                       "for arch in amd64 arm64", "docker load -i",
+                       "delta-${arch}.tar", "id={{.id}} os={{.os}} arch={{.architecture}}",
+                       "repo_digests={{json .repodigests}}"):
+            self.assertIn(phrase, workshop)
 
     def test_api_health_distinguishes_liveness_and_operational_diagnostics(self):
         text = (ROOT / "docs/api-spec.md").read_text()
