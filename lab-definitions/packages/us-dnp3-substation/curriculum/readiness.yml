@@ -20,11 +20,12 @@ readinessFlags:
       - dnp3-dpi
       - rtac-architecture-review
       - positive-validation
+      - ot-asset-inventory
     severity: warn
     source: ot-eng-availability
     sourceLabel: OT engineering capacity
     verdict: STRETCHED
-    message: OT Engineer marked STRETCHED — expect this to take longer than the budget shows.
+    message: OT Engineer marked STRETCHED — OT Engineer capacity is reduced from 120h to 60h.
   - actions:
       - restrict-vendor-to-ot
       - block-vendor-to-field
@@ -33,6 +34,7 @@ readinessFlags:
       - dnp3-dpi
       - rtac-architecture-review
       - positive-validation
+      - ot-asset-inventory
     severity: blocked
     source: ot-eng-availability
     sourceLabel: OT engineering capacity
@@ -69,6 +71,8 @@ readinessFlags:
   - actions:
       - restrict-vendor-to-ot
       - block-vendor-to-field
+      - restrict-enterprise-to-vendor
+      - vendor-zta-broker
     severity: warn
     source: vendor-change-window
     sourceLabel: Vendor change windows
@@ -77,6 +81,8 @@ readinessFlags:
   - actions:
       - restrict-vendor-to-ot
       - block-vendor-to-field
+      - restrict-enterprise-to-vendor
+      - vendor-zta-broker
     severity: blocked
     source: vendor-change-window
     sourceLabel: Vendor change windows
@@ -91,7 +97,7 @@ readinessFlags:
     source: risk-acceptance-authority
     sourceLabel: Risk-acceptance authority
     verdict: UNCLEAR
-    message: Risk-acceptance authority UNCLEAR — get the signoff path nailed down before applying this rule.
+    message: Risk-acceptance authority UNCLEAR — signoff pending; clarify authority before applying this rule.
   - actions:
       - block-enterprise-to-field
       - block-enterprise-to-ot
@@ -102,3 +108,31 @@ readinessFlags:
     sourceLabel: Risk-acceptance authority
     verdict: DISPUTED
     message: Risk-acceptance authority DISPUTED — denying production flows without a clear signoff path is unsafe.
+
+budgetAdjustments:
+  - source: ot-eng-availability
+    verdict: STRETCHED
+    teamCaps: {OT Engineer: 60}
+    effort: []
+  - source: ot-eng-availability
+    verdict: UNAVAILABLE
+    teamCaps: {OT Engineer: 0}
+    effort: []
+  - source: fw-admin-skills
+    verdict: VENDOR_LED
+    teamCaps: {Firewall Admin: 80}
+    effort:
+      - actions: [modbus-dpi, dnp3-dpi]
+        multiplier: 1
+        extraHours: 20
+  - source: fw-admin-skills
+    verdict: GAP
+    teamCaps: {Firewall Admin: 40}
+    effort: []
+  - source: vendor-change-window
+    verdict: NEGOTIATING
+    teamCaps: {}
+    effort:
+      - actions: [restrict-vendor-to-ot]
+        multiplier: 1.5
+        extraHours: 0

@@ -161,7 +161,7 @@ func validateCurriculum(pkg Package) error {
 	}
 	fail := func(format string, args ...any) error { return fmt.Errorf("curriculum: "+format, args...) }
 	// Explicit empty collections keep the wire DTO free of null maps/arrays.
-	if c.Requirements == nil || c.Readiness == nil || c.ReadinessFlags == nil || c.Groups == nil || c.PlanningOnly == nil || c.Phases == nil || c.Tests == nil || c.NodeMap == nil || c.NodeInference == nil || c.RequirementOrder == nil || c.GroupOrder == nil || c.ImpactOrder == nil || c.Impact == nil || c.Activities == nil || c.DynamicSteps == nil {
+	if c.Requirements == nil || c.Readiness == nil || c.ReadinessFlags == nil || c.BudgetAdjustments == nil || c.Groups == nil || c.PlanningOnly == nil || c.Phases == nil || c.Tests == nil || c.NodeMap == nil || c.NodeInference == nil || c.RequirementOrder == nil || c.GroupOrder == nil || c.ImpactOrder == nil || c.Impact == nil || c.Activities == nil || c.DynamicSteps == nil {
 		return fail("collections must be explicit mappings or lists, not null or omitted")
 	}
 	if c.BudgetHours <= 0 || len(c.Teams) == 0 || len(c.Catalog) == 0 {
@@ -290,6 +290,9 @@ func validateCurriculum(pkg Package) error {
 		if err := check(f.Actions...); err != nil {
 			return err
 		}
+	}
+	if err := validateBudgetAdjustments(c, decisions); err != nil {
+		return err
 	}
 	for id, impact := range c.Impact {
 		if err := check(id); err != nil {

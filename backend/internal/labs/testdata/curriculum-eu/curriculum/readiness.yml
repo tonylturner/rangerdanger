@@ -102,3 +102,5 @@ readinessFlags:
     sourceLabel: Risk-acceptance authority
     verdict: DISPUTED
     message: Risk-acceptance authority DISPUTED — denying production flows without a clear signoff path is unsafe.
+
+budgetAdjustments: []

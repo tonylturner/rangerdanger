@@ -1,5 +1,6 @@
 """One strict section reader for offline package-content contracts."""
 
+import math
 import re
 from pathlib import Path
 
@@ -47,4 +48,44 @@ def read_curriculum(package_dir: Path) -> dict:
             if key in merged:
                 raise ValueError(f"Duplicate curriculum key {key}")
             merged[key] = value
+    if "budgetAdjustments" in merged:
+        validate_budget_adjustments(merged)
     return merged
+
+
+def validate_budget_adjustments(model: dict) -> None:
+    """Mirror the budget schema and references; Go also checks scenario options."""
+    adjustments = model["budgetAdjustments"]
+    if not isinstance(adjustments, list):
+        raise ValueError("budgetAdjustments must be a list")
+    teams = {t["name"]: t["capacity_hours"] for t in model.get("teams", [])}
+    actions = {a["id"] for a in model.get("catalog", [])}
+    sources = {r["id"] for r in model.get("readiness", [])}
+    seen = set()
+    for a in adjustments:
+        if not isinstance(a, dict) or set(a) != {"source", "verdict", "teamCaps", "effort"}:
+            raise ValueError("Invalid budget adjustment fields")
+        if not isinstance(a["source"], str) or not isinstance(a["verdict"], str):
+            raise ValueError("Budget source/verdict must be strings")
+        key = (a["source"], a["verdict"])
+        if a["source"] not in sources or not a["verdict"] or key in seen:
+            raise ValueError("Invalid or duplicate budget source/verdict")
+        seen.add(key)
+        if not isinstance(a["teamCaps"], dict) or not isinstance(a["effort"], list):
+            raise ValueError("Budget collections must be explicit")
+        if not a["teamCaps"] and not a["effort"]:
+            raise ValueError("Budget adjustment must have an effect")
+        for team, cap in a["teamCaps"].items():
+            if team not in teams or type(cap) is not int or not 0 <= cap <= teams[team]:
+                raise ValueError("Invalid budget team cap")
+        for e in a["effort"]:
+            if not isinstance(e, dict) or set(e) != {"actions", "multiplier", "extraHours"}:
+                raise ValueError("Invalid budget effort fields")
+            ids, factor, extra = e["actions"], e["multiplier"], e["extraHours"]
+            if (not isinstance(ids, list) or not ids
+                    or any(not isinstance(i, str) or i not in actions for i in ids)
+                    or len(set(ids)) != len(ids)):
+                raise ValueError("Invalid budget effort actions")
+            if (type(factor) not in (int, float) or not math.isfinite(factor) or factor < 1
+                    or type(extra) is not int or extra < 0 or (factor == 1 and extra == 0)):
+                raise ValueError("Invalid budget effort arithmetic")
