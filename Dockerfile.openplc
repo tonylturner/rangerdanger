@@ -26,7 +26,11 @@ FROM tuttas/openplc_v3:latest@sha256:94fb9e8387340af716211454664980dc0e979240677
 #   building libmodbus from source for one redundant probe), so the
 #   lab uses nmap + dnp3poll from this host instead.
 # - python3: pretty-printing JSON in lab commands
-RUN apt-get update && apt-get install -y \
+# Upstream has no newer snapshot. Apply the public Bionic updates in the
+# existing package layer; this does not enable ESM or remove runtime packages.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && apt-get install -y \
         sqlite3 \
         curl \
         iproute2 \
