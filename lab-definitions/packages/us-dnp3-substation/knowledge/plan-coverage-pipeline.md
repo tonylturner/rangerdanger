@@ -1,5 +1,11 @@
 Labs 1.3 and 1.4 record design verdicts and action selections. **Apply Your Plan** sends those action IDs, the package ID and revision to the backend. The backend compiles one policy, rule table and expected TCP matrix. A saved selection alone is not running state.
 
+### Readiness and labor budget
+
+Lab 1.3 readiness reshapes the Lab 1.4 labor model. OT engineering `STRETCHED` reduces its cap from 120h to 60h; `UNAVAILABLE` reduces it to 0h and blocks OT-touching actions. Firewall skills `VENDOR_LED` sets an 80h cap and adds 20h per DPI action; `GAP` sets a 40h cap and blocks DPI actions. A `NEGOTIATING` vendor window multiplies the vendor restriction effort by 1.5; `NOT_DISCUSSED` blocks vendor-touching actions. `UNCLEAR` risk authority means signoff pending; `DISPUTED` blocks high-impact deny actions.
+
+The total envelope remains 500h. The planner shows original → adjusted values and the answer behind each change. **Use default budget** restores default caps, effort and eligibility for comparison; the setting is saved per package and revision. Readiness-blocked saved choices stay visible but are excluded from draft totals, coverage and Apply Your Plan, even if you change readiness without reopening Lab 1.4. Changing readiness back restores those saved choices. An already-applied plan keeps its recorded provenance and proof expectations. Budget or role overrun alone remains a warning, not an apply limit.
+
 ### Action kinds and deferred exposure
 
 Enforceable actions change L4 reachability. These are `restrict-enterprise-to-vendor`, `block-enterprise-to-ot`, `block-enterprise-to-field`, `restrict-vendor-to-ot`, `block-vendor-to-field` and `pin-rtac-to-field`.

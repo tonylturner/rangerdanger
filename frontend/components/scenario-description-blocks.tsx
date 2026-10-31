@@ -20,8 +20,9 @@ import {
   computeCoverage,
   summariseCoverage,
 } from "../lib/requirement-coverage";
-import { loadRemediationPlan } from "../lib/remediation-plan";
+import { readRemediationPlanState } from "../lib/remediation-plan";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { PlanReadinessExclusions } from "./plan-readiness-exclusions";
 import { DecisionPanel } from "./decision-panel";
 import { MarkdownProse } from "./markdown-prose";
 import { TrackPicker } from "./track-picker";
@@ -329,7 +330,7 @@ export function PlanCoveragePanel({ title }: { title: string }) {
   const scope = useCurriculumScope();
   useCurriculumStorageRevision(scope);
   const requirements = readRequirements(scope);
-  const plan = loadRemediationPlan(scope);
+  const { effective: plan, excluded } = readRemediationPlanState(scope);
   const selected = new Set(plan?.selectedActionIds ?? []);
   const coverage = computeCoverage(requirements, selected, scope.curriculum);
   const summary = summariseCoverage(coverage);
@@ -352,6 +353,7 @@ export function PlanCoveragePanel({ title }: { title: string }) {
 
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-950 p-3">
+      <PlanReadinessExclusions excluded={excluded} />
       <div className="flex items-baseline justify-between mb-2">
         <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
           {title}

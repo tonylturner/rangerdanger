@@ -94,7 +94,7 @@ export function summariseCoverage(items: CoverageItem[]): {
 }
 
 // Readiness answers and action overlays are defined by the active binding.
-// Flags are observational: they do not change the budget or prevent selection.
+// The shared readiness-budget model turns blocked flags into draft exclusions.
 
 export type ReadinessKey = string;
 

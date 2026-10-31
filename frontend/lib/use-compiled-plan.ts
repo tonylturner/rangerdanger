@@ -5,18 +5,18 @@ import { useQuery } from "@tanstack/react-query";
 import { compilePlan, type PlanProvenance } from "./api";
 import type { CurriculumScope } from "./curriculum-storage";
 import { loadRemediationPlan } from "./remediation-plan";
+import { useCurriculumStorageRevision } from "./use-curriculum-storage-revision";
 
 export function useCompiledPlan(scope: CurriculumScope, enabled: boolean, appliedPlan?: PlanProvenance, appliedOnly = false) {
+  useCurriculumStorageRevision(scope);
   const [, refreshStorage] = useState(0);
   useEffect(() => {
     const refresh = () => refreshStorage((n) => n + 1);
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("focus", refresh);
-    window.addEventListener("storage", refresh);
     return () => {
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("focus", refresh);
-      window.removeEventListener("storage", refresh);
     };
   }, [scope]);
   const actionIds = loadRemediationPlan(scope)?.selectedActionIds ?? [];

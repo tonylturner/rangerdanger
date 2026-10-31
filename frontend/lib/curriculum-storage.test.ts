@@ -82,7 +82,7 @@ describe("curriculum storage", () => {
 
 import { fixtureCurriculum, US_CURRICULUM } from "./curriculum-storage.test-util";
 import { readReadiness, readRequirements, readinessFlagsForAction } from "./requirement-coverage";
-import { loadRemediationPlan, saveRemediationPlan } from "./remediation-plan";
+import { loadRemediationPlan, loadSavedRemediationPlan, saveRemediationPlan } from "./remediation-plan";
 
 it("reads EU decisions and plans only through its own roles and storage scope", () => {
   const storage = memoryStorage();
@@ -99,7 +99,8 @@ it("reads EU decisions and plans only through its own roles and storage scope", 
     expect(readinessFlagsForAction("restrict-vendor-to-station", readReadiness(eu), binding)).toMatchObject([{ severity: "blocked", source: "ot-eng-availability" }]);
     const plan = { exerciseId: binding.roles.planning, selectedActionIds: ["iec104-dpi"], savedAt: "now" };
     saveRemediationPlan(eu, plan);
-    expect(loadRemediationPlan(eu)).toEqual(plan);
+    expect(loadSavedRemediationPlan(eu)).toEqual(plan);
+    expect(loadRemediationPlan(eu)).toEqual({ ...plan, selectedActionIds: [] });
     expect(loadRemediationPlan({ ...US, curriculum: US_CURRICULUM })).toBeNull();
     expect(loadRemediationPlan({ ...eu, revision: 4 })).toBeNull();
     const unbound = { packageId: "unbound", revision: 1 };

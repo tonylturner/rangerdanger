@@ -214,7 +214,7 @@
       {
         "id": "plan-coverage-pipeline",
         "title": "The Plan Coverage Pipeline (1.3 → 1.4 → 2.2 → 2.3 → 2.4)",
-        "sha256": "044f9cce7c2eed6441afbae9fd50e6fef45e0465133988bdb8c7bab332966e89"
+        "sha256": "67396df4eaa5763e87f0387e63a26507da4957ecb390c56508bf3a8856381963"
       },
       {
         "id": "live-dpi-events-strip",
