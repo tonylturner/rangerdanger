@@ -90,7 +90,7 @@ export function RemediationPlanBanner({ currentExerciseId, appliedPlan }: Remedi
               }`}
             >
               {relevantSelected.length > 0
-                ? `${relevantSelected.length} actions ${appliedPlan ? "applied in your plan" : "planned"}`
+                ? `${relevantSelected.length} action${relevantSelected.length === 1 ? "" : "s"} ${appliedPlan ? "applied in your plan" : "planned"}`
                 : "no actions selected for this exercise"}
             </div>
           )}
