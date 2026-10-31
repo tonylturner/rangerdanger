@@ -201,9 +201,8 @@ for node in breaker-1 f2-breaker rmu-1 rmu-2 oltc-1; do
       '[.[$node].entries[] | select(.operation == "first_solve" and .seq > $cursor)] | length')" \
     "$node waits for every changed revision while RTU paused"
 done
-t_expect_eq "$(grep -E '^(policy|reset|field|audit .* 0$|docker pause)' "$CALLS" | head -9)" \
-  "policy improved
-reset
+t_expect_eq "$(grep -E '^(policy|reset|field|audit .* 0$|docker pause)' "$CALLS" | head -8)" \
+  "reset
 field
 audit breaker-1 0
 audit f2-breaker 0
@@ -300,8 +299,7 @@ init_flow
 RESET_FAIL=true
 t_run eu_gate_G13
 t_expect_fails 1 "G13 aborts if its own reset fails"
-t_expect_eq "$(cat "$CALLS")" "policy improved
-reset" "a failed reset cannot reach a cursor or pause"
+t_expect_eq "$(cat "$CALLS")" "reset" "a failed reset cannot reach a cursor or pause"
 init_flow
 FIELD=$(printf '%s' "$FIELD_BASE" | jq -c '.process.devices["oltc-1"].solved_revision = -1')
 t_run eu_gate_G13

@@ -6,8 +6,7 @@ eu_gate_G11() {
   local g11_policy g11_tuple g11_loss_started_ms stale_ms g11_before_reset g11_stale g11_stale_points \
     g11_stale_epoch g11_truth g11_after_reset g11_after_reset_points reset_truth poll_since poll_until
   g11_loss_verified=0
-  # Earlier gates may have left a restrictive policy or tripped device behind.
-  eu_apply_named improved || return
+  # Reset restores Weak and healthy devices before installing the custom policy.
   eu_reset_all || return
   eu_wait_for_baseline "G11 GOOD baseline before Modbus loss" 30 || return
   g11_policy="$TMP_DIR/improved-without-rtu-modbus.json"
@@ -117,8 +116,7 @@ eu_gate_G11() {
 
 eu_gate_G12() {
   local g12_pause_started_ms g12_measurement_loss_seen=0
-  # This outage needs a healthy chain, not a successful G11 outage/recovery.
-  eu_apply_named improved || return
+  # Reset restores a healthy chain under Weak, independent of G11 recovery.
   eu_reset_all || return
   eu_wait_for_baseline "G12 GOOD baseline before measurement loss" 30 || return
   g12_pause_started_ms=$(eu_now_ms) || g12_pause_started_ms=""
@@ -165,7 +163,7 @@ eu_gate_G13() {
     and $field.process.devices[$device.device_id].delivered == true
     and $field.process.devices[$device.device_id].solved_revision == $device.revision))'
   loss_budget=$(jq -er '.timers | .t3_s + .t1_s + 10' "$PACKAGE/protocols/points.json") || return
-  eu_apply_named improved || return
+  # The RTU outage/recovery assertions run under the reset's Weak baseline.
   eu_reset_all || return
   if ! eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and station_good and f2_good' \
     30 "G13 CC baseline before the RTU outage"; then

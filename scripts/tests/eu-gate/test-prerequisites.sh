@@ -23,7 +23,7 @@ eu_command() { pass "intentional no_measurement rejection (stub)"; }
 eu_apply_named() {
   pass "$1 applied (stub)"
 }
-eu_reset_all() { pass "reset (stub)"; }
+eu_reset_all() { pass "reset to weak (stub)"; }
 BASELINE_FAIL=false
 eu_wait_for_baseline() {
   if [ "$BASELINE_FAIL" = true ]; then
@@ -49,8 +49,8 @@ t_expect_eq "$g11_loss_verified" 0 "G11 records no verified Modbus loss"
 t_run gate G12
 t_expect_fails 0 "G12 establishes its own baseline after G11 fails"
 t_expect_out "GATE G12 PASS" "G12 passes with its own baseline and both quality transitions"
-t_expect_out "improved applied (stub)" "G12 restores the conduit even if G11 left it blocked"
-t_expect_out "reset (stub)" "G12 resets devices rather than trusting earlier gates"
+t_expect_no_out "improved applied (stub)" "G12 needs only the reset's weak baseline"
+t_expect_out "reset to weak (stub)" "G12 restores the conduit and devices rather than trusting earlier gates"
 t_expect_out "G12 GOOD baseline before measurement loss" "G12 waits for operator/truth/solver agreement"
 t_expect_eq "$OPENDSS_STATE" false "G12 unpaused the OpenDSS container it paused"
 
