@@ -21,116 +21,18 @@ EXPECTATIONS = ROOT / "scripts/lab-commands-expectations.json"
 # Every reviewed oracle field the gate reads; anything else is a typo or a
 # retired mechanism that would otherwise be ignored silently.
 ORACLE_KEYS = {"intent", "match", "control_match", "nmap", "file",
-               "zero_rc_denial", "policy", "state"}
+               "zero_rc_denial", "policy", "state", "semantic", "eu_device", "peer"}
 
-SCENARIO_DIR = "lab-definitions/scenarios"
-TOPOLOGY    = "lab-definitions/substation-segmentation.yml"
-
-# Include the old UI's command vocabulary plus appliance instructions.
-CMD_TOOL_RE = re.compile(
-    r'^(?:(?:nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker|vi)\s|'
-    r'(?:show (?:interfaces|running-config|diff|audit)|(?:export|import) config|'
-    r'(?:delete|set) firewall|shell|bash|exit|commit|confirm|containd cli)(?:\s|$))'
-)
-
-# Skip commands that would be destructive, interactive, or that the
-# UI's Run button doesn't actually wire up (mostly because they'd
-# leave the stack in a different state than the next step expects).
-SKIP_PATTERNS = [
-    re.compile(r'/api/firewall/apply'),     # mutating
-    re.compile(r'docker compose '),         # would tear stack down
-    re.compile(r'docker run '),
-    re.compile(r'docker rm '),
-    re.compile(r'docker stop '),
-    re.compile(r'^ssh\b'),                  # interactive password prompt
-    # sshpass-prefixed lines are non-interactive and DO run.
-]
-
-def should_skip(cmd: str) -> bool:
-    return any(p.search(cmd) for p in SKIP_PATTERNS)
-
-def load_topology(root):
-    with open(root / TOPOLOGY) as f:
-        topo = yaml.safe_load(f)
-    nodes = {n["id"]: n.get("container", "") for n in topo.get("nodes", [])}
-    return nodes
-
-# Match frontend/lib/exercise-nodes.ts for the fallback only. Prefer the
-# documented per-command source header; this gate checks YAML recipes,
-# not the old frontend's generated replacement snippets.
-NODE_INFERENCE = [
-    ("kali-1",        re.compile(r'10\.10\.10\.50|\bkali\b', re.I)),
-    ("vendor-jump-1", re.compile(r'10\.20\.20\.10|\bvendor.?jump\b', re.I)),
-    ("eng-ws-1",      re.compile(r'10\.20\.20\.20|\bengineering.?workstation\b|\beng-ws\b', re.I)),
-    ("openplc-1",     re.compile(r'10\.30\.30\.30|\bopenplc\b', re.I)),
-    ("rtac-1",        re.compile(r'10\.30\.30\.20|\brtac\b', re.I)),
-]
-
-def infer_node_from_text(text: str) -> str:
-    """First-match node inference. Returns "" if nothing matches."""
-    for node_id, pat in NODE_INFERENCE:
-        if pat.search(text):
-            return node_id
-    return ""
-
-def infer_node_per_command(desc: str, cmd_line_idx: int):
-    """For a command at line cmd_line_idx, look at the nearest preceding
-    'From the X terminal' / 'On X' header where X is a known node.
-    Returns "" if no recognized header found; caller falls back to
-    step-level inference. Lines that have "from/on" but match an
-    unrelated keyword (e.g. "on the [network map]") are skipped, not
-    treated as terminators."""
-    lines = desc.split("\n")
-    KEYWORD_MAP = {
-        "kali":         "kali-1",
-        "vendor-jump":  "vendor-jump-1",
-        "vendor":       "vendor-jump-1",
-        "engineering":  "eng-ws-1",
-        "eng-ws":       "eng-ws-1",
-        "eng":          "eng-ws-1",
-        "openplc":      "openplc-1",
-        "rtac":         "rtac-1",
-        "hmi":          "hmi-1",
-        "fuxa":         "hmi-1",
-        "firewall":     "fw-1",
-        "fw-1":         "fw-1",
-        "historian":    "historian-1",
-    }
-    # Source headers wrap across lines and may say "From vendor-jump",
-    # not just "From the vendor-jump terminal".
-    preceding = "\n".join(lines[:cmd_line_idx]).lower()
-    matches = re.finditer(
-        r'(?<!not )\b(?:from|on|via)\s+(?:the\s+)?[`*]*([a-z][a-z0-9-]*)\b',
-        preceding)
-    for m in reversed(list(matches)):
-        if m.group(1) in KEYWORD_MAP:
-            return KEYWORD_MAP[m.group(1)]
-    return ""
-
-def extract_step_commands(desc: str):
-    """Return list of (cmd, line_idx) tuples from a step description."""
-    if not desc:
-        return []
-    out = []
-    lines = desc.split("\n")
-    i = 0
-    while i < len(lines):
-        raw = lines[i]
-        # Indented + tool-prefixed = command block (matches UI logic)
-        if re.match(r'^\s+\S', raw) and CMD_TOOL_RE.match(raw.strip()):
-            cmd = raw.strip()
-            cmd_idx = i
-            # Continuation lines (trailing backslash)
-            while cmd.endswith("\\") and i + 1 < len(lines):
-                i += 1
-                cmd = cmd.rstrip("\\").rstrip() + " " + lines[i].strip()
-            out.append((cmd, cmd_idx))
-        i += 1
-    return out
+# Shared offline parser, also exercised against the UI in command-smoke-parity.test.ts.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lab_commands_inventory import (US, extract, inventory, packages, scenario_files,
+                                    extract_step_commands, infer_node_per_command)
 
 
-CLI_RE = re.compile(r"^(?:show|export|import|delete|set|commit|confirm)\b")
-MUTATING_RE = re.compile(r"^(?:import|delete|set|commit|confirm|vi)\b")
+def should_skip(cmd):
+    return bool(re.search(r"/api/firewall/apply|^docker |^ssh\b", cmd))
+
+
 BAD_OUTPUT = re.compile(
     r"unknown command|command not found|illegal (?:function|data)|"
     r"usage:|authentication failed|"
@@ -144,75 +46,10 @@ def key(row):
     return f'{row["scenario"]}|{row["step"]}|{row["command"]}|{row.get("occurrence", 1)}'
 
 
-def extract(root=ROOT, target=""):
-    """Extract descriptions including hints; never infer a successful oracle."""
-    root = Path(root)
-    nodes = load_topology(root)
-    files = sorted((root / SCENARIO_DIR).glob("*.yml"))
-    if not files:
-        raise ValueError("no scenario YAML files")
-    rows = []
-    found = False
-    for path in files:
-        scenario = path.stem
-        if target and scenario != target:
-            continue
-        found = True
-        doc = yaml.safe_load(path.read_text())
-        if not isinstance(doc, dict) or not isinstance(doc.get("steps"), list):
-            raise ValueError(f"{path}: invalid scenario")
-        default_node = (doc.get("nodes") or [""])[0]
-        for idx, step in enumerate(doc["steps"], 1):
-            desc = step.get("description") or ""
-            step_node = step.get("node") or infer_node_from_text(desc) or default_node
-            entry = ""
-            occurrences = {}
-            for command, line in extract_step_commands(desc):
-                occurrences[command] = occurrences.get(command, 0) + 1
-                bare = command.split("#", 1)[0].strip()
-                cli = bool(CLI_RE.match(bare)) or bare in (
-                    "shell", "bash", "exit", "containd cli")
-                node = "fw-1" if cli else (
-                    infer_node_per_command(desc, line) or step_node)
-                # The firewall always opens at containd#, never directly bash.
-                # Only a documented shell transition authorizes the wrapper.
-                if node == "fw-1" and not cli:
-                    preceding = "\n".join(desc.splitlines()[:line])
-                    if re.search(r"`(?:shell|bash|exit)`", preceding):
-                        entry = "shell"
-                prompt = "cli" if cli or (node == "fw-1" and not entry) else "shell"
-                action = "SKIP" if should_skip(command) or MUTATING_RE.match(bare) else "RUN"
-                rows.append({
-                    "scenario": scenario, "step": idx, "title": step["title"],
-                    "policy": step.get("expected_config") or "weak",
-                    "container": nodes.get(node, ""), "node": node,
-                    "command": command, "prompt": prompt,
-                    "entry": entry if prompt == "shell" else "",
-                    "action": action,
-                    "occurrence": occurrences[command],
-                })
-                if bare in ("shell", "bash", "exit"):
-                    entry = "shell"
-                elif bare == "containd cli":
-                    entry = ""
-    if not found:
-        raise ValueError(f"unknown scenario: {target}")
-    return rows
-
-
-def inventory(rows):
-    counts = {}
-    for path in sorted((ROOT / SCENARIO_DIR).glob("*.yml")):
-        counts[path.stem] = {"RUN": 0, "SKIP": 0}
-    for row in rows:
-        counts[row["scenario"]][row["action"]] += 1
-    return counts
-
-
-def validate_inventory(rows, data, target=""):
+def validate_inventory(rows, data, target="", root=ROOT, package_id=US):
     if not rows or len({key(r) for r in rows}) != len(rows):
         raise ValueError("empty or duplicate command inventory")
-    actual = inventory(rows)
+    actual = inventory(rows, root, package_id)
     expected = data["inventory"]
     scenarios = [target] if target else list(expected)
     if not target and actual != expected:
@@ -455,6 +292,24 @@ def execute(row, oracle, directory, timeout, positive=False, control=False):
     return passed
 
 
+
+def expectations_path(root, package_id):
+    suffix = "" if package_id == US else "-" + package_id
+    return Path(root) / f"scripts/lab-commands-expectations{suffix}.json"
+
+
+def check_package(root, package_id):
+    try:
+        rows = extract(root, package_id=package_id)
+        data = json.loads(expectations_path(root, package_id).read_text())
+        return validate_inventory(rows, data, root=root, package_id=package_id)
+    except (ValueError, KeyError, OSError) as exc:
+        raise ValueError(f"{package_id}: {exc}. Add/update {expectations_path(root, package_id).name}: "
+                         "include every scenario (even zero-command scenarios) and every command; "
+                         "RUN needs a reviewed oracle, SKIP needs a reviewed reason. "
+                         "Use --repin --package <package>, review all changes, then rerun --guard. "
+                         "See docs/lab-authoring.md.") from exc
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("target", nargs="?", default="")
@@ -462,19 +317,34 @@ def main():
     parser.add_argument("--repin", action="store_true",
                         help="update counts/metadata, preserve only exact-key oracles; review new null oracles")
     parser.add_argument("--matrix", action="store_true")
+    parser.add_argument("--guard", action="store_true", help="validate every package offline")
+    parser.add_argument("--package", default=US)
     parser.add_argument("--execute", type=int, metavar="ROW")
     parser.add_argument("--positive-control", action="store_true")
     parser.add_argument("--control-passed", action="store_true")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=int, default=10)
     args = parser.parse_args()
-    rows = extract(args.root, args.target)
-    data = json.loads(EXPECTATIONS.read_text())
+    if args.target in packages(args.root):
+        args.package, args.target = args.target, ""
+    if args.guard:
+        for package_id in packages(args.root):
+            check_package(args.root, package_id)
+        print("All package scenario command contracts reviewed and pinned")
+        return
+    rows = extract(args.root, args.target, args.package)
+    expectations = expectations_path(args.root, args.package)
+    if expectations.exists():
+        data = json.loads(expectations.read_text())
+    elif args.repin:
+        data = {"schema": 1, "commands": {}}
+    else:
+        raise ValueError(f"missing {expectations}; run --guard for author instructions")
     if args.repin:
         if args.target:
             raise ValueError("--repin requires the complete inventory")
         previous = data["commands"]
-        data["inventory"] = inventory(rows)
+        data["inventory"] = inventory(rows, args.root, args.package)
         data["minimum_executed"] = sum(r["action"] == "RUN" for r in rows)
         data["commands"] = {
             key(row): {**{f: row[f] for f in (
@@ -482,9 +352,9 @@ def main():
                 "oracle": previous.get(key(row), {}).get("oracle"),
                 "reason": previous.get(key(row), {}).get("reason")}
             for row in rows}
-        EXPECTATIONS.write_text(json.dumps(data, indent=2) + "\n")
+        expectations.write_text(json.dumps(data, indent=2) + "\n")
         return
-    minimum = validate_inventory(rows, data, args.target)
+    minimum = validate_inventory(rows, data, args.target, args.root, args.package)
     if args.execute is not None:
         if args.output is None:
             raise ValueError("--execute needs --output")

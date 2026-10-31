@@ -440,6 +440,40 @@ to surface saved data, add a parser case to `splitDescription` and a
 renderer in `frontend/components/scenario-description-blocks.tsx`,
 then document it here.
 
+## Reviewed command smoke inventory
+
+Every new or changed scenario in **any** package must update its smoke contracts
+in the same change. CI's offline guard discovers package.yml files, follows their
+scenario/topology declarations, cross-checks manifest container identity, and
+rejects missing scenarios (including zero-command scenarios), missing or stale
+commands, changed dispatch/policy metadata, missing oracles and unreviewed skips.
+It never connects to the range.
+
+```sh
+python3 scripts/lib/lab-commands-extract.py --guard
+python3 scripts/lib/lab-commands-extract.py <package-id> --repin
+python3 scripts/lib/lab-commands-extract.py <package-id> --matrix
+```
+
+Repin preserves only exact-key oracles/reasons. Review the diff in
+`scripts/lab-commands-expectations*.json`: every RUN needs a semantic oracle;
+every SKIP needs a specific reviewed reason. Fill new null entries, inspect
+removed entries and container/policy changes, then rerun the guard. Do not
+lower counts or copy an unrelated oracle to make it green. The US file keeps
+its original name; other packages use `lab-commands-expectations-<package>.json`.
+
+The parser shares command/source-marker grammar with the UI. Use explicit
+`From <node>`, `On <node>` or `via <node>` prose before commands in multi-source
+steps. Host commands are copy-only, not silently dispatched to a container.
+Appliance CLI examples use the firewall CLI mechanism, never node exec.
+Tools outside the backend exec allowlist remain copy-only; do not expand the
+allowlist to accommodate wrappers. Frontend parity tests check the same pins.
+Interactive/manual examples still need reviewed SKIP contracts.
+
+Live smoke mutates policy and devices: run it **only on a disposable stack**;
+never point it at a student workshop. Both host entry points accept a package.
+The orchestrator owns live acceptance, including Windows acceptance.
+
 ## Authoring checklist
 
 Before opening a PR with a new or modified lab:
@@ -454,7 +488,7 @@ Before opening a PR with a new or modified lab:
    ./scripts/firewall-smoke.sh
    ```
 4. **Update `lab-definitions/substation-segmentation.yml`** if you added a new container the lab needs.
-5. **Update `EXERCISE_NODE_MAP`** in [`frontend/lib/exercise-nodes.ts`](../frontend/lib/exercise-nodes.ts) so the in-app terminal tabs and node UI shortcuts surface the right hosts.
+5. **Update the package curriculum `nodes.yml`** so terminal tabs and source inference surface the right hosts.
 6. **Update `CHANGELOG.md`** under `[Unreleased]` for any user-visible change.
 
 ## Patterns that work well

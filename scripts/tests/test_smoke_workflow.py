@@ -88,6 +88,14 @@ class ProxyProbeTests(unittest.TestCase):
 
 
 class SmokeWorkflowTests(unittest.TestCase):
+    def test_every_package_command_guard_runs_offline_in_ci(self):
+        ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        steps = ci["jobs"]["release-tooling"]["steps"]
+        guard = next(s for s in steps if s.get("run") ==
+                     "python3 scripts/lib/lab-commands-extract.py --guard")
+        self.assertLess(next(i for i, s in enumerate(steps)
+                             if s.get("run") == "python3 -m pip install pyyaml"), steps.index(guard))
+
     @classmethod
     def setUpClass(cls):
         cls.workflow = yaml.safe_load((ROOT / ".github/workflows/smoke.yml").read_text())

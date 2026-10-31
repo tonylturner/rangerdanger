@@ -57,7 +57,7 @@ class ExtractTests(unittest.TestCase):
             "    dnp3poll -a 2 \\\n      10.40.40.21:20000\n"
             "    export config > /tmp/policy.json\n")
         self.assertEqual([c for c, _ in commands], [
-            "show audit", "shell # leave CLI",
+            "show audit",
             "dnp3poll -a 2 10.40.40.21:20000",
             "export config > /tmp/policy.json"])
 

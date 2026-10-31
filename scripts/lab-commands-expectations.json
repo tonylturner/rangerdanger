@@ -58,7 +58,7 @@
     },
     "vendor-rdp-compromise": {
       "RUN": 7,
-      "SKIP": 0
+      "SKIP": 3
     }
   },
   "minimum_executed": 78,
@@ -1109,6 +1109,33 @@
         "nmap": false
       },
       "reason": null
+    },
+    "vendor-rdp-compromise|2|xfreerdp /v:10.20.20.10:3389 /u:rangerdanger /p:rangerdanger +clipboard /cert:ignore|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "reason": "Interactive desktop/login example; requires a human terminal and is copy-only in the UI.",
+      "oracle": null
+    },
+    "vendor-rdp-compromise|2|xtightvncviewer 10.20.20.10:5900|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "reason": "Interactive desktop/login example; requires a human terminal and is copy-only in the UI.",
+      "oracle": null
+    },
+    "vendor-rdp-compromise|2|sshpass -p rangerdanger ssh -o StrictHostKeyChecking=no rangerdanger@10.20.20.10|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "reason": "Interactive desktop/login example; requires a human terminal and is copy-only in the UI.",
+      "oracle": null
     }
   }
 }

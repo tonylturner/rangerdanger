@@ -1,3 +1,4 @@
+import commandGrammar from "./command-grammar.json";
 import { commandSourceMarker } from "./exercise-nodes";
 
 // scenario-description.ts — pure-logic parser for lab step
@@ -14,7 +15,7 @@ import { commandSourceMarker } from "./exercise-nodes";
 
 // Tools whose indented lines are runnable command blocks. The PDF
 // export (exercise-pdf-text.ts) uses the same list.
-export const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
+export const CMD_TOOL_RE = new RegExp(commandGrammar.command);
 
 export const RUN_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|wget|ls|cat)\s/;
 
@@ -23,13 +24,13 @@ export const RUN_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark
 // terminal), so they render as copy-only blocks — clearly badged as
 // containd CLI — rather than getting a Run button. Matched precisely so
 // generic words ("show", "set") only count as the actual containd verbs.
-const CONTAIND_CLI_RE = /^(containd cli\b|show\s+[a-z]|set\s+(firewall|interface|zone|nat|route|ip|system|syslog|port-forward|dataplane|proxy|outbound)\b|commit(\s+confirmed\b|\s*$)|confirm\s*$|rollback\s*$|delete\s+firewall\b|export\s+config\b|import\s+config\b)/;
+const CONTAIND_CLI_RE = new RegExp(commandGrammar.cli);
 
 // Interactive / GUI commands the student runs in a real terminal but the
 // lab can't usefully "Run" (remote-desktop clients, sshpass-wrapped
 // interactive shells). Rendered as copy-only command blocks — a copy
 // button, no Run.
-const COPY_ONLY_TOOL_RE = /^(xfreerdp|xtightvncviewer|vncviewer|rdesktop|sshpass)\s/;
+const COPY_ONLY_TOOL_RE = new RegExp(commandGrammar.copy);
 
 // :::hint Title  ...content...  :::
 // Opens a collapsible hint panel in the rendered description. Anything
