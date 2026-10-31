@@ -12,7 +12,13 @@ The [change-resource plan](#eu-change-resource-plan) should already define the e
 
 The EU report has 37 TCP tuples. **Plan proof** checks this applied plan, zero skipped and a stable recorded plan hash. **Hardened acceptance** requires 10/10 authorized and 27/27 unauthorized denied, zero skipped, capture and stable hash. Confirm a healthy HMI and fresh CC observations separately. A partial plan can pass plan proof and retain prevention gaps; list them by tuple ID and owning action. Do not erase deferred allow results or treat them as skipped.
 
-Save **Export plan record** alongside **Export compiled config**. The record contains package ID, revision, label, action IDs and policy hash. Check `GET /api/firewall/active` to confirm what is running. Named and manual policies have no applicable plan proof and are judged against Hardened. The L4 source pin enforces; DPI detects and logs. EU DPI is disabled; planning selections emit no inspection or later enforcement promise.
+Save **Export plan record** alongside **Export compiled config**. The record contains package ID, revision, label, action IDs and policy hash. Check `GET /api/firewall/active` to confirm what is running. Named and manual policies have no applicable plan proof and are judged against Hardened. The L4 source pin enforces; DPI detects and logs. Applied IEC 104 monitor observations are separate from TCP proof; Modbus DPI remains planning-only. Monitoring never satisfies a BLOCK requirement.
+
+### Retain applied shadow evidence separately
+
+Keep the three rule IDs (`observe-cc-breaker-command`, `observe-cc-oltc-step`, `observe-cc-oltc-raise-only`), running predicates, healthy decoder/engine, fresh post-apply CC SYN/GI, and embedded containd Firewall/ICS table baseline/deltas. Record `available`, `snapshotVersion`, `since`, `unit`, `shadowMatches`, `wouldAllow`, `wouldDeny` and matching `ics.decision` rule/mode/time evidence. Successful apply resets counters; restart loses them. `available:false`, missing rules, changed snapshot/since or retention gaps are limitations, never zero. A would-deny match is not a denied command or whole-policy prediction. Counts are matching rule × decoded message, normally two per matching rule for a fully decoded SBO action but not guaranteed; require ≥1 and retain independent field feedback.
+
+Monitor traffic traverses NFQUEUE 101, adds latency and has no queue bypass: if the engine is down, the CC conduit drops. Name this forwarding dependency, rollback owner and GI/PLC/historian continuity evidence. Optional instructor-led [PCAP Analysis](#eu-ics-dpi) certification is not graded, not permission or delivery proof, and ends by discarding the staged candidate without commit.
 
 ### Assemble a paired test record
 

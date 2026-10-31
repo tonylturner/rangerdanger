@@ -22,9 +22,9 @@ Use the actual rules and attempt-local evidence for the tuple under test, rather
 
 ### A port is not a permission level
 
-Telemetry, general interrogation and switching share TCP/2404. Allowing that port does not create a read-only IEC 104 session. The EU policy disables DPI and does not enforce an ASDU-type, common-address or IOA allowlist. A capture that decodes C_DC_NA_1 proves observability, not command-aware blocking.
+Telemetry, general interrogation and switching share TCP/2404. Allowing that port does not create a read-only IEC 104 session. Improved observes selected ASDU types, CA and IOAs with explicit monitor rules, but does not enforce a command allowlist. A capture that decodes C_DC_NA_1 proves observability, not command-aware blocking.
 
-Similarly, TCP/502 can carry input-register reads and holding-register writes. The permitted PLC-to-OLTC flow is necessary for regulation but is not an FC/register restriction. This is the Network console's read/write warning: command-level filtering would need deep packet inspection (DPI), which the EU reference policy disables. Device logic supplies further checks such as remote mode, auto/manual state and interlocks; those are different controls with different failure modes.
+Similarly, TCP/502 can carry input-register reads and holding-register writes. The permitted PLC-to-OLTC flow is necessary for regulation but is not an FC/register restriction. This is the Network console's read/write warning: command-level filtering needs a separately designed enforcing policy; the EU IEC 104 observations are monitor-only and Modbus DPI remains planning-only. Device logic supplies further checks such as remote mode, auto/manual state and interlocks; those are different controls with different failure modes.
 
 The historian's read-only property comes from its GET-only read listener and lack of write-back behavior, combined with network separation from its ingest service. It is not a generic property of port 8080.
 

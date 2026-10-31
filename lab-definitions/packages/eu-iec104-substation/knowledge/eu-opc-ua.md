@@ -18,7 +18,7 @@ Transport and endpoint details are deployment-specific. A UA TCP endpoint common
 
 OPC UA defines security mechanisms including application certificates, secure-channel security policies and message signing or encryption. User identity tokens and server-side authorization are distinct from application authentication: a trusted client certificate does not automatically grant every user or client permission to browse, read, write or call every node. Administrators must configure trust, certificate lifecycle, endpoint security modes and least-privilege access. A server configured with weak or absent protections does not become secure simply by speaking OPC UA.
 
-Network segmentation remains useful for limiting which systems can reach an endpoint, but an ordinary L4 firewall rule distinguishes addresses, ports and transport connections, not OPC UA node-level rights or individual Read, Write and Call requests. In this EU range, the reference policy enforces L4 boundaries with DPI disabled; it does not demonstrate OPC UA inspection or service-level filtering. See [port and source boundaries](#eu-port-source-boundary) and [policy comparison](#eu-policy-comparison).
+Network segmentation remains useful for limiting which systems can reach an endpoint, but an ordinary L4 firewall rule distinguishes addresses, ports and transport connections, not OPC UA node-level rights or individual Read, Write and Call requests. In this EU range, the reference policy enforces L4 boundaries and observes selected IEC 104 commands in monitor mode; it does not demonstrate OPC UA inspection or service-level filtering. See [port and source boundaries](#eu-port-source-boundary) and [policy comparison](#eu-policy-comparison).
 
 ### Contrast with the EU station paths
 

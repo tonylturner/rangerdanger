@@ -4,8 +4,8 @@ name: Remediation Planning Under Constraint
 summary: Choose EU remediation within 500 hours and the unchanged four-role capacity constraints.
 estimated_minutes: 18
 description: Fund a defensible subset of the station design. Balance the shared labor budget against specialist
-  capacity, readiness and operational risk. Selected closures affect the generated policy; semantic controls remain
-  planning-only and emit no rules, as do organizational controls.
+  capacity, readiness and operational risk. Selected closures change L4 reachability; IEC 104 monitoring adds
+  observation rules, while Modbus DPI and organizational controls remain planning-only.
 nodes:
 - kali-1
 - eng-ws-1
@@ -78,10 +78,12 @@ steps:
     | Kind | Actions | Effect when applied |
     |---|---|---|
     | Enforceable | `restrict-enterprise-to-vendor`, `block-enterprise-to-field`, `block-enterprise-to-station`, `restrict-vendor-to-station`, `block-vendor-to-field`, `pin-rtu-to-field`, `tighten-firewall-objects` | Change L4 reachability |
-    | Detection-only | None | EU emits no ICS inspection |
-    | Planning-only | `modbus-dpi`, `iec104-dpi`, `improve-logging`, `station-architecture-review`, `positive-validation`, `ids-deployment`, `ot-asset-inventory`, `vendor-zta-broker` | Emit no firewall change |
+    | Detection-only | `iec104-dpi` | Append three explicit monitor rules for CC breaker and OLTC requests; no admission or denial |
+    | Planning-only | `modbus-dpi`, `improve-logging`, `station-architecture-review`, `positive-validation`, `ids-deployment`, `ot-asset-inventory`, `vendor-zta-broker` | Emit no firewall change |
 
-    Required diagnostic denies always log. The logging selection changes no rule. The L4 source pin enforces; DPI detects and logs. In EU, DPI is disabled; a selected DPI action does not enable it. Empty and planning-only plans leave Weak exposures open.
+    Required diagnostic denies always log. The logging selection changes no rule. The L4 source pin enforces; DPI detects and logs. Monitoring never satisfies a BLOCK requirement. Empty and planning-only plans leave Weak exposures open.
+
+    **Staffing trade-off:** `iec104-dpi` stays **80h** and is now a technical detection action required for the Hardened label. With all technical actions selected, Firewall Admin load is **149h vs 140h capacity — a 9h overrun**, not a capacity-compliant plan. Keep the 80h estimate and the 140h cap: request approved staffing or rescheduling, or defer work and accept a partial plan with its explicit gaps. Overrun remains a warning, not an apply prohibition. Readiness `GAP` or `UNAVAILABLE` exclusions can make Hardened unreachable; do not hide that by relabeling excluded work.
 
     :::plan-coverage title="Coverage of your design"
     :::
@@ -97,5 +99,5 @@ steps:
     In Notes, name the finding each funded action closes and the consequence of every deferral. Which role bound first? Did readiness, hours or risk acceptance drive the compromise? Who owns each residual risk, and what test will establish completion next quarter?
 
     :::hint Defensible deferral
-    A DPI selection is planning-only, not a live control or a promise of future enforcement. A broker or IDS selection deploys no infrastructure. Commands on allowed CC sessions and same-subnet paths remain residual risks. Continue to [implementation](/exercises/eu-firewall-implementation) with a saved plan.
+    IEC 104 monitoring is live only after its rules are applied and verified; it is not command prevention. Modbus DPI remains planning-only. A broker or IDS selection deploys no infrastructure. Commands on allowed CC sessions and same-subnet paths remain residual risks. Continue to [implementation](/exercises/eu-firewall-implementation) with a saved plan.
     :::

@@ -52,7 +52,7 @@ Existing sessions complicate temporal proof. Applying a deny does not itself pro
 
 ### Limits of the control
 
-The improved policy is source- and port-based, not per-IOA authorization or Modbus function filtering. Its DPI setting is disabled. An allowed CC can still send correctly sequenced commands, and an allowed Modbus source can attempt writes. [Device authority](#eu-control-authority), interlocks and trusted-host controls remain relevant.
+The improved policy is source- and port-based, not per-IOA authorization or Modbus function filtering. It enables three explicit monitor-only IEC 104 rules for CC breaker/OLTC requests, not command denial. The L4 source pin enforces; DPI detects and logs. Monitoring never satisfies a BLOCK requirement. See [shadow evidence and the NFQUEUE forwarding dependency](#eu-ics-dpi). An allowed CC can still send correctly sequenced commands, and an allowed Modbus source can attempt writes. [Device authority](#eu-control-authority), interlocks and trusted-host controls remain relevant.
 
 RTU-to-PLC and RTU-to-GPS are same-subnet Station exchanges; this firewall does not enforce them as cross-zone conduits. The two package policies are reference designs, not the only valid site design or an IEC 62443 certification. Evaluate any alternative against required availability, denied initiation paths and explicitly bounded evidence rather than copying a rule count.
 
