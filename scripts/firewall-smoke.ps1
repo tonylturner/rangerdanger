@@ -312,7 +312,7 @@ $Listeners = @(
     @{ hp='10.30.30.30:502';   label='openplc Modbus' },
     @{ hp='10.30.30.30:8080';  label='openplc HTTP' },
     @{ hp='10.40.40.20:502';   label='relay Modbus' },
-    @{ hp='10.20.20.10:8082';  label='vendor-jump kasm' },
+    @{ hp='10.20.20.10:3000';  label='vendor-jump desktop' },
     @{ hp='10.20.20.10:22';    label='vendor-jump SSH' }
 )
 # Apply weak briefly so listener probes can traverse zones.

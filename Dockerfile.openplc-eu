@@ -1,7 +1,11 @@
 # The upstream runtime is amd64-only; SSD staging must include this architecture.
 FROM tuttas/openplc_v3:latest@sha256:94fb9e8387340af716211454664980dc0e97924067712cf573a1e467c3a37722
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Upstream has no newer snapshot. Apply public Bionic fixes without removing
+# packages or enabling ESM; the runtime/compiler remain the pinned upstream's.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
         curl iproute2 python3 sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 

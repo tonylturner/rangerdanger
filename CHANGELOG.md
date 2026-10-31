@@ -10,6 +10,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Lab 1.3 readiness now adjusts Lab 1.4 role capacity, action effort and draft eligibility in both packages, with a default-budget comparison toggle and visible exclusion reasons.
 
+### Security
+
+- Refresh workstation and HMI bases, update bundled npm and Compose, apply
+  available OpenPLC OS fixes, and upgrade OpenDSS FastAPI/Starlette to fix
+  three CVEs. Document remaining image findings.
+
 ## [v0.2.0-rc.5] - 2026-10-30
 
 Fifth release candidate for v0.2.0 and the first built on Ubuntu 26.04

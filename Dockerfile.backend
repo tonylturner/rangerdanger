@@ -1,6 +1,6 @@
 # The range lifecycle runs the standalone Compose binary (no docker CLI).
 # The index digest pins both architectures; BuildKit picks the platform's.
-FROM docker:29.8.0-cli@sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf10ea2d04921bb66 AS compose
+FROM docker:29.9.2-cli@sha256:5e6baf67325a79f64ed3bed6863954d5e05d0f3d4e57cbdb14809346814bbfdb AS compose
 
 FROM golang:1.26.10@sha256:672c944cfd07599b5f1bb179869270cdc94c6254e41db4d431259693cb286b82 AS builder
 ENV GOTOOLCHAIN=local

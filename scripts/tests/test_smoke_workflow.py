@@ -79,9 +79,10 @@ class ProxyProbeTests(unittest.TestCase):
         for body, code in (
                 (shell, "502"), (shell, "302"), (shell, "000"),
                 ("<h1>Vendor Remote Access Portal</h1>", "200"),
+                ("<html><head><title>Welcome to nginx!</title></head></html>", "200"),
                 ("<html>kasm novnc webtop</html>", "200"),
                 (shell.replace("touch-gamepad-host", "missing"), "200"),
-                (shell.replace("universalTouchGamepad.js", "missing.js"), "200")):
+                (shell.replace("<title>Selkies</title>", "<title>missing</title>"), "200")):
             with self.subTest(body=body, code=code):
                 self.assertNotEqual(self.desktop_verdict(body, code), 0)
 
