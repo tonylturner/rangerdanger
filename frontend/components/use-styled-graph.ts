@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import type { LabGraph, TrafficStatus, ZoneRuleSummary } from "../lib/api";
+import type { LabGraph, ZoneRuleSummary } from "../lib/api";
+import type { FlowContext } from "../lib/observed-flows";
 import type { ViewMode } from "../lib/network-console-data";
 import { buildStyledGraph } from "../lib/network-graph";
 
@@ -11,7 +12,7 @@ export function useStyledGraph(
   viewMode: ViewMode = { policyDim: true, traffic: false, iec62443: false },
   deviceComms?: Record<string, boolean>,
   rtacOnline?: boolean,
-  trafficStatus?: TrafficStatus,
+  flowContext?: FlowContext,
   firewallOnline?: boolean,
   trafficFilter?: { zone: string; crossZoneOnly: boolean },
   highlightedTrafficPair?: string | null,
@@ -23,7 +24,7 @@ export function useStyledGraph(
     viewMode,
     deviceComms,
     rtacOnline,
-    trafficStatus,
+    flowContext,
     firewallOnline,
     trafficFilter,
     highlightedTrafficPair,
@@ -36,7 +37,7 @@ export function useStyledGraph(
     viewMode.iec62443,
     deviceComms,
     rtacOnline,
-    trafficStatus,
+    flowContext,
     firewallOnline,
     trafficFilter,
     highlightedTrafficPair,

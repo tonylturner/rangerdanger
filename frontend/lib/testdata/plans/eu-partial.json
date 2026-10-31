@@ -1,0 +1,1836 @@
+{
+  "config": {
+    "dataplane": {
+      "dpiMode": "enforce",
+      "nflogGroup": 100,
+      "nfqueueGroup": 101,
+      "dpiEnabled": false
+    },
+    "firewall": {
+      "defaultAction": "DENY",
+      "nat": {
+        "enabled": false
+      },
+      "rules": [
+        {
+          "id": "control-centre-to-rtu-iec104",
+          "description": "Allow the named Control Centre to open IEC104 sessions to the RTU",
+          "sourceZones": [
+            "lan4"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "sources": [
+            "10.60.60.20/32"
+          ],
+          "destinations": [
+            "10.30.30.20/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "2404"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "rtu-to-feeder-modbus",
+          "description": "Allow the named RTU to poll both breakers, RMUs and OLTC and control the existing command targets over Modbus TCP",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "sources": [
+            "10.30.30.20/32"
+          ],
+          "destinations": [
+            "10.40.40.20/32",
+            "10.40.40.21/32",
+            "10.40.40.22/32",
+            "10.40.40.23/32",
+            "10.40.40.24/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "502"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "plc-to-oltc-modbus",
+          "description": "Allow only the named PLC to regulate the OLTC over Modbus TCP",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "sources": [
+            "10.30.30.30/32"
+          ],
+          "destinations": [
+            "10.40.40.23/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "502"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "control-centre-to-historian-ingest",
+          "description": "Allow only the named CC to push historian snapshots",
+          "sourceZones": [
+            "lan4"
+          ],
+          "destZones": [
+            "lan5"
+          ],
+          "sources": [
+            "10.60.60.20/32"
+          ],
+          "destinations": [
+            "10.70.70.40/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8081"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "enterprise-to-historian-read",
+          "description": "Allow enterprise read-only historian access",
+          "sourceZones": [
+            "wan"
+          ],
+          "destZones": [
+            "lan5"
+          ],
+          "sources": [
+            "10.10.10.0/24"
+          ],
+          "destinations": [
+            "10.70.70.40/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "engineering-to-plc-web",
+          "description": "Allow engineering maintenance of the OpenPLC web UI",
+          "sourceZones": [
+            "dmz"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "sources": [
+            "10.20.20.20/32"
+          ],
+          "destinations": [
+            "10.30.30.30/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "weak-foreign-field-modbus-enterprise",
+          "description": "WEAK teaching exposure: enterprise and vendor direct Modbus access to field devices (should be blocked)",
+          "sourceZones": [
+            "wan"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "502"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "weak-iec104-exposure-enterprise",
+          "description": "WEAK: enterprise, vendor, and control centre can open IEC104 sessions to the RTU",
+          "sourceZones": [
+            "wan"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "2404"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "weak-iec104-exposure-vendor",
+          "description": "WEAK: enterprise, vendor, and control centre can open IEC104 sessions to the RTU",
+          "sourceZones": [
+            "dmz"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "2404"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "weak-vendor-station-web",
+          "description": "Workshop weak exposure",
+          "sourceZones": [
+            "dmz"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            }
+          ],
+          "action": "ALLOW",
+          "log": true
+        },
+        {
+          "id": "weak-foreign-field-modbus-vendor",
+          "description": "WEAK teaching exposure: enterprise and vendor direct Modbus access to field devices (should be blocked)",
+          "sourceZones": [
+            "dmz"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "502"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "weak-rtu-modbus",
+          "description": "WEAK: all station-zone nodes can reach every field device over Modbus TCP",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "502"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "weak-iec104-exposure-control-centre",
+          "description": "WEAK: enterprise, vendor, and control centre can open IEC104 sessions to the RTU",
+          "sourceZones": [
+            "lan4"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "2404"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "weak-historian-read",
+          "description": "WEAK: enterprise, vendor and control centre can read the historian",
+          "sourceZones": [
+            "wan",
+            "dmz",
+            "lan4"
+          ],
+          "destZones": [
+            "lan5"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "weak-historian-ingest",
+          "description": "WEAK: any control-centre-zone source can push historian snapshots",
+          "sourceZones": [
+            "lan4"
+          ],
+          "destZones": [
+            "lan5"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8081"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "deny-unauthorized-historian-ingest",
+          "description": "Deny and log other sources attempting historian snapshot ingest on TCP/8081",
+          "sourceZones": [
+            "wan",
+            "dmz",
+            "lan1",
+            "lan2",
+            "lan3",
+            "lan4",
+            "lan5"
+          ],
+          "destZones": [
+            "lan5"
+          ],
+          "destinations": [
+            "10.70.70.40/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8081"
+            }
+          ],
+          "action": "DENY",
+          "log": true
+        },
+        {
+          "id": "deny-unauthorized-plc-web",
+          "description": "Deny and log other sources attempting OpenPLC web maintenance on TCP/8080",
+          "sourceZones": [
+            "wan",
+            "dmz",
+            "lan1",
+            "lan2",
+            "lan3",
+            "lan4",
+            "lan5"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "destinations": [
+            "10.30.30.30/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            }
+          ],
+          "action": "DENY",
+          "log": true
+        },
+        {
+          "id": "deny-unauthorized-iec104",
+          "description": "Deny and log other sources attempting to reach IEC104 on TCP/2404",
+          "sourceZones": [
+            "wan",
+            "dmz",
+            "lan1",
+            "lan2",
+            "lan3",
+            "lan4",
+            "lan5"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "2404"
+            }
+          ],
+          "action": "DENY",
+          "log": true
+        },
+        {
+          "id": "deny-unauthorized-modbus",
+          "description": "Deny and log other sources attempting to reach Modbus on TCP/502",
+          "sourceZones": [
+            "wan",
+            "dmz",
+            "lan1",
+            "lan2",
+            "lan3",
+            "lan4",
+            "lan5"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "502"
+            }
+          ],
+          "action": "DENY",
+          "log": true
+        }
+      ]
+    },
+    "ids": {
+      "enabled": false
+    },
+    "interfaces": [
+      {
+        "name": "wan",
+        "zone": "wan",
+        "access": {
+          "mgmt": false,
+          "http": false,
+          "https": false,
+          "ssh": false
+        }
+      },
+      {
+        "name": "dmz",
+        "zone": "dmz",
+        "access": {
+          "mgmt": false,
+          "http": false,
+          "https": false,
+          "ssh": false
+        }
+      },
+      {
+        "name": "lan1",
+        "zone": "lan1",
+        "access": {
+          "mgmt": false,
+          "http": false,
+          "https": false,
+          "ssh": false
+        }
+      },
+      {
+        "name": "lan2",
+        "zone": "lan2",
+        "access": {
+          "mgmt": false,
+          "http": false,
+          "https": false,
+          "ssh": false
+        }
+      },
+      {
+        "name": "lan3",
+        "zone": "lan3",
+        "access": {
+          "mgmt": true,
+          "http": true,
+          "https": true,
+          "ssh": true
+        }
+      },
+      {
+        "name": "lan4",
+        "zone": "lan4",
+        "access": {
+          "mgmt": false,
+          "http": false,
+          "https": false,
+          "ssh": false
+        }
+      },
+      {
+        "name": "lan5",
+        "zone": "lan5",
+        "access": {
+          "mgmt": false,
+          "http": false,
+          "https": false,
+          "ssh": false
+        }
+      }
+    ],
+    "pcap": {
+      "filter": {}
+    },
+    "routing": {},
+    "schema_version": "0.1.0",
+    "services": {
+      "syslog": {
+        "forwarders": [],
+        "format": "rfc5424",
+        "batchSize": 500,
+        "flushEvery": 2
+      },
+      "dns": {
+        "enabled": false
+      },
+      "ntp": {
+        "enabled": false
+      },
+      "proxy": {
+        "forward": {
+          "enabled": false
+        },
+        "reverse": {
+          "enabled": false
+        }
+      },
+      "dhcp": {
+        "enabled": false
+      },
+      "vpn": {
+        "wireguard": {
+          "enabled": false
+        },
+        "openvpn": {
+          "enabled": false
+        }
+      },
+      "av": {
+        "enabled": false,
+        "icap": {},
+        "clamav": {}
+      }
+    },
+    "system": {
+      "hostname": "containd",
+      "mgmt": {
+        "listenAddr": ":8080",
+        "enableHTTP": true,
+        "enableHTTPS": true,
+        "httpListenAddr": ":8080",
+        "httpsListenAddr": ":8443",
+        "tlsCertFile": "/data/tls/server.crt",
+        "tlsKeyFile": "/data/tls/server.key"
+      },
+      "ssh": {}
+    },
+    "zones": [
+      {
+        "name": "wan",
+        "description": "Enterprise Zone - untrusted student and attacker access"
+      },
+      {
+        "name": "dmz",
+        "description": "Vendor and Engineering Zone"
+      },
+      {
+        "name": "lan1",
+        "description": "Station Zone - IEC104 RTU, OpenPLC and GPS clock"
+      },
+      {
+        "name": "lan2",
+        "description": "Feeder Field Zone - breaker, RMUs and OLTC Modbus endpoints"
+      },
+      {
+        "name": "lan3",
+        "description": "RangerDanger control plane - backend and containd management"
+      },
+      {
+        "name": "lan4",
+        "description": "Control Centre Zone - IEC104 client"
+      },
+      {
+        "name": "lan5",
+        "description": "Operations DMZ - read-only historian"
+      }
+    ]
+  },
+  "rules": [
+    {
+      "rule": {
+        "id": "control-centre-to-rtu-iec104",
+        "description": "Allow the named Control Centre to open IEC104 sessions to the RTU",
+        "sourceZones": [
+          "lan4"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "sources": [
+          "10.60.60.20/32"
+        ],
+        "destinations": [
+          "10.30.30.20/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "2404"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "rtu-to-feeder-modbus",
+        "description": "Allow the named RTU to poll both breakers, RMUs and OLTC and control the existing command targets over Modbus TCP",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "sources": [
+          "10.30.30.20/32"
+        ],
+        "destinations": [
+          "10.40.40.20/32",
+          "10.40.40.21/32",
+          "10.40.40.22/32",
+          "10.40.40.23/32",
+          "10.40.40.24/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "plc-to-oltc-modbus",
+        "description": "Allow only the named PLC to regulate the OLTC over Modbus TCP",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "sources": [
+          "10.30.30.30/32"
+        ],
+        "destinations": [
+          "10.40.40.23/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "control-centre-to-historian-ingest",
+        "description": "Allow only the named CC to push historian snapshots",
+        "sourceZones": [
+          "lan4"
+        ],
+        "destZones": [
+          "lan5"
+        ],
+        "sources": [
+          "10.60.60.20/32"
+        ],
+        "destinations": [
+          "10.70.70.40/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8081"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "enterprise-to-historian-read",
+        "description": "Allow enterprise read-only historian access",
+        "sourceZones": [
+          "wan"
+        ],
+        "destZones": [
+          "lan5"
+        ],
+        "sources": [
+          "10.10.10.0/24"
+        ],
+        "destinations": [
+          "10.70.70.40/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "engineering-to-plc-web",
+        "description": "Allow engineering maintenance of the OpenPLC web UI",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "sources": [
+          "10.20.20.20/32"
+        ],
+        "destinations": [
+          "10.30.30.30/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "weak-foreign-field-modbus-enterprise",
+        "description": "WEAK teaching exposure: enterprise and vendor direct Modbus access to field devices (should be blocked)",
+        "sourceZones": [
+          "wan"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "block-enterprise-to-field"
+      }
+    },
+    {
+      "rule": {
+        "id": "weak-iec104-exposure-enterprise",
+        "description": "WEAK: enterprise, vendor, and control centre can open IEC104 sessions to the RTU",
+        "sourceZones": [
+          "wan"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "2404"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "block-enterprise-to-station"
+      }
+    },
+    {
+      "rule": {
+        "id": "weak-iec104-exposure-vendor",
+        "description": "WEAK: enterprise, vendor, and control centre can open IEC104 sessions to the RTU",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "2404"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "restrict-vendor-to-station"
+      }
+    },
+    {
+      "rule": {
+        "id": "weak-vendor-station-web",
+        "description": "Workshop weak exposure",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          }
+        ],
+        "action": "ALLOW",
+        "log": true
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "restrict-vendor-to-station"
+      }
+    },
+    {
+      "rule": {
+        "id": "weak-foreign-field-modbus-vendor",
+        "description": "WEAK teaching exposure: enterprise and vendor direct Modbus access to field devices (should be blocked)",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "block-vendor-to-field"
+      }
+    },
+    {
+      "rule": {
+        "id": "weak-rtu-modbus",
+        "description": "WEAK: all station-zone nodes can reach every field device over Modbus TCP",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "pin-rtu-to-field"
+      }
+    },
+    {
+      "rule": {
+        "id": "weak-iec104-exposure-control-centre",
+        "description": "WEAK: enterprise, vendor, and control centre can open IEC104 sessions to the RTU",
+        "sourceZones": [
+          "lan4"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "2404"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "tighten-firewall-objects"
+      }
+    },
+    {
+      "rule": {
+        "id": "weak-historian-read",
+        "description": "WEAK: enterprise, vendor and control centre can read the historian",
+        "sourceZones": [
+          "wan",
+          "dmz",
+          "lan4"
+        ],
+        "destZones": [
+          "lan5"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "tighten-firewall-objects"
+      }
+    },
+    {
+      "rule": {
+        "id": "weak-historian-ingest",
+        "description": "WEAK: any control-centre-zone source can push historian snapshots",
+        "sourceZones": [
+          "lan4"
+        ],
+        "destZones": [
+          "lan5"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8081"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "tighten-firewall-objects"
+      }
+    },
+    {
+      "rule": {
+        "id": "deny-unauthorized-historian-ingest",
+        "description": "Deny and log other sources attempting historian snapshot ingest on TCP/8081",
+        "sourceZones": [
+          "wan",
+          "dmz",
+          "lan1",
+          "lan2",
+          "lan3",
+          "lan4",
+          "lan5"
+        ],
+        "destZones": [
+          "lan5"
+        ],
+        "destinations": [
+          "10.70.70.40/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8081"
+          }
+        ],
+        "action": "DENY",
+        "log": true
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "deny-unauthorized-plc-web",
+        "description": "Deny and log other sources attempting OpenPLC web maintenance on TCP/8080",
+        "sourceZones": [
+          "wan",
+          "dmz",
+          "lan1",
+          "lan2",
+          "lan3",
+          "lan4",
+          "lan5"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "destinations": [
+          "10.30.30.30/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          }
+        ],
+        "action": "DENY",
+        "log": true
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "deny-unauthorized-iec104",
+        "description": "Deny and log other sources attempting to reach IEC104 on TCP/2404",
+        "sourceZones": [
+          "wan",
+          "dmz",
+          "lan1",
+          "lan2",
+          "lan3",
+          "lan4",
+          "lan5"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "2404"
+          }
+        ],
+        "action": "DENY",
+        "log": true
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "deny-unauthorized-modbus",
+        "description": "Deny and log other sources attempting to reach Modbus on TCP/502",
+        "sourceZones": [
+          "wan",
+          "dmz",
+          "lan1",
+          "lan2",
+          "lan3",
+          "lan4",
+          "lan5"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "DENY",
+        "log": true
+      },
+      "origin": {
+        "kind": "required"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "id": "restrict-enterprise-to-vendor",
+      "kind": "enforce",
+      "chosen": true
+    },
+    {
+      "id": "block-enterprise-to-field",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "block-enterprise-to-station",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "restrict-vendor-to-station",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "block-vendor-to-field",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "pin-rtu-to-field",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "modbus-dpi",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "iec104-dpi",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "improve-logging",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "station-architecture-review",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "tighten-firewall-objects",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "positive-validation",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "ids-deployment",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "ot-asset-inventory",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "vendor-zta-broker",
+      "kind": "plan",
+      "chosen": false
+    }
+  ],
+  "label": "partial",
+  "packageId": "eu-iec104-substation",
+  "revision": 5,
+  "policyHash": "f5b1292192381c481d961ad4ce1ff829ae3a16ad454be5d3bacc56f643241b68",
+  "expectations": [
+    {
+      "id": "A1",
+      "from": "cc-1",
+      "to": "rtu-1",
+      "network": "station_net",
+      "port": 2404,
+      "category": "authorized",
+      "owners": [],
+      "note": "CC IEC 104 to RTU",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.60.60.20",
+      "toIp": "10.30.30.20"
+    },
+    {
+      "id": "A2",
+      "from": "plc-1",
+      "to": "oltc-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "authorized",
+      "owners": [],
+      "note": "PLC to OLTC (pinned station-to-field conduit)",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.30.30.30",
+      "toIp": "10.40.40.23"
+    },
+    {
+      "id": "A3",
+      "from": "cc-1",
+      "to": "historian-1",
+      "network": "ops_dmz_net",
+      "port": 8081,
+      "category": "authorized",
+      "owners": [],
+      "note": "CC historian ingest",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.60.60.20",
+      "toIp": "10.70.70.40"
+    },
+    {
+      "id": "A4",
+      "from": "kali-1",
+      "to": "historian-1",
+      "network": "ops_dmz_net",
+      "port": 8080,
+      "category": "authorized",
+      "owners": [],
+      "note": "Enterprise historian read",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.70.70.40"
+    },
+    {
+      "id": "A5",
+      "from": "eng-ws-1",
+      "to": "plc-1",
+      "network": "station_net",
+      "port": 8080,
+      "category": "authorized",
+      "owners": [],
+      "note": "Named engineering PLC maintenance",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.20.20.20",
+      "toIp": "10.30.30.30"
+    },
+    {
+      "id": "U1",
+      "from": "kali-1",
+      "to": "rtu-1",
+      "network": "station_net",
+      "port": 2404,
+      "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-station"
+      ],
+      "labs": [
+        "implementation",
+        "hardening"
+      ],
+      "note": "Foreign IEC 104 connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.30.30.20"
+    },
+    {
+      "id": "U2",
+      "from": "kali-1",
+      "to": "plc-1",
+      "network": "station_net",
+      "port": 8080,
+      "category": "unauthorized",
+      "owners": [],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Enterprise PLC web",
+      "planVerdict": "deny",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.30.30.30"
+    },
+    {
+      "id": "U3",
+      "from": "kali-1",
+      "to": "vendor-jump-1",
+      "network": "vendor_net",
+      "port": 3389,
+      "category": "unauthorized",
+      "owners": [
+        "restrict-enterprise-to-vendor"
+      ],
+      "labs": [
+        "implementation",
+        "vendor"
+      ],
+      "note": "Enterprise vendor RDP",
+      "planVerdict": "deny",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.20.20.10"
+    },
+    {
+      "id": "U4",
+      "from": "kali-1",
+      "to": "vendor-jump-1",
+      "network": "vendor_net",
+      "port": 5900,
+      "category": "unauthorized",
+      "owners": [
+        "restrict-enterprise-to-vendor"
+      ],
+      "labs": [
+        "implementation",
+        "vendor"
+      ],
+      "note": "Enterprise vendor VNC",
+      "planVerdict": "deny",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.20.20.10"
+    },
+    {
+      "id": "A6",
+      "from": "rtu-1",
+      "to": "breaker-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "authorized",
+      "owners": [],
+      "note": "RTU field Modbus",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.30.30.20",
+      "toIp": "10.40.40.20"
+    },
+    {
+      "id": "U5",
+      "from": "kali-1",
+      "to": "breaker-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-field"
+      ],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.40.40.20"
+    },
+    {
+      "id": "U6",
+      "from": "vendor-jump-1",
+      "to": "breaker-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "labs": [
+        "implementation",
+        "vendor"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.40.40.20"
+    },
+    {
+      "id": "U7",
+      "from": "eng-ws-1",
+      "to": "breaker-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.20",
+      "toIp": "10.40.40.20"
+    },
+    {
+      "id": "A7",
+      "from": "rtu-1",
+      "to": "f2-breaker",
+      "network": "field_net",
+      "port": 502,
+      "category": "authorized",
+      "owners": [],
+      "note": "RTU field Modbus",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.30.30.20",
+      "toIp": "10.40.40.24"
+    },
+    {
+      "id": "U8",
+      "from": "kali-1",
+      "to": "f2-breaker",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-field"
+      ],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.40.40.24"
+    },
+    {
+      "id": "U9",
+      "from": "vendor-jump-1",
+      "to": "f2-breaker",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "labs": [
+        "implementation",
+        "vendor"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.40.40.24"
+    },
+    {
+      "id": "U10",
+      "from": "eng-ws-1",
+      "to": "f2-breaker",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.20",
+      "toIp": "10.40.40.24"
+    },
+    {
+      "id": "A8",
+      "from": "rtu-1",
+      "to": "rmu-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "authorized",
+      "owners": [],
+      "note": "RTU field Modbus",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.30.30.20",
+      "toIp": "10.40.40.21"
+    },
+    {
+      "id": "U11",
+      "from": "kali-1",
+      "to": "rmu-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-field"
+      ],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.40.40.21"
+    },
+    {
+      "id": "U12",
+      "from": "vendor-jump-1",
+      "to": "rmu-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "labs": [
+        "implementation",
+        "vendor"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.40.40.21"
+    },
+    {
+      "id": "U13",
+      "from": "eng-ws-1",
+      "to": "rmu-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.20",
+      "toIp": "10.40.40.21"
+    },
+    {
+      "id": "A9",
+      "from": "rtu-1",
+      "to": "rmu-2",
+      "network": "field_net",
+      "port": 502,
+      "category": "authorized",
+      "owners": [],
+      "note": "RTU field Modbus",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.30.30.20",
+      "toIp": "10.40.40.22"
+    },
+    {
+      "id": "U14",
+      "from": "kali-1",
+      "to": "rmu-2",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-field"
+      ],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.40.40.22"
+    },
+    {
+      "id": "U15",
+      "from": "vendor-jump-1",
+      "to": "rmu-2",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "labs": [
+        "implementation",
+        "vendor"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.40.40.22"
+    },
+    {
+      "id": "U16",
+      "from": "eng-ws-1",
+      "to": "rmu-2",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.20",
+      "toIp": "10.40.40.22"
+    },
+    {
+      "id": "A10",
+      "from": "rtu-1",
+      "to": "oltc-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "authorized",
+      "owners": [],
+      "note": "RTU field Modbus",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.30.30.20",
+      "toIp": "10.40.40.23"
+    },
+    {
+      "id": "U17",
+      "from": "kali-1",
+      "to": "oltc-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-field"
+      ],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.40.40.23"
+    },
+    {
+      "id": "U18",
+      "from": "vendor-jump-1",
+      "to": "oltc-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "labs": [
+        "implementation",
+        "vendor"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.40.40.23"
+    },
+    {
+      "id": "U19",
+      "from": "eng-ws-1",
+      "to": "oltc-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "labs": [
+        "implementation"
+      ],
+      "note": "Foreign field Modbus connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.20",
+      "toIp": "10.40.40.23"
+    },
+    {
+      "id": "U20",
+      "from": "vendor-jump-1",
+      "to": "rtu-1",
+      "network": "station_net",
+      "port": 2404,
+      "category": "unauthorized",
+      "owners": [
+        "restrict-vendor-to-station"
+      ],
+      "note": "Vendor IEC 104 connect",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.30.30.20"
+    },
+    {
+      "id": "U21",
+      "from": "vendor-jump-1",
+      "to": "plc-1",
+      "network": "station_net",
+      "port": 8080,
+      "category": "unauthorized",
+      "owners": [
+        "restrict-vendor-to-station"
+      ],
+      "note": "Vendor PLC web",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.30.30.30"
+    },
+    {
+      "id": "U22",
+      "from": "plc-1",
+      "to": "breaker-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "pin-rtu-to-field"
+      ],
+      "note": "Non-RTU station PLC to breaker",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.30.30.30",
+      "toIp": "10.40.40.20"
+    },
+    {
+      "id": "U23",
+      "from": "gps-1",
+      "to": "breaker-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "pin-rtu-to-field"
+      ],
+      "note": "Non-RTU station GPS to breaker",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.30.30.50",
+      "toIp": "10.40.40.20"
+    },
+    {
+      "id": "U24",
+      "from": "vendor-jump-1",
+      "to": "historian-1",
+      "network": "ops_dmz_net",
+      "port": 8080,
+      "category": "unauthorized",
+      "owners": [
+        "tighten-firewall-objects"
+      ],
+      "note": "Vendor historian read",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.70.70.40"
+    },
+    {
+      "id": "U25",
+      "from": "cc-1",
+      "to": "gps-1",
+      "network": "station_net",
+      "port": 2404,
+      "category": "unauthorized",
+      "owners": [
+        "tighten-firewall-objects"
+      ],
+      "note": "CC to non-RTU station endpoint",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.60.60.20",
+      "toIp": "10.30.30.50"
+    },
+    {
+      "id": "U26",
+      "from": "kali-1",
+      "to": "historian-1",
+      "network": "ops_dmz_net",
+      "port": 8081,
+      "category": "unauthorized",
+      "owners": [],
+      "note": "Enterprise cannot ingest even under Weak",
+      "planVerdict": "deny",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.70.70.40"
+    },
+    {
+      "id": "U27",
+      "from": "vendor-jump-1",
+      "to": "historian-1",
+      "network": "ops_dmz_net",
+      "port": 8081,
+      "category": "unauthorized",
+      "owners": [],
+      "note": "Vendor cannot ingest even under Weak",
+      "planVerdict": "deny",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.70.70.40"
+    }
+  ]
+}

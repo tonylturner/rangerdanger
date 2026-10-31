@@ -28,7 +28,7 @@ network model.
 | vendor-jump (DMZ)  | `10.20.20.10`  | HTTP             | 80        | Vendor Remote Access Portal landing page. |
 | vendor-jump (DMZ)  | `10.20.20.10`  | HTTPS            | 443       | Same page over TLS (self-signed cert). |
 | vendor-jump (DMZ)  | `10.20.20.10`  | RDP (xrdp)       | 3389      | Drops you into an XFCE desktop session. |
-| vendor-jump (DMZ)  | `10.20.20.10`  | VNC (x11vnc)     | 5900      | Shares the running kasm desktop session. |
+| vendor-jump (DMZ)  | `10.20.20.10`  | VNC (x11vnc)     | 5900      | Shares the LinuxServer webtop (Selkies) desktop session. |
 | rtac-sim (OT Ops)  | `10.30.30.20`  | SSH              | 22        | RTAC management shell. Improved policy keeps vendor → OT:22 open for monitoring. |
 | rtac-sim (OT Ops)  | `10.30.30.20`  | HTTPS            | 443       | RTAC mgmt portal (self-signed cert). Improved policy keeps vendor → OT:443 open for monitoring. |
 

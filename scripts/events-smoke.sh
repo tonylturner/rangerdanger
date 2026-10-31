@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Events smoke test — exercises the v0.1.25 firewall.rule.hit event
-# pipeline + ICS DPI enforcement that the traffic-only smoke
+# pipeline + ICS DPI detection/logging that the traffic-only smoke
 # (firewall-smoke.sh) doesn't cover.
 #
-# Three gates:
+# Four checks:
 #
 #   1. L4 events flow under improved policy
 #      Apply improved → kali Modbus probe → expect at least one
@@ -21,12 +21,15 @@
 #      underscores but the list endpoint returns hyphens — anyone
 #      copy-pasting from the list would 400 without the fix).
 #
-#   3. ICS DPI function-code allowlist enforces (Linux/containerd
-#      with NFQUEUE-capable kernel only — skipped if the host kernel's
-#      netlink library can't bind nflog group, e.g. some macOS Docker
-#      Desktop kernels). RTAC sends Modbus FC8 → expect block_flows
-#      entry within a few seconds. Catches: NFQueueGroup wiring,
-#      compiler chain reorder, BlockFlowTemp verdict path.
+#   3. ICS DPI function-code detection/logging (the L4 source pin
+#      enforces; DPI detects and logs). This check needs NFQUEUE and is
+#      skipped if the host kernel cannot bind it, e.g. some macOS Docker
+#      Desktop kernels. RTAC sends Modbus FC8 → expect matching DPI
+#      evidence within a few seconds. Catches: NFQueueGroup wiring,
+#      compiler chain ordering and DPI evidence publication.
+#
+#   4. DNP3 ICS DPI function-code detection/logging, under the same
+#      NFQUEUE prerequisite, for an RTAC Direct Operate probe.
 #
 # Assumes rangerdanger stack is up + backend healthy (run
 # scripts/smoke-test.sh --keep first).
@@ -48,12 +51,23 @@ EVENT_POLL_BUDGET="${EVENT_POLL_BUDGET:-45}"  # max additional seconds to wait
 
 fail=0
 passed=0
+skipped=0
+required_skipped=0
 total=0
 
 note() { printf '\n=== %s ===\n' "$1"; }
 ok()   { printf '  ✓ %s\n' "$1"; passed=$((passed+1)); total=$((total+1)); }
 err()  { printf '  ✗ %s\n' "$1"; fail=1; total=$((total+1)); }
-skip() { printf '  ⊘ %s (skipped: %s)\n' "$1" "$2"; }
+skip() {
+  local requirement="${3:-optional}"
+  printf '  ⊘ %s (skipped: %s; %s)\n' "$1" "$2" "$requirement"
+  skipped=$((skipped+1))
+  total=$((total+1))
+  if [ "$requirement" = "required" ]; then
+    required_skipped=$((required_skipped+1))
+    fail=1
+  fi
+}
 
 note "preflight"
 if ! curl -fsS "$API/api/health" >/dev/null 2>&1; then
@@ -61,6 +75,18 @@ if ! curl -fsS "$API/api/health" >/dev/null 2>&1; then
   exit 1
 fi
 ok "backend healthy"
+
+# These checks assert the US range. Refuse another package or a range
+# mid-switch: GET /api/range must report us-dnp3-substation ready.
+# shellcheck source=lib/range.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/range.sh"
+# Printed, not ok(): ok() counts toward the gate's passed/total.
+if range_is_ready us-dnp3-substation; then
+  printf '  ✓ %s\n' "range us-dnp3-substation ready"
+else
+  err "range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)"
+  exit 1
+fi
 
 # Generate an admin JWT so we can hit firewall API endpoints directly
 # (the X-Containd-Warnings inspection step needs auth).
@@ -132,16 +158,25 @@ note "gate 1: L4 firewall.rule.hit event flow"
 
 apply_policy improved || exit 1
 
+# Use the range kernel clock, just like eu_epoch_ns in lib/eu-range.sh.
+# That library also initializes EU-only point metadata, so do not source it
+# in this US gate. Never substitute the host clock (Docker Desktop can drift).
+probe_boundary=$(docker exec rangerdanger-firewall date -u +%s%N) || {
+  err "cannot capture range-clock event boundary"; exit 1;
+}
+if ! [[ "$probe_boundary" =~ ^[0-9]{19}$ ]]; then
+  err "invalid range-clock event boundary: $probe_boundary"; exit 1
+fi
+
 # Kali probe — port 502 to a field device should hit deny-enterprise-to-field
 # (an L4 log+drop rule, not an ICS-eligible one). nc -w 3 bounds it,
 # because the SYN drops and nc would otherwise wait forever.
 docker exec rangerdanger-kali sh -c "nc -nv -w 3 10.40.40.20 502 < /dev/null" >/dev/null 2>&1 || true
 sleep "$PROBE_WAIT"
 
-# Query the engine's full event store directly (not the substation
-# endpoint, which limits to 50 most recent and gets drowned out by RTAC's
-# continuous allow-traffic). limit=500 gives plenty of room for kali
-# drops to appear (~6 events/s under improved).
+# Query the engine directly. Both listings prioritize retained DENYs, not
+# globally newest events; no age expiry means an old probe can still appear.
+# The timestamp boundary below prevents that historical evidence passing.
 engine_events() {
   docker exec rangerdanger-firewall sh -c \
     "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>/dev/null
@@ -149,16 +184,27 @@ engine_events() {
 
 count_kali_denies() {
   engine_events | python3 -c '
-import json, sys
+import calendar, datetime, json, re, sys
+def epoch_ns(value):
+    match = re.fullmatch(r"(.*T\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?(Z|[+-]\d\d:\d\d)", value or "")
+    if not match:
+        raise ValueError("event timestamp is not RFC3339Nano")
+    parsed = datetime.datetime.fromisoformat(match[1] + match[3].replace("Z", "+00:00"))
+    seconds = calendar.timegm(parsed.astimezone(datetime.timezone.utc).utctimetuple())
+    return seconds * 1_000_000_000 + int((match[2] or "").ljust(9, "0"))
+boundary = int(sys.argv[1])
 events = json.load(sys.stdin) or []
 denies = [e for e in events
           if e.get("kind") == "firewall.rule.hit"
           and e.get("attributes",{}).get("action") == "DENY"
-          and e.get("srcIp","").startswith("10.10.10.")
-          and e.get("dstIp","").startswith("10.40.40.")
-          and e.get("dstPort") == 502]
+          and e.get("attributes",{}).get("ruleId") == "deny-enterprise-to-field"
+          and e.get("srcIp") == "10.10.10.50"
+          and e.get("dstIp") == "10.40.40.20"
+          and e.get("dstPort") == 502
+          and e.get("transport") == "tcp"
+          and epoch_ns(e.get("timestamp")) > boundary]
 print(len(denies))
-' 2>/dev/null || echo 0
+' "$probe_boundary"
 }
 
 # Poll for the DENY event. The nflog consumer + engine event store + REST
@@ -172,9 +218,11 @@ elapsed=0
 # `-le` so the loop checks at elapsed values 0..EVENT_POLL_BUDGET
 # inclusive. The previous `-lt` exited after the final sleep without
 # rechecking, so an event that surfaced during the last second of the
-# advertised budget was still missed (Codex review on #72).
+# advertised budget was still missed (raised in review on #72).
 while [ "$elapsed" -le "$EVENT_POLL_BUDGET" ]; do
-  deny_count=$(count_kali_denies)
+  deny_count=$(count_kali_denies) || {
+    err "cannot read or parse engine events"; exit 1;
+  }
   if [ "$deny_count" -ge 1 ]; then
     break
   fi
@@ -215,7 +263,7 @@ fi
 
 # Also verify the backend's substation surface returns SOME events at all
 # (catches a broken backend Event JSON schema mapping; the kali DENY
-# specifically may not be in the 50-most-recent window if RTAC is busy).
+# specifically may not be in that retained-evidence page).
 sub_total=$(curl -fsS "$API/api/substation/network-events" 2>/dev/null \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len((d or {}).get("events") or []))' \
   2>/dev/null || echo 0)
@@ -256,27 +304,26 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────
-# Gate 3: ICS DPI function-code enforcement (NFQUEUE path)
+# Gate 3: ICS DPI function-code detection/logging (NFQUEUE path) —
+# the L4 source pin enforces; DPI detects and logs.
 # ─────────────────────────────────────────────────────────────────────
-note "gate 3: ICS DPI function-code allowlist enforcement"
+note "gate 3: ICS DPI function-code detection/logging"
 
-# This gate requires NFQUEUE to actually bind on the host kernel. If
-# the netlink layer can't (older mdlayher/netlink + LinuxKit panics,
-# kernels missing CONFIG_NETFILTER_NETLINK_QUEUE, etc), containd
-# silently falls back to plain accept and FC8 won't be blocked. Skip
-# gracefully rather than fail the smoke when the path is unavailable.
+# This observation requires NFQUEUE to bind on the host kernel. When
+# the host cannot provide it, report an optional skip rather than
+# claiming DPI evidence was observed.
 nfq_alive=0
 if docker exec rangerdanger-firewall sh -c "cat /proc/net/netfilter/nfnetlink_queue 2>/dev/null" 2>/dev/null | grep -q '^[[:space:]]*101'; then
   nfq_alive=1
 fi
 if [ "$nfq_alive" != "1" ]; then
-  skip "ICS DPI enforcement" "NFQUEUE 101 not bound (kernel/library env doesn't support it)"
+  skip "ICS DPI detection/logging" "NFQUEUE 101 not bound (kernel environment does not support this optional observation)"
 else
   ok "NFQUEUE 101 bound by containd"
 
   # Confirm RTAC is reachable + can python (needed for the probe).
   if ! docker exec rangerdanger-rtac-sim which python3 >/dev/null 2>&1; then
-    skip "ICS DPI enforcement" "rtac-sim lacks python3"
+    skip "ICS DPI detection/logging" "rtac-sim lacks required python3 probe" required
   else
     # Install probe — single source of truth so the smoke is self-contained.
     cat <<'PY' | docker exec -i rangerdanger-rtac-sim sh -c "cat > /tmp/_smoke_modbus.py"
@@ -296,83 +343,80 @@ try:
 finally: s.close()
 PY
 
-    # Fire FC8 from RTAC. DPI should parse it, see fc=8 NOT in [1..6],
-    # apply BlockFlowTemp → entry appears in block_flows nft set.
-    # The first FC8 packet itself may pass through (verdict is added
-    # async); we check the SET, not whether the packet was blocked.
+    # Fire FC8 from RTAC and check the resulting DPI evidence record.
     docker exec rangerdanger-rtac-sim python3 /tmp/_smoke_modbus.py 10.40.40.20 fc8 >/dev/null 2>&1 || true
     sleep "$PROBE_WAIT"
     block_lines=$(docker exec rangerdanger-firewall sh -c \
       "nft list set inet containd block_flows 2>/dev/null" 2>/dev/null \
       | grep -c '10.30.30.20.*10.40.40.20.*502' || echo 0)
     if [ "$block_lines" -lt 1 ]; then
-      err "Modbus FC8 from RTAC did not produce a block_flows entry — Modbus DPI parser may not be wired to BlockFlowTemp"
+      err "Modbus FC8 from RTAC did not produce DPI function-code evidence"
     else
-      ok "Modbus FC8 (not in allowlist [1..6]) triggered block_flows entry for 10.30.30.20.10.40.40.20.502"
+      ok "Modbus FC8 produced function-code evidence for 10.30.30.20.10.40.40.20.502"
     fi
 
-    # BlockFlowTemp blocks the whole 3-tuple flow, so the Modbus FC8 block
-    # above also suspends the RTAC's legit FC3 reads to that relay until the
-    # 10m TTL expires. Flush it so the next gate (and the lab) start clean.
+    # Clear the DPI evidence record so the next gate starts clean.
     docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" >/dev/null 2>&1 || true
     sleep 1
   fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────
-# Gate 4: DNP3 ICS DPI function-code enforcement (NFQUEUE path)
+# Gate 4: DNP3 ICS DPI function-code detection/logging (NFQUEUE path)
 # ─────────────────────────────────────────────────────────────────────
 # Parallel to gate 3 but for DNP3: the hardened policy allows the RTAC to
 # poll field devices on DNP3/20000 but the rule's ICS function-code
-# allowlist is [1] (Read/integrity poll) only. A Direct Operate (FC5) -
-# even from the RTAC, which L4 source-pinning permits - is NOT in the
-# allowlist, so DPI must parse the DNP3 function code and BlockFlowTemp it.
-# This is the DNP3 half of "Modbus AND DNP3 DPI both enforce", and it backs
-# the Lab 2.3 lesson that Direct Operate is restricted at the protocol layer.
-note "gate 4: DNP3 ICS DPI function-code allowlist enforcement"
+# allowlist is [1] (Read/integrity poll) only. The L4 source pin enforces;
+# DPI detects and logs function-code evidence.
+note "gate 4: DNP3 ICS DPI function-code detection/logging"
 
 if [ "$nfq_alive" != "1" ]; then
-  skip "DNP3 ICS DPI enforcement" "NFQUEUE 101 not bound (kernel/library env doesn't support it)"
+  skip "DNP3 ICS DPI detection/logging" "NFQUEUE 101 not bound (kernel environment does not support this optional observation)"
 elif ! docker exec rangerdanger-rtac-sim which dnp3cmd >/dev/null 2>&1; then
-  skip "DNP3 ICS DPI enforcement" "rtac-sim lacks dnp3cmd"
+  skip "DNP3 ICS DPI detection/logging" "rtac-sim lacks required dnp3cmd probe" required
 else
   # Make sure the hardened policy (with the DNP3 FC allowlist) is active -
   # gate 1 applied improved, but re-assert in case a later gate changed it.
   apply_policy improved || true
 
-  # Fire a DNP3 Direct Operate (FC5) from the RTAC to the relay. DPI should
-  # parse it, see fc=5 NOT in [1], and BlockFlowTemp the flow. As in gate 3
-  # the first packet may pass (async verdict) and it may actuate the point,
-  # so we restore the relay afterwards and check the SET, not the packet.
+  # Fire a DNP3 Direct Operate (FC5) from the RTAC to the relay and check
+  # the resulting DPI evidence record. Restore the relay afterwards.
   docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip >/dev/null 2>&1 || true
   sleep "$PROBE_WAIT"
   dnp3_block=$(docker exec rangerdanger-firewall sh -c \
     "nft list set inet containd block_flows 2>/dev/null" 2>/dev/null \
     | grep -c '10.30.30.20.*10.40.40.20.*20000' || echo 0)
   if [ "$dnp3_block" -lt 1 ]; then
-    err "DNP3 FC5 (Direct Operate) from RTAC did not produce a block_flows entry — DNP3 DPI parser may not be wired to BlockFlowTemp, or the DNP3 rule is missing its functionCode allowlist"
+    err "DNP3 FC5 from RTAC did not produce DPI function-code evidence"
   else
-    ok "DNP3 FC5 (not in allowlist [1]) triggered block_flows entry for 10.30.30.20.10.40.40.20.20000"
+    ok "DNP3 FC5 produced function-code evidence for 10.30.30.20.10.40.40.20.20000"
   fi
 
-  # Cleanup. The restore is itself a DNP3 FC5 (crob close), so it would be
-  # re-blocked under the hardened FC1-only policy - and could re-add a
-  # block_flows entry or be dropped outright, leaving the lab dirty. So drop
-  # back to the weak baseline FIRST (no DNP3 FC allowlist -> the close is
-  # allowed), restore the relay, THEN flush block_flows last so nothing the
-  # restore touched is left blocked. Ending on weak also matches the lab
-  # default that gate 1 moved away from.
+  # Restore the baseline before cleaning up the flow record, then close
+  # the relay after the dataplane has returned to weak.
+  # Ending on weak also matches the lab default that gate 1 moved away from.
   apply_policy weak || true
-  docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close >/dev/null 2>&1 || true
   docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" >/dev/null 2>&1 || true
+  docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close >/dev/null 2>&1 || true
+  # Report cleanup only on failure so the summary does not count an
+  # implicit pass. A breaker left open de-energizes the feeder for later gates.
+  breaker=""
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    breaker=$(curl -fsS --max-time 5 "$API/api/substation/state" 2>/dev/null | python3 -c 'import json,sys; print(str(json.load(sys.stdin)["devices"]["relay"]["breaker_closed"]).lower())' 2>/dev/null)
+    [ "$breaker" = "true" ] && break
+    sleep 1
+  done
+  [ "$breaker" = "true" ] || err "cleanup: relay breaker still open after the DNP3 close (breaker_closed=${breaker:-unknown})"
 fi
 
 # ─────────────────────────────────────────────────────────────────────
 note "summary"
 echo "  passed: $passed / $total"
+echo "  skipped: $skipped"
+echo "  required skipped: $required_skipped"
 if [ "$fail" = "0" ]; then
-  echo "  ALL EVENT GATES PASSED"
+  echo "  ALL REQUIRED EVENT CHECKS PASSED"
   exit 0
 fi
-echo "  FAILED — $(( total - passed )) gate(s) regressed"
+echo "  FAILED — $(( total - passed - skipped )) check(s) failed; $required_skipped required check(s) skipped"
 exit 1

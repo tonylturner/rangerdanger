@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { sections } from "./knowledge-content";
+import type { Section } from "./knowledge-types";
 import {
   buildSnippet,
   readingMinutes,
+  searchKnowledge,
   stripMarkdownForExcerpt,
 } from "./knowledge-search";
 
@@ -39,65 +40,29 @@ describe("knowledge search helpers", () => {
   });
 });
 
-describe("knowledge content", () => {
-  it("retains the six unique section headings and original article order", () => {
-    const headings = sections.map((section) => section.heading);
-    expect(headings).toEqual([
-      "Substation Equipment & Operations",
-      "Network Segmentation Concepts",
-      "Protocols & Communication",
-      "Command References & Lab Tools",
-      "Lab Internals",
-      "ICS Threats & Operational Practice",
-    ]);
-    expect(new Set(headings).size).toBe(6);
+describe("package-scoped knowledge search", () => {
+  const us: Section[] = [{ id: "equipment", heading: "Equipment", articles: [
+    { id: "rtac", title: "RTAC", body: "US controller" },
+  ] }];
+  const eu: Section[] = [{ id: "telecontrol", heading: "Telecontrol", articles: [
+    { id: "iec104-wire-model", title: "IEC104 frames", body: "I frames carry ASDUs." },
+    { id: "iec104-sbo-commands", title: "SBO", body: "IEC104 select-before-operate." },
+  ] }];
 
-    const articleIds = sections.flatMap((section) =>
-      section.articles.map((article) => article.id),
-    );
-    expect(new Set(articleIds).size).toBe(articleIds.length);
-    expect(articleIds).toEqual([
-      "distribution-substation",
-      "rtac",
-      "protective-relays",
-      "reclosers",
-      "voltage-regulators",
-      "capacitor-banks",
-      "substation-physics",
-      "hmi-scada-fuxa",
-      "plc-ladder-openplc",
-      "power-factor-reactive-power",
-      "ot-segmentation-overview",
-      "segmentation-approaches",
-      "purdue-model",
-      "iec-62443-zones-conduits",
-      "iec-62443-security-levels",
-      "nerc-cip-segmentation",
-      "esp-eap-erc",
-      "ics-dpi",
-      "default-deny",
-      "vendor-remote-access",
-      "modbus-tcp",
-      "dnp3",
-      "ntp-ot",
-      "iec-61850-goose",
-      "opc-ua",
-      "tool-mbpoll",
-      "tool-dnp3",
-      "tool-tshark",
-      "tool-tcpdump",
-      "tool-curl",
-      "tool-nmap",
-      "lab-architecture",
-      "weak-vs-hardened",
-      "traffic-matrix",
-      "plan-coverage-pipeline",
-      "live-dpi-events-strip",
-      "how-containd-enforces-policy",
-      "ot-kill-chain",
-      "living-off-the-land-ot",
-      "change-management-firewall-rules",
-      "outage-costs-saidi-saifi",
-    ]);
+  it("searches only the supplied package and preserves authored order", () => {
+    expect(searchKnowledge(us, "RTAC").map((hit) => hit.article.id)).toEqual(["rtac"]);
+    expect(searchKnowledge(eu, "RTAC")).toEqual([]);
+    expect(searchKnowledge(eu, " IEC104 ").map((hit) => hit.article.id)).toEqual(["iec104-wire-model", "iec104-sbo-commands"]);
+    expect(searchKnowledge(eu, "")).toEqual([]);
+    expect(searchKnowledge([], "IEC104")).toEqual([]);
+  });
+
+  it("matches titles and bodies with snippets from the loaded snapshot", () => {
+    expect(searchKnowledge(eu, "ASDU")[0]).toMatchObject({
+      section: eu[0], article: eu[0].articles[0], snippet: "I frames carry ASDUs.",
+    });
+    expect(searchKnowledge(eu, "SBO")[0]).toMatchObject({
+      article: eu[0].articles[1], snippet: "IEC104 select-before-operate.",
+    });
   });
 });

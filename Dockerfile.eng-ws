@@ -1,4 +1,6 @@
-FROM golang:1.27-alpine AS dnp3-builder
+ARG GO_IMAGE=golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba
+FROM ${GO_IMAGE} AS dnp3-builder
+ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY dnp3go/ .
 RUN --mount=type=cache,target=/root/.cache/go-build \
@@ -6,7 +8,14 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -o /dnp3poll ./cmd/dnp3poll \
  && CGO_ENABLED=0 go build -o /dnp3cmd ./cmd/dnp3cmd
 
-# webtop ubuntu-mate pinned by digest (A7).
+# IEC 104 CLI: standalone static Go build, independent of the service image.
+FROM ${GO_IMAGE} AS iec104cmd-builder
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOPROXY=off
+WORKDIR /src/iec104go
+COPY iec104go/go.mod iec104go/*.go ./
+COPY iec104go/cmd/iec104cmd/ ./cmd/iec104cmd/
+RUN go build -trimpath -o /out/iec104cmd ./cmd/iec104cmd
+
 FROM linuxserver/webtop:ubuntu-mate@sha256:db3e3c309152b4f2d0835ee570c5141d0868097efde235593ffa575055d95a82
 
 # Install OT analysis tools and Modbus testing
@@ -20,13 +29,17 @@ RUN apt-get update && \
         tcpdump \
         tshark \
         wireshark && \
-    pip3 install --no-cache-dir --break-system-packages pymodbus && \
+    pip3 install --no-cache-dir --break-system-packages pymodbus==3.16.1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Install DNP3 CLI tools
 COPY --from=dnp3-builder /dnp3poll /usr/local/bin/dnp3poll
 COPY --from=dnp3-builder /dnp3cmd /usr/local/bin/dnp3cmd
+
+# IEC 104 CLI (Apache-2.0); unrelated base-image components retain their licences.
+COPY --from=iec104cmd-builder /out/iec104cmd /usr/local/bin/iec104cmd
+COPY iec104go/LICENSE /usr/share/licenses/iec104/LICENSE
 
 # Create MATE desktop shortcuts and a pcaps directory
 RUN mkdir -p /config/Desktop /home/abc/pcaps && \

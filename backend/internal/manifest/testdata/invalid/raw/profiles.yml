@@ -1,0 +1,4 @@
+name: rangerdanger
+services:
+  firewall:
+    profiles: [debug]

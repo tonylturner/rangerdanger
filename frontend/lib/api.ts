@@ -1,6 +1,38 @@
 import { API_BASE_URL } from "./utils";
+import { parseRangeNotReady, reportRangeNotReady, type RangeStatus } from "./range";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// A non-2xx answer. detail is the server's {"error"} text when it sent
+// one; the message carries it, so every banner shows the backend's cause.
+export class ApiError extends Error {
+  readonly status: number;
+  readonly detail: string;
+  readonly warnings: string[];
+
+  constructor(status: number, detail: string, warnings: string[] = []) {
+    super(detail ? `${status} ${detail}` : `Request failed: ${status}`);
+    this.status = status;
+    this.detail = detail;
+    this.warnings = warnings;
+  }
+}
+
+async function errorBody(res: Response): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function errorDetail(body: unknown): string {
+  if (typeof body !== "object" || body === null) return "";
+  const { error, reason } = body as { error?: unknown; reason?: unknown };
+  return typeof error === "string" ? error : typeof reason === "string" ? reason : "";
+}
+
+// Every API helper goes through here (lib/operator-api.ts too), so a
+// not-ready range is reported the same way for all of them.
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
@@ -11,7 +43,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    throw new Error(`Request failed: ${res.status}`);
+    const body = await errorBody(res);
+    const notReady = res.status === 503 ? parseRangeNotReady(body) : null;
+    if (notReady) {
+      reportRangeNotReady(notReady);
+      throw notReady;
+    }
+    const warnings = (body as { warnings?: unknown } | null)?.warnings;
+    throw new ApiError(res.status, errorDetail(body), Array.isArray(warnings) ? warnings.filter((w): w is string => typeof w === "string") : []);
   }
 
   if (res.status === 204) {
@@ -20,49 +59,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   return res.json();
 }
-
-export type LabInstance = {
-  id: string;
-  name: string;
-  status: string;
-  template_id: string;
-  docker_stack_name?: string;
-  runtime_config?: string;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type LabTemplate = {
-  id: string;
-  name: string;
-  description: string;
-  topology: string;
-  default_scenarios?: string;
-  compose_file?: string;
-};
-
-export type NodeDefinition = {
-  id: string;
-  lab_instance_id: string;
-  type: string;
-  name: string;
-  ip: string;
-  status: string;
-  metadata?: string;
-};
-
-export type LabInstanceDetail = LabInstance & {
-  template?: LabTemplate;
-  nodes?: NodeDefinition[];
-};
-
-export type LabTopologyNetwork = { name: string; cidr: string };
-export type LabTopologyNode = { id: string; name: string; type: string; networks: string[] };
-export type LabTopology = {
-  networks: LabTopologyNetwork[];
-  nodes: LabTopologyNode[];
-  scenarios?: Scenario[];
-};
 
 export type GraphNodeData = {
   label: string;
@@ -83,7 +79,37 @@ export type GraphNode = {
 };
 
 export type GraphEdge = { id: string; source: string; target: string; label?: string };
-export type LabGraph = { nodes: GraphNode[]; edges: GraphEdge[] };
+export type TopologyFlow = {
+  id: string;
+  source: string;
+  target: string;
+  protocol: string;
+  port: number;
+  cadence: string;
+  category: "baseline" | "scenario";
+  liveness_key: string;
+};
+export type LivenessBinding =
+  | { provider: "workshop-supervisor" | "traffic-generator" | "operator-link" | "unobserved" }
+  | { provider: "workshop-device"; device: string }
+  | { provider: "operator-device"; points: string[] }
+  | { provider: "session-presence"; transport: "tcp" | "udp" };
+export type TopologyNetwork = {
+  id: string;
+  name: string;
+  zone?: string;
+  subnet?: string;
+  cidr?: string;
+  description?: string;
+};
+export type LabGraph = {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  flows: TopologyFlow[];
+  liveness: Record<string, LivenessBinding>;
+  networks: TopologyNetwork[];
+  operations: { traffic_generation: boolean };
+};
 
 export type DecisionRole = {
   name: string;
@@ -100,30 +126,31 @@ export type DecisionAction = {
 };
 
 export type StepAction = {
-  type: "command" | "check" | "firewall" | "sequence" | "manual" | "decision" | "probe";
+  type: "command" | "check" | "firewall" | "sequence" | "manual" | "decision" | "probe" | "session-cut";
   device?: string;
   command?: string;
   source?: string;
   value?: number;
+  flow?: string;
   config?: string;
   expect?: Record<string, unknown>;
-  outcome?: "reachable" | "blocked";
   targets?: { from?: string; host: string; port: number; note?: string }[];
   commands?: { device: string; command: string; source?: string; value?: number }[];
-  // Decision action fields (type === "decision")
-  budget_hours?: number;
-  roles?: DecisionRole[];
-  actions?: DecisionAction[];
 };
 
-export type ScenarioStep = { title: string; description: string; expected_config?: string; action?: StepAction; node?: string };
+// id is the authored, stable step identifier (unique in its scenario).
+// Progress is stored by it; the execute route stays index-based.
+export type ScenarioStep = { id: string; title: string; description: string; expected_config?: string; action?: StepAction; node?: string };
 export type Scenario = {
   id: string;
   name: string;
   summary?: string;
   description: string;
-  order?: number;
+  order: string;
+  package_id: string;
   lab_template_id: string;
+  // Validator key declared by the scenario; empty when it has none.
+  validator: string;
   tags: string[];
   steps: ScenarioStep[];
   nodes?: string[];
@@ -150,67 +177,49 @@ function hydrateScenario(raw: RawScenario): Scenario {
   };
 }
 
-export async function listLabInstances() {
-  return request<{ instances: LabInstance[] }>("/labs/instances");
-}
-
-export async function listLabTemplates() {
-  return request<{ templates: LabTemplate[] }>("/labs/templates");
-}
-
-export async function getLabInstance(id: string) {
-  return request<LabInstanceDetail>(`/labs/instances/${id}`);
-}
-
-export async function getLabTopology(id: string) {
-  const res = await request<{ topology: LabTopology }>(`/labs/instances/${id}/topology`);
-  return res.topology;
-}
-
-export async function getLabGraph(id: string) {
-  return request<LabGraph>(`/labs/instances/${id}/graph`);
-}
-
-export async function createLabInstance(templateId: string, name: string) {
-  return request<LabInstance>("/labs/instances", {
-    method: "POST",
-    body: JSON.stringify({ template_id: templateId, name })
-  });
-}
-
-export async function seedTemplates() {
-  return request<{ status: string }>("/admin/seed", { method: "POST" });
-}
-
-export async function startLabInstance(id: string) {
-  return request<{ status: string }>(`/labs/instances/${id}/start`, { method: "POST" });
-}
-
-export async function stopLabInstance(id: string) {
-  return request<{ status: string }>(`/labs/instances/${id}/stop`, { method: "POST" });
-}
-
-export async function deleteLabInstance(id: string) {
-  return request<void>(`/labs/instances/${id}`, { method: "DELETE" });
-}
-
-export async function listScenarios(templateId?: string) {
-  const query = templateId ? `?lab_template_id=${encodeURIComponent(templateId)}` : "";
-  const res = await request<{ scenarios: RawScenario[] }>(`/scenarios${query}`);
+// The backend serves only the active package's scenarios.
+export async function listScenarios() {
+  const res = await request<{ scenarios: RawScenario[] }>("/scenarios");
   return { scenarios: res.scenarios.map(hydrateScenario) };
 }
 
-export async function saveLabTemplate(payload: { id?: string; name: string; description: string; topology: unknown }) {
-  return request<LabTemplate>("/labs/templates", {
+// A curriculum package as GET /api/packages reports it. revision is the
+// curriculum revision: it changes when step IDs or validator meaning do.
+// operator_view names the operator screen the package uses; it stays a
+// string because the portal must show an error for a value it does not
+// know (lib/operator-view.ts), never fall back to another view.
+// policies are the package.yml policy names /firewall/apply accepts,
+// the package's default first (lib/policy-wording.ts).
+export type PackageSummary = {
+  curriculum?: CurriculumBinding;
+  id: string;
+  title: string;
+  revision: number;
+  active: boolean;
+  operator_view: string;
+  policies: string[];
+};
+
+export async function listPackages() {
+  return request<PackageSummary[]>("/packages");
+}
+
+export async function getActivePackage(): Promise<PackageSummary> {
+  const active = (await listPackages()).find((p) => p.active);
+  if (!active) throw new Error("The backend reports no active curriculum package");
+  return active;
+}
+
+export async function getRange() {
+  return request<RangeStatus>("/range");
+}
+
+// Starts, restarts or switches the range (202 with the new status). 409
+// means another transition is already running; 400 an unknown package.
+export async function requestRange(packageId: string) {
+  return request<RangeStatus>("/range", {
     method: "POST",
-    body: JSON.stringify({
-      id: payload.id,
-      name: payload.name,
-      description: payload.description,
-      topology: JSON.stringify(payload.topology),
-      compose_file: "deploy/docker-compose.yml",
-      default_scenarios: JSON.stringify([])
-    })
+    body: JSON.stringify({ package: packageId }),
   });
 }
 
@@ -342,14 +351,8 @@ export async function getSubstationHealth() {
 
 // Network DPI events from containd filtered to substation traffic.
 //
-// containd v0.1.25+ emits camelCase keys (srcIp/dstIp/srcPort/dstPort/kind)
-// with semantic data in a nested `attributes` object. The legacy snake_case
-// fields (source/dest/src_port/dst_port/type/details/severity/zone) are
-// still present as empty strings for backward-compat with older clients
-// that pre-date the schema bump; new code should read the camelCase fields
-// and `attributes.*`. See rangerdanger#46 for why this matters: a stale
-// type definition here caused LiveEventRow to render blank src→dst columns
-// and miss DENY events entirely.
+// containd events use camelCase keys and semantic data in a nested
+// `attributes` object. The backend maps containd's `proto` to `protocol`.
 //
 // Three event `kind` values reach this endpoint:
 //   - "firewall.rule.hit" — nft drop/accept with attributes.action +
@@ -380,25 +383,14 @@ export type NetworkEventAttributes = {
 export type NetworkEvent = {
   id: string;
   timestamp: string;
-  // v0.1.25+ schema (the one current containd actually emits)
   kind?: string;
   srcIp?: string;
   dstIp?: string;
   srcPort?: number;
   dstPort?: number;
   transport?: string;
-  attributes?: NetworkEventAttributes;
-  // Legacy fallback fields — kept for resilience if an older containd
-  // is in the loop. New code should prefer the camelCase fields above.
-  type?: string;
-  source?: string;
-  dest?: string;
   protocol?: string;
-  src_port?: number;
-  dst_port?: number;
-  details?: string;
-  severity?: string;
-  zone?: string;
+  attributes?: NetworkEventAttributes;
 };
 
 export async function getSubstationNetworkEvents() {
@@ -426,20 +418,15 @@ export async function getFirewallComparison() {
   return request<PolicyComparison>("/firewall/compare");
 }
 
-// PolicySource matches the backend's policySource field on the Server
-// struct. "weak" / "hardened-reference" / "plan-custom" cover Phase A
-// of the dual-track firewall config exploration. "manual-custom" is
-// reserved for Phase B (when a poller observes direct containd commits)
-// and "" is the never-applied initial state.
 export type PolicySource =
   | "weak"
   | "hardened-reference"
-  | "plan-custom"
+  | "plan"
   | "manual-custom"
   | "";
 
 export async function getActiveFirewallConfig() {
-  return request<{ active_config: string; policy_source: PolicySource }>(
+  return request<{ active_config: string; policy_source: PolicySource; plan?: PlanProvenance }>(
     "/firewall/active",
   );
 }
@@ -461,21 +448,56 @@ export async function validateScenario(scenarioId: string) {
   return request<ValidationResult>(`/scenarios/${encodeURIComponent(scenarioId)}/validate`);
 }
 
-export async function applyFirewallConfig(config: "weak" | "improved") {
+// config is one of the active package's policy names.
+export async function applyFirewallConfig(config: string) {
   return request<{ status: string; active_config: string }>("/firewall/apply", {
     method: "POST",
     body: JSON.stringify({ config }),
   });
 }
 
-export async function applyCustomFirewallConfig(configJson: object) {
-  return request<{ status: string; active_config: string }>("/firewall/apply-custom", {
-    method: "POST",
-    body: JSON.stringify(configJson),
+export type PlanLabel = "weak" | "partial" | "hardened";
+export type PlanRequest = { packageId: string; revision: number; actionIds: string[] };
+export type PlanProvenance = PlanRequest & { label: PlanLabel; policyHash: string; appliedAt: string };
+export type PlanAction = { id: string; kind: "enforce" | "detect" | "plan"; chosen: boolean };
+export type PlanRule = {
+  id: string;
+  description?: string;
+  sourceZones?: string[];
+  destZones?: string[];
+  sources?: string[];
+  destinations?: string[];
+  protocols?: { name: string; port?: string }[];
+  ics?: PlanICS;
+  action: "ALLOW" | "DENY";
+  log?: boolean;
+};
+export type PlanExpectation = {
+  id: string; from: string; to: string; network: string; port: number;
+  category: "authorized" | "unauthorized"; owners: string[]; labs?: string[];
+  note: string; planVerdict: "allow" | "deny"; hardenedVerdict: "allow" | "deny";
+  bridged: boolean; fromIp: string; toIp: string;
+};
+export type CompiledPlan = {
+  packageId: string; revision: number; label: PlanLabel; policyHash: string;
+  actions: PlanAction[];
+  rules: { rule: PlanRule; origin: { kind: "required" | "selected" | "deferred"; action?: string } }[];
+  expectations: PlanExpectation[];
+  config: Record<string, unknown>;
+};
+export async function compilePlan(body: PlanRequest): Promise<CompiledPlan> {
+  return request<CompiledPlan>("/plan/compile", { method: "POST", body: JSON.stringify(body) });
+}
+export async function applyPlan(body: PlanRequest) {
+  return request<{ applied: boolean; warnings: string[]; plan: CompiledPlan }>("/firewall/apply-plan", {
+    method: "POST", body: JSON.stringify(body),
   });
 }
+export type ProofRow = { id: string; expected: "allow" | "deny"; observed: "allow" | "deny" | "skipped"; pass: boolean };
 
 export type ValidationReport = {
+  planProof: { applicable: boolean; pass: boolean; policyHash: string; hashStable: boolean; skipped: number; rows: ProofRow[] };
+  acceptance: { pass: boolean; skipped: number; rows: ProofRow[]; preventionGaps: string[] };
   markdown: string;
   summary: {
     authorized_pass: number;
@@ -487,6 +509,10 @@ export type ValidationReport = {
   active_config: string;
   policy_source: string;
   pcap_path: string;
+  policy_hash: string;
+  window_start: string;
+  window_end: string;
+  policy_stable: boolean;
 };
 
 // runValidationReport runs the positive/negative segmentation test matrix
@@ -571,12 +597,20 @@ export type TrafficStatus = {
   generating: boolean;
   started_at: string;
   flows_generated: number;
+  run_id: string;
 };
 
 export async function startTrafficGeneration(durationSec?: number) {
-  return request<{ status: string; duration_sec: number }>("/traffic/generate", {
+  return request<{ status: string; duration_sec: number; run_id: string; started_at: string }>("/traffic/generate", {
     method: "POST",
     body: JSON.stringify({ duration_sec: durationSec || 30 }),
+  });
+}
+
+export async function stopTrafficGeneration(runID: string) {
+  return request<{ status: "stopping" | "stopped" }>("/traffic/stop", {
+    method: "POST",
+    body: JSON.stringify({ run_id: runID }),
   });
 }
 
@@ -584,14 +618,24 @@ export async function getTrafficStatus() {
   return request<TrafficStatus>("/traffic/status");
 }
 
+// The control centre's link and GI states; null while it does not answer.
+export type WorkshopControlCentre = {
+  link: "disconnected" | "connecting" | "started" | null;
+  gi: "none" | "running" | "complete" | null;
+};
+
+// The package's supervisory service decides the optional part: an RTAC
+// package (US) sends rtac_online and device_comms, a control-centre
+// package (EU) sends control_centre.
 export type WorkshopStatus = {
   workshop_id: string;
   workshop_name: string;
-  rtac_online: boolean;
   firewall_online: boolean;
   firewall_config: string;
   scenario_count: number;
-  device_comms: Record<string, boolean>;
+  rtac_online?: boolean;
+  device_comms?: Record<string, boolean>;
+  control_centre?: WorkshopControlCentre;
 };
 
 export async function getWorkshopGraph(): Promise<LabGraph> {
@@ -632,3 +676,43 @@ export type ResetResult = {
 export async function resetWorkshop() {
   return request<ResetResult>("/workshop/reset", { method: "POST" });
 }
+
+// The backend strictly merges the package sibling directory and resolves topology
+// references before publishing this model. Missing binding means no planner.
+export type CurriculumBinding = {
+  schema: 1;
+  roles: Record<string, string>;
+  activities: Record<string, { policyActions: boolean; hideBanner: boolean; validate?: boolean }>;
+  dynamicSteps: Record<string, "rules" | "positive" | "negative">;
+  icsRules: "allowed" | "forbidden";
+  requirementOrder: string[];
+  groupOrder: string[];
+  impactOrder: string[];
+  requirements: Record<string, { label: string; impl: Record<string, string[]> }>;
+  readiness: { id: string; label: string; good: string }[];
+  readinessFlags: { actions: string[]; severity: "warn" | "blocked"; source: string; sourceLabel: string; verdict: string; message: string }[];
+  budgetHours: number;
+  teams: DecisionRole[];
+  catalog: DecisionAction[];
+  impact: Record<string, { defends: string[]; note: string }>;
+  groups: Record<string, { title: string; description: string; effect: "closes" | "restricts" | "semantic" | "conceptual" | "logging" }>;
+  planningOnly: string[];
+  phases: Record<string, string>;
+  noPlan: string;
+  tests: { kind: "positive" | "negative"; text: string }[];
+  negativeEmpty: string;
+  nodeMap: Record<string, { primary: string; others: string[] }>;
+  nodeInference: { node: string; ip: string; pattern: string }[];
+};
+
+export type PlanICS = {
+  protocol?: string;
+  functionCode?: number[];
+  unitId?: number;
+  addresses?: string[];
+  objectClasses?: number[];
+  readOnly?: boolean;
+  writeOnly?: boolean;
+  direction?: string;
+  mode?: string;
+};

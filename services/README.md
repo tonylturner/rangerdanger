@@ -1,7 +1,8 @@
 # RangerDanger field-device simulators
 
-Each simulator is a single Go binary that exposes the **same
-in-memory state across three protocols simultaneously**:
+The legacy US relay, recloser, regulator, and capacitor-bank
+simulators are single Go binaries that expose the **same in-memory
+state across three protocols simultaneously**:
 
 - **HTTP REST** on `:8080` - `GET /api/state`, `POST /api/command`,
   `GET /api/audit`, `GET /api/health`; `rtac-sim` also exposes
@@ -19,6 +20,10 @@ the same instant, and the audit log records the source of every
 write so exercises can attribute attacks (`source: 10.10.10.50` vs.
 `source: rtac-sim`).
 
+The EU `field-device-sim` is separate: one binary owns breaker, RMU or OLTC
+truth, serves Modbus plus separate process/sim HTTP APIs, and does not
+expose DNP3.
+
 ## Services
 
 | Service | DNP3 addr | Description |
@@ -28,9 +33,15 @@ write so exercises can attribute attacks (`source: 10.10.10.50` vs.
 | `regulator-sim` | 3  | Load tap changer, ±16 tap range, voltage regulation |
 | `capbank-sim`   | 4  | Switched capacitor bank, lockout-after-N-operations |
 | `rtac-sim`      | 10 | Supervisory controller. Polls field devices via DNP3 master and HTTP; exposes aggregated state. Read-only DNP3 outstation. |
+| `field-device-sim` | - | EU breaker, RMU or OLTC truth owner. Modbus TCP field interface and separate process / sim HTTP listeners. |
 | `historian-sim` | -  | Time-series collector polling the RTAC. HTTP-only. |
-| `gps-sim`       | -  | NTP/IRIG-B time source. UDP NTP server. |
+| `gps-sim`       | -  | GPS/IRIG-B time source; sends synthetic NTP client packets to configured targets. Not an NTP server. |
 | `opendss-sim`   | -  | Feeder physics engine (Python, OpenDSS). Calculates energization and voltage from the device states. HTTP-only. |
+
+`gps-sim` reads `NTP_POLL_TARGETS` for its outbound UDP/123 generator:
+when unset it uses the existing US target list, when empty it disables
+the generator, and a comma-separated list supplies target hosts (the
+generator uses UDP port 123 for each).
 
 The RTAC includes OpenDSS freshness in `/api/state` as `physics` (`stale`,
 `consecutive_failures`, `last_good_at`, `solved_at`, `last_error`), flattens
@@ -42,7 +53,7 @@ stale and `ok` after a good solve.
 ## Local development
 
 The Go simulators (relay/recloser/regulator/capbank/historian/gps/
-rtac) share a single module (`services/go.mod`) and a multi-stage
+rtac/field-device) share a single module (`services/go.mod`) and a multi-stage
 Dockerfile (`services/Dockerfile`). It has a common module/dependency
 stage, a shared-code builder, a DNP3-enabled builder for relay,
 recloser, regulator, capbank, and RTAC, then one `<target>-builder`
@@ -54,6 +65,10 @@ tools use a separate, narrow DNP3 tools stage. Final images still share
 existing tools and management-init script). `opendss-sim` is
 Python/FastAPI and builds from its own
 `services/opendss-sim/Dockerfile`.
+
+The EU `field-device-sim` builder copies the in-tree `devices/`
+packages and builds `./devices/cmd/field-device-sim` from
+`sim-builder`.
 
 ```sh
 # Run a single sim outside the lab
@@ -74,6 +89,174 @@ outstation). `rtac-sim` runs both client and outstation roles
 (`dnp3.go`, `dnp3_poll.go`, `modbus.go`, `modbus_poll.go`). Shared
 primitives (audit log, command source detection, JSON helpers) live
 in `services/shared/`.
+
+## EU field devices
+
+Build with `go -C services build ./devices/cmd/field-device-sim` (or the
+`field-device-sim` Dockerfile target). The old binary and schema 1 are gone.
+`devices/fielddevice` is the shared audit, revision, measurement and action
+core; HTTP and Modbus are adapters over that same mutex-protected model.
+
+Required environment:
+
+| Variable | Values |
+|----------|--------|
+| `DEVICE_KIND` | `breaker`, `rmu`, `oltc` |
+| `DEVICE_ID` | `feeder-breaker` / `f2-breaker` for breakers; `rmu-1` / `rmu-2` for RMU; `oltc-1` for OLTC |
+| `DEVICE_RMU_NORMAL` | Required for RMU: `closed` (rmu-1) or `open` (rmu-2) |
+
+The CB1 breaker retains node id `breaker-1` but device id `feeder-breaker`.
+New devices use the same node/device id. Configure all three explicit-IPv4
+listeners per container; unchanged defaults are only suitable for CB1:
+
+| Variable | Default | rmu-1 | rmu-2 | oltc-1 | f2-breaker |
+|----------|---------|-------|-------|--------|------------|
+| `DEVICE_MODBUS_LISTEN` | `10.40.40.20:502` | `10.40.40.21:502` | `10.40.40.22:502` | `10.40.40.23:502` | `10.40.40.24:502` |
+| `DEVICE_PROCESS_LISTEN` | `10.50.50.30:8080` | `10.50.50.31:8080` | `10.50.50.32:8080` | `10.50.50.33:8080` | `10.50.50.34:8080` |
+| `DEVICE_SIM_LISTEN` | `10.99.99.22:8080` | `10.99.99.24:8080` | `10.99.99.25:8080` | `10.99.99.26:8080` | `10.99.99.28:8080` |
+
+`DEVICE_ZONES` is a comma-separated `name=IPv4-CIDR` map for audit attribution;
+it defaults to `field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24`.
+F2 owns its 400 A / 1000 ms / 2000 A protection and
+provides four indications, no IEC 104 command. Its generic Modbus writes
+remain available to permitted field clients. Process reset does not reset F2.
+
+Unknown peers remain `unknown`; attribution is not authorization.
+
+The process listener exposes only `GET /api/truth` and `POST /api/measurements`.
+Both use schema 3 (schema 2 is rejected). Measurements carry identity, generation, solved revision,
+solver epoch/sequence/UTC time, `current_a`, `voltage_kv_ll`, `source_kv_ll`,
+`section_live`, `source_live`, signed finite `p_mw` and `q_mvar`. A successful delivery returns
+`{accepted:true, solved_revision, revision}`: protection/FPI can change the
+revision during receipt. Stale truth and replay return 409; invalid input
+returns 400. Measurements expire after 3 seconds, and any truth revision
+immediately invalidates them. Last known voltage/current remain visible, not fresh zeros; invalid P/Q/PF are null.
+For the EU feeder, CB1's `voltage_kv_ll` / `section_live` use its line-side VT
+at bus f1; S1 voltage is `rmu-1-source-kv` from RMU1's source side. The
+solver uses f1 internally while the public `.process.buses` map remains
+`bus20`, `s1`, `s2`, and `s3`.
+
+The sim listener exposes `GET /api/state`, `/api/health`, `/api/audit?after=N`
+and `POST /api/sim/actions` with exactly `{"action":"<name>"}`. Audit contexts
+retain the socket peer; sim actions use protocol `lab`.
+
+- Breaker: `reset_lockout`, `reset`. Faults belong to the process, not the
+  device. Solved amps drive the overcurrent timer and instantaneous trip on a closed breaker, latching lockout.
+- RMU: `set_local`, `set_remote`, `earth_close`, `earth_open`,
+  `reset_fault_passage`, `reset`. Earth close needs an open way and a valid,
+  dead section. Fault passage latches on solved-current pickup.
+- OLTC: `set_local`, `set_remote`, `block`, `unblock`, `reset`.
+- Reset bypasses interlocks, restores initial truth and invalidates measurements.
+  Old `/api/sim/fault` and `/api/sim/reset` routes do not exist.
+
+Modbus TCP uses unit 1, zero-based addresses, high-word-first f32/u32.
+FC3 reads holding, FC4 reads input, FC6 writes one holding register. Switch
+HR0 is 1 open / 2 close. Close needs valid measurements and refuses live-live;
+RMU open also needs valid measurements and refuses current pickup. This
+includes the invalid interval between an FPI latch and the re-solve. Breaker
+open remains allowed in remote even without valid measurements. Rejections use
+exception 04 and audit peer/reason. Breaker IR1 bit 2 is overcurrent picked up; RMU IR1 bit 3 is FPI picked up.
+
+OLTC HR0 is 1 lower / 2 raise (remote/manual); HR2 is 1 manual / 2 auto
+(remote only, also allowed during motion). HR1 is the PLC absolute request:
+0 clears/arms, or `100 + target` for targets -8 through +8. FC16 is supported
+**only for quantity 1 at HR1**. Well-formed HR1 requests always acknowledge;
+IR13 reports none/accepted/not_remote/not_auto/moving/not_adjacent/limit/
+blocked/unarmed/not_energized (0 through 9). No-op writes are not audited;
+ignored writes are audited only when their reason changes. Entering
+remote/auto and reset disarm HR1 until a new zero is written. Motion takes
+2 seconds on a non-blocking timer; completed tap remains unchanged until it
+finishes. Reset cancels motion. FC3 returns HR0=0, HR1=last request, HR2=mode.
+IR14 is a wrapping 250 ms heartbeat, independent of process delivery.
+
+Protection is configured with `DEVICE_PICKUP_A`, `DEVICE_DELAY_MS`,
+`DEVICE_INSTANTANEOUS_A` (number or `null`), and `DEVICE_MAX_GAP_MS`.
+Compose and code defaults agree: breaker 400 A / 1000 ms / 2000 A;
+RMU FPI 300 A / 0 ms / null; OLTC block 866 A / 0 ms / null.
+The maximum accepted-sample gap is 2500 ms by default. Timing uses accepted
+`solved_at` samples, not receipt or wall time: first pickup starts the timer;
+the first sample at or beyond the delay operates. Effective delay is rounded
+up to the solve cadence (1000 ms at the default 1 s cadence). Instantaneous
+pickup operates on the first sample. Drop-off, epoch/generation changes,
+expiry and gaps above the maximum restart the timer. Rejected samples do not
+advance or reset it. A truth revision alone does not restart it; its temporary
+measurement invalidation is distinct from expiry. Within an epoch both sequence
+and solve time must strictly increase.
+
+Schema-3 state and audit snapshots include `protection` (function, pickup,
+delay, instantaneous, picked-up state/since and last-trip current). Power factor
+is |P|/hypot(P,Q), null below 0.001 MVA. Breaker input count is 17 with P/Q/PF
+at 11/13/15; OLTC count is 21 with P/Q/PF at 15/17/19. RMU count stays 13.
+Null power values encode quiet NaN. RTU converts NaN to 0 with IV (no NT),
+classified by CC as `measurement_invalid`, not a communications failure.
+OLTC IR1 bit 5 is the effective block (manual OR overcurrent), bit 7 is the
+overcurrent block, telemetered as `oltc-1-overcurrent-block`, IOA 1307.
+Both PLC and manual tap requests refuse the effective block; truth `blocked`
+continues to mean only the manual block.
+
+The EU PLC publishes configured 20.4 kV / 10 per-mille / 30 s at holding
+1025–1027. Its thresholds derive from setpoint and deadband (20.196–20.604 kV),
+and timer PT derives from the configured delay. Countdown is internal only.
+The image build compiles the ST, and startup checks all three settings.
+CC state is schema 3 with 42 points; each point carries its source `device`
+and nullable voltage `limits`. The point-map configuration itself remains
+schema 2 (not a state or measurement surface).
+
+Targeted checks:
+
+```sh
+go -C services test -race -count=1 ./devices/...
+go -C services vet ./devices/...
+gofmt -l services/devices
+```
+
+## Live EU state smoke
+
+With exclusive ownership of a ready EU range, run
+`bash scripts/eu-state-smoke.sh` (default `RANGERDANGER_API=http://127.0.0.1:8088`).
+It checks independent electrical truth, fresh IEC104 observations, and the
+Control Centre and Physical System DOMs. Install frontend dependencies with
+`npm ci --prefix frontend`; the pinned `playwright-core` uses system Chrome
+headlessly, with no browser download or shared browser session.
+
+`--list` is offline; `--case NAME` is repeatable, and `--case switching` selects
+the reachable switching matrix. Both DOM checks are mandatory; the old
+`--pending-dom` option is removed. The full matrix (including F2 reset,
+S1 recovery, LOCAL rejection and OLTC) is:
+
+```sh
+RANGERDANGER_API=http://127.0.0.1:8088 bash scripts/eu-state-smoke.sh
+```
+
+Rebuild the range with the fifth device, `f2-breaker`, before running it.
+All 42 IEC indications must be present; F2 position/trip/current/MW must be
+fresh and agree with the independent device/model observations. Both pages'
+SCADA banners must stay `ok` in steady states, including zero-power PF marked
+`measurement_invalid`; the CC summary reports that uncertainty separately.
+Offline fixtures run with `bash scripts/tests/eu-gate/run.sh`. To re-probe
+the 21 F2 current/MW and section vectors directly from OpenDSS (no live range),
+use the process Python 3.13 environment to run
+`python scripts/tests/eu-gate/probe-state-oracle.py`.
+
+Evidence (field/operator snapshots, command/audit responses, DOM JSON,
+screenshots and outcomes with timings) stays in `build/eu-state-smoke/<UTC>/`.
+Cases have 180 s deadlines (OLTC 300 s), inside a 30-minute run cap including
+reset. An unknown command result or timeout stops the matrix without retry.
+Cleanup re-enables the profile and uses the workshop reset barrier; this
+**clears workshop work and restores the weak policy**. The harness never
+pauses/restarts containers or directly edits firewall policy.
+
+`--case CCC-normal-interlock` proves that closing CB1 from the reachable
+OCC-normal predecessor is rejected with negative ACT-CON / `live_live`, with
+unchanged plant switch revisions/positions, GOOD CC positions and all section
+states. It is included in `--case switching`; the CCC-normal electrical row
+remains in the offline oracle. All eight F2-tripped rows are reachable via the S2
+fault/tie sequence; the F2 device owns the protection latch. `--case f2-cycle`
+also proves `f2-breaker`'s `/api/sim/actions` reset and restored CC indications,
+without a process `reset_f2` action. Instantaneous pre-trip and delayed pickup fault rows
+cannot be held for GI/DOM sampling. `--list` also names unsupported S3 fault
+and PLC setpoint controls. At zero power, undefined PF is intentionally
+IEC IV / comparison INVALID, not MATCH or a communications outage.
 
 ## Adding a new sim
 
@@ -104,11 +287,16 @@ in `services/shared/`.
    EXPOSE 8080 502 20000
    CMD ["sh", "-c", "set-gateway.sh && <name>-sim"]
    ```
-6. Add a service block in `docker-compose.yml` (and mirror in
-   `docker-compose.release.yml`) with appropriate zone networks,
-   healthcheck, and `depends_on`.
-7. Add the node type to `backend/internal/labs/catalog.go` and any
-   relevant lab-definition YAMLs.
+6. Add a service block to the range package's
+   `lab-definitions/packages/<id>/compose.source.yml` (and mirror in its
+   `compose.release.yml`) with appropriate zone networks, healthcheck,
+   and `depends_on`, plus a service entry in the package's
+   `manifest.json`. The root `docker-compose*.yml` files are the
+   platform (backend, frontend, proxy) only.
+7. Add the node to the package topology (the file `package.yml`'s
+   `topology:` names) and give its
+   manifest service the matching `node`; run
+   `(cd backend && go run ./cmd/packagelint)`.
 8. Add the image and its reviewed build-input envelope to
    [`.github/release-images.json`](../.github/release-images.json). The
    release matrix is generated from this inventory; do not add a workflow
@@ -129,3 +317,16 @@ library. It supports the read/write function codes the exercises
 exercise (FC 1/3/4 read, FC 5/6 write) and is intentionally explicit
 about register addresses so students can correlate writes against
 state changes during attack walkthroughs.
+
+## EU post-change operator proof
+
+The IEC 104 CC accepts bodyless `POST /api/reconnect` (portal relay:
+`POST /api/operator/reconnect`). Its link worker closes the real connection,
+then uses the point-map reconnect interval and connect GI. This does not
+reset policy, devices or cache identity. 202 is queued, not completed;
+409 refuses a pending reconnect or active command, and 503 means already
+down/reconnecting. Labs 2.2/2.3 require link.since after the latest policy
+commit, matched GI completion on that connection and every loaded inventory
+point non-null/GOOD received since GI start. An established session surviving
+a commit is not proof of the new policy. Loss of observations remains distinct
+from independently measured physical supply.

@@ -8,13 +8,13 @@ import { actionLabel } from "../lib/scenario-runner-logic";
 
 export function StepNavigator({
   scenario,
-  completedSteps,
+  completedStepIds,
   currentStep,
   setCurrentStep,
   setStepResult,
 }: {
   scenario: Scenario;
-  completedSteps: Set<number>;
+  completedStepIds: Set<string>;
   currentStep: number;
   setCurrentStep: Dispatch<SetStateAction<number>>;
   setStepResult: Dispatch<SetStateAction<import("../lib/api").StepExecutionResult | null>>;
@@ -24,7 +24,7 @@ export function StepNavigator({
   {/* Left: Step navigator */}
   <div className="space-y-1">
     {scenario.steps.map((s, i) => {
-      const done = completedSteps.has(i);
+      const done = completedStepIds.has(s.id);
       const active = i === currentStep;
       return (
         <button

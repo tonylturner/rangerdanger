@@ -1,0 +1,565 @@
+{
+  "nodes": [
+    {
+      "id": "fw-1",
+      "type": "containd_ngfw",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Containd Firewall",
+        "zone": "enterprise_net",
+        "networks": [
+          "enterprise_net",
+          "vendor_net",
+          "ot_ops_net",
+          "field_net"
+        ],
+        "ip": "10.10.10.2"
+      }
+    },
+    {
+      "id": "corp-ws-1",
+      "type": "corp_workstation",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Corporate Workstation",
+        "zone": "enterprise_net",
+        "networks": [
+          "enterprise_net"
+        ],
+        "ip": "10.10.10.10"
+      }
+    },
+    {
+      "id": "kali-1",
+      "type": "kali_pentest",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Kali Attacker",
+        "zone": "enterprise_net",
+        "networks": [
+          "enterprise_net"
+        ],
+        "ip": "10.10.10.50"
+      }
+    },
+    {
+      "id": "vendor-jump-1",
+      "type": "vendor_jumpbox",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Vendor Jump Box",
+        "zone": "vendor_net",
+        "networks": [
+          "vendor_net"
+        ],
+        "ip": "10.20.20.10"
+      }
+    },
+    {
+      "id": "eng-ws-1",
+      "type": "eng_workstation",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Engineering Workstation",
+        "zone": "vendor_net",
+        "networks": [
+          "vendor_net"
+        ],
+        "ip": "10.20.20.20"
+      }
+    },
+    {
+      "id": "hmi-1",
+      "type": "fuxa_hmi",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Substation HMI",
+        "zone": "ot_ops_net",
+        "networks": [
+          "ot_ops_net"
+        ],
+        "ip": "10.30.30.10"
+      }
+    },
+    {
+      "id": "rtac-1",
+      "type": "rtac_sim",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "RTAC / Supervisory Controller",
+        "zone": "ot_ops_net",
+        "networks": [
+          "ot_ops_net",
+          "field_net"
+        ],
+        "ip": "10.30.30.20"
+      }
+    },
+    {
+      "id": "openplc-1",
+      "type": "openplc",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Substation Automation PLC",
+        "zone": "ot_ops_net",
+        "networks": [
+          "ot_ops_net"
+        ],
+        "ip": "10.30.30.30"
+      }
+    },
+    {
+      "id": "historian-1",
+      "type": "historian_sim",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Data Historian",
+        "zone": "ot_ops_net",
+        "networks": [
+          "ot_ops_net"
+        ],
+        "ip": "10.30.30.40"
+      }
+    },
+    {
+      "id": "gps-1",
+      "type": "gps_sim",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "GPS Time Server",
+        "zone": "ot_ops_net",
+        "networks": [
+          "ot_ops_net"
+        ],
+        "ip": "10.30.30.50"
+      }
+    },
+    {
+      "id": "relay-1",
+      "type": "relay_sim",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Feeder Breaker / Relay",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "ip": "10.40.40.20"
+      }
+    },
+    {
+      "id": "recloser-1",
+      "type": "recloser_sim",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Mid-Feeder Recloser",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "ip": "10.40.40.21"
+      }
+    },
+    {
+      "id": "regulator-1",
+      "type": "regulator_sim",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Voltage Regulator",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "ip": "10.40.40.22"
+      }
+    },
+    {
+      "id": "capbank-1",
+      "type": "capbank_sim",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Capacitor Bank",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "ip": "10.40.40.23"
+      }
+    }
+  ],
+  "edges": [],
+  "flows": [
+    {
+      "id": "rtac-1-relay-1-modbus",
+      "source": "rtac-1",
+      "target": "relay-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~3s",
+      "category": "baseline",
+      "liveness_key": "rtac-relay"
+    },
+    {
+      "id": "rtac-1-recloser-1-modbus",
+      "source": "rtac-1",
+      "target": "recloser-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~3s",
+      "category": "baseline",
+      "liveness_key": "rtac-recloser"
+    },
+    {
+      "id": "rtac-1-regulator-1-modbus",
+      "source": "rtac-1",
+      "target": "regulator-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~3s",
+      "category": "baseline",
+      "liveness_key": "rtac-regulator"
+    },
+    {
+      "id": "rtac-1-relay-1-dnp3",
+      "source": "rtac-1",
+      "target": "relay-1",
+      "protocol": "DNP3",
+      "port": 20000,
+      "cadence": "~5s",
+      "category": "baseline",
+      "liveness_key": "rtac-relay"
+    },
+    {
+      "id": "rtac-1-recloser-1-dnp3",
+      "source": "rtac-1",
+      "target": "recloser-1",
+      "protocol": "DNP3",
+      "port": 20000,
+      "cadence": "~5s",
+      "category": "baseline",
+      "liveness_key": "rtac-recloser"
+    },
+    {
+      "id": "rtac-1-regulator-1-dnp3",
+      "source": "rtac-1",
+      "target": "regulator-1",
+      "protocol": "DNP3",
+      "port": 20000,
+      "cadence": "~5s",
+      "category": "baseline",
+      "liveness_key": "rtac-regulator"
+    },
+    {
+      "id": "gps-1-relay-1-ntp",
+      "source": "gps-1",
+      "target": "relay-1",
+      "protocol": "NTP",
+      "port": 123,
+      "cadence": "~30s",
+      "category": "baseline",
+      "liveness_key": "gps"
+    },
+    {
+      "id": "gps-1-recloser-1-ntp",
+      "source": "gps-1",
+      "target": "recloser-1",
+      "protocol": "NTP",
+      "port": 123,
+      "cadence": "~30s",
+      "category": "baseline",
+      "liveness_key": "gps"
+    },
+    {
+      "id": "gps-1-regulator-1-ntp",
+      "source": "gps-1",
+      "target": "regulator-1",
+      "protocol": "NTP",
+      "port": 123,
+      "cadence": "~30s",
+      "category": "baseline",
+      "liveness_key": "gps"
+    },
+    {
+      "id": "rtac-1-capbank-1-modbus",
+      "source": "rtac-1",
+      "target": "capbank-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~3s",
+      "category": "baseline",
+      "liveness_key": "rtac-capbank"
+    },
+    {
+      "id": "rtac-1-capbank-1-dnp3",
+      "source": "rtac-1",
+      "target": "capbank-1",
+      "protocol": "DNP3",
+      "port": 20000,
+      "cadence": "~5s",
+      "category": "baseline",
+      "liveness_key": "rtac-capbank"
+    },
+    {
+      "id": "gps-1-capbank-1-ntp",
+      "source": "gps-1",
+      "target": "capbank-1",
+      "protocol": "NTP",
+      "port": 123,
+      "cadence": "~30s",
+      "category": "baseline",
+      "liveness_key": "gps"
+    },
+    {
+      "id": "hmi-1-rtac-1-modbus",
+      "source": "hmi-1",
+      "target": "rtac-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~2s",
+      "category": "baseline",
+      "liveness_key": "rtac"
+    },
+    {
+      "id": "historian-1-rtac-1-http",
+      "source": "historian-1",
+      "target": "rtac-1",
+      "protocol": "HTTP",
+      "port": 8080,
+      "cadence": "~5s",
+      "category": "baseline",
+      "liveness_key": "rtac"
+    },
+    {
+      "id": "eng-ws-1-rtac-1-http",
+      "source": "eng-ws-1",
+      "target": "rtac-1",
+      "protocol": "HTTP",
+      "port": 8080,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "eng-ws-1-openplc-1-http",
+      "source": "eng-ws-1",
+      "target": "openplc-1",
+      "protocol": "HTTP",
+      "port": 8080,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "eng-ws-1-hmi-1-fuxa",
+      "source": "eng-ws-1",
+      "target": "hmi-1",
+      "protocol": "FUXA",
+      "port": 1881,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "eng-ws-1-relay-1-modbus",
+      "source": "eng-ws-1",
+      "target": "relay-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "eng-ws-1-recloser-1-modbus",
+      "source": "eng-ws-1",
+      "target": "recloser-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "eng-ws-1-regulator-1-modbus",
+      "source": "eng-ws-1",
+      "target": "regulator-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "eng-ws-1-capbank-1-modbus",
+      "source": "eng-ws-1",
+      "target": "capbank-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "eng-ws-1-relay-1-dnp3",
+      "source": "eng-ws-1",
+      "target": "relay-1",
+      "protocol": "DNP3",
+      "port": 20000,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "eng-ws-1-recloser-1-dnp3",
+      "source": "eng-ws-1",
+      "target": "recloser-1",
+      "protocol": "DNP3",
+      "port": 20000,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "eng-ws-1-regulator-1-dnp3",
+      "source": "eng-ws-1",
+      "target": "regulator-1",
+      "protocol": "DNP3",
+      "port": 20000,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "eng-ws-1-capbank-1-dnp3",
+      "source": "eng-ws-1",
+      "target": "capbank-1",
+      "protocol": "DNP3",
+      "port": 20000,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "vendor-jump-1-hmi-1-fuxa",
+      "source": "vendor-jump-1",
+      "target": "hmi-1",
+      "protocol": "FUXA",
+      "port": 1881,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    },
+    {
+      "id": "vendor-jump-1-rtac-1-http",
+      "source": "vendor-jump-1",
+      "target": "rtac-1",
+      "protocol": "HTTP",
+      "port": 8080,
+      "cadence": "burst",
+      "category": "scenario",
+      "liveness_key": "scenario"
+    }
+  ],
+  "liveness": {
+    "rtac-relay": {
+      "provider": "workshop-device",
+      "device": "relay"
+    },
+    "rtac-recloser": {
+      "provider": "workshop-device",
+      "device": "recloser"
+    },
+    "rtac-regulator": {
+      "provider": "workshop-device",
+      "device": "regulator"
+    },
+    "rtac-capbank": {
+      "provider": "workshop-device",
+      "device": "capbank"
+    },
+    "rtac": {
+      "provider": "workshop-supervisor"
+    },
+    "gps": {
+      "provider": "workshop-supervisor"
+    },
+    "scenario": {
+      "provider": "traffic-generator"
+    }
+  },
+  "networks": [
+    {
+      "id": "enterprise_net",
+      "name": "Enterprise Zone",
+      "subnet": "10.10.10.0/24",
+      "zone": "wan",
+      "description": "Corporate IT environment - lowest trust, common attacker foothold"
+    },
+    {
+      "id": "vendor_net",
+      "name": "Vendor / Engineering Zone",
+      "subnet": "10.20.20.0/24",
+      "zone": "dmz",
+      "description": "Remote support, contractor access, engineering maintenance"
+    },
+    {
+      "id": "ot_ops_net",
+      "name": "OT Operations Zone",
+      "subnet": "10.30.30.0/24",
+      "zone": "lan1",
+      "description": "Substation operational services - HMI, RTAC, supervisory control"
+    },
+    {
+      "id": "field_net",
+      "name": "Field Device Zone",
+      "subnet": "10.40.40.0/24",
+      "zone": "lan2",
+      "description": "Substation and feeder control endpoints - relay, recloser, regulator"
+    }
+  ],
+  "operations": {
+    "traffic_generation": true
+  }
+}

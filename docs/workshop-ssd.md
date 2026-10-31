@@ -4,6 +4,13 @@ How to get RangerDanger onto N student laptops in a room with bad
 Wi-Fi, and how to push patches between sessions without forcing every
 student to re-import the full 6 GB image bundle.
 
+This is the v0.2.0 package-based operator runbook. Tagged examples require
+published v0.2.0 images. PowerShell setup supports the same packages on
+Docker Desktop WSL2 with a physical local-drive checkout. It rejects UNC,
+`\\wsl$`, mapped network drives, junctions and Hyper-V; see the
+[Windows requirements](quickstart.md#windows-docker-desktop-wsl2-only).
+Archive verification does not establish real-hardware Windows acceptance.
+
 This is the operator runbook. For the student-facing one-liner see
 [`quickstart.md`](quickstart.md) Path C.
 
@@ -15,36 +22,12 @@ workshop has not started 90 minutes in". The SSD path moves the
 network round-trip to the instructor's machine the night before:
 stage once, students load from USB.
 
-Staging tools:
+Two staging flows:
 
 - `stage-ssd.sh` - full bundle. First-time SSD, or when a student is
   joining late and needs everything from scratch.
 - `stage-ssd-delta.sh` - patch bundle. After a fix lands and you
   need to push it without re-shipping the unchanged 6 GB.
-- `stage-ssd-repo-update.sh <out-dir> <tag>` - repository-only artifacts
-  for changes that need no new images. Writes a tag archive, Git bundle,
-  `SHA256SUMS` and `REPO-UPDATE-README.md`. Students follow that generated
-  guide and use `scripts/apply-repo-update.sh` or `.ps1`; these helpers
-  never install images. This tool is not the v0.1.36 release update path.
-
-### v0.1.36 distribution
-
-Use the normal full bundle for new installs. Once the release is published,
-from a clean checkout of tag `v0.1.36`:
-
-```sh
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.36
-```
-
-For an existing v0.1.35 install, the normal delta path is supported:
-
-```sh
-./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.36 v0.1.35 v0.1.36
-```
-
-All 16 first-party images rebuild for this release (`[rebuild-all]`), so
-this delta is close to a full set, not a small content patch. Follow the
-[normal delta apply and rollback workflow](#student-side-delta-apply).
 
 ## What's on the SSD
 
@@ -69,7 +52,8 @@ or does not match, staging fails and removes both kernel files instead of
 writing a bundle that could install an unverified kernel. Re-run the stage
 helper, or place both files in the output directory by hand.
 
-Both `images-*.tar` cover the release stack's image references, with
+Both `images-*.tar` cover the image references of the release Compose
+files (the platform's and every range package's), with
 different architecture-specific binaries. The arm64 archive additionally
 contains `tonistiigi/binfmt` and cross-includes the amd64-only `openplc`
 image because no arm64 manifest exists for it.
@@ -81,7 +65,7 @@ archive.
 On a machine with internet, from the repo root:
 
 ```sh
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.17
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0
 ```
 
 The positional version selects the first-party image tags through Compose
@@ -121,40 +105,53 @@ cd ~/rangerdanger
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
 ```
 
-Or on Windows:
+Or on Windows, after extracting the repo onto a physical local drive:
 
 ```powershell
 .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD
+# Or select EU instead of the fresh-install US default:
+# .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD -Package eu-iec104-substation
 ```
 
 What `setup.sh --from-tarballs` does, in order:
 
-1. **Pre-flight checks** - Docker reachable, Compose v2, arch
-   recognized, and ports `8088 / 9080 / 9443 / 2222` free. Ports held
-   by an already-running RangerDanger lab stop an install, which prints
-   the commands to stop and refresh it; anything else holding them
-   fails. Disk and memory readings are advisory: setup warns below
-   30 GB free on the checkout filesystem and below 7 whole GiB of
-   reported memory (8 GB recommended). Linux-native Docker can fall back
-   to host RAM. It does not measure Docker's storage volume or check
-   macOS host RAM. `--check-only` runs just this stage and exits; it
-   passes when the running lab holds all four ports, so it also works
-   as a night-before check on an installed laptop. A lab holding only
-   some of them is reported as partly running and fails, with the
-   commands to stop it and re-run setup.
-2. **`docker load`** the matching `images-<arch>.tar` every time.
-   Docker deduplicates existing layers by content hash. On Windows,
-   `setup.ps1 -FromTarballs` then probes the WSL2 kernel in the loaded
-   containd image (no network needed) and, if `CONFIG_NFT_QUEUE` is
-   missing, installs the bundled kernel. That runs `wsl --shutdown`,
-   which restarts Docker Desktop before the stack starts.
-3. **`docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d`**. The
-   offline overlay sets `pull_policy: never` on every release-image
-   service so a slow/blocked GHCR can't ruin the day.
-4. **Readiness checks** - a backend health timeout only warns. Failed
-   firewall API-health, policy-apply, or workshop-reset checks are
-   fatal. DPI degradation and a non-running OpenPLC only warn, so the
-   final banner can still print when those checks fail.
+1. **Pre-flight checks** - Docker reachable, Compose 2.36.0+ on
+   Engine API 1.49+ (Docker Desktop 4.42+), arch recognized, and ports
+   `8088 / 9080 / 9443 / 2222` free (or held by this install's own
+   containers, on a re-run). Disk and
+   memory readings are advisory: setup warns below 30 GB free on the
+   checkout filesystem and below 7 whole GiB of reported memory (8 GB
+   recommended). Linux-native Docker can fall back to host RAM. It does
+   not measure Docker's storage volume or check macOS host RAM.
+   `--check-only` runs just this stage and exits.
+2. **`.env`** - writes `VERSION` (from the SSD's `.version`) and
+   `RANGERDANGER_ROOT` (the install directory) to `.env`.
+3. **`docker load`** the matching `images-<arch>.tar` every time, before
+   any destructive teardown. Docker deduplicates existing layers by content
+   hash. The archive carries the platform and every range package's images.
+4. **Migration** - after images are available, an older single-project
+   install (`rangerdanger` owning `rangerdanger_mgmt_net`) is taken down by
+   Compose label. Foreign management/delivery network ownership is rejected.
+5. **Platform** - `docker compose -p rangerdanger-platform ... -f
+   docker-compose.release.yml up -d --wait --pull never` starts the
+   backend, frontend and proxy. `--pull never` overrides the release
+   file's pull policy, so a slow/blocked GHCR can't ruin the day.
+6. **Range** - once `/api/health` answers, `POST /api/range` asks the
+   backend to start the range (containd, the zones, the devices), the
+   same request the UI's package toggle sends. The backend always runs
+   ranges with `--pull never`. Setup waits until `GET /api/range`
+   reports `ready`; a failed range start is fatal and prints the
+   backend's error.
+7. **Readiness checks** - failed firewall API-health, policy-apply, or
+   workshop-reset checks are fatal. DPI degradation and a non-running
+   OpenPLC only warn, so the final banner can still print when those
+   checks fail.
+
+PowerShell follows the same acquisition-before-migration sequence and also
+checks WSL2 kernel features and proves the daemon can read the checkout at
+the mapped root before teardown/platform startup. Both installers keep
+platform volumes; the range restart removes its anonymous desktop volumes.
+Save desktop work and evidence before rerunning setup.
 
 Successful tail looks like:
 
@@ -183,14 +180,22 @@ into an image at build time:
 - Lab YAML edits (`lab-definitions/scenarios/*.yml`)
 - Compose file tweaks
 - Documentation
-- nginx config (`proxy/nginx.conf`)
+- nginx config (`proxy/nginx.conf`, a package's `nginx.routes.conf`)
 - Setup script changes
 - containd policy JSONs (`lab-definitions/firewall/*.json`)
 
-Use `stage-ssd-repo-update.sh` and follow its generated checksum and
-archive/clone instructions. It stages only the tagged repository files;
-`apply-repo-update.sh` / `.ps1` require the matching images to be cached
-already. Use Pattern 2 whenever new application images are needed.
+Distribution: ship the new `rangerdanger.tgz` only. ~1 MB. USB,
+AirDrop, Slack, anything. Student replaces their repo and restarts:
+
+```sh
+cd ~/rangerdanger
+./scripts/dev-down.sh                                 # the range, then the platform
+tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~   # overwrites ~/rangerdanger in place
+./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD      # loads the image archive again
+```
+
+`setup.sh` runs `docker load` on every import. Docker deduplicates
+layers that are already present.
 
 ### Pattern 2: image rebuild change (Dockerfile / Go / TS / sim code)
 
@@ -210,6 +215,11 @@ Use [`stage-ssd-delta.sh`](#delta-staging) below.
 
 ### Pattern 3: containd update
 
+RangerDanger v0.2.0 requires containd 0.1.35 or later, including offline
+bundles. RangerDanger owns its client fixes for that contract; using an older
+containd image is not a compatibility path. Verify the staged build as well
+as its digest.
+
 containd intentionally floats on its own mutable `latest` tag; its release
 version is independent of RangerDanger's. The delta helper does not record
 the digest included by a previous full stage, so it cannot detect whether
@@ -217,7 +227,7 @@ containd has drifted since that stage. To include the current `latest` image
 in a delta, force it with:
 
 ```sh
-./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.17 v0.1.16 v0.1.17 \
+./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1 \
   --include-upstream --include containd
 ```
 
@@ -227,6 +237,13 @@ After staging, compare it with
 `docker image inspect ghcr.io/tonylturner/containd:latest --format '{{json .RepoDigests}}'`.
 If the approved digest is not present locally, do not distribute the delta;
 the helper does not pin containd's mutable tag to a prior-stage digest.
+
+Before the first 0.1.33 start on each installed machine, stop the lab and
+back up the complete firewall `/data` while quiescent. In the repo root
+(`RANGERDANGER_ROOT`), preserve `data/firewall/` for US and
+`data/eu-iec104-substation/firewall/` for EU, including both if installed.
+Keep all databases, journals, users and captures, not just a config export.
+The stored schema migrates one-way to 0.1.7, which 0.1.32 cannot read.
 
 ## Delta staging
 
@@ -238,27 +255,38 @@ the helper does not pin containd's mutable tag to a prior-stage digest.
   local-only images are not a fallback.
 - Always includes a fresh `rangerdanger.tgz` (since the repo
   archive is tiny anyway).
-- Runs with stock macOS Bash 3.2 and Compose support for
-  `config --format json`; it requires `python3` for registry fallback
-  and exact service mapping.
-- Writes a `DELTA-README.md` whose image/service table comes from the
-  release Compose model (including the actual `eng_workstation` service).
-  Its apply recipe loads changed tags, retags unchanged images from
-  `<since>` to `<new>`, snapshots the complete existing repo (including
-  `.env` and local edits), selects `<new>`, then starts the full offline
-  release stack. Rollback restores that snapshot and reuses the retained
-  old image tags.
+- Runs with stock macOS Bash 3.2 and Compose `config --images`; it
+  requires `python3` for registry-manifest parsing and exact
+  image-to-service mapping.
+- Compares the union of images the platform release file and every
+  package's `compose.release.yml` name.
+- Writes a `DELTA-README.md` whose image table lists, for every changed
+  image, its package/service membership (the platform or the package
+  that uses it). Its apply recipe loads changed tags, retags unchanged
+  images from `<since>` to `<new>`, snapshots the complete existing repo
+  (including `.env` and local edits), selects `<new>`, then restarts the
+  lab offline: the platform with `--pull never`, then the recorded range
+  package through the backend (`POST /api/range`). Rollback restores
+  that snapshot and reuses the retained old image tags. The recipe needs
+  `curl` and `python3` on the student's machine.
 
-Example:
+The source release must carry the platform/package Compose metadata. A
+v0.1.x SSD baseline lacks it: stage a full v0.2.0 bundle for that migration.
+Later package-aware releases can use:
 
 ```sh
-./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.17 v0.1.16 v0.1.17
+./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1
 ```
+
+This is a future-version example, not a claim those tags already exist.
+v0.2.0 rebuilds every first-party image (`[rebuild-all]`), so a compatible
+full-rebuild delta is close to a full set. Do not use the retired single-stack
+repository-update helpers for package migration; use setup and full/delta staging.
 
 Typical output (from the script's run summary):
 
 ```
-Comparing v0.1.16 -> v0.1.17 across N candidate image(s)
+Comparing <since> -> <new> across N candidate image(s)
   changed: backend, frontend
   unchanged: kali, vendor-jump, eng-ws, openplc, rtac-sim,
              relay-sim, recloser-sim, regulator-sim,
@@ -281,9 +309,9 @@ than writing a delta that could install an unverified kernel. Re-run the delta
 helper, or place both kernel files in the output directory by hand.
 
 Size depends entirely on how many image digests differ between the two
-releases, and that example is the best case. A release tagged with
-`[rebuild-all]` rebuilds every first-party image, so its release-to-release delta is close to a full
-bundle (normal releases may promote unchanged images):
+releases, and that example is the best case. A tagged release rebuilds
+every first-party image, so every digest changes and a plain
+release-to-release delta is close to a full bundle:
 `v0.1.31 -> v0.1.32` reported 15 changed, 0 unchanged, and wrote 8.1 GB.
 `--include <image>` is additive: it force-adds a named image whose digest
 compared as unchanged. It does not exclude changed images or make a delta
@@ -303,8 +331,9 @@ already applied and nothing was changed. This also permits safely
 re-applying a delta after an interrupted attempt that left the install at
 `<since-version>`.
 
-After that precondition passes, the recipe stops the release + offline
-stack, then saves the complete existing `~/rangerdanger` tree beside the
+After that precondition passes, the recipe stops the lab (the range,
+then the platform, each by its Compose project label from an empty
+directory, verifying that no container or network is left), then saves the complete existing `~/rangerdanger` tree beside the
 install as
 `../rangerdanger.before-<new-version>.tar.gz`. The snapshot includes
 `.env`, Compose files, lab definitions, policy files, local edits, and all
@@ -313,18 +342,17 @@ Docker images. It also captures any other files present in the install
 tree. Snapshot size and creation time grow with lab state; allow enough
 free disk space for a compressed copy of the full tree. The snapshot is
 not overwritten if the same delta is applied again. If snapshot creation
-or its archive check fails, the generated instructions say the stack is
-stopped and give the command to bring the unchanged install back up.
-If stopping the stack itself fails, no snapshot or repo changes have been
-made; the generated instructions note that some services may be stopped
-and give the same command to bring the unchanged install back up.
+or its archive check fails, the recipe stops with the lab down and
+points to its `Rollback` section to bring the unchanged install back.
+If stopping and verifying both projects fails (a container or network
+of either is left), it stops before any snapshot or repo change; some
+services may already be stopped.
 
 The recipe then extracts the repo and loads the changed-image archive for
 the host architecture. For every unchanged first-party image it emits a
 `docker image tag <old-ref> <new-ref>` command, so Compose can find every
 image at the selected new version while offline. It then updates `VERSION`
-in `.env` and finishes with the explicit release + offline Compose
-restart.
+in `.env` and finishes by restarting the lab offline.
 
 For ARM64 Linux, OpenPLC uses amd64 emulation. A delta with changed images
 includes `tonistiigi/binfmt` in `delta-arm64.tar`; a repo-only delta creates
@@ -333,21 +361,28 @@ no image archives and cannot provide that image. Ensure
 repo-only delta offline if OpenPLC may need to restart after a host reboot.
 
 Do not restart only the changed services: first select the new image tags,
-then apply the complete stack so every service resolves against the same
-release and updated repo files. The generated recipe's final command is:
-
-```sh
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
-```
+then restart the whole lab so every service resolves against the same
+release and updated repo files: the platform with `--pull never`, then the
+range through the backend (`POST /api/range`). The generated
+`DELTA-README.md` gives the exact commands.
 
 For offline rollback, the generated `Rollback` section first stops the
-release + offline stack, then removes the updated repo and restores the
+lab, then removes the updated repo and restores the
 complete saved repo tree (including `.env`, local edits, and `./data/`)
-before starting the complete stack with the old tags. It needs no network
+before starting the complete lab with the old tags. It needs no network
 or second bundle. Docker images are not in the repo snapshot, so keep the
 snapshot and old image tags until the rollback window closes. Images behind
 mutable tags overwritten by the delta are parked as `:before-<new version>`;
 deleting those parked tags forfeits rollback for those images.
+
+The complete repo backup must include both package firewall directories
+listed above. After the containd schema 0.1.7 migration, binary rollback
+requires that matching pre-upgrade data **and** the old image; an older tag
+alone is not enough. Stop the lab and replace the migrated directories,
+never merge old database files into migrated storage. Restore the older
+RangerDanger release too if returning to containd 0.1.32, then restart and
+verify operations. Importing a prior policy stages configuration and does
+not undo the binary/schema upgrade.
 
 ## Recovery scenarios
 
@@ -367,8 +402,7 @@ break anything - the student can re-run `setup.sh --from-tarballs`
 and it'll pick up where it left off. If state's still weird:
 
 ```sh
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down -v
-docker system prune -a              # nukes all images, frees disk
+./scripts/uninstall-rangerdanger.sh --yes --purge   # the lab, .env and its release/dev images
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
 ```
 
@@ -380,10 +414,13 @@ older images allowed it. `/api/workshop/reset` wipes containd's
 next firewall restart. Or manually:
 
 ```sh
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+docker stop rangerdanger-firewall
 rm -f data/firewall/users.db data/firewall/users.db-*
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8088/api/range
 ```
+
+The `POST` restarts the range (offline-safe: the backend never pulls)
+and resets the firewall policy to the package default.
 
 ### "The lab YAML I edited mid-workshop isn't showing up"
 
@@ -392,7 +429,7 @@ Lab YAML is bind-mounted into the backend container at
 Restart the backend to pick up edits:
 
 ```sh
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml restart backend
+docker restart rangerdanger-backend
 ```
 
 If a YAML edit landed in `rangerdanger.tgz` and the student already

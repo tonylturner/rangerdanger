@@ -2,10 +2,11 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,75 +16,55 @@ type resetAction struct {
 	Detail  string `json:"detail"`
 }
 
-// resetDeviceCommands is the canonical list of (device, command) pairs the
-// workshop reset and the test-runner replay against the sims to restore
-// default state. Every command here must be a real handler in the
-// corresponding sim's main.go switch — TestResetCommandsAreSupported pins
-// that contract so a typo (or a sim-handler rename) fails CI instead of
-// surfacing as a silent "success: false" at workshop time.
-var resetDeviceCommands = []struct {
-	device, command, desc string
-}{
-	{"relay", "clear_fault", "Clear relay faults"},
-	{"relay", "unlock", "Unlock relay"},
-	{"relay", "close", "Close feeder breaker"},
-	{"recloser", "clear_fault", "Clear recloser faults"},
-	{"recloser", "reset_lockout", "Reset recloser lockout"},
-	{"recloser", "enable_reclose", "Enable auto-reclose"},
-	{"recloser", "close", "Close recloser"},
-	{"regulator", "set_auto", "Set regulator to auto mode"},
-	// capbank: reset_lockout already clears the alarm flag (see
-	// services/capbank-sim/main.go reset_lockout handler), so no
-	// separate clear_alarm command exists.
-	{"capbank", "reset_lockout", "Reset capbank lockout"},
-	{"capbank", "switch_in", "Switch capbank in"},
-	{"capbank", "set_auto", "Set capbank to auto mode"},
-}
-
-// handleWorkshopReset restores the lab to its default state:
-// weak firewall config, all devices in normal operating condition.
+// handleWorkshopReset restores the lab to its default state: the package's
+// default firewall policy, all devices in normal operating condition.
 func (s *Server) handleWorkshopReset(c *gin.Context) {
+	ctx := c.Request.Context()
+	gen := rangeOf(c)
+	recipe, ok := supportedRecipe(c, func(*packageRecipe) bool { return true })
+	if !ok {
+		return
+	}
+	firewall, err := firewallContainer(gen)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	policy, err := defaultPolicy(gen)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	var actions []resetAction
+	// Truth-backed packages define their ordered reset, including delivery
+	// confirmation, before the shared firewall/capture housekeeping.
+	if recipe.resetTruth != nil {
+		actions = append(actions, recipe.resetTruth(ctx, gen, recipe)...)
+	}
 
-	// 1. Apply weak firewall config
-	_, err := s.applyFirewallConfigInternal("weak")
+	// 1. Apply the default firewall policy
+	_, err = s.applyFirewallConfigInternal(ctx, gen, policy)
 	actions = append(actions, resetAction{
-		Action:  "Apply weak firewall baseline",
+		Action:  "Apply " + policy + " firewall baseline",
 		Success: err == nil,
-		Detail:  boolDetail(err == nil, "weak config applied", errStr(err)),
+		Detail:  boolDetail(err == nil, policy+" config applied", errStr(err)),
 	})
 
 	// 2. Reset all field devices via RTAC commands
-	for _, cmd := range resetDeviceCommands {
-		result := s.executeCommand(cmd.device, cmd.command, "reset-script", nil)
+	for _, cmd := range recipe.resetCommands {
+		result := s.executeCommand(ctx, gen, cmd.device, cmd.command, "reset-script", cmd.value)
 		actions = append(actions, resetAction{
 			Action:  cmd.desc,
 			Success: result.Success,
 			Detail:  result.Detail,
 		})
 	}
-
-	// Reset regulator tap to 0 (needs value parameter)
-	tapZero := float64(0)
-	tapResult := s.executeCommand("regulator", "set_tap", "reset-script", &tapZero)
-	actions = append(actions, resetAction{
-		Action:  "Reset regulator tap to 0",
-		Success: tapResult.Success,
-		Detail:  tapResult.Detail,
-	})
-
 	// Clear PCAP captures so validators reflect fresh state
 	s.pcapMu.Lock()
 	s.pcap.FileReady = false
 	s.pcapMu.Unlock()
 	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
-		execCfg := container.ExecOptions{
-			Cmd: []string{"sh", "-c", "rm -f /data/captures/*.pcap /tmp/capture*.pcap 2>/dev/null; true"},
-		}
-		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
-		if err == nil {
-			dockerCli.ContainerExecStart(context.Background(), execID.ID, container.ExecStartOptions{})
-		}
+		err := runResetCleanup(ctx, s.orchestrator, firewall, "rm -f /data/captures/*.pcap /tmp/capture*.pcap")
 		actions = append(actions, resetAction{
 			Action:  "Clear PCAP captures",
 			Success: err == nil,
@@ -100,13 +81,7 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		// its next restart. The wipe is a no-op on a clean stack
 		// (file is already containing the default cred) so this is
 		// always safe to run from Reset Lab.
-		credCfg := container.ExecOptions{
-			Cmd: []string{"sh", "-c", "rm -f /data/users.db /data/sessions.db 2>/dev/null; true"},
-		}
-		credExecID, credErr := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, credCfg)
-		if credErr == nil {
-			dockerCli.ContainerExecStart(context.Background(), credExecID.ID, container.ExecStartOptions{})
-		}
+		credErr := runResetCleanup(ctx, s.orchestrator, firewall, "rm -f /data/users.db /data/sessions.db")
 		actions = append(actions, resetAction{
 			Action:  "Reset containd credentials to default",
 			Success: credErr == nil,
@@ -116,8 +91,10 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		})
 	}
 
-	// Wait for state propagation
-	time.Sleep(500 * time.Millisecond)
+	// The truth reset already waits for acknowledged measurement delivery.
+	if recipe.resetTruth == nil {
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	// Check overall success
 	allSuccess := true
@@ -128,10 +105,31 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	status := http.StatusOK
+	if recipe.resetTruth != nil && !allSuccess {
+		status = http.StatusBadGateway
+	}
+	c.JSON(status, gin.H{
 		"success": allSuccess,
 		"actions": actions,
 	})
+}
+
+type resetCommandRunner interface {
+	ExecCommand(context.Context, string, []string, int) (string, string, int, error)
+}
+
+// runResetCleanup checks both Docker transport errors and the command's
+// exit status. A created exec is not evidence that cleanup succeeded.
+func runResetCleanup(ctx context.Context, runner resetCommandRunner, container, command string) error {
+	_, stderr, code, err := runner.ExecCommand(ctx, container, []string{"sh", "-c", command}, 5)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("reset cleanup exited %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return nil
 }
 
 func boolDetail(ok bool, success, failure string) string {

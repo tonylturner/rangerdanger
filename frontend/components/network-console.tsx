@@ -16,18 +16,22 @@ import "reactflow/dist/style.css";
 import { useQuery } from "@tanstack/react-query";
 import {
   getWorkshopGraph,
-  getWorkshopStatus,
   getFirewallRules,
-  getTrafficStatus,
 } from "../lib/api";
 import { Button } from "./ui/button";
 import { NodeTerminal } from "./node-terminal";
 import { SharedTerminalPanel, useTerminals } from "./terminal-context";
 import { nodeTypes } from "./topology-nodes";
 import { zoneColors } from "../lib/zone-colors";
-import { nodeZone } from "../lib/observed-flows";
+import { nodeTypeLabel } from "../lib/node-types";
+import { useNetworkFlowContext } from "../lib/network-flow-queries";
 import { ViewMode, humanZoneName } from "../lib/network-console-data";
 import { edgeTypes } from "./network-edges";
+import { isRangeNotReady } from "../lib/range";
+import { controlCentreLinkText } from "../lib/operator-format";
+import { useWorkshopStatus } from "../lib/live-queries";
+import { useOperatorView } from "../lib/operator-queries";
+import { EU_OPERATOR_VIEW, isView, networkMapHeading } from "../lib/operator-view";
 import {
   ActiveFlowsPanel,
   InfoRow,
@@ -37,9 +41,12 @@ import {
   ViewModeToolbar,
 } from "./network-drawers";
 import { useStyledGraph } from "./use-styled-graph";
+import { InfrastructurePlanes } from "./network-infrastructure-planes";
 import { ExternalLink, Map as MapIcon, Maximize2, X } from "lucide-react";
 
 export function NetworkConsole() {
+  const operatorView = useOperatorView();
+  const heading = networkMapHeading(operatorView);
   const [inspectorNode, setInspectorNode] = useState<Node | null>(null);
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
@@ -93,11 +100,7 @@ export function NetworkConsole() {
   });
 
   // Validate workshop environment on render
-  const { data: workshopStatus } = useQuery({
-    queryKey: ["workshop", "status"],
-    queryFn: getWorkshopStatus,
-    refetchInterval: 10000,
-  });
+  const { data: workshopStatus, error: workshopStatusError } = useWorkshopStatus(activeDrawer === "traffic" ? 5000 : 10000);
 
   // Pulse Rook briefly whenever the firewall config changes. Initial
   // load is skipped via the ref so we don't pulse on first paint.
@@ -121,14 +124,7 @@ export function NetworkConsole() {
     staleTime: 2000,
   });
 
-  // Traffic generator state - only polled when the Traffic view is on
-  // so we don't waste cycles in the default policy view.
-  const { data: trafficStatus } = useQuery({
-    queryKey: ["traffic-status"],
-    queryFn: getTrafficStatus,
-    refetchInterval: viewMode.traffic ? 3000 : false,
-    enabled: viewMode.traffic,
-  });
+  const flowContext = useNetworkFlowContext(graph, workshopStatus);
 
   const { nodes: layoutNodes, edges } = useStyledGraph(
     graph,
@@ -136,7 +132,7 @@ export function NetworkConsole() {
     viewMode,
     workshopStatus?.device_comms,
     workshopStatus?.rtac_online,
-    trafficStatus,
+    flowContext,
     workshopStatus?.firewall_online,
     trafficFilter,
     highlightedTrafficPair,
@@ -160,13 +156,6 @@ export function NetworkConsole() {
   const drawerVisible = viewMode.policyDim;
   const drawerExpanded = drawerVisible && activeDrawer !== null;
 
-  // If Policy view is turned off the drawer is unmounted; reset the
-  // active tab so re-enabling Policy starts fresh at the strip.
-  useEffect(() => {
-    if (!viewMode.policyDim && activeDrawer !== null) {
-      setActiveDrawer(null);
-    }
-  }, [viewMode.policyDim, activeDrawer]);
   useEffect(() => {
     if (!rfInstance || nodes.length === 0) return;
     // Wait one frame so React Flow has measured the container.
@@ -249,7 +238,7 @@ export function NetworkConsole() {
   }, [graphIsError, graphError]);
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col space-y-4">
+    <div className="flex h-[calc(100vh-3rem)] flex-col stack-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {/* Rook - operator/control symbol. Sits next to the title
@@ -263,8 +252,8 @@ export function NetworkConsole() {
           />
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Network Map</p>
-            <h1 className="text-3xl font-semibold text-white">Substation Network Map</h1>
-            <p className="text-sm text-slate-400">Distribution co-op feeder topology. Click a node to inspect, open UI, or terminal.</p>
+            <h1 className="text-3xl font-semibold text-white">{heading.title}</h1>
+            <p className="text-sm text-slate-400">{heading.subtitle}</p>
           </div>
         </div>
         {workshopStatus && (
@@ -273,24 +262,45 @@ export function NetworkConsole() {
               ok={workshopStatus.firewall_online}
               label="containd"
               tooltipTitle="Segmentation enforcement"
-              tooltipBody="containd NGFW. Mediates every cross-zone flow in the lab. Down = no cross-zone path is enforced."
+              tooltipBody="containd NGFW enforces teaching-zone conduits through containd. Health is not evidence of per-flow authorization; infrastructure and same-zone paths are separate."
             />
-            <StatusDot
-              ok={workshopStatus.rtac_online}
-              label="RTAC"
-              tooltipTitle="Supervisory control"
-              tooltipBody="Real-Time Automation Controller. The only host that polls field devices and brokers HMI/historian state. Down = no supervisory loop."
-            />
-            <StatusDot
-              ok={workshopStatus.device_comms ? Object.values(workshopStatus.device_comms).every(Boolean) : false}
-              label={`Devices ${workshopStatus.device_comms ? Object.values(workshopStatus.device_comms).filter(Boolean).length : 0}/${workshopStatus.device_comms ? Object.keys(workshopStatus.device_comms).length : 0}`}
-              tooltipTitle="Field protection layer"
-              tooltipBody="Relay, recloser, regulator. RTAC polls these via Modbus and DNP3. A drop here means a poll path is broken - device down, network issue, or firewall rule change."
-            />
+            {workshopStatus.rtac_online !== undefined && (
+              <>
+                <StatusDot
+                  ok={workshopStatus.rtac_online}
+                  label="RTAC"
+                  tooltipTitle="Supervisory control"
+                  tooltipBody="Real-Time Automation Controller. The only host that polls field devices and brokers HMI/historian state. Down = no supervisory loop."
+                />
+                <StatusDot
+                  ok={workshopStatus.device_comms ? Object.values(workshopStatus.device_comms).every(Boolean) : false}
+                  label={`Devices ${workshopStatus.device_comms ? Object.values(workshopStatus.device_comms).filter(Boolean).length : 0}/${workshopStatus.device_comms ? Object.keys(workshopStatus.device_comms).length : 0}`}
+                  tooltipTitle="Field protection layer"
+                  tooltipBody="Relay, recloser, regulator. RTAC polls these via Modbus and DNP3. A drop here means a poll path is broken - device down, network issue, or firewall rule change."
+                />
+              </>
+            )}
+            {workshopStatus.control_centre && (
+              <StatusDot
+                ok={workshopStatus.control_centre.link === "started"}
+                label={`Control centre ${controlCentreLinkText(workshopStatus.control_centre)}`}
+                tooltipTitle="Supervisory control"
+                tooltipBody="The CC→RTU TCP/2404 session carries spontaneous status events, cyclic/deadband measurands and commands. GI runs on connect, every 15 minutes or via Interrogate station. Quiet GOOD status does not expire; link loss marks retained values stale."
+              />
+            )}
             <PolicyBadge activeConfig={workshopStatus.firewall_config} />
           </div>
         )}
       </header>
+      {isView(operatorView, EU_OPERATOR_VIEW) && <InfrastructurePlanes />}
+
+      {/* GET /workshop/graph is served whatever the range does; the
+          live status behind the node and edge colours is range-bound. */}
+      {isRangeNotReady(workshopStatusError) && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+          Live device, firewall and traffic status shows once the range is ready.
+        </div>
+      )}
 
       {errors.length > 0 && (
         <div className="rounded-xl border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-100">
@@ -301,7 +311,11 @@ export function NetworkConsole() {
       )}
 
       <div className="relative flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
-        <ViewModeToolbar viewMode={viewMode} onChange={setViewMode} />
+        <ViewModeToolbar viewMode={viewMode} onChange={(next) => {
+          setViewMode(next);
+          // Re-enabling Policy starts fresh at the strip, not the old tab.
+          if (!next.policyDim) setActiveDrawer(null);
+        }} />
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -351,7 +365,7 @@ export function NetworkConsole() {
             />
           )}
           <Controls
-            className="!bg-slate-800 !border-slate-700"
+            className="bg-slate-800! border-slate-700!"
             position="top-right"
             showInteractive={false}
           >
@@ -366,6 +380,8 @@ export function NetworkConsole() {
         </ReactFlow>
         {viewMode.policyDim && (
           <LeftDrawerMenu
+            flowContext={flowContext}
+            ruleSummaries={firewallRulesData?.summaries}
             active={activeDrawer}
             onChange={setActiveDrawer}
             trafficEdgesOn={viewMode.traffic}
@@ -394,7 +410,7 @@ export function NetworkConsole() {
       </div>
 
       {inspectorNode && (
-        <aside className="fixed right-0 top-0 z-40 h-full w-full max-w-md border-l border-slate-800 bg-slate-900/95 px-5 py-6 shadow-2xl backdrop-blur">
+        <aside className="fixed right-0 top-0 z-40 h-full w-full max-w-md border-l border-slate-800 bg-slate-900/95 px-5 py-6 shadow-2xl backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div>
               <p
@@ -404,7 +420,7 @@ export function NetworkConsole() {
                 {inspectorNode.data?.zone}
               </p>
               <h3 className="text-xl font-semibold text-white">{inspectorNode.data?.label}</h3>
-              <p className="text-sm text-slate-400">{inspectorNode.data?.nodeType || inspectorNode.type}</p>
+              <p className="text-sm text-slate-400">{nodeTypeLabel(inspectorNode.data?.nodeType || inspectorNode.type || "")}</p>
             </div>
             <Button variant="ghost" size="sm" onClick={() => { setInspectorNode(null); setIframeUrl(null); setShowTerminal(false); setShowTerminalModal(false); }}>
               Close
@@ -412,7 +428,7 @@ export function NetworkConsole() {
           </div>
 
           <div className="mt-4 space-y-3 text-sm text-slate-200">
-            <InfoRow label="Type" value={inspectorNode.data?.nodeType || inspectorNode.type || "unknown"} />
+            <InfoRow label="Type" value={nodeTypeLabel(inspectorNode.data?.nodeType || inspectorNode.type || "unknown")} />
             <InfoRow label="Status" value={inspectorNode.data?.status || "unknown"} />
 
             {/* Networks as chips */}
@@ -476,6 +492,7 @@ export function NetworkConsole() {
             </div>
 
             <ActiveFlowsPanel
+              graph={graph}
               nodeId={inspectorNode.id}
               nodeZone={inspectorNode.data?.zone}
               ruleSummaries={firewallRulesData?.summaries}
@@ -633,7 +650,6 @@ export function NetworkConsole() {
             <div className="h-full w-full rounded-lg border border-slate-700 overflow-hidden bg-slate-950">
               <NodeTerminal
                 nodeId={inspectorNode.id}
-                labId="workshop"
                 expanded={true}
                 hideHeader={true}
               />

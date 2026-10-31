@@ -111,6 +111,7 @@ AGENTS.md
 # the public docs. CHANGELOG.md is the public history. docs/tasks.md is
 # private operator notes that aren't useful to external readers.
 docs/tasks.md
+docs/plans/
 ROADMAP.md
 
 # Internal maintainer tooling docs. The leading-underscore convention

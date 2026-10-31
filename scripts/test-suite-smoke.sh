@@ -21,6 +21,16 @@ if ! curl -fsS --max-time 10 "$API/api/health" >/dev/null 2>&1; then
 fi
 ok "backend healthy"
 
+# These checks assert the US range. Refuse another package or a range
+# mid-switch: GET /api/range must report us-dnp3-substation ready.
+# shellcheck source=lib/range.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/range.sh"
+if ! range_is_ready us-dnp3-substation; then
+  err "range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)"
+  exit 1
+fi
+ok "range us-dnp3-substation ready"
+
 note "gate 2: workshop test-suite (resets lab state)"
 if ! response=$(curl -fsS --max-time 900 -X POST "$API/api/workshop/test-suite"); then
   err "workshop test-suite request failed"

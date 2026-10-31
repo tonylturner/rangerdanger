@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -11,7 +13,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 
-	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 // ValidationCheck is a single pass/fail condition.
@@ -29,50 +32,46 @@ type ValidationResult struct {
 	Timestamp  string            `json:"timestamp"`
 }
 
-// handleValidateScenario checks current substation state against scenario pass criteria.
+// handleValidateScenario runs the active-package scenario's declared
+// validator against current substation state. A scenario outside the active
+// package, or one without a validator, has no validation result (404).
 func (s *Server) handleValidateScenario(c *gin.Context) {
 	scenarioID := c.Param("id")
-
-	// Fetch current state from RTAC
-	state, err := s.fetchRTACState()
+	scenario, err := s.findActiveScenario(scenarioID)
 	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cannot reach RTAC: " + err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+		return
+	}
+	if scenario.Validator == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "scenario has no validator"})
+		return
+	}
+	validator, ok := scenarioValidators[scenario.Validator]
+	if !ok {
+		// The loader rejects unknown keys, so only a stale row can get here.
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unknown validator " + scenario.Validator})
 		return
 	}
 
-	// Fetch audit log
-	audit, err := s.fetchRTACAudit()
-	if err != nil {
-		audit = nil // non-fatal
+	var input validatorInput
+	var auditErr error
+	if validator.needs(labs.CapabilityProcessElectrical) {
+		input.state, err = s.fetchRTACState(c.Request.Context(), rangeOf(c))
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cannot reach RTAC: " + err.Error()})
+			return
+		}
 	}
-
-	// Get active firewall config
+	if validator.needs(labs.CapabilityAuditDeviceControl) {
+		input.audit, auditErr = s.fetchRTACAudit(c.Request.Context(), rangeOf(c))
+	}
 	s.activeConfigMu.RLock()
-	activeConfig := s.activeConfig
+	input.activeConfig = s.activeConfig
 	s.activeConfigMu.RUnlock()
+	input.gen = rangeOf(c)
 
-	var checks []ValidationCheck
-
-	switch scenarioID {
-	case "baseline-assessment":
-		checks = s.validateBaselineAssessment(state, audit, activeConfig)
-	case "segmentation-requirements":
-		checks = validateSegmentationRequirements(state, audit, activeConfig)
-	case "remediation-planning":
-		checks = validateRemediationPlanning(state, activeConfig)
-	case "firewall-implementation":
-		checks = validateFirewallImplementation(state, audit, activeConfig)
-	case "hardening-configurations":
-		checks = validateHardeningConfigurations(state, audit, activeConfig)
-	case "vendor-rdp-compromise":
-		checks = validateVendorRDPCompromise(state, audit, activeConfig)
-	case "validation-evidence":
-		checks = validateValidationEvidence(state, audit, activeConfig)
-	default:
-		// Generic validation: check basic operational state.
-		// Used for any scenario without a dedicated validator.
-		checks = validateGeneric(state, activeConfig)
-	}
+	checks := validator.run(c.Request.Context(), s, input)
+	checks = withAuditFetchError(checks, auditErr)
 
 	// Determine overall outcome
 	outcome := "PASS"
@@ -94,9 +93,22 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 	})
 }
 
+func withAuditFetchError(checks []ValidationCheck, err error) []ValidationCheck {
+	if err == nil {
+		return checks
+	}
+	for i, check := range checks {
+		if strings.HasPrefix(check.Name, "Audit:") {
+			checks[i] = checkFail(check.Name, "RTAC audit unavailable: "+err.Error())
+			return checks
+		}
+	}
+	return append(checks, checkFail("RTAC audit", "unavailable: "+err.Error()))
+}
+
 // ── Lab 2.3-bonus: Vendor RDP Compromise ───────────────────────
 
-func validateVendorRDPCompromise(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+func validateVendorRDPCompromise(state map[string]any) []ValidationCheck {
 	var checks []ValidationCheck
 
 	// Check 1: Recloser should be closed (restored)
@@ -127,21 +139,17 @@ func validateVendorRDPCompromise(state map[string]any, audit []map[string]any, a
 		checks = append(checks, ValidationCheck{"Load status", "fail", "Loads de-energized — customer outage"})
 	}
 
-	// Check 4: Firewall config
-	if activeConfig == "improved" || activeConfig == "custom" {
-		checks = append(checks, ValidationCheck{"Firewall policy", "pass", "Hardened config active — vendor zone cannot reach field devices"})
-	} else {
-		checks = append(checks, ValidationCheck{"Firewall policy", "warn", "Weak baseline active — vendor can still access field devices"})
-	}
-
 	return checks
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-func (s *Server) fetchRTACState() (map[string]any, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(s.rtacURL() + "/api/state")
+func (s *Server) fetchRTACState(ctx context.Context, gen *lifecycle.Generation) (map[string]any, error) {
+	rtac, err := rtacURL(gen)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := rtacRequest(ctx, http.MethodGet, rtac+"/api/state", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -154,14 +162,23 @@ func (s *Server) fetchRTACState() (map[string]any, error) {
 	return result, nil
 }
 
-func (s *Server) fetchRTACAudit() ([]map[string]any, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(s.rtacURL() + "/api/audit")
+func (s *Server) fetchRTACAudit(ctx context.Context, gen *lifecycle.Generation) ([]map[string]any, error) {
+	rtac, err := rtacURL(gen)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := rtacRequest(ctx, http.MethodGet, rtac+"/api/audit", nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read RTAC audit: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("RTAC audit returned HTTP %d", resp.StatusCode)
+	}
 	var result struct {
 		Entries []map[string]any `json:"entries"`
 	}
@@ -216,6 +233,31 @@ func intGet(m map[string]any, key string) int {
 	}
 }
 
+func intField(m map[string]any, key string) (int, bool) {
+	if m == nil {
+		return 0, false
+	}
+	v, ok := m[key]
+	if !ok {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case float64:
+		if math.IsNaN(n) || math.IsInf(n, 0) || math.Trunc(n) != n {
+			return 0, false
+		}
+		converted := int(n)
+		if float64(converted) != n {
+			return 0, false
+		}
+		return converted, true
+	default:
+		return 0, false
+	}
+}
+
 func floatGet(m map[string]any, key string) float64 {
 	if m == nil {
 		return 0
@@ -229,6 +271,27 @@ func floatGet(m map[string]any, key string) float64 {
 		return 0
 	}
 	return f
+}
+
+func floatField(m map[string]any, key string) (float64, bool) {
+	if m == nil {
+		return 0, false
+	}
+	v, ok := m[key]
+	if !ok {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case float64:
+		if math.IsNaN(n) || math.IsInf(n, 0) {
+			return 0, false
+		}
+		return n, true
+	case int:
+		return float64(n), true
+	default:
+		return 0, false
+	}
 }
 
 func itoa(n int) string {
@@ -265,7 +328,7 @@ func countAuditByZoneAndCommand(entries []map[string]any, zone, command string) 
 
 // ── Exercise 0: Baseline Assessment ─────────────────────────────
 
-func (s *Server) validateBaselineAssessment(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+func (s *Server) validateBaselineAssessment(ctx context.Context, gen *lifecycle.Generation, state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
 	var checks []ValidationCheck
 
 	elec := mapGet(state, "electrical")
@@ -273,7 +336,7 @@ func (s *Server) validateBaselineAssessment(state map[string]any, audit []map[st
 	comms := mapGet(state, "device_comms")
 
 	// 1. Check if a PCAP capture file exists (student completed the capture step)
-	pcapExists := s.checkPcapFileExists()
+	pcapExists := s.checkPcapFileExists(ctx, gen)
 	if pcapExists {
 		checks = append(checks, ValidationCheck{"PCAP captured", "pass", "Baseline capture file found — traffic was recorded"})
 	} else {
@@ -359,7 +422,7 @@ func validateSegmentationRequirements(state map[string]any, audit []map[string]a
 	if activeConfig == "weak" {
 		checks = append(checks, ValidationCheck{"Weak baseline restored", "pass", "Weak baseline is active — ready for remediation planning and implementation"})
 	} else {
-		checks = append(checks, ValidationCheck{"Weak baseline restored", "warn", "Firewall is on " + activeConfig + " config — complete the 'Return to weak baseline' step before moving on"})
+		checks = append(checks, ValidationCheck{"Weak baseline restored", "warn", "Firewall is on " + activeConfig + " config — click Reset to Weak in the policy-actions panel to restore the baseline"})
 	}
 
 	// RTAC should still be communicating on the weak config
@@ -375,15 +438,8 @@ func validateSegmentationRequirements(state map[string]any, audit []map[string]a
 
 // ── Lab 2.4: Testing & Validation ───────────────────────────────
 
-func validateValidationEvidence(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+func validateValidationEvidence(state map[string]any) []ValidationCheck {
 	var checks []ValidationCheck
-
-	// Must be on a hardened config (improved or custom from Exercise 3)
-	if activeConfig == "improved" || activeConfig == "custom" {
-		checks = append(checks, ValidationCheck{"Hardened config", "pass", "Hardened firewall configuration is active (" + activeConfig + ")"})
-	} else {
-		checks = append(checks, ValidationCheck{"Hardened config", "fail", "Hardened config not active — apply it using Apply Hardened or Apply Your Plan"})
-	}
 
 	// All devices operational
 	elec := mapGet(state, "electrical")
@@ -440,23 +496,13 @@ func validateRemediationPlanning(state map[string]any, activeConfig string) []Va
 		checks = append(checks, ValidationCheck{"Substation operational", "fail", "Substation not in normal state — reset lab before planning"})
 	}
 
-	// Planning is a student decision exercise — no automated check for plan quality
-	checks = append(checks, ValidationCheck{"Plan saved", "pass", "Remediation plan selections are saved in browser — referenced by later exercises"})
-
 	return checks
 }
 
 // ── Exercise 3: Firewall Implementation ────────────────────────
 
-func validateFirewallImplementation(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+func validateFirewallImplementation(state map[string]any) []ValidationCheck {
 	var checks []ValidationCheck
-
-	// Firewall should no longer be on the weak baseline
-	if activeConfig == "weak" {
-		checks = append(checks, ValidationCheck{"Firewall policy changed", "fail", "Still on weak baseline — apply your custom policy or the improved config"})
-	} else {
-		checks = append(checks, ValidationCheck{"Firewall policy changed", "pass", "Firewall policy updated from weak baseline (active: " + activeConfig + ")"})
-	}
 
 	// RTAC must still communicate with field devices
 	comms := mapGet(state, "device_comms")
@@ -515,15 +561,17 @@ func validateFirewallImplementation(state map[string]any, audit []map[string]any
 // attack vectors. The lab passes when the substation is in normal
 // state and the hardened firewall config is active.
 
-func validateHardeningConfigurations(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+func validateHardeningConfigurations(state map[string]any) []ValidationCheck {
 	var checks []ValidationCheck
 
 	elec := mapGet(state, "electrical")
 	devices := mapGet(state, "devices")
 
 	// Regulator tap near normal (Modbus override side)
-	tap := intGet(elec, "regulator_tap")
-	if tap >= -3 && tap <= 3 {
+	tap, tapAvailable := intField(elec, "regulator_tap")
+	if !tapAvailable {
+		checks = append(checks, ValidationCheck{"Regulator tap", "fail", "Tap position unavailable — cannot verify that the Modbus write was blocked"})
+	} else if tap >= -3 && tap <= 3 {
 		checks = append(checks, ValidationCheck{"Regulator tap", "pass",
 			"Tap position is " + itoa(tap) + " (normal range)"})
 	} else {
@@ -532,15 +580,18 @@ func validateHardeningConfigurations(state map[string]any, audit []map[string]an
 	}
 
 	// Critical-load voltage within ANSI C84.1 Range A
-	critV := floatGet(elec, "critical_load_voltage_v")
-	if critV >= 114 && critV <= 126 {
+	critV, voltageAvailable := floatField(elec, "critical_load_voltage_v")
+	if !voltageAvailable {
+		checks = append(checks, ValidationCheck{"Critical load voltage", "fail", "Voltage measurement unavailable — cannot verify the critical load"})
+	} else if critV == 0 {
+		checks = append(checks, ValidationCheck{"Critical load voltage", "fail", "0V — no power"})
+	} else if critV >= 114 && critV <= 126 {
 		checks = append(checks, ValidationCheck{"Critical load voltage", "pass",
 			fmtFloat(critV) + "V — within normal range"})
-	} else if critV > 0 {
+	} else {
 		checks = append(checks, ValidationCheck{"Critical load voltage", "fail",
 			fmtFloat(critV) + "V — outside ANSI Range A"})
 	}
-
 	// Recloser closed + auto-reclose enabled (DNP3 injection side)
 	rclClosed := boolGet(elec, "recloser_closed")
 	recloseEnabled := boolGet(mapGet(devices, "recloser"), "reclose_enabled")
@@ -555,101 +606,21 @@ func validateHardeningConfigurations(state map[string]any, audit []map[string]an
 			"Auto-reclose is DISABLED — DNP3 attack may have succeeded"})
 	}
 
-	// Hardened firewall must be active to claim the lab passed
-	if activeConfig == "improved" || activeConfig == "custom" {
-		checks = append(checks, ValidationCheck{"Firewall policy", "pass",
-			"Hardened config active (" + activeConfig + ") — DPI + source-pinning in effect"})
-	} else {
-		checks = append(checks, ValidationCheck{"Firewall policy", "fail",
-			"Weak baseline still active — apply Hardened or Your Plan first"})
-	}
-
-	// Audit: no unauthorized writes from non-RTAC sources
-	badWrites := countAuditNonRTACCommand(audit, "set_tap") +
-		countAuditByZoneAndCommand(audit, "enterprise", "crob_reclose") +
-		countAuditByZoneAndCommand(audit, "enterprise", "disable_reclose")
-	if badWrites == 0 {
-		checks = append(checks, ValidationCheck{"Audit: unauthorized writes", "pass",
-			"No unauthorized Modbus or DNP3 commands in audit log"})
-	} else {
-		checks = append(checks, ValidationCheck{"Audit: unauthorized writes", "warn",
-			strings.Replace("N unauthorized command(s) reached field devices", "N", itoa(badWrites), 1)})
-	}
-
 	return checks
-}
-
-// ── Generic validation (fallback) ───────────────────────────────
-
-func validateGeneric(state map[string]any, activeConfig string) []ValidationCheck {
-	var checks []ValidationCheck
-
-	elec := mapGet(state, "electrical")
-	if boolGet(elec, "breaker_closed") {
-		checks = append(checks, ValidationCheck{"Breaker", "pass", "Feeder breaker CLOSED"})
-	} else {
-		checks = append(checks, ValidationCheck{"Breaker", "fail", "Feeder breaker OPEN"})
-	}
-
-	if boolGet(elec, "critical_load_energized") {
-		checks = append(checks, ValidationCheck{"Critical load", "pass", "Energized"})
-	} else {
-		checks = append(checks, ValidationCheck{"Critical load", "fail", "De-energized"})
-	}
-
-	checks = append(checks, ValidationCheck{"Firewall config", "pass", "Active: " + activeConfig})
-
-	return checks
-}
-
-// checkPcapFileOnDisk checks if PCAP capture files exist on the filesystem
-// or via the containd API. Does NOT check the in-memory flag, which can be
-// stale from a previous session and survive lab resets.
-func (s *Server) checkPcapFileOnDisk() bool {
-	// 1. Check filesystem inside the firewall container
-	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
-		execCfg := container.ExecOptions{
-			Cmd:          []string{"sh", "-c", "ls /data/captures/*.pcap 2>/dev/null | head -1"},
-			AttachStdout: true,
-		}
-		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
-		if err == nil {
-			resp, err := dockerCli.ContainerExecAttach(context.Background(), execID.ID, container.ExecAttachOptions{})
-			if err == nil {
-				out, _ := io.ReadAll(resp.Reader)
-				resp.Close()
-				if strings.Contains(string(out), ".pcap") {
-					return true
-				}
-			}
-		}
-	}
-
-	// 2. Check containd PCAP API
-	containdURL := s.cfg.ContaindAPIURL
-	if containdURL == "" {
-		containdURL = "http://firewall:8080"
-	}
-	client := containd.NewClient(containdURL)
-	files, err := client.ListPcapFiles()
-	if err == nil && len(files) > 0 {
-		return true
-	}
-
-	return false
 }
 
 // checkPcapFileExists checks if any PCAP capture files are available.
-func (s *Server) checkPcapFileExists() bool {
+func (s *Server) checkPcapFileExists(ctx context.Context, gen *lifecycle.Generation) bool {
 	// 1. Check filesystem inside the firewall container (covers manual tcpdump captures)
-	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
+	firewall, err := firewallContainer(gen)
+	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil && err == nil {
 		execCfg := container.ExecOptions{
 			Cmd:          []string{"sh", "-c", "test -s /data/captures/baseline.pcap && echo YES"},
 			AttachStdout: true,
 		}
-		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
+		execID, err := dockerCli.ContainerExecCreate(ctx, firewall, execCfg)
 		if err == nil {
-			resp, err := dockerCli.ContainerExecAttach(context.Background(), execID.ID, container.ExecAttachOptions{})
+			resp, err := dockerCli.ContainerExecAttach(ctx, execID.ID, container.ExecAttachOptions{})
 			if err == nil {
 				out, _ := io.ReadAll(resp.Reader)
 				resp.Close()
@@ -661,12 +632,7 @@ func (s *Server) checkPcapFileExists() bool {
 	}
 
 	// 2. Check containd PCAP API (covers API-initiated captures)
-	containdURL := s.cfg.ContaindAPIURL
-	if containdURL == "" {
-		containdURL = "http://firewall:8080"
-	}
-	client := containd.NewClient(containdURL)
-	files, err := client.ListPcapFiles()
+	files, err := gen.Containd().ListPcapFiles(ctx)
 	if err == nil && len(files) > 0 {
 		return true
 	}
@@ -679,20 +645,53 @@ func (s *Server) checkPcapFileExists() bool {
 	return hasCapture
 }
 
-func countAuditNonRTACCommand(entries []map[string]any, command string) int {
-	count := 0
-	for _, e := range entries {
-		cmd, _ := e["command"].(string)
-		source, _ := e["source"].(string)
-		result, _ := e["result"].(string)
-		if cmd == command && result == "executed" {
-			// RTAC is the legitimate source
-			if !strings.Contains(strings.ToLower(source), "rtac") &&
-				!strings.Contains(strings.ToLower(source), "reset") &&
-				!strings.Contains(strings.ToLower(source), "operator") {
-				count++
-			}
-		}
-	}
-	return count
+func init() {
+	registerScenarioValidator("us-baseline-assessment", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityCaptureFirewall},
+		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
+			return s.validateBaselineAssessment(ctx, in.gen, in.state, in.audit, in.activeConfig)
+		},
+	})
+	registerScenarioValidator("us-segmentation-requirements", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
+			return validateSegmentationRequirements(in.state, in.audit, in.activeConfig)
+		},
+	})
+	registerScenarioValidator("us-remediation-planning", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical},
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
+			return validateRemediationPlanning(in.state, in.activeConfig)
+		},
+	})
+	registerScenarioValidator("us-firewall-implementation", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
+		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
+			checks := validateFirewallImplementation(in.state)
+			return append(checks, s.usPolicyJudgment(ctx, in.gen))
+		},
+	})
+	registerScenarioValidator("us-hardening-configurations", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind, labs.CapabilityAuditDeviceControl},
+		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
+			checks := validateHardeningConfigurations(in.state)
+			return append(checks, s.usPolicyJudgment(ctx, in.gen), s.usAuditJudgment(in.gen, in.audit))
+		},
+	})
+	registerScenarioValidator("us-vendor-rdp-compromise", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
+		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
+			checks := validateVendorRDPCompromise(in.state)
+			return append(checks, s.usPolicyJudgment(ctx, in.gen))
+		},
+	})
+
+	registerScenarioValidator("us-validation-evidence", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
+		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
+			checks := validateValidationEvidence(in.state)
+			return append(checks, s.usPolicyJudgment(ctx, in.gen), s.usRetainedReport(in.gen))
+		},
+	})
+
 }

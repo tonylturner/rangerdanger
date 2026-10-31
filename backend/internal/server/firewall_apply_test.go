@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +19,7 @@ import (
 )
 
 // firewall_apply_test exercises the HTTP handlers (handleFirewallApply
-// and handleFirewallApplyCustom) end-to-end against a real
+// and handleFirewallApplyPlan) end-to-end against a real
 // containd.Client wired to an httptest fake. The pure compare logic
 // is covered by firewall_compare_test.go; this file is the integration
 // layer that gates the path Lab 2.2 / 2.4 / firewall-smoke all use.
@@ -37,7 +38,7 @@ import (
 type fakeContaindCounters struct {
 	candidateCount int32
 	commitCount    int32
-	importCount    int32 // legacy fallback path
+	importCount    int32 // forbidden legacy import requests
 	lastCandidate  []byte
 }
 
@@ -46,6 +47,8 @@ func fakeContaind(t *testing.T, candidateStatus, commitStatus int) (*httptest.Se
 	c := &fakeContaindCounters{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/api/v1/config":
+			io.WriteString(w, `{"interfaces":[{"name":"lan3","device":"eth8"}]}`)
 		case "/api/v1/config/candidate":
 			body, _ := io.ReadAll(r.Body)
 			c.lastCandidate = body
@@ -79,10 +82,10 @@ func newTestServer(t *testing.T, containdURL string) *Server {
 		LabDefinitionsPath: filepath.Join(repoRoot, "lab-definitions"),
 	}
 	return &Server{
-		engine:         gin.New(),
-		cfg:            cfg,
-		containdClient: containd.NewClient(containdURL),
-		activeConfig:   "weak",
+		engine:       gin.New(),
+		cfg:          cfg,
+		rng:          servingRange(containd.NewClient(containdURL)),
+		activeConfig: "weak",
 	}
 }
 
@@ -90,7 +93,7 @@ func newTestServer(t *testing.T, containdURL string) *Server {
 // router/request/recorder wiring in every test.
 func invoke(s *Server, handler gin.HandlerFunc, method, path string, body any) (*httptest.ResponseRecorder, gin.H) {
 	router := gin.New()
-	router.Handle(method, path, handler)
+	router.Handle(method, path, s.rangeBound(), handler)
 
 	var bodyReader io.Reader
 	if body != nil {
@@ -204,9 +207,7 @@ func TestHandleFirewallApply_BadJSON(t *testing.T) {
 }
 
 func TestHandleFirewallApply_PropagatesContaindFailure(t *testing.T) {
-	// Both endpoints fail — the legacy /import fallback also hits the
-	// fake which returns 200 above, so to make this fail end-to-end we
-	// stand up a fake whose /import path also errors.
+	// A candidate failure must propagate without a legacy import.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -224,97 +225,15 @@ func TestHandleFirewallApply_PropagatesContaindFailure(t *testing.T) {
 	}
 }
 
-// ── handleFirewallApplyCustom ───────────────────────────────────────
-
-// minimalValidCustom is the smallest config the handler accepts —
-// non-empty firewall.rules and non-empty interfaces. The contents
-// don't need to be schematically valid; the handler only checks
-// presence + container shape. Containd would reject malformed
-// rules later but this layer's contract is "passes the validation
-// gate and forwards to containd."
-const minimalValidCustom = `{
-  "interfaces": [{"name":"wan","device":"eth0","zone":"wan"}],
-  "firewall":   {"rules": [{"id":"r1","action":"DENY"}]}
-}`
-
-func TestHandleFirewallApplyCustom_Success(t *testing.T) {
-	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-
-	rec, body := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom",
-		minimalValidCustom)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	if body["active_config"] != "custom" {
-		t.Errorf("active_config = %v, want \"custom\"", body["active_config"])
-	}
-	if atomic.LoadInt32(&counters.candidateCount) != 1 {
-		t.Errorf("expected 1 candidate POST, got %d", counters.candidateCount)
-	}
-	s.activeConfigMu.RLock()
-	defer s.activeConfigMu.RUnlock()
-	if s.activeConfig != "custom" {
-		t.Errorf("activeConfig = %q, want \"custom\"", s.activeConfig)
-	}
-	if s.policySource != "plan-custom" {
-		t.Errorf("policySource = %q, want \"plan-custom\" (the Apply Your Plan button path)", s.policySource)
-	}
-}
-
-func TestHandleFirewallApplyCustom_RejectsEmptyRules(t *testing.T) {
-	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-
-	cfg := `{"interfaces":[{"name":"wan"}],"firewall":{"rules":[]}}`
-	rec, _ := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", cfg)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 for empty rules", rec.Code)
-	}
-	if atomic.LoadInt32(&counters.candidateCount) != 0 {
-		t.Errorf("containd must not be called when validation rejects; saw %d", counters.candidateCount)
-	}
-}
-
-func TestHandleFirewallApplyCustom_RejectsEmptyInterfaces(t *testing.T) {
-	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-
-	cfg := `{"interfaces":[],"firewall":{"rules":[{"id":"r1"}]}}`
-	rec, _ := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", cfg)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 for empty interfaces", rec.Code)
-	}
-	if atomic.LoadInt32(&counters.candidateCount) != 0 {
-		t.Errorf("containd must not be called; saw %d", counters.candidateCount)
-	}
-}
-
-func TestHandleFirewallApplyCustom_RejectsBadJSON(t *testing.T) {
-	fake, _ := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-
-	rec, _ := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", "not json")
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 for invalid JSON", rec.Code)
-	}
-}
-
-func TestHandleFirewallApplyCustom_RejectsOversizedBody(t *testing.T) {
-	fake, _ := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-
-	// Handler caps request body at 512 KiB. Generate a payload that
-	// exceeds that — its actual content doesn't matter because the
-	// MaxBytesReader truncates before unmarshal sees it.
-	big := strings.Repeat("a", 600*1024)
-	rec, _ := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", big)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 for oversized body", rec.Code)
+func TestHandleFirewallApplyMissingCandidateDoesNotPublish(t *testing.T) {
+	for _, code := range []int{404, 405} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			fake, counts := fakeContaind(t, code, 200)
+			s := newTestServer(t, fake.URL)
+			rec, _ := invoke(s, s.handleFirewallApply, "POST", "/api/firewall/apply", map[string]string{"config": "improved"})
+			if rec.Code != 502 || s.activeConfig != "weak" || s.policySource != "" || counts.commitCount != 0 || counts.importCount != 0 {
+				t.Fatalf("published failed apply: %d %s", rec.Code, rec.Body)
+			}
+		})
 	}
 }

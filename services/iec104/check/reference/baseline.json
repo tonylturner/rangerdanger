@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "commit": "c1de19412b69ea9f00f68644a584b861b1f6d3f1",
+  "lib60870_version": "2.4.1",
+  "lib60870_sha256": "d5708b9885c2c068ac9d9bae4696a624bd1d1d6645a1b1a9261c00274bc36c3a",
+  "cjson_version": "1.7.19",
+  "cjson_sha256": "7fa616e3046edfa7a28a32d5f9eacfd23f92900fe1f8ccd988c1662f30454562",
+  "cflags": "-std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror -Isrc -I/src/cjson -I/opt/lib60870/include",
+  "libs": "/opt/lib60870/lib/liblib60870.a -lpthread -lm",
+  "image_id": null
+}

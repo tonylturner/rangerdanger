@@ -10,6 +10,9 @@ export default function NotFound() {
         <img
           src="/rook-quarter-turn-wink-bg-web.png"
           alt=""
+          // Next 16 renders this boundary into every page; eager images get
+          // a preload link there, so every page would fetch the 404 artwork.
+          loading="lazy"
           className="h-48 w-48 rounded-full"
         />
         <div>

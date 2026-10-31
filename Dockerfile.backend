@@ -1,4 +1,9 @@
-FROM golang:1.27 AS builder
+# The range lifecycle runs the standalone Compose binary (no docker CLI).
+# The index digest pins both architectures; BuildKit picks the platform's.
+FROM docker:29.8.0-cli@sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf10ea2d04921bb66 AS compose
+
+FROM golang:1.26.10@sha256:672c944cfd07599b5f1bb179869270cdc94c6254e41db4d431259693cb286b82 AS builder
+ENV GOTOOLCHAIN=local
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./backend/
 COPY backend ./backend
@@ -19,8 +24,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
                   -X github.com/tturner/rangerdanger/backend/internal/version.Date=${DATE}" \
         -o /bin/rangerdanger-backend ./cmd/server
 
-FROM gcr.io/distroless/base-debian12
+FROM gcr.io/distroless/base-debian12:latest@sha256:fabbf1c0c357a3d42550111351daed089b20a2c954df13ee2fcff60602515e84
+COPY --from=compose /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
 COPY --from=builder /bin/rangerdanger-backend /bin/rangerdanger-backend
+# Compose runs from here; it must hold no Compose file (label-only down).
 WORKDIR /app
 EXPOSE 8080
 ENTRYPOINT ["/bin/rangerdanger-backend"]

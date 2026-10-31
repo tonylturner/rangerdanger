@@ -38,6 +38,19 @@ export function CommandAuditView({ entries, networkEvents }: { entries: AuditEnt
     auto: "border-l-amber-500",
   };
 
+  const eventDetail = (event: NetworkEvent) => {
+    const attributes = event.attributes;
+    return [
+      event.protocol,
+      attributes?.function_code !== undefined ? `FC=${attributes.function_code}` : undefined,
+      attributes?.ruleId ? `rule=${attributes.ruleId}` : undefined,
+      attributes?.action,
+      attributes?.anomaly_type ?? attributes?.message,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  };
+
   return (
     <div className="space-y-3">
       {/* Controls */}
@@ -65,7 +78,7 @@ export function CommandAuditView({ entries, networkEvents }: { entries: AuditEnt
               const harmful = e.process_impact?.includes("de-energized") || e.process_impact?.includes("DISABLED") || e.process_impact?.includes("OPENED") || e.process_impact?.includes("LOCKED");
 
               return (
-                <div key={`a-${e.timestamp}-${e.command}-${i}`} className={`rounded border-l-2 border border-slate-800/60 bg-slate-900/40 p-2 text-xs ${zoneBorder[zone] || "border-l-slate-500"}`}>
+                <div key={`a-${e.timestamp}-${e.command}-${i}`} className={`rounded-sm border-l-2 border border-slate-800/60 bg-slate-900/40 p-2 text-xs ${zoneBorder[zone] || "border-l-slate-500"}`}>
                   <div className="flex items-center gap-2">
                     <span className="text-slate-600 w-14 shrink-0 text-[10px]">
                       {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
@@ -107,18 +120,17 @@ export function CommandAuditView({ entries, networkEvents }: { entries: AuditEnt
             })}
 
         {showDPI && networkEvents.map((e, i) => (
-          <div key={`n-${e.id ?? i}`} className="rounded border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
+          <div key={`n-${e.id ?? i}`} className="rounded-sm border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
             <div className="flex items-center gap-2">
               <span className="text-slate-600 w-14 shrink-0 text-[10px]">
                 {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
               </span>
               <span className="text-[10px] font-bold text-purple-400">DPI</span>
-              <span className="text-slate-500">{e.source} → {e.dest}</span>
-              {e.protocol && e.protocol !== "-" && (
-                <span className="text-purple-400 text-[10px]">[{e.protocol}]</span>
-              )}
+              <span className="text-slate-500">
+                {e.srcIp ?? "?"}{e.srcPort ? `:${e.srcPort}` : ""} → {e.dstIp ?? "?"}{e.dstPort ? `:${e.dstPort}` : ""}
+              </span>
             </div>
-            {e.details && <div className="mt-0.5 ml-14 text-slate-500 text-[10px]">{e.details}</div>}
+            {!!eventDetail(e) && <div className="mt-0.5 ml-14 text-slate-500 text-[10px]">{eventDetail(e)}</div>}
           </div>
         ))}
       </div>

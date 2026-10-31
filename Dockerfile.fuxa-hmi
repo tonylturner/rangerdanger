@@ -11,5 +11,17 @@ COPY scripts/fuxa-entrypoint.sh /usr/local/bin/fuxa-entrypoint.sh
 RUN chmod +x /usr/local/bin/set-gateway.sh /usr/local/bin/fuxa-entrypoint.sh
 
 WORKDIR /usr/src/app/FUXA/server
+COPY lab-definitions/packages/us-dnp3-substation/seeds/fuxa/ /opt/rangerdanger/fuxa/
+# Keep the complete, integrity-locked transport tree nested beneath its module.
+# FUXA discovers that real directory through its normal server/node_modules.
+RUN sha256sum package.json package-lock.json > /tmp/fuxa-manifests.sha256 \
+    && npm ci --prefix /opt/rangerdanger/fuxa/plugin --install-strategy=nested \
+        --omit=dev --no-audit --no-fund \
+    && test ! -e node_modules/modbus-serial \
+    && mv /opt/rangerdanger/fuxa/plugin/node_modules/modbus-serial node_modules/ \
+    && sha256sum -c /tmp/fuxa-manifests.sha256 \
+    && rm /tmp/fuxa-manifests.sha256
+# Use the pinned runtime's own importer/schema, not a hand-maintained SQLite copy.
+RUN node /opt/rangerdanger/fuxa/bake.js
 ENTRYPOINT ["/usr/local/bin/fuxa-entrypoint.sh"]
 CMD ["node", "main.js"]

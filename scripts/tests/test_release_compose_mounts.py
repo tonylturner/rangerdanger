@@ -14,7 +14,8 @@ MOUNTS = (
 
 class ReleaseComposeMountTests(unittest.TestCase):
     def test_both_compose_files_mount_both_init_scripts(self):
-        for name in ("docker-compose.yml", "docker-compose.release.yml"):
+        for name in ("lab-definitions/packages/us-dnp3-substation/compose.source.yml",
+                     "lab-definitions/packages/us-dnp3-substation/compose.release.yml"):
             with self.subTest(compose=name):
                 compose = yaml.safe_load((ROOT / name).read_text())
                 volumes = compose["services"]["vendor_jump"]["volumes"]
@@ -33,11 +34,16 @@ class ReleaseComposeMountTests(unittest.TestCase):
                 self.assertEqual(entry.split()[0], "100755")
                 self.assertNotIn(b"\r", (ROOT / path).read_bytes())
 
-    def test_offline_overlay_does_not_replace_vendor_volumes(self):
-        overlay = yaml.safe_load((ROOT / "docker-compose.offline.yml").read_text())
-        vendor = overlay["services"]["vendor_jump"]
-        self.assertNotIn("volumes", vendor)
-        self.assertEqual(vendor["pull_policy"], "never")
+    def test_offline_uses_same_package_mounts_with_pull_never(self):
+        self.assertFalse((ROOT / "docker-compose.offline.yml").exists())
+        source = (ROOT / "setup.sh").read_text()
+        self.assertIn('RANGE_FILE_NAME="compose.release.yml"', source)
+        self.assertIn('[ "$MODE" = offline ] && UP_FLAGS+=(--pull never)', source)
+        lifecycle = (ROOT / "backend/internal/lifecycle/compose.go").read_text()
+        self.assertIn('"--pull", "never"', lifecycle)
+        # Package models, not a replacement offline model, own these mounts.
+        for name in ("docker-compose.yml", "docker-compose.release.yml"):
+            self.assertNotIn("vendor_jump", yaml.safe_load((ROOT / name).read_text())["services"])
 
 
 if __name__ == "__main__":

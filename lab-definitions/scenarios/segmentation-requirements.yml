@@ -3,6 +3,7 @@ order: "1.3"
 name: "Segmentation Requirements & Policy Design"
 summary: "Define zone-pair communication requirements and compare your design to the hardened configuration."
 estimated_minutes: 10
+validator: us-segmentation-requirements
 description: >
   Using the baseline assessment findings, define what
   communications should be allowed between each zone pair.
@@ -16,7 +17,8 @@ tags:
   - segmentation
   - defense
 steps:
-  - title: "Translate findings into design requirements"
+  - id: translate-findings-into-design-requirements
+    title: "Translate findings into design requirements"
     expected_config: weak
     description: |
       **Time budget:** ~10 minutes (Guided path). This is a design and
@@ -116,7 +118,9 @@ steps:
       :::
 
       :::decision id=unauth-modbus-writes
-      **Requirement: Unauthorized Modbus writes / DNP3 Direct Operate** from any source.
+      **Requirement: Foreign-source Modbus writes / DNP3 Direct Operate**.
+      This covers enterprise, vendor and non-RTAC OT paths, not command
+      authorization on an allowed RTAC session.
       :::
 
       :::hint Reveal expected requirements
@@ -126,7 +130,7 @@ steps:
       2. **Enterprise → OT Ops on ICS ports:** `BLOCK`. Enterprise reaches OT only via constrained management paths, never on Modbus/DNP3. Closes the Modbus-override staging path.
       3. **Vendor → OT Ops on Modbus/HMI control:** `RESTRICT`. Vendor remote access stays on encrypted management protocols (HTTPS, SSH); direct Modbus/HMI control is the **Vendor Remote Access Compromise** vector.
       4. **Non-RTAC OT Ops → Field:** `BLOCK`. Only the RTAC (pinned to source `10.30.30.20`) should reach field devices. A compromised HMI or OpenPLC must not become an attack path.
-      5. **Unauthorized Modbus writes / DNP3 Direct Operate:** `BLOCK and LOG`. Port-level filtering isn't enough - this requires **ICS DPI** to filter by function code, plus per-rule logging so blocked attempts are visible.
+      5. **Foreign-source Modbus writes / DNP3 Direct Operate:** `BLOCK and LOG`. Select the enterprise, vendor and non-RTAC OT field closures plus logging. The L4 source pin enforces; DPI detects and logs. Detection alone cannot meet a prevention requirement.
 
       Your design might differ - that's fine. The verdict you commit drives Lab 1.4's labor budget against *your* stated design, not against this answer key.
       :::
@@ -144,12 +148,14 @@ steps:
       | OT Ops intra-zone | Modbus (502), DNP3 (20000), HTTP (8080), FUXA (1881), NTP (123) | HMI ↔ RTAC, etc. |
       | OT Ops → Field | Modbus (502), DNP3 (20000), HTTP (8080) - **RTAC only** | source-pin to `10.30.30.20` (1.3 verdict 4). HTTP/8080 is the field devices' lab-only status API the RTAC polls for health (`/api/state` on each device) - kept open because the RTAC reads it for liveness; would not exist on a production relay. |
 
-      DPI layer (1.3 verdict 5):
-      - **Modbus**: RTAC may read (FC1–4) and write (FC5/6) - the RTAC issues legitimate Modbus setpoints; other sources blocked at FC level.
-      - **DNP3**: RTAC may poll (FC01 Read) only - its DNP3 master only sends integrity polls. Direct Operate (FC05) and No-Ack (FC06) are blocked for **every** source, including the RTAC, since no legitimate flow uses them. This is what the Lab 2.3 DPI lesson demonstrates.
+      Detection layer (1.3 verdict 5):
+      - `modbus-dpi` and `dnp3-dpi` add protocol visibility, not prevention.
+      - L4 controls foreign-source reachability. They do not authorize commands
+        within an allowed RTAC session. Keep that residual risk explicit.
       :::
 
-  - title: "Resourcing reality check"
+  - id: resourcing-reality-check
+    title: "Resourcing reality check"
     expected_config: weak
     description: |
       Real OT segmentation projects fail more often on resourcing than on technology - vendor change windows that never materialise, OT engineers stretched between operations and security work, unclear risk-acceptance authority. Before you pick remediation actions in Lab 1.4, commit to your team's current state. Lab 1.4 will surface dependencies on these answers per action.
@@ -176,14 +182,15 @@ steps:
       Right now these annotations are observational - they don't reduce the Lab 1.4 labor budget. A future workshop iteration may drive 1.4's role caps directly from these answers (tracked in [issue #27](https://github.com/tonylturner/rangerdanger/issues/27)).
       :::
 
-  - title: "Define success criteria for segmentation"
+  - id: define-success-criteria-for-segmentation
+    title: "Define success criteria for segmentation"
     description: |
       Before moving on, write down what **"good"** looks like for this substation. These are concrete, testable statements - not a plan, not a matrix. You will use them in Lab 2.4 (Testing & Validation) to validate your changes worked.
 
       ### Good segmentation for this substation means
 
       1. **Enterprise cannot directly reach Field devices.**
-         *Test:* `tcpdump` on the firewall's field interface should show zero packets originating from `10.10.10.0/24`.
+         *Test:* `tcpdump -i lan2` on the firewall (its field interface) should show zero packets originating from `10.10.10.0/24`.
 
       2. **Vendor access to OT Ops is constrained and brokered.**
          *Test:* vendor DMZ can reach the RTAC/HMI only on approved management ports, not on raw Modbus/DNP3.

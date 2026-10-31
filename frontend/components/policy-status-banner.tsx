@@ -1,7 +1,18 @@
 "use client";
 
 import { Shield, ShieldOff, FileCheck2, FileEdit, AlertTriangle, Loader2 } from "lucide-react";
-import type { PolicySource } from "../lib/api";
+import type { PolicySource, PlanProvenance } from "../lib/api";
+import {
+  CUSTOM_POLICY,
+  planLabel,
+  HARDENED_ALIAS,
+  HARDENED_POLICY,
+  isHardened,
+  matchesExpected,
+  policyWording,
+  type PackagePolicies,
+  type PolicyWording,
+} from "../lib/policy-wording";
 
 /**
  * Single source of truth for "what firewall policy is the lab actually
@@ -10,17 +21,19 @@ import type { PolicySource } from "../lib/api";
  * card; mismatched-state shows an amber warning with the action prompt
  * inline.
  *
- * Reads from /api/firewall/active (active_config + policy_source) and
- * the current step's expected_config to decide which variant to render.
+ * Reads from /api/firewall/active (active_config + policy_source), the
+ * active package's policies and the current step's expected_config to
+ * decide which variant to render.
  *
- * Three resting states by activeConfig + policy_source:
- *   activeConfig=weak                     -> "Weak baseline" (rose)
- *   activeConfig=improved                 -> "Hardened reference" (emerald)
- *   activeConfig=custom + plan-custom     -> "Your custom policy
- *                                            (Lab 1.4 plan)" (sky)
+ * Resting states by activeConfig + policy_source:
+ *   activeConfig=the hardened policy      -> "Hardened reference" (emerald)
+ *   activeConfig=another package policy   -> "Weak baseline" (rose)
+ *   activeConfig=custom + plan            -> "Your plan — Weak/Partial/Hardened" (sky)
  *   activeConfig=custom + manual-custom   -> "Your custom policy
  *                                            (your containd commit)" (sky)
  *   activeConfig=custom + ""              -> "Your custom policy" (sky)
+ * The quoted names are the US package's; another package's policies
+ * show by their declared names, without a description.
  *
  * Mismatched (amber): the step's expected_config differs from active.
  *
@@ -29,13 +42,15 @@ import type { PolicySource } from "../lib/api";
  * here. This component is the announcement; that panel is where the
  * actions are. The
  * mismatch variant just tells the student which button to click and
- * lets them aim.
+ * lets them aim. Other packages have no such panel: their prompt
+ * points at the Network Console policy menu.
  */
 
+// "weak" is any package policy but the hardened one.
 type Kind =
   | "weak"
   | "hardened-reference"
-  | "plan-custom"
+  | "plan"
   | "manual-custom"
   | "other-custom"
   | "unknown";
@@ -59,8 +74,8 @@ const STATE_STYLES: Record<Kind, Style> = {
     labelColor: "text-rose-100",
     subColor: "text-rose-300",
     iconColor: "text-rose-300",
-    label: "Weak baseline",
-    sub: "Cross-zone attacks succeed under this config.",
+    label: "",
+    sub: "",
   },
   "hardened-reference": {
     border: "border-emerald-800/70",
@@ -69,10 +84,10 @@ const STATE_STYLES: Record<Kind, Style> = {
     labelColor: "text-emerald-100",
     subColor: "text-emerald-300",
     iconColor: "text-emerald-300",
-    label: "Hardened reference",
-    sub: "Canned reference policy (substation-improved.json).",
+    label: "",
+    sub: "",
   },
-  "plan-custom": {
+  "plan": {
     border: "border-sky-800/70",
     bg: "bg-sky-950/40",
     dotBg: "bg-sky-500",
@@ -80,7 +95,7 @@ const STATE_STYLES: Record<Kind, Style> = {
     subColor: "text-sky-300",
     iconColor: "text-sky-300",
     label: "Your custom policy",
-    sub: "Built from your Lab 1.4 plan picks.",
+    sub: "Compiled by the backend from your plan picks.",
   },
   "manual-custom": {
     border: "border-sky-800/70",
@@ -114,74 +129,92 @@ const STATE_STYLES: Record<Kind, Style> = {
   },
 };
 
-function deriveKind(activeConfig: string | null, policySource: PolicySource): Kind {
-  if (!activeConfig) return "unknown";
-  if (activeConfig === "weak") return "weak";
-  if (activeConfig === "improved") return "hardened-reference";
-  if (activeConfig === "custom") {
-    if (policySource === "plan-custom") return "plan-custom";
+// The label and sub of a package policy ("weak" and
+// "hardened-reference" styles) in the US package's words.
+const US_BANNER_WORDING: Record<string, PolicyWording> = {
+  weak: { label: "Weak baseline", description: "Cross-zone attacks succeed under this config." },
+  improved: { label: "Hardened reference", description: "Canned reference policy (substation-improved.json)." },
+};
+
+function deriveKind(activeConfig: string | null, policySource: PolicySource, policies: PackagePolicies | undefined): Kind {
+  if (!activeConfig || !policies) return "unknown";
+  if (activeConfig === CUSTOM_POLICY) {
+    if (policySource === "plan") return "plan";
     if (policySource === "manual-custom") return "manual-custom";
     return "other-custom";
   }
-  return "unknown";
+  if (!policies.names.includes(activeConfig)) return "unknown";
+  return isHardened(activeConfig) ? "hardened-reference" : "weak";
+}
+
+// The kind's style with a package policy's own label and sub.
+function bannerStyle(kind: Kind, activeConfig: string | null, policies: PackagePolicies | undefined): Style {
+  const style = STATE_STYLES[kind];
+  if ((kind !== "weak" && kind !== "hardened-reference") || !activeConfig || !policies) return style;
+  const wording = policyWording(activeConfig, policies, US_BANNER_WORDING);
+  return { ...style, label: wording.label, sub: wording.description };
+}
+
+// What the mismatch variant asks for, and how to get there.
+function mismatchText(expectedConfig: string, usWording: boolean): { need: string; action: string } {
+  if (usWording) {
+    return expectedConfig === "weak"
+      ? {
+          need: "weak baseline",
+          action: "Click Reset to Weak in the policy-actions panel below to restore the baseline.",
+        }
+      : {
+          need: "hardened policy (reference or your custom)",
+          action:
+            "Click Apply Hardened (canned reference) or Apply Your Plan (built from your Lab 1.4 picks) in the policy-actions panel below.",
+        };
+  }
+  const need =
+    expectedConfig === HARDENED_ALIAS || expectedConfig === HARDENED_POLICY
+      ? `${HARDENED_POLICY} policy (or a custom policy)`
+      : `${expectedConfig} policy`;
+  return { need, action: "Apply it from the Firewall policy menu in the Network Console." };
 }
 
 function StateIcon({ kind, className }: { kind: Kind; className?: string }) {
   const cls = className ?? "h-4 w-4";
   if (kind === "weak") return <ShieldOff className={cls} />;
   if (kind === "hardened-reference") return <Shield className={cls} />;
-  if (kind === "plan-custom") return <FileCheck2 className={cls} />;
+  if (kind === "plan") return <FileCheck2 className={cls} />;
   if (kind === "manual-custom" || kind === "other-custom") return <FileEdit className={cls} />;
   return <Loader2 className={cls + " animate-spin"} />;
-}
-
-/**
- * matchesExpected - mirror of the alias logic in scenario_execute.go:332
- * and frontend/components/scenario-runner.tsx:1219-1223. The YAML uses
- * "hardened" as the alias for the backend's "improved" or "custom"
- * states, so any of those three count as a match for an expected
- * "hardened" step.
- */
-function matchesExpected(actual: string, expected: string | undefined): boolean {
-  if (!expected) return true;
-  if (expected === "weak") return actual === "weak";
-  if (expected === "hardened" || expected === "improved") {
-    return actual === "improved" || actual === "custom";
-  }
-  return true;
 }
 
 export function PolicyStatusBanner({
   activeConfig,
   policySource,
   expectedConfig,
+  policies,
+  plan,
 }: {
   activeConfig: string | null;
   policySource: PolicySource;
+  plan?: PlanProvenance;
   /** From step.expected_config in the lab YAML. Undefined for steps
       that don't pin a policy (planning labs, intros, etc.) */
   expectedConfig?: string;
+  /** The active package's policies; undefined while it loads. */
+  policies: PackagePolicies | undefined;
 }) {
-  const kind = deriveKind(activeConfig, policySource);
-  const style = STATE_STYLES[kind];
+  const kind = deriveKind(activeConfig, policySource, policies);
+  const base = bannerStyle(kind, activeConfig, policies);
+  const style = kind === "plan" && plan ? { ...base, label: `Your plan — ${planLabel(plan.label)}` } : base;
 
   // If the step doesn't pin a policy, or if it does and the current
   // policy satisfies it, show the informational banner.
   const matched = matchesExpected(activeConfig ?? "", expectedConfig);
 
   // Mismatch variant - amber warning, action prompt inline.
-  if (!matched && expectedConfig && activeConfig) {
-    const needLabel =
-      expectedConfig === "weak"
-        ? "weak baseline"
-        : "hardened policy (reference or your custom)";
-    const promptedAction =
-      expectedConfig === "weak"
-        ? "Click Reset to Weak in the policy-actions panel below to restore the baseline."
-        : "Click Apply Hardened (canned reference) or Apply Your Plan (built from your Lab 1.4 picks) in the policy-actions panel below.";
+  if (!matched && expectedConfig && activeConfig && policies) {
+    const { need: needLabel, action: promptedAction } = mismatchText(expectedConfig, policies.usWording);
 
     return (
-      <div className="sticky top-0 z-10 -mx-4 mb-3 border-b border-amber-700/60 bg-amber-950/60 px-4 py-2.5 backdrop-blur-sm">
+      <div className="sticky top-0 z-10 -mx-4 mb-3 border-b border-amber-700/60 bg-amber-950/60 px-4 py-2.5 backdrop-blur-xs">
         <div className="flex items-start gap-2.5">
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300 mt-0.5" />
           <div className="min-w-0 flex-1">
@@ -203,7 +236,7 @@ export function PolicyStatusBanner({
   // Matched / informational variant.
   return (
     <div
-      className={`sticky top-0 z-10 -mx-4 mb-3 border-b ${style.border} ${style.bg} px-4 py-2.5 backdrop-blur-sm`}
+      className={`sticky top-0 z-10 -mx-4 mb-3 border-b ${style.border} ${style.bg} px-4 py-2.5 backdrop-blur-xs`}
     >
       <div className="flex items-center gap-2.5">
         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${style.bg} ${style.iconColor}`}>
@@ -217,9 +250,9 @@ export function PolicyStatusBanner({
             <span className={`text-sm font-semibold ${style.labelColor}`}>
               {style.label}
             </span>
-            {(kind === "plan-custom" || kind === "manual-custom") && (
+            {(kind === "plan" || kind === "manual-custom") && (
               <span className={`text-[10px] ${style.subColor}`}>
-                {kind === "plan-custom" ? "(Lab 1.4 plan)" : "(your containd commit)"}
+                {kind === "plan" ? "(Lab 1.4 plan)" : "(your containd commit)"}
               </span>
             )}
           </div>

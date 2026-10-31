@@ -3,11 +3,12 @@ order: "2.4"
 name: "Testing & Validation"
 summary: "Generate a change-board validation report (authorized/unauthorized tests + PCAP) against the policy you have active, then reflect on residual risk."
 estimated_minutes: 7
+validator: us-validation-evidence
 description: >
-  After applying the hardened firewall configuration in Lab 2.2 and
+  After applying your plan or the Hardened reference in Lab 2.2 and
   stress-testing it in Lab 2.3, this exercise builds the formal
   evidence package: positive tests confirming authorized flows still
-  work, negative tests confirming unauthorized flows are blocked, and
+  work, tests comparing unauthorized flows with the applied plan and Hardened, and
   PCAP evidence from the firewall. You generate it in one click against
   the policy you have active - then read it like a reviewer would. This
   is the validation step required before any segmentation change goes to
@@ -26,7 +27,8 @@ tags:
   - evidence
   - defense
 steps:
-  - title: "Confirm hardened config is active"
+  - id: confirm-hardened-config-is-active
+    title: "Confirm hardened config is active"
     expected_config: hardened
     description: |
       You're now validating the work you did across Labs 1.2 → 2.3. Below is the design + plan you committed; this validation pass tests whether the firewall enforces what you specified.
@@ -39,18 +41,16 @@ steps:
       unauth-modbus-writes: Unauthorized Modbus writes / DNP3 Direct Operate
       :::
 
-      **Start with the policy banner above this step.** If it shows
-      green **Hardened reference**, you're ready to validate.
-      Otherwise click **Apply Hardened** below the step before continuing.
+      Confirm the intended applied plan in the policy banner. Record its package
+      revision, action IDs and policy hash. Do not replace a partial plan with
+      Hardened just to make the report green. Apply Hardened only when you intend
+      to test the reference. A saved browser plan is not an applied plan.
 
-      **Workshop note:**
-      - Keep your plan as a design artifact. Use **Hardened reference**, not **Apply Your Plan**, for workshop enforcement.
-
-      The validation in the next step runs against whatever policy is active,
-      so confirm the reference policy is selected.
+      Named and manual policies use Hardened expectations. Their plan proof is
+      not applicable. Check the running policy before generating the report.
 
       :::hint Optional: cross-check the running policy in containd
-      Once the banner is green, you can confirm the running policy from
+      Confirm the running policy from
       either interface:
 
       - **Web UI:** [http://localhost:9080](http://localhost:9080),
@@ -60,9 +60,10 @@ steps:
 
             show running-config
 
-      Either should show the hardened rule set: RTAC source-pinned to
+      For Hardened, expect this rule set: RTAC source-pinned to
       field, vendor restricted to SSH/HTTPS, enterprise-to-field
-      removed, default deny on cross-zone.
+      removed, default deny on cross-zone. For a plan, also expect the compiled
+      deferred Weak allows for actions you did not select.
       :::
 
       **Time budget:** ~7 minutes (Guided path - one-click report plus reflection. The by-hand Advanced verification hints are optional).
@@ -71,57 +72,46 @@ steps:
       expect:
         firewall_config: improved
 
-  - title: "Generate the validation report"
+  - id: generate-the-validation-report
+    title: "Generate the validation report"
     expected_config: hardened
     description: |
-      **Workshop note:**
-      - The report is your proof: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI. Save the report, PCAP and notes.
-      - Validate Exercise checks operational state only; it may PASS and auto-complete with no report or a FAIL report. Trust the report, not the banner.
-      - The report is a TCP reachability matrix: its DNP3 row is an FC1 read and no row sends a control write, so a PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Protocol-level enforcement evidence is Lab 2.3's re-test: auto-reclose still enabled after the Kali Direct Operate.
+      Generate the full **21-row TCP matrix** against the active policy.
+      The report has two independent results:
 
-      A segmentation change ships with *evidence*: proof that authorized
-      flows still work, proof that unauthorized flows are blocked, and a
-      capture showing only the RTAC reaching field devices. Rather than run
-      nineteen probes by hand, generate the evidence package against the
-      policy you have active:
+      - **Plan proof** checks observed allow/deny results against this applied plan.
+        It requires 0 skipped and the recorded plan hash before and after probing.
+      - **Hardened acceptance** requires authorized **8/8** and unauthorized denied
+        **13/13**, 0 skipped, a stable running hash and capture evidence. Confirm a
+        healthy HMI separately. Acceptance does not prove command-level filtering.
+
+      A partial plan can pass plan proof and fail Hardened acceptance. Read the
+      prevention gaps by row ID. Deferred controls keep their Weak exposures open;
+      that expected consequence is not a reason to hide a row or change the target.
+      A named or manual policy has no applicable plan proof; use Hardened acceptance.
 
       :::validation-report
       :::
 
-      The report runs the full authorized + unauthorized test matrix,
-      captures PCAP at the firewall, and analyzes which sources reached the
-      field zone - the same work an operator does after a change, assembled
-      into a change-board-ready document. A green **PASS** means every
-      authorized flow connected and every unauthorized flow was blocked at
-      the TCP level; it says nothing about function codes.
+      Only a connection timeout counts as deny. Connection refused means reached
+      (allow). Tool or container errors are skipped evidence, never a pass.
+      The matrix tests TCP connectivity, not DNP3 function-code rejection.
+      The L4 source pin enforces; DPI detects and logs.
 
-      **Read the report, not just the verdict:**
+      Keep the report, UTC window, policy hash and PCAP with the plan's package
+      revision and action IDs. Inspect sources against Plan and Hardened results;
+      a captured ingress SYN alone does not prove that traffic reached a device.
 
-      - Each **✗ authorized** row means a rule is too tight - it's blocking a
-        flow operations depend on. Each **✗ unauthorized** row means a rule
-        is missing or too loose - an attack path is still open.
-      - The **PCAP source analysis** should show only `10.30.30.20` (the
-        RTAC) and `10.30.30.50` (GPS/NTP) reaching the field zone. Any other
-        source IP is a leak.
-      - A FAIL means enforcement is not demonstrated yet: check Hardened reference is active, fix the ✗ rows, and re-run.
-
-      ### Confirm operations at the HMI
-
-      The report proves *enforcement*; the HMI proves *operations didn't
-      break*. Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
-      tab: no alarm banner, breaker + recloser closed, both loads energized,
-      customers served - identical to the Lab 2.3 baseline. The combination
-      (report PASS + HMI normal) is the two-sided evidence a change board
-      needs: attacks are blocked *and* the substation still runs.
+      At the HMI, require no alarms, closed breaker/recloser, auto-reclose on and
+      energized loads. Restoration and operational checks apply to every plan.
+      Validate Exercise does not replace report evidence.
 
       :::decision id=pos-test-ops-intact options=NORMAL_OPS,DEGRADED,ALARMS_PRESENT correct=NORMAL_OPS
-      **After validation, does the HMI show normal operations (authorized
-      flows worked AND the substation still runs)?**
+      Are operations healthy after validation?
       :::
 
-      :::decision id=neg-test-no-impact options=UNCHANGED,DEGRADED,UNCLEAR correct=UNCHANGED
-      **Did every unauthorized flow in the report come back blocked, with the
-      HMI unchanged from baseline?**
+      :::decision id=neg-test-no-impact options=UNCHANGED,DEGRADED,UNCLEAR
+      Did operations remain unchanged? Record any deferred reachable paths in Notes.
       :::
 
       :::hint Advanced: run the positive tests by hand
@@ -146,8 +136,10 @@ steps:
           ssh -o StrictHostKeyChecking=no rangerdanger@10.30.30.20 'hostname'
           curl -ks https://10.30.30.20/ -o /dev/null -w '%{http_code}\n'
 
-      Both should succeed (banner + `200`) - proof the "encrypted-management
-      only" allowance is enforced, not just declared.
+      A banner or HTTP response confirms application access. A refusal means
+      the port was reached but no service accepted it; it is not a deny.
+      These two management ports stay allowed for every plan. They do not
+      prove that the other vendor paths closed. Use the full TCP matrix too.
       :::
 
       :::hint Advanced: run the negative tests by hand
@@ -172,7 +164,9 @@ steps:
 
           nmap -Pn -p 20000 10.40.40.22 --max-retries 1 -T4
 
-      All should be filtered / time out. The same L4 source-pin closes Modbus
+      Under Hardened, all should be filtered / time out. For an applied plan,
+      compare each path with its owning action: enterprise-to-field,
+      vendor-to-field or non-RTAC OT-to-field. Deferred paths remain reachable. The same L4 source-pin closes Modbus
       too - repeat with port 502 and `mbpoll` for a two-protocol package.
       Any single-homed OT host (historian-sim, fuxa-hmi, openplc) works as
       the probe source.
@@ -180,20 +174,25 @@ steps:
 
       :::hint Advanced: capture PCAP by hand
       The report captures this automatically; the manual form, from the
-      `fw-1` terminal, uses `-i any` + a BPF subnet filter (Docker's `ethN`
-      ordering drifts between hosts):
+      `fw-1` terminal, captures on `lan2`, the firewall's field-zone
+      interface:
 
       At `containd#`, type `shell` before these Linux commands.
 
-          tcpdump -i any -nn 'net 10.40.40.0/24 and (tcp port 502 or tcp port 20000)' -w /data/captures/validation.pcap
+          tcpdump -i lan2 -nn 'tcp port 502 or tcp port 20000' -w /data/captures/validation.pcap
 
       Let it run ~30s while the RTAC polls, Ctrl-C, then see who's on the
       wire:
 
-          tcpdump -r /data/captures/validation.pcap -nn | awk '{print $3, $5}' | sort | uniq -c | sort -rn
+          tcpdump -r /data/captures/validation.pcap -nn | awk '{ s = $3; d = $5; sub(/\.[0-9]+$/, "", s); sub(/\.[0-9]+:$/, "", d); print s, "->", d }' | sort | uniq -c | sort -rn
 
-      The only Modbus/DNP3 sources reaching field should be `10.30.30.20`
-      (the RTAC).
+      `lan2` records each packet once, as it enters or leaves the field
+      zone. The `awk` strips the ports, so each line counts packets from
+      one host to another.
+
+      Under Hardened, the only Modbus/DNP3 source reaching field should be
+      `10.30.30.20` (the RTAC). For a partial plan, compare additional
+      sources with deferred exposures; preserve the prevention gaps.
       :::
 
       :::hint Advanced: assemble the evidence package by hand
@@ -215,7 +214,8 @@ steps:
       screenshot** (Feeder One-Line, no alarms, customers served) for the
       operational side. Per-rule deny events for each blocked probe are in
       the [/console](/console) Segmentation drawer's **Live DPI Events**
-      strip - each row is kernel-side proof the rule fired.
+      strip - correlate each event with its tuple and time. A detection record alone
+      is not proof of prevention.
       :::
     action:
       type: check
@@ -223,7 +223,8 @@ steps:
         firewall_config: improved
         breaker_closed: true
 
-  - title: "Reflection - what did your plan close?"
+  - id: reflection-what-did-your-plan-close
+    title: "Reflection - what did your plan close?"
     description: |
       Before wrapping up, take five minutes to look at what your plan addressed vs deferred.
 
@@ -251,8 +252,8 @@ steps:
 
       ### Other observations from Lab 2.2 / 2.3
 
-      - **Firewall visibility blind spot at the RTAC.** The RTAC is multi-homed (it polls field devices over DNP3/Modbus) but its application traffic is routed through containd by host-level hardening (the `rtac-architecture-review` action). Worth noting as a compensating control on your evidence package, not a network-layer enforcement. The RTAC is the *only* host with a leg in field_net - every other OT host is single-homed on ot_ops_net.
-      - **No protocol-aware constraints by default.** L4 port filtering doesn't distinguish reads from writes; the `modbus-dpi` and `dnp3-dpi` actions close that gap.
+      - **Firewall visibility blind spot at the RTAC.** The RTAC is multi-homed (it polls field devices over DNP3/Modbus) but its application traffic is routed through containd by preinstalled host-level hardening. The `rtac-architecture-review` action plans a review; it installs no control. Worth noting as a compensating control on your evidence package, not a network-layer enforcement. The RTAC is the *only* host with a leg in field_net - every other OT host is single-homed on ot_ops_net.
+      - **No protocol-aware constraints by default.** L4 port filtering does not distinguish reads from writes. The `modbus-dpi` and `dnp3-dpi` actions add visibility only. The L4 source pin enforces; DPI detects and logs.
 
       ### What your plan closed vs deferred
 

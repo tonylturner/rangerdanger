@@ -1,0 +1,185 @@
+{
+  "version": "1.02",
+  "server": {
+    "id": "0",
+    "name": "FUXA Server",
+    "type": "FuxaServer",
+    "property": {}
+  },
+  "devices": {
+    "rd_rtac": {
+      "id": "rd_rtac",
+      "name": "US RTAC",
+      "type": "ModbusTCP",
+      "enabled": true,
+      "polling": 2000,
+      "property": {
+        "address": "10.30.30.20:502",
+        "slaveid": 1,
+        "timeout": 1500,
+        "delay": 10
+      },
+      "tags": {
+        "t_breaker": {
+          "id": "t_breaker",
+          "name": "Breaker closed",
+          "type": "UInt16",
+          "address": "1",
+          "memaddress": "400000",
+          "divisor": 1
+        },
+        "t_recloser": {
+          "id": "t_recloser",
+          "name": "Recloser closed",
+          "type": "UInt16",
+          "address": "2",
+          "memaddress": "400000",
+          "divisor": 1
+        },
+        "t_reclose": {
+          "id": "t_reclose",
+          "name": "Auto-reclose enabled",
+          "type": "UInt16",
+          "address": "3",
+          "memaddress": "400000",
+          "divisor": 1
+        },
+        "t_tap": {
+          "id": "t_tap",
+          "name": "Regulator tap",
+          "type": "Int16",
+          "address": "4",
+          "memaddress": "400000",
+          "divisor": 1
+        },
+        "t_voltage": {
+          "id": "t_voltage",
+          "name": "Bus voltage (V)",
+          "type": "UInt16",
+          "address": "1",
+          "memaddress": "300000",
+          "divisor": 10
+        },
+        "t_current": {
+          "id": "t_current",
+          "name": "Feeder current (A)",
+          "type": "UInt16",
+          "address": "4",
+          "memaddress": "300000",
+          "divisor": 10
+        }
+      }
+    }
+  },
+  "hmi": {
+    "layout": {
+      "start": "rd_us_monitor",
+      "navigation": {
+        "mode": "fix",
+        "type": "inline",
+        "items": [
+          {
+            "icon": "dashboard",
+            "view": "rd_us_monitor",
+            "link": "",
+            "text": "US substation"
+          }
+        ]
+      },
+      "header": {}
+    },
+    "views": [
+      {
+        "id": "rd_us_monitor",
+        "name": "US substation — RTAC monitor",
+        "profile": {
+          "width": 760,
+          "height": 620,
+          "bkcolor": "#ffffff"
+        },
+        "items": {
+          "VAL_breaker": {
+            "id": "VAL_breaker",
+            "type": "svg-ext-value",
+            "name": "Breaker closed",
+            "label": "Value",
+            "property": {
+              "events": [],
+              "variable": "Breaker closed",
+              "variableId": "t_breaker",
+              "variableSrc": "rd_rtac",
+              "ranges": []
+            }
+          },
+          "VAL_recloser": {
+            "id": "VAL_recloser",
+            "type": "svg-ext-value",
+            "name": "Recloser closed",
+            "label": "Value",
+            "property": {
+              "events": [],
+              "variable": "Recloser closed",
+              "variableId": "t_recloser",
+              "variableSrc": "rd_rtac",
+              "ranges": []
+            }
+          },
+          "VAL_reclose": {
+            "id": "VAL_reclose",
+            "type": "svg-ext-value",
+            "name": "Auto-reclose enabled",
+            "label": "Value",
+            "property": {
+              "events": [],
+              "variable": "Auto-reclose enabled",
+              "variableId": "t_reclose",
+              "variableSrc": "rd_rtac",
+              "ranges": []
+            }
+          },
+          "VAL_tap": {
+            "id": "VAL_tap",
+            "type": "svg-ext-value",
+            "name": "Regulator tap",
+            "label": "Value",
+            "property": {
+              "events": [],
+              "variable": "Regulator tap",
+              "variableId": "t_tap",
+              "variableSrc": "rd_rtac",
+              "ranges": []
+            }
+          },
+          "VAL_voltage": {
+            "id": "VAL_voltage",
+            "type": "svg-ext-value",
+            "name": "Bus voltage (V)",
+            "label": "Value",
+            "property": {
+              "events": [],
+              "variable": "Bus voltage (V)",
+              "variableId": "t_voltage",
+              "variableSrc": "rd_rtac",
+              "ranges": []
+            }
+          },
+          "VAL_current": {
+            "id": "VAL_current",
+            "type": "svg-ext-value",
+            "name": "Feeder current (A)",
+            "label": "Value",
+            "property": {
+              "events": [],
+              "variable": "Feeder current (A)",
+              "variableId": "t_current",
+              "variableSrc": "rd_rtac",
+              "ranges": []
+            }
+          }
+        },
+        "variables": {},
+        "svgcontent": "<svg width=\"760\" height=\"620\" xmlns=\"http://www.w3.org/2000/svg\"><g font-family=\"sans-serif\" fill=\"#17212b\">\n<text x=\"28\" y=\"42\" font-size=\"24\">US substation — RTAC monitor</text>\n<text x=\"28\" y=\"76\" font-size=\"16\">Read-only display · RTAC 10.30.30.20 · Modbus TCP · 2 s polling</text>\n<text x=\"28\" y=\"106\" font-size=\"16\">Workshop alarms and customer-service evidence: /substation</text>\n<line x1=\"28\" y1=\"134\" x2=\"732\" y2=\"134\" stroke=\"#c9d2db\"/>\n<text x=\"28\" y=\"160\" font-size=\"18\">Breaker closed</text>\n<text x=\"28\" y=\"180\" font-size=\"14\" fill=\"#425466\">1 = closed; 0 = open</text>\n<g id=\"VAL_breaker\" type=\"svg-ext-value\" fill=\"#17212b\" stroke-width=\"0\" font-size=\"22\" font-family=\"sans-serif\" text-anchor=\"end\"><text id=\"VAL_breaker_text\" x=\"716\" y=\"164\" font-size=\"22\" text-anchor=\"end\">---</text></g>\n<line x1=\"28\" y1=\"202\" x2=\"732\" y2=\"202\" stroke=\"#c9d2db\"/>\n<text x=\"28\" y=\"228\" font-size=\"18\">Recloser closed</text>\n<text x=\"28\" y=\"248\" font-size=\"14\" fill=\"#425466\">1 = closed; 0 = open</text>\n<g id=\"VAL_recloser\" type=\"svg-ext-value\" fill=\"#17212b\" stroke-width=\"0\" font-size=\"22\" font-family=\"sans-serif\" text-anchor=\"end\"><text id=\"VAL_recloser_text\" x=\"716\" y=\"232\" font-size=\"22\" text-anchor=\"end\">---</text></g>\n<line x1=\"28\" y1=\"270\" x2=\"732\" y2=\"270\" stroke=\"#c9d2db\"/>\n<text x=\"28\" y=\"296\" font-size=\"18\">Auto-reclose enabled</text>\n<text x=\"28\" y=\"316\" font-size=\"14\" fill=\"#425466\">1 = enabled; 0 = disabled</text>\n<g id=\"VAL_reclose\" type=\"svg-ext-value\" fill=\"#17212b\" stroke-width=\"0\" font-size=\"22\" font-family=\"sans-serif\" text-anchor=\"end\"><text id=\"VAL_reclose_text\" x=\"716\" y=\"300\" font-size=\"22\" text-anchor=\"end\">---</text></g>\n<line x1=\"28\" y1=\"338\" x2=\"732\" y2=\"338\" stroke=\"#c9d2db\"/>\n<text x=\"28\" y=\"364\" font-size=\"18\">Regulator tap</text>\n<text x=\"28\" y=\"384\" font-size=\"14\" fill=\"#425466\">Signed tap position</text>\n<g id=\"VAL_tap\" type=\"svg-ext-value\" fill=\"#17212b\" stroke-width=\"0\" font-size=\"22\" font-family=\"sans-serif\" text-anchor=\"end\"><text id=\"VAL_tap_text\" x=\"716\" y=\"368\" font-size=\"22\" text-anchor=\"end\">---</text></g>\n<line x1=\"28\" y1=\"406\" x2=\"732\" y2=\"406\" stroke=\"#c9d2db\"/>\n<text x=\"28\" y=\"432\" font-size=\"18\">Bus voltage (V)</text>\n<text x=\"28\" y=\"452\" font-size=\"14\" fill=\"#425466\">RTAC measurement</text>\n<g id=\"VAL_voltage\" type=\"svg-ext-value\" fill=\"#17212b\" stroke-width=\"0\" font-size=\"22\" font-family=\"sans-serif\" text-anchor=\"end\"><text id=\"VAL_voltage_text\" x=\"716\" y=\"436\" font-size=\"22\" text-anchor=\"end\">---</text></g>\n<line x1=\"28\" y1=\"474\" x2=\"732\" y2=\"474\" stroke=\"#c9d2db\"/>\n<text x=\"28\" y=\"500\" font-size=\"18\">Feeder current (A)</text>\n<text x=\"28\" y=\"520\" font-size=\"14\" fill=\"#425466\">RTAC measurement</text>\n<g id=\"VAL_current\" type=\"svg-ext-value\" fill=\"#17212b\" stroke-width=\"0\" font-size=\"22\" font-family=\"sans-serif\" text-anchor=\"end\"><text id=\"VAL_current_text\" x=\"716\" y=\"504\" font-size=\"22\" text-anchor=\"end\">---</text></g>\n<text x=\"28\" y=\"592\" font-size=\"14\" fill=\"#425466\">--- = awaiting data; check the device connection before recording evidence.</text></g></svg>"
+      }
+    ]
+  }
+}

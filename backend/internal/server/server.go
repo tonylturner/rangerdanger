@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -12,9 +11,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/tturner/rangerdanger/backend/internal/config"
-	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
-	"github.com/tturner/rangerdanger/backend/internal/models"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
 	"github.com/tturner/rangerdanger/backend/internal/version"
 )
@@ -29,15 +27,21 @@ type pcapState struct {
 	FileReady   bool     `json:"file_ready"`
 	FilePrefix  string   `json:"file_prefix,omitempty"` // prefix used in containd config
 	Files       []string `json:"files,omitempty"`       // resulting PCAP filenames from containd
-	Fallback    bool     `json:"fallback"`              // true when using tcpdump fallback
+	Fallback    bool     `json:"fallback"`              // true for package-specific tcpdump capture
+
+	// Native completion has one owner, independent of public readiness.
+	stopping       bool
+	cancelDuration context.CancelFunc
 }
 
 // trafficState tracks an active traffic generation session.
 type trafficState struct {
 	Generating     bool   `json:"generating"`
+	RunID          string `json:"run_id"`
 	DurationSec    int    `json:"duration_sec"`
 	StartedAt      string `json:"started_at,omitempty"`
 	FlowsGenerated int    `json:"flows_generated"`
+	run            *trafficRun
 }
 
 // Server wraps the Gin router and dependencies.
@@ -46,32 +50,27 @@ type Server struct {
 	cfg             *config.Config
 	db              *gorm.DB
 	loader          *labs.Loader
+	catalogMu       sync.RWMutex
+	catalog         *labs.Catalog // packages from the last successful seed
 	orchestrator    *orchestrator.Orchestrator
 	execInContainer func(context.Context, string, []string, int) (string, string, int, error)
-	containdClient  *containd.Client
-	activeConfigMu  sync.RWMutex
-	activeConfig    string // "weak", "improved", or "custom"
-	// policySource records how the active policy was applied. Possible
-	// values:
-	//   "weak"              — canned weak baseline (/api/firewall/apply)
-	//   "hardened-reference" — canned hardened policy (/api/firewall/apply)
-	//   "plan-custom"       — student's Lab 1.4 plan, pushed by the
-	//                         frontend "Apply Your Plan" button
-	//                         (/api/firewall/apply-custom)
-	//   "manual-custom"     — observed: a policy the student committed
-	//                         directly in containd's CLI/UI. Set by
-	//                         the background policyObserver goroutine
-	//                         when the running-config hash diverges
-	//                         from the last applied hash for >5s.
-	//   ""                  — never applied / initial state
-	// The frontend uses this to label the status banner accurately
-	// ("Your custom policy (Lab 1.4 plan)" vs "(your containd commit)")
-	// and survives page reloads, which a frontend-only session-state
-	// approach would not.
-	policySource string
+	// rng is the range lifecycle. Range-bound handlers run against its
+	// current generation, which owns the containd client.
+	rng rangeLifecycle
+	// The policy, capture and traffic state below describe the serving
+	// range; activateRange resets it for every new generation.
+	policyApplyMu  sync.Mutex // serializes backend imports and provenance publication
+	activeConfigMu sync.RWMutex
+	activeConfig   string // "weak", "improved", or "custom"
+	// policySource is weak, hardened-reference, plan, or manual-custom.
+	// A plan retains its provenance while the running firewall hash matches,
+	// even when its full compilation is identical to the Hardened reference.
+	policySource   string
+	planProvenance *planProvenance
+	appliedPlan    *labs.CompiledPlan
 	// lastAppliedHash is the canonical SHA-256 of the firewall sub-
 	// document at the moment of the last successful backend apply
-	// (weak / improved / plan-custom). The observer compares it to
+	// (weak / improved / plan). The observer compares it to
 	// containd's live running-config hash to spot manual commits.
 	lastAppliedHash string
 	// lastAppliedAt records when lastAppliedHash was set. The
@@ -79,60 +78,53 @@ type Server struct {
 	// apply so a hash-in-flight race doesn't briefly flip to
 	// manual-custom on a normal button-driven apply.
 	lastAppliedAt time.Time
-	pcapMu        sync.Mutex
-	pcap          pcapState
-	trafficMu     sync.Mutex
-	traffic       trafficState
+	// policyChangedAt also advances on manual commits; validators use this
+	// conservative observation boundary, never the time of an earlier apply.
+	policyChangedAt time.Time
+	// A manual commit happened between the previous matching observation and
+	// discovery; backend commits between request start and response. Absence
+	// proofs use the lower bound, negative tests the upper bound.
+	policyEvidenceSince  time.Time
+	policyObservedAt     time.Time
+	lastValidationReport *retainedValidationReport // immutable, guarded by activeConfigMu
+	pcapMu               sync.Mutex
+	pcap                 pcapState
+	trafficMu            sync.Mutex
+	traffic              trafficState
 }
 
-// New constructs a server with routes registered.
-func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, orchestrator *orchestrator.Orchestrator, containdClient *containd.Client) *Server {
-	engine := gin.Default()
-
-	// Determine initial active config from seed path
-	activeConfig := "weak"
-	if strings.Contains(cfg.ContaindConfigPath, "improved") {
-		activeConfig = "improved"
-	}
-
+// New constructs a server with routes registered. catalog is the result of
+// the startup seed and must contain cfg.Package. rangeOpts wires the range
+// lifecycle; the server supplies its catalog and activation hook.
+func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, catalog *labs.Catalog, orchestrator *orchestrator.Orchestrator, rangeOpts lifecycle.Options) (*Server, error) {
 	s := &Server{
-		engine:         engine,
-		cfg:            cfg,
-		db:             db,
-		containdClient: containdClient,
-		activeConfig:   activeConfig,
-		loader:         loader,
-		orchestrator:   orchestrator,
+		engine:       gin.Default(),
+		cfg:          cfg,
+		db:           db,
+		loader:       loader,
+		catalog:      catalog,
+		orchestrator: orchestrator,
 	}
 	s.execInContainer = s.orchestrator.ExecCommand
 
-	s.applyMigrations()
+	rangeOpts.Catalog = s.currentCatalog
+	rangeOpts.Activate = s.activateRange
+	manager, err := lifecycle.New(rangeOpts)
+	if err != nil {
+		return nil, fmt.Errorf("range lifecycle: %w", err)
+	}
+	s.rng = manager
+
 	s.registerMiddleware()
 	s.registerRoutes()
-	// Kick off the background poller that watches containd's running
-	// config for manual commits the backend didn't initiate. context.
-	// Background() is fine here — the goroutine lives for the
-	// lifetime of the process. (Tests construct Server directly
-	// without going through New, so they get a no-op observer.)
-	s.startPolicyObserver(context.Background())
-	return s
+	return s, nil
 }
 
-// Run starts the HTTP server.
+// Run reconciles the range left by the previous process, then serves HTTP.
 func (s *Server) Run(_ context.Context) error {
+	s.rng.Start()
 	addr := fmt.Sprintf(":%d", s.cfg.HTTPPort)
 	return s.engine.Run(addr)
-}
-
-func (s *Server) applyMigrations() {
-	_ = s.db.AutoMigrate(
-		&models.LabTemplate{},
-		&models.LabInstance{},
-		&models.NodeDefinition{},
-		&models.Scenario{},
-		&models.ScenarioRun{},
-		&models.TelemetryPoint{},
-	)
 }
 
 func (s *Server) registerRoutes() {
@@ -143,88 +135,104 @@ func (s *Server) registerRoutes() {
 		// to FUXA's HMI for its own version endpoint. See proxy/nginx.conf.
 		api.GET("/build", s.handleVersion)
 
+		api.GET("/range", s.handleGetRange)
+		api.POST("/range", s.handlePostRange)
+		api.GET("/packages", s.handleListPackages)
+		api.GET("/knowledge", s.handleKnowledge)
+
 		admin := api.Group("/admin")
 		admin.POST("/seed", s.handleSeedDefinitions)
 
-		labsGroup := api.Group("/labs")
-		{
-			labsGroup.GET("/templates", s.handleListLabTemplates)
-			labsGroup.POST("/templates", s.handleCreateLabTemplate)
-
-			labsGroup.POST("/instances", s.handleCreateLabInstance)
-			labsGroup.GET("/instances", s.handleListLabInstances)
-			labsGroup.GET("/instances/:id", s.handleGetLabInstance)
-			labsGroup.POST("/instances/:id/start", s.handleStartLabInstance)
-			labsGroup.POST("/instances/:id/stop", s.handleStopLabInstance)
-			labsGroup.DELETE("/instances/:id", s.handleDeleteLabInstance)
-			labsGroup.GET("/instances/:id/topology", s.handleGetTopology)
-			labsGroup.GET("/instances/:id/graph", s.handleGetInstanceGraph)
-			labsGroup.PATCH("/instances/:id/topology", s.handlePatchTopology)
-			labsGroup.GET("/instances/:id/metrics", s.handleGetMetrics)
-			labsGroup.GET("/instances/:id/events", s.handleGetEvents)
-			labsGroup.Any("/instances/:id/nodes/:nodeId/ui/*path", s.handleProxyNodeUI)
-			labsGroup.GET("/instances/:id/nodes/:nodeId/terminal", s.handleTerminal)
-			labsGroup.GET("/instances/:id/live-events", s.handleGetLiveEvents)
-		}
-
-		// Firewall endpoints
-		api.GET("/firewall/health", s.handleGetFirewallHealth)
-		api.GET("/firewall/sessions", s.handleGetFirewallSessions)
-		api.GET("/firewall/rules", s.handleGetFirewallRules)
-		api.GET("/firewall/compare", s.handleFirewallCompare)
-		api.GET("/firewall/active", s.handleFirewallActive)
-		api.POST("/firewall/apply", s.handleFirewallApply)
-		api.POST("/firewall/apply-custom", s.handleFirewallApplyCustom)
-		api.POST("/firewall/validation-report", s.handleValidationReport)
-
-		// Workshop endpoints
-		api.GET("/workshop/graph", s.handleGetWorkshopGraph)
-		api.GET("/workshop/status", s.handleGetWorkshopStatus)
-		api.GET("/workshop/nodes/:nodeId/terminal", s.handleWorkshopTerminal)
-		api.POST("/workshop/nodes/:nodeId/exec", s.handleWorkshopExec)
-		api.POST("/workshop/reset", s.handleWorkshopReset)
-		api.POST("/workshop/test-suite", s.handleWorkshopTestSuite)
-
-		api.POST("/nodes/:node_id/action", s.handleNodeAction)
-
-		// Substation data (proxied from rtac-sim)
-		sub := api.Group("/substation")
-		{
-			sub.GET("/tags", s.handleSubstationTags)
-			sub.GET("/state", s.handleSubstationState)
-			sub.POST("/command/:device", s.handleSubstationCommand)
-			sub.POST("/lab-control", s.handleSubstationLabControl)
-			sub.GET("/audit", s.handleSubstationAudit)
-			sub.GET("/health", s.handleSubstationHealth)
-			sub.GET("/network-events", s.handleSubstationNetworkEvents)
-		}
-
-		// PCAP capture endpoints (containd API with tcpdump fallback)
-		pcap := api.Group("/pcap")
-		{
-			pcap.POST("/start", s.handlePcapStart)
-			pcap.POST("/stop", s.handlePcapStop)
-			pcap.GET("/status", s.handlePcapStatus)
-			pcap.GET("/download", s.handlePcapDownload)
-			pcap.GET("/download/:name", s.handlePcapDownloadFile)
-			pcap.GET("/list", s.handlePcapList)
-		}
-
-		// Traffic generation for Scenario 0
-		api.POST("/traffic/generate", s.handleTrafficGenerate)
-		api.GET("/traffic/status", s.handleTrafficStatus)
-
+		// Scenario routes serve the active package only.
 		api.GET("/scenarios", s.handleListScenarios)
-		api.POST("/scenarios", s.handleCreateScenario)
 		api.GET("/scenarios/:id", s.handleGetScenario)
-		api.POST("/scenarios/:id/run", s.handleStartScenarioRun)
-		api.GET("/scenario-runs/:id", s.handleGetScenarioRun)
-		api.GET("/scenarios/:id/validate", s.handleValidateScenario)
-		api.POST("/scenarios/:id/steps/:stepIdx/execute", s.handleExecuteStep)
 
-		// Containd proxy - enables same-origin access to containd UI
-		api.Any("/containd/*path", s.handleProxyContaind)
+		s.registerRangeRoutes(api.Group("", s.rangeBound()))
 	}
+}
+
+// registerRangeRoutes registers every route that reaches the range: its
+// containers, its firewall, or its services.
+func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
+	rng.POST("/plan/compile", s.handlePlanCompile)
+	firewall := rng.Group("/firewall")
+	{
+		firewall.GET("/health", s.handleGetFirewallHealth)
+		firewall.GET("/flows", s.handleGetFirewallFlows)
+		firewall.GET("/rules", s.handleGetFirewallRules)
+		firewall.GET("/compare", s.handleFirewallCompare)
+		firewall.GET("/active", s.handleFirewallActive)
+		firewall.POST("/apply", s.handleFirewallApply)
+		firewall.POST("/apply-plan", s.handleFirewallApplyPlan)
+		firewall.POST("/validation-report", s.handleValidationReport)
+		firewall.GET("/sessions", s.handleFirewallSessions)
+		firewall.POST("/sessions/kill", s.handleFirewallSessionKill)
+	}
+
+	workshop := rng.Group("/workshop")
+	{
+		workshop.GET("/graph", s.handleGetWorkshopGraph)
+		workshop.GET("/status", s.handleGetWorkshopStatus)
+		workshop.GET("/nodes/:nodeId/terminal", s.handleWorkshopTerminal)
+		workshop.POST("/nodes/:nodeId/exec", s.handleWorkshopExec)
+		workshop.POST("/reset", s.handleWorkshopReset)
+		workshop.POST("/test-suite", s.handleWorkshopTestSuite)
+	}
+
+	// Substation data (proxied from rtac-sim)
+	sub := rng.Group("/substation")
+	{
+		sub.GET("/tags", s.handleSubstationTags)
+		sub.GET("/state", s.handleSubstationState)
+		sub.POST("/command/:device", s.handleSubstationCommand)
+		sub.POST("/lab-control", s.handleSubstationLabControl)
+		sub.GET("/audit", s.handleSubstationAudit)
+		sub.GET("/health", s.handleSubstationHealth)
+		sub.GET("/network-events", s.handleSubstationNetworkEvents)
+	}
+
+	// Control centre and physical field readings, for packages
+	// whose manifest has those services.
+	operator := rng.Group("/operator")
+	{
+		operator.GET("/state", s.handleOperatorState)
+		operator.POST("/commands", s.handleOperatorCommand)
+		operator.POST("/gi", s.handleOperatorGI)
+		operator.POST("/reconnect", s.handleOperatorReconnect)
+		operator.GET("/journal", s.handleOperatorJournal)
+	}
+	field := rng.Group("/field")
+	{
+		field.GET("/state", s.handleFieldState)
+		field.GET("/audit", s.handleFieldAudit)
+	}
+	historian := rng.Group("/historian")
+	{
+		historian.GET("/points", s.handleHistorianPoints)
+		historian.GET("/history", s.handleHistorianHistory)
+	}
+
+	// PCAP capture endpoints (native containd for US; package-specific tcpdump for EU)
+	pcap := rng.Group("/pcap")
+	{
+		pcap.POST("/start", s.handlePcapStart)
+		pcap.POST("/stop", s.handlePcapStop)
+		pcap.GET("/status", s.handlePcapStatus)
+		pcap.GET("/download", s.handlePcapDownload)
+		pcap.GET("/download/:name", s.handlePcapDownloadFile)
+		pcap.GET("/list", s.handlePcapList)
+	}
+
+	// Traffic generation for Scenario 0
+	rng.POST("/traffic/generate", s.handleTrafficGenerate)
+	rng.POST("/traffic/stop", s.handleTrafficStop)
+	rng.GET("/traffic/status", s.handleTrafficStatus)
+
+	rng.GET("/scenarios/:id/validate", s.handleValidateScenario)
+	rng.POST("/scenarios/:id/steps/:stepIdx/execute", s.handleExecuteStep)
+
+	// Containd proxy - enables same-origin access to containd UI
+	rng.Any("/containd/*path", s.handleProxyContaind)
 }
 
 func (s *Server) registerMiddleware() {

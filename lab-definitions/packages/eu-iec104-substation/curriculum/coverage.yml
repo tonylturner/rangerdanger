@@ -1,0 +1,145 @@
+impact:
+  block-enterprise-to-field:
+    defends:
+    - eu-hardening-configurations
+    note: Close direct corporate Modbus access to the feeder; an unused path is still exposure.
+  block-enterprise-to-station:
+    defends:
+    - eu-hardening-configurations
+    note: Close enterprise IEC 104 access to RTU; only the named CC should initiate telecontrol.
+  restrict-vendor-to-station:
+    defends:
+    - eu-hardening-configurations
+    note: Replace broad vendor-zone trust with named engineering PLC web access; field control is separate.
+  block-vendor-to-field:
+    defends:
+    - eu-hardening-configurations
+    note: Remove direct vendor Modbus access even if a compromised remote-access foothold exists.
+  pin-rtu-to-field:
+    defends:
+    - eu-hardening-configurations
+    note: Keep RTU field polling and the explicit PLC→OLTC exception; exclude other station sources.
+  modbus-dpi:
+    defends:
+    - eu-hardening-configurations
+    note: Planning-only protocol review. No Modbus inspection or verdict change is emitted.
+  iec104-dpi:
+    defends:
+    - eu-hardening-configurations
+    note: Planning-only protocol review. No IEC 104 inspection or command restriction is emitted.
+  improve-logging:
+    defends:
+    - eu-hardening-configurations
+    note: Planning-only evidence review. Required diagnostic denies always log; this action changes no rule.
+  station-architecture-review:
+    defends:
+    - eu-validation-evidence
+    note: Planning-only review of RTU/PLC/GPS same-subnet trust and endpoint authority; no policy effect.
+  tighten-firewall-objects:
+    defends:
+    - eu-hardening-configurations
+    note: Pin historian reader/ingest destinations and separate read 8080 from CC ingest 8081.
+  positive-validation:
+    defends:
+    - eu-validation-evidence
+    note: 'Planning-only validation work: authorized operations, denied exposures and bounded evidence.'
+  ids-deployment:
+    defends:
+    - eu-validation-evidence
+    note: 'Planning-only detection work: sensors, rule tuning and response ownership; no sensor is deployed here.'
+  ot-asset-inventory:
+    defends:
+    - eu-validation-evidence
+    note: Planning-only inventory and drift baseline for station and field assets.
+  vendor-zta-broker:
+    defends:
+    - eu-validation-evidence
+    note: Planning-only identity, MFA, approval and recorded-session work; no broker is deployed here.
+groups:
+  block-enterprise-to-field:
+    title: block enterprise to field
+    description: Close direct corporate Modbus access to the feeder; an unused path is still exposure.
+    effect: closes
+  block-enterprise-to-station:
+    title: block enterprise to station
+    description: Close enterprise IEC 104 access to RTU; only the named CC should initiate telecontrol.
+    effect: closes
+  restrict-vendor-to-station:
+    title: restrict vendor to station
+    description: Replace broad vendor-zone trust with named engineering PLC web access; field control is separate.
+    effect: restricts
+  block-vendor-to-field:
+    title: block vendor to field
+    description: Remove direct vendor Modbus access even if a compromised remote-access foothold exists.
+    effect: closes
+  pin-rtu-to-field:
+    title: pin rtu to field
+    description: Keep RTU field polling and the explicit PLC→OLTC exception; exclude other station sources.
+    effect: restricts
+  modbus-dpi:
+    title: modbus dpi
+    description: Planning-only protocol review. No Modbus inspection or verdict change is emitted.
+    effect: semantic
+  iec104-dpi:
+    title: iec104 dpi
+    description: Planning-only protocol review. No IEC 104 inspection or command restriction is emitted.
+    effect: semantic
+  improve-logging:
+    title: improve logging
+    description: Planning-only evidence review. Required diagnostic denies always log; this action changes no rule.
+    effect: logging
+  station-architecture-review:
+    title: station architecture review
+    description: Planning-only review of RTU/PLC/GPS same-subnet trust and endpoint authority; no policy effect.
+    effect: conceptual
+  tighten-firewall-objects:
+    title: tighten firewall objects
+    description: Pin historian reader/ingest destinations and separate read 8080 from CC ingest 8081.
+    effect: restricts
+  positive-validation:
+    title: positive validation
+    description: 'Planning-only validation work: authorized operations, denied exposures and bounded evidence.'
+    effect: conceptual
+  ids-deployment:
+    title: ids deployment
+    description: 'Planning-only detection work: sensors, rule tuning and response ownership; no sensor is deployed here.'
+    effect: conceptual
+  ot-asset-inventory:
+    title: ot asset inventory
+    description: Planning-only inventory and drift baseline for station and field assets.
+    effect: conceptual
+  vendor-zta-broker:
+    title: vendor zta broker
+    description: Planning-only identity, MFA, approval and recorded-session work; no broker is deployed here.
+    effect: conceptual
+planningOnly: []
+groupOrder:
+- block-enterprise-to-field
+- block-enterprise-to-station
+- restrict-vendor-to-station
+- block-vendor-to-field
+- pin-rtu-to-field
+- modbus-dpi
+- iec104-dpi
+- improve-logging
+- station-architecture-review
+- tighten-firewall-objects
+- positive-validation
+- ids-deployment
+- ot-asset-inventory
+- vendor-zta-broker
+impactOrder:
+- block-enterprise-to-field
+- block-enterprise-to-station
+- restrict-vendor-to-station
+- block-vendor-to-field
+- pin-rtu-to-field
+- modbus-dpi
+- iec104-dpi
+- improve-logging
+- station-architecture-review
+- tighten-firewall-objects
+- positive-validation
+- ids-deployment
+- ot-asset-inventory
+- vendor-zta-broker

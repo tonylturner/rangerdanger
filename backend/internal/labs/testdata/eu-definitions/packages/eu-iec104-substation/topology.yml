@@ -1,0 +1,27 @@
+id: telecontrol-segmentation
+name: Telecontrol Segmentation
+description: Test fixture
+firewall_config: firewall/weak.json
+networks:
+  - id: station_net
+    name: Station
+    cidr: 10.30.30.0/24
+    zone: lan1
+  - id: control_centre_net
+    name: Control centre
+    cidr: 10.60.60.0/24
+    zone: lan4
+nodes:
+  - id: cc-1
+    type: control_centre
+    name: Control centre
+    networks: [control_centre_net]
+    ip: 10.60.60.20
+    container: rangerdanger-control-centre
+  - id: rtu-1
+    type: iec104_rtu
+    name: RTU
+    networks: [station_net]
+    ip: 10.30.30.20
+    container: rangerdanger-iec104-rtu
+scenarios: []

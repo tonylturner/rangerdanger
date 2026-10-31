@@ -1,0 +1,14 @@
+id: valid-topology
+name: Valid fixture topology
+networks:
+  - id: field_net
+    name: Field
+    subnet: 10.40.40.0/24
+    zone: lan1
+nodes:
+  - id: fw-1
+    type: firewall
+    name: Firewall
+    container: fixture-firewall
+    networks: [field_net]
+    ip: 10.40.40.2

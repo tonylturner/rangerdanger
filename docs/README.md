@@ -58,6 +58,8 @@ investigating the lab's design decisions.
   Useful when wiring custom tools or automation.
 - [`tool-inventory.md`](tool-inventory.md) - Which CLI tool lives in
   which Dockerfile by lab persona. Useful when authoring new exercises.
+- [`lab-definitions/packages/eu-iec104-substation/`](../lab-definitions/packages/eu-iec104-substation/package.yml)
+  - The shipped European IEC-104 package and its seven-exercise workshop.
 
 ## Lab content
 
@@ -66,12 +68,16 @@ ones.
 
 - [`lab-authoring.md`](lab-authoring.md) - How to write a workshop lab.
   YAML shape, the runner-specific fences (`:::hint`, `:::decision`,
-  `:::findings-panel`, `:::plan-coverage`), the localStorage model that
+  `:::findings-panel`, `:::plan-coverage`), the browser storage model that
   lets a lab read student selections from earlier labs, authoring
   checklist.
-- The 7 shipped labs live in
+- The seven US DNP3 exercises live in
   [`lab-definitions/scenarios/`](../lab-definitions/scenarios/) (YAML).
-  The substation topology and firewall policies live alongside.
+  The EU IEC-104 workshop has seven package-owned exercises in
+  [`lab-definitions/packages/eu-iec104-substation/scenarios/`](../lab-definitions/packages/eu-iec104-substation/scenarios/).
+- The US topology and firewall policies live alongside the US exercise
+  directory; the EU package owns its topology, policies and curriculum
+  under `lab-definitions/packages/eu-iec104-substation/`.
 
 ## Security model
 

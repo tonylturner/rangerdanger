@@ -1,0 +1,14 @@
+# Test fixture: the smallest EU-shaped package the catalog accepts.
+schema: 1
+id: eu-iec104-substation
+title: "EU telecontrol substation (IEC 104)"
+revision: 1
+topology: topology.yml
+knowledge: knowledge/index.yml
+scenarios: scenarios
+capabilities: [policy.containd, protocol.iec104, process.truth]
+policies:
+  weak: firewall/weak.json
+  improved: firewall/improved.json
+operator_view: eu-iec104
+ics_rules: forbidden

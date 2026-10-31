@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1.0",
+  "interfaces": [{"name":"lan3","zone":"lan3"},{"name": "lan1", "zone": "lan1"}, {"name": "lan4", "zone": "lan4"}],
+  "zones": [{"name": "lan1"}, {"name": "lan4"}],
+  "firewall": {
+    "defaultAction": "DENY",
+    "rules": [
+      {"id": "cc-to-rtu", "description": "ICS telecontrol: CC to RTU", "sourceZones": ["lan4"], "destZones": ["lan1"],
+       "sources": ["10.60.60.20/32"], "destinations": ["10.30.30.20/32"],
+       "protocols": [{"name": "tcp", "port": "2404"}], "action": "ALLOW", "tags": ["ics", "iec104"]},
+      {"id": "icsx", "description": "keys that only look like ics", "icsProfile": "none", "ICS": "upper case", "action": "DENY", "log": true}
+    ]
+  }
+}

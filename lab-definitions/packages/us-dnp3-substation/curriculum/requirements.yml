@@ -1,0 +1,55 @@
+requirements:
+  enterprise-to-field:
+    label: Enterprise → Field on Modbus/DNP3
+    impl:
+      BLOCK:
+        - block-enterprise-to-field
+      BLOCK and LOG:
+        - block-enterprise-to-field
+        - improve-logging
+  enterprise-to-ot:
+    label: Enterprise → OT Operations on ICS ports
+    impl:
+      BLOCK:
+        - block-enterprise-to-ot
+      BLOCK and LOG:
+        - block-enterprise-to-ot
+        - improve-logging
+  vendor-to-ot:
+    label: Vendor DMZ → OT Operations on Modbus/HMI control
+    impl:
+      BLOCK:
+        - restrict-vendor-to-ot
+        - block-vendor-to-field
+      BLOCK and LOG:
+        - restrict-vendor-to-ot
+        - block-vendor-to-field
+        - improve-logging
+      RESTRICT:
+        - restrict-vendor-to-ot
+  non-rtac-to-field:
+    label: Non-RTAC OT hosts → Field devices
+    impl:
+      BLOCK:
+        - pin-rtac-to-field
+      BLOCK and LOG:
+        - pin-rtac-to-field
+        - improve-logging
+  unauth-modbus-writes:
+    label: Foreign-source Modbus writes / DNP3 Direct Operate
+    impl:
+      BLOCK:
+        - block-enterprise-to-field
+        - block-vendor-to-field
+        - pin-rtac-to-field
+      BLOCK and LOG:
+        - block-enterprise-to-field
+        - block-vendor-to-field
+        - pin-rtac-to-field
+        - improve-logging
+requirementOrder:
+  - enterprise-to-field
+  - enterprise-to-ot
+  - vendor-to-ot
+  - non-rtac-to-field
+  - unauth-modbus-writes

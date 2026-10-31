@@ -1,6 +1,7 @@
 # Quickstart
 
-Full install walkthrough for RangerDanger. The 5-line version lives
+Full install walkthrough for package-based v0.2.0 (tagged commands
+require published v0.2.0 images). The 5-line version lives
 in the [README](../README.md); this doc covers the offline / SSD
 path, common errors, and what to do when something breaks.
 
@@ -8,7 +9,7 @@ path, common errors, and what to do when something breaks.
 
 | | Workshop recommendation | More headroom |
 |---|---|---|
-| Docker | Docker Desktop or Engine + Compose v2 | latest |
+| Docker | Docker Desktop 4.42+, or Engine 28.1+ with Compose 2.36+ | latest |
 | Host RAM | 16 GB | 32 GB |
 | Docker VM RAM allocation | 8 GB | 12 GB |
 | Disk | 30 GB free | 50 GB free |
@@ -32,8 +33,34 @@ itself plus the student's browser plus any IDE - 8 GB host is too
 tight in practice and will swap-thrash through the workshop. 16 GB
 is the realistic floor.
 
-Linux hosts running Docker Engine need Compose v2 (`docker compose`,
-with a space - not `docker-compose`).
+Linux hosts running Docker Engine need Engine 28.1 or later (API 1.49)
+and the Compose v2 plugin 2.36.0 or later (`docker compose`, with a
+space - not `docker-compose`). The range pins each firewall NIC to its
+zone name with Compose `interface_name` (`lan2` is the field zone on
+every host); older Compose rejects the range file and older Engines
+cannot create the pinned interfaces. Docker Desktop 4.42 is the first
+Desktop release that meets both. `setup.ps1` does not check these
+versions yet; on an older Docker Desktop the range fails to start with
+a Compose error.
+
+### Windows: Docker Desktop WSL2 only
+
+Run PowerShell setup from a physical local-drive checkout, for example
+`C:\work\rangerdanger`. Setup rejects UNC paths, `\\wsl$` checkouts,
+mapped network drives, junctions/symlinks, remote engines and the Hyper-V
+backend. Keep the checkout on a local drive even though Docker uses WSL2.
+
+Setup derives `RANGERDANGER_ROOT` as
+`/run/desktop/mnt/host/<lowercase drive>/<path>` and, after acquiring images,
+verifies a same-path, read-only bind using a sentinel file before starting
+the platform. `-CheckOnly` does not run that container probe or change the
+WSL2 kernel. During installation, setup checks the kernel's
+`CONFIG_NFT_QUEUE` support for DPI logging and can install the lab kernel;
+offline installation requires the bundled kernel and checksum when the fix
+is needed. The L4 source pin enforces; DPI detects and logs.
+
+These are the supported configuration and installer checks, not a claim
+of completed v0.2.0 acceptance testing on Windows hardware.
 
 ### OpenPLC on ARM64 hosts
 
@@ -72,24 +99,54 @@ git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
 ./setup.sh                   # latest release
 # or pin a specific version:
-./setup.sh --version v0.1.17
+./setup.sh --version v0.2.0
 ```
 
-PowerShell equivalent:
+PowerShell (Docker Desktop WSL2, local-drive checkout):
 
 ```powershell
 git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
 .\setup.ps1                  # latest release
-.\setup.ps1 -Version v0.1.17
+.\setup.ps1 -Version v0.2.0
 ```
 
-`setup.sh` checks Docker, Compose v2, architecture, and loopback ports.
+`setup.sh` checks Docker, the Compose (2.36.0+) and Engine API (1.49+)
+versions, architecture, and loopback ports; it refuses older Docker.
 Its disk and memory checks only warn: disk is measured on the checkout
 filesystem (not Docker's storage volume), and low memory is reported
 when Docker reports less than 7 whole GiB. On Linux-native Docker, the
-memory check can fall back to host RAM. It then pulls images, starts
-the stack, and runs backend and workshop-readiness checks.
+memory check can fall back to host RAM. Ports already held by this
+install's own containers (a re-run) do not fail the check. It then
+writes `.env` (`VERSION`, `RANGERDANGER_ROOT`), pulls the images of the
+platform and of every range package, starts the platform (backend,
+frontend, proxy), asks the backend to start the range
+(`POST /api/range`), waits until `GET /api/range` reports `ready`, and
+runs the workshop-readiness checks.
+
+The lab is two Compose projects: the **platform**
+(`rangerdanger-platform`), which stays up, and the **range**
+(`rangerdanger`: containd, the zone networks, the devices and
+workstations), which the backend starts and replaces. One range runs
+at a time. The default range package is `us-dnp3-substation`;
+`./setup.sh --package eu-iec104-substation` selects EU IEC 104, and
+`.\setup.ps1 -Package eu-iec104-substation` does the same on Windows.
+Students switch packages from the web UI afterwards. A switch, or
+re-running setup, restarts the range and resets the firewall policy to
+the package default; package-scoped browser progress is kept. Without an
+explicit package, a rerun restarts the recorded package (US is the
+fresh-install default).
+
+Each `lab-definitions/packages/<id>/` directory owns `package.yml`,
+`curriculum/`, `manifest.json`, `compose.source.yml`,
+`compose.release.yml` and `nginx.routes.conf`, plus package-specific content.
+The platform uses the root Compose files; do not start a package directly
+with a host-side Compose command.
+
+If an older single-project install is still on the machine (it owned
+`rangerdanger_mgmt_net`), setup takes it down by its Compose label
+before it starts the platform. Setup stops with an error if that
+network belongs to anything else.
 
 To re-run only the preflight checks without installing:
 
@@ -104,10 +161,13 @@ the first build takes several minutes (Go simulators, Kali
 trim, eng-ws, frontend bundle).
 
 ```bash
-docker compose up -d --build
+./setup.sh --from-source
+# or, without the workshop firewall gate:
+./scripts/dev-up.sh
 ```
 
-Subsequent runs reuse the layer cache and start in seconds.
+Subsequent runs reuse the layer cache. Re-run either one after a
+change: it rebuilds and restarts the range.
 
 ### Path C - Offline / SSD (workshops)
 
@@ -117,7 +177,7 @@ isn't realistic. The instructor stages an SSD; students load from it.
 **On a machine with internet (instructor):**
 
 ```bash
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.17
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0
 ```
 
 The positional version selects every first-party image tag independently
@@ -137,19 +197,120 @@ separate kernel download.
 tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~
 cd ~/rangerdanger
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
-# Windows: .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD
 ```
 
-The installer uses `docker-compose.release.yml`; `--from-tarballs`
-also selects `docker-compose.offline.yml`.
+On Windows, extract `rangerdanger.tgz` to a physical local drive, open
+PowerShell in the extracted `rangerdanger` directory, then run:
 
-`setup.sh` detects the host architecture, loads the matching
-tarball with `docker load`, then starts the selected Compose stack.
+```powershell
+.\setup.ps1 -FromTarballs D:\WORKSHOP_SSD -Package us-dnp3-substation
+# Or select -Package eu-iec104-substation
+```
+
+The installer uses the release Compose files (the platform's
+`docker-compose.release.yml` and each package's
+`compose.release.yml`). `setup.sh` detects the host architecture, loads
+the matching tarball with `docker load`, then starts the platform with
+`--pull never`, so nothing is fetched from GHCR. The backend always
+starts ranges with `--pull never`.
 
 Do not assume each [GitHub release](https://github.com/tonylturner/rangerdanger/releases)
 has prebuilt image tarballs attached. Use an instructor-staged, verified
 bundle, or verify any manually supplied assets and their `.version`
 before using them offline.
+
+## Upgrading to v0.2.0
+
+These tagged examples apply once v0.2.0 is published. On this branch use
+`./setup.sh --from-source` to build its images instead of pulling older ones.
+v0.2.0 rebuilds all 20 first-party images (the tag carries `[rebuild-all]`);
+this is not a repository-only hotfix.
+
+**v0.2.0 requires containd 0.1.35 or later** for online, offline and source
+installs. Check the actual containd build, not just the mutable `latest` tag.
+RangerDanger owns its client fixes for the 0.1.35 contract; older containd
+builds are not a compatibility option.
+The backend checks the version before seeding and before adopting a running
+range after a backend restart; a 0.1.35 prerelease is too old.
+
+`/api/firewall/health` includes `ipv4Forwarding`, `managementBinding` and
+authenticated `managementReservation` diagnostics (or
+`managementReservationError` if that read fails). HTTP 200/status `ok` is
+management liveness, not proof of forwarding readiness. US captures use native
+containd zone selection from the authored topology; startup errors are returned,
+not retried with tcpdump. EU uses tcpdump for its four-port OR filter.
+
+Save captures, reports, notes and desktop work, then back up `.env`, `data/`,
+`backend/data/` and local source edits. This is a workshop reset, not a
+state-preserving mid-exercise update. The range restart removes range anonymous
+volumes; platform volumes are kept (platform teardown never uses `-v`).
+Browser progress from the single-package
+release is not migrated into package-scoped progress.
+
+### Firewall storage backup and rollback
+
+Before the first containd 0.1.33 start, stop the lab using its normal
+teardown procedure and back up the complete firewall `/data` while it is
+quiescent. Relative to `RANGERDANGER_ROOT`, this is `data/firewall/` for US
+(also the old single-project install), and
+`data/eu-iec104-substation/firewall/` for EU. Preserve both if both packages
+have been installed. Keep every file, including databases, journals, users
+and captures, together with the old repo, `.env` and exact firewall image.
+A config export or a copy of `config.db` alone is not a full backup.
+
+The stored schema migrates one-way to **0.1.7**, which containd 0.1.32 cannot
+read. For binary/schema rollback, stop the lab, replace the migrated
+directories with their complete pre-upgrade backups (do not merge database
+files), restore the matching older release and image, then restart and
+verify operations. **An older tag alone is not enough.** containd 0.1.32
+requires the older RangerDanger release too; v0.2.0 requires 0.1.35 or later.
+A policy import uses candidate+commit only, preserving running NIC `device`
+bindings before staging. It is not a binary/schema rollback.
+
+### Installing the upgrade
+
+From a clean macOS/Linux checkout:
+
+```bash
+git fetch origin tag v0.2.0 &&
+git checkout --detach v0.2.0 &&
+./setup.sh --version v0.2.0 --package us-dnp3-substation
+# Or select --package eu-iec104-substation
+```
+
+Do not stop the install before image acquisition. Setup accepts ports owned by
+both RangerDanger projects, pulls/loads all package images first, then migrates
+an old single-project install and restarts through `POST /api/range`. Foreign
+port listeners or network owners stop setup. `--check-only` never migrates or
+restarts, including on an existing or partly running install.
+
+For SSD upgrades, prefer a new full bundle when crossing from v0.1.x: the old
+release lacks the package Compose metadata required by the delta helper. Delta
+staging remains supported between compatible package-aware releases; follow
+its generated `DELTA-README.md`, including backup and rollback. With all images
+rebuilt the delta is close to a full set, not a bandwidth-saving promise.
+
+PowerShell has the same package/migration setup path; installer parity does
+not establish real-hardware acceptance. From a clean local-drive checkout
+on Docker Desktop WSL2:
+
+```powershell
+git fetch origin tag v0.2.0
+if ($LASTEXITCODE -ne 0) { throw 'Could not fetch v0.2.0' }
+git checkout --detach v0.2.0
+if ($LASTEXITCODE -ne 0) { throw 'Could not check out v0.2.0' }
+.\setup.ps1 -Version v0.2.0 -Package us-dnp3-substation
+# Or select -Package eu-iec104-substation
+```
+
+Use `-FromSource` before release images exist, or `-FromTarballs` with a new
+full SSD bundle for a v0.1.x upgrade. Both installers acquire every image
+before migration teardown. The Windows path additionally verifies the daemon
+root bind before starting the platform. The bounded port probe accepts this
+install's listeners for reruns and rejects foreign or unknown listeners.
+
+Historical [v0.1.36 errata](v0.1.36-hotfix.md) retains
+useful US evidence guidance, but its old installer path is not this upgrade.
 
 ## Once it's up
 
@@ -164,63 +325,27 @@ before using them offline.
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises)
 and start with **Lab 1.2** (Baseline Traffic Analysis).
 
-## Updating to v0.1.36
-
-v0.1.36 is a **full image release**: all 16 first-party images are rebuilt
-and `latest` moves. New installs use [Path A](#path-a---online-default)
-or the normal [SSD bundle](#path-c---offline--ssd-workshops). To pin the
-release, check out tag `v0.1.36` and run `./setup.sh --version v0.1.36`
-(PowerShell: `.\setup.ps1 -Version v0.1.36`).
-
-For an existing online installation, use setup's normal **stop, then
-refresh** path. Save captures, exported reports, notes and desktop work,
-and back up `.env`, `data/`, `backend/data/` and any local source edits
-first. Setup runs a workshop reset as part of readiness checks; this is
-not a state-preserving mid-exercise patch. Do not use `down -v`.
-
-From the existing clean Git checkout, macOS/Linux:
+To stop the lab (the range, then the platform), and to start it again:
 
 ```bash
-git fetch origin tag v0.1.36 &&
-git checkout --detach v0.1.36 &&
-docker compose -f docker-compose.release.yml down &&
-./setup.sh --version v0.1.36
+./scripts/dev-down.sh
+./setup.sh                 # with the options you installed with
 ```
-
-Windows PowerShell 5.1+ (stop on any error):
-
-```powershell
-git fetch origin tag v0.1.36
-if ($LASTEXITCODE -ne 0) { throw "Fetch failed; stop here" }
-git checkout --detach v0.1.36
-if ($LASTEXITCODE -ne 0) { throw "Checkout failed; stop here" }
-docker compose -f docker-compose.release.yml down
-if ($LASTEXITCODE -ne 0) { throw "Stop failed; stop here" }
-.\setup.ps1 -Version v0.1.36
-```
-
-Setup pulls the selected release images and starts the complete release
-stack. No source build is needed. Do not use `scripts/apply-repo-update.*`
-for this release: it does not install the new images.
-
-For an existing **offline / SSD** installation, follow the generated
-`DELTA-README.md` from an instructor-staged
-[`stage-ssd-delta.sh`](workshop-ssd.md#delta-staging) bundle. The
-v0.1.35 → v0.1.36 delta is close to a full set because all images are
-rebuilt. Its version precondition, backup, image loading, complete-stack
-restart and rollback instructions are part of the normal delta workflow.
-For a fresh offline installation, use the full bundle and Path C instead.
-See the [workshop errata](v0.1.36-hotfix.md) for remaining lab guidance.
 
 ## Common errors
 
-Compose commands below use the release and offline files explicitly, so
-they also work after Path C without contacting GHCR. For an online Path A
-install, drop `-f docker-compose.offline.yml` if Compose should pull an
-updated image. A bare `docker compose` selects the source stack and may
-rebuild from Dockerfiles; Path B source-build users should drop both
-release flags. The firewall-pull example below is intentionally online
-and uses only the release file.
+The commands below use container names and the backend's range API, so
+they work the same after every install path. The range is started by
+the backend, not by Compose commands on the host: to restart it, ask
+the backend (this tears the range down and starts it again, and resets
+the firewall policy to the package default):
+
+```bash
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8088/api/range
+curl -s http://localhost:8088/api/range      # phase: ... -> ready
+```
+
+The firewall-pull example below is intentionally online.
 
 ### "the lab doesn't come up"
 
@@ -228,9 +353,11 @@ Most "doesn't start" issues fall into one of these:
 
 1. **Docker isn't running** - start Docker Desktop, or
    `sudo systemctl start docker` on Linux.
-2. **Compose v2 isn't installed** - Compose v1 (`docker-compose`,
-   with a hyphen) is end-of-life. Install Compose v2 via Docker
-   Desktop or `apt install docker-compose-plugin`.
+2. **Compose v2 isn't installed, or Docker is too old** - Compose v1
+   (`docker-compose`, with a hyphen) is end-of-life. The range needs
+   Compose 2.36.0+ on Engine 28.1+: update to Docker Desktop 4.42 or
+   later, or on Linux install current `docker-ce` and
+   `docker-compose-plugin` from Docker's apt repository.
 3. **Ports already in use** (`8088`, `9080`, `9443`, `2222`).
    `./setup.sh --check-only` will tell you which.
 4. **Out of disk** during a 6+ GB image pull. Leave at least 30 GB
@@ -250,44 +377,6 @@ Most "doesn't start" issues fall into one of these:
    the dialog; setup continues on its own. Updating Docker Desktop
    avoids it (4.94 recovers without the dialog).
 
-### "the vendor desktop returns 502 / vendor services are missing"
-
-Both mounted init scripts must have **LF** line endings and be executable:
-`scripts/vendor-jump-services.sh` and `scripts/set-gateway.sh`. The vendor
-mount overrides the image's copy; s6 skips a non-executable script, so a
-missing executable bit can disable portal, SSH, RDP and VNC setup too.
-
-In a Linux/macOS shell (or WSL), check and repair permissions:
-
-```bash
-file scripts/vendor-jump-services.sh scripts/set-gateway.sh  # must not report CRLF
-test -x scripts/vendor-jump-services.sh && test -x scripts/set-gateway.sh
-chmod +x scripts/vendor-jump-services.sh scripts/set-gateway.sh
-git ls-files --eol scripts/vendor-jump-services.sh scripts/set-gateway.sh  # w/lf
-git ls-files -s scripts/vendor-jump-services.sh scripts/set-gateway.sh     # 100755
-git config --get core.fileMode  # diagnostic only; false does not grant executable bits
-```
-
-Restore LF endings if the checks report CRLF; the repository already
-specifies LF for shell scripts in `.gitattributes`. Do not change global
-Git settings. On WSL prefer a **Linux-filesystem checkout** (for example
-`~/rangerdanger`, not `/mnt/c/...`) and run `chmod +x` there.
-
-After recreating vendor_jump, verify Docker's view, not just the Git index:
-
-```bash
-docker compose -f docker-compose.release.yml exec vendor_jump bash -ec \
-  'for f in /custom-cont-init.d/01-vendor-services.sh /custom-cont-init.d/10-set-gateway.sh; do test -x "$f"; if LC_ALL=C grep -q $'"'"'\r'"'"' "$f"; then exit 1; fi; done'
-docker compose -f docker-compose.release.yml logs vendor_jump
-```
-
-For SSD installs add `-f docker-compose.offline.yml`. Logs must show both
-01 and 10 executing without skipped/nonzero init. Native Docker Desktop
-NTFS and WSL ext4 fresh-start checks are release signoff requirements,
-not yet verified. If the host share cannot expose executable LF scripts,
-stop and use a verified WSL Linux-filesystem checkout; do not assume the
-image's build-time chmod can repair a read-only mount.
-
 ### "the firewall (`fw-1`) terminal says command not found"
 
 The `fw-1` in-app terminal lands directly in the **containd
@@ -302,35 +391,39 @@ back.
 Stale local DB after a major schema change. Delete and restart:
 
 ```bash
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+docker stop rangerdanger-backend
 rm -f backend/data/rangerdanger.db
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+docker start rangerdanger-backend
 ```
 
 ### "containd won't authenticate"
 
 Stale local users.db after the default password got changed in
-a prior session. Delete and restart:
+a prior session. Delete it and restart the range:
 
 ```bash
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+docker stop rangerdanger-firewall
 rm -f data/firewall/users.db data/firewall/users.db-*
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8088/api/range
 ```
 
 containd's lab-mode default-admin seeding (`CONTAIND_LAB_MODE=1`
-in the compose file) will restore the `containd` / `containd`
+in the range's Compose file) will restore the `containd` / `containd`
 admin on next boot.
 
 ### "the build is slow"
 
-The first `docker compose build` pulls + compiles a lot. Subsequent
-builds reuse the layer cache. To force a clean re-pull of just the
-firewall image when containd publishes a security fix:
+The first source build (`./setup.sh --from-source`) pulls + compiles
+a lot. Subsequent builds reuse the layer cache. To force a clean re-pull
+of just the firewall image when containd publishes a security fix, pull
+it and restart the range on it (release mode only; source mode must rebuild
+from its containd source context). Confirm the image meets the 0.1.35 minimum
+and, before its first start, follow the [firewall backup procedure](#firewall-storage-backup-and-rollback)
+above. A pull/restart is not a rollback procedure:
 
 ```bash
-docker compose -f docker-compose.release.yml pull firewall
-docker compose -f docker-compose.release.yml up -d firewall
+docker pull ghcr.io/tonylturner/containd:latest
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8088/api/range
 ```
 
 ## What a good bug report includes
@@ -340,8 +433,10 @@ If none of the above fits, file an issue against
 Helpful contents:
 
 - The output of `./setup.sh --check-only` (or `-CheckOnly`)
-- `docker compose -f docker-compose.release.yml logs <service>`
-  for whichever service didn't come up
+- `curl -s http://localhost:8088/api/range` (the range phase and its
+  error, if any)
+- `docker logs rangerdanger-<service>` for whichever service didn't
+  come up (for example `rangerdanger-backend`, `rangerdanger-firewall`)
 - `GET /api/build` if the API is reachable at all
 - The relevant excerpt from `~/Library/Logs/Docker Desktop/log.log`
   (macOS) or `%LOCALAPPDATA%\Docker\log` (Windows) if Docker itself

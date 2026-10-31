@@ -1,11 +1,48 @@
 package dnp3go
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net"
 	"time"
 )
+
+// WithMasterConnection dials an outstation, applies a deadline, and runs fn
+// on the connection. It closes normally when fn succeeds and aborts the TCP
+// connection when setup or fn fails, discarding any queued control data.
+func WithMasterConnection(endpoint string, timeout time.Duration, fn func(net.Conn) error) error {
+	conn, err := net.DialTimeout("tcp", endpoint, timeout)
+	if err != nil {
+		return err
+	}
+
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return abortMasterConnection(conn, fmt.Errorf("set deadline: %w", err))
+	}
+	if err := fn(conn); err != nil {
+		return abortMasterConnection(conn, err)
+	}
+	if err := conn.Close(); err != nil {
+		return abortMasterConnection(conn, fmt.Errorf("close connection: %w", err))
+	}
+	return nil
+}
+
+func abortMasterConnection(conn net.Conn, cause error) error {
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return errors.Join(cause, fmt.Errorf("abortive close requires a TCP connection"), conn.Close())
+	}
+
+	if err := tcpConn.SetLinger(0); err != nil {
+		cause = errors.Join(cause, fmt.Errorf("set abortive close: %w", err))
+	}
+	if err := tcpConn.Close(); err != nil {
+		cause = errors.Join(cause, fmt.Errorf("abort connection: %w", err))
+	}
+	return cause
+}
 
 // MasterConfig configures a DNP3 master that polls an outstation.
 type MasterConfig struct {
@@ -50,80 +87,88 @@ func Poll(cfg *MasterConfig) *PollResult {
 		timeout = 3 * time.Second
 	}
 
-	conn, err := net.DialTimeout("tcp", cfg.Endpoint, timeout)
+	started := false
+	err := WithMasterConnection(cfg.Endpoint, timeout, func(conn net.Conn) error {
+		started = true
+
+		// Build integrity poll: Read FC01, Group 60 Var 1 (Class 0), Qualifier 0x06 (all)
+		apdu := []byte{
+			acFIR | acFIN,                            // AC: FIR=1, FIN=1, SEQ=0
+			FCRead,                                   // FC 0x01: Read
+			GroupClassData, VarClass0, QualAllPoints, // Group 60 Var 1 Qual 0x06
+		}
+
+		tpData := WrapTransport(apdu, 0)
+
+		reqFrame := &LinkFrame{
+			Control: ctrlDIR | ctrlPRM | ctrlFCUnconfirmedData, // 0xC4
+			Dest:    cfg.OutstationAddr,
+			Source:  cfg.MasterAddr,
+			Payload: tpData,
+		}
+
+		if err := WriteLinkFrame(conn, reqFrame); err != nil {
+			return fmt.Errorf("write: %w", err)
+		}
+
+		// Read response
+		respFrame, err := ReadLinkFrame(conn)
+		if err != nil {
+			return fmt.Errorf("read: %w", err)
+		}
+
+		if respFrame.Dest != cfg.MasterAddr || respFrame.Source != cfg.OutstationAddr {
+			return fmt.Errorf("response address mismatch: destination %d source %d", respFrame.Dest, respFrame.Source)
+		}
+		if respFrame.Control != MakeResponseControl() {
+			return fmt.Errorf("unexpected response link control: 0x%02x", respFrame.Control)
+		}
+
+		// Reassemble transport
+		tr := &TransportReader{}
+		appData := tr.ProcessSegment(respFrame.Payload)
+		if appData == nil {
+			return fmt.Errorf("incomplete transport segment")
+		}
+
+		// Parse APDU
+		respAPDU, err := ParseAPDU(appData)
+		if err != nil {
+			return fmt.Errorf("parse APDU: %w", err)
+		}
+
+		if respAPDU.FuncCode != FCResponse || respAPDU.Control != acFIR|acFIN {
+			return fmt.Errorf("unexpected response function/control: 0x%02x/0x%02x", respAPDU.FuncCode, respAPDU.Control)
+		}
+		result.IIN = respAPDU.IIN
+
+		// Extract point values from response objects
+		for _, oh := range respAPDU.Objects {
+			switch {
+			case oh.Group == GroupBinaryInput && oh.Variation == VarBIStatus:
+				// Data is inline after the header — parse flags bytes.
+				parseInlineBinary(oh, result.BinaryInputs, oh.Start, oh.Stop)
+
+			case oh.Group == GroupBinaryOutput && oh.Variation == VarBOStatus:
+				parseInlineBinary(oh, result.BinaryOutputs, oh.Start, oh.Stop)
+
+			case oh.Group == GroupAnalogInput && oh.Variation == VarAIFloat:
+				parseInlineAnalog(oh, result.AnalogInputs, oh.Start, oh.Stop)
+
+			case oh.Group == GroupAnalogOutput && oh.Variation == VarAOFloat:
+				parseInlineAnalog(oh, result.AnalogOutputs, oh.Start, oh.Stop)
+			}
+		}
+
+		return nil
+	})
 	if err != nil {
-		result.Error = fmt.Errorf("connect: %w", err)
-		return result
-	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(timeout))
-
-	// Build integrity poll: Read FC01, Group 60 Var 1 (Class 0), Qualifier 0x06 (all)
-	apdu := []byte{
-		acFIR | acFIN,                            // AC: FIR=1, FIN=1, SEQ=0
-		FCRead,                                   // FC 0x01: Read
-		GroupClassData, VarClass0, QualAllPoints, // Group 60 Var 1 Qual 0x06
-	}
-
-	tpData := WrapTransport(apdu, 0)
-
-	reqFrame := &LinkFrame{
-		Control: ctrlDIR | ctrlPRM | ctrlFCUnconfirmedData, // 0xC4
-		Dest:    cfg.OutstationAddr,
-		Source:  cfg.MasterAddr,
-		Payload: tpData,
-	}
-
-	if err := WriteLinkFrame(conn, reqFrame); err != nil {
-		result.Error = fmt.Errorf("write: %w", err)
-		return result
-	}
-
-	// Read response
-	respFrame, err := ReadLinkFrame(conn)
-	if err != nil {
-		result.Error = fmt.Errorf("read: %w", err)
-		return result
-	}
-
-	// Reassemble transport
-	tr := &TransportReader{}
-	appData := tr.ProcessSegment(respFrame.Payload)
-	if appData == nil {
-		result.Error = fmt.Errorf("incomplete transport segment")
-		return result
-	}
-
-	// Parse APDU
-	respAPDU, err := ParseAPDU(appData)
-	if err != nil {
-		result.Error = fmt.Errorf("parse APDU: %w", err)
-		return result
-	}
-
-	result.IIN = respAPDU.IIN
-
-	// Extract point values from response objects
-	for _, oh := range respAPDU.Objects {
-		switch {
-		case oh.Group == GroupBinaryInput && oh.Variation == VarBIStatus:
-			start, stop := oh.Start, oh.Stop
-			idx := start
-			// Data is inline after the header — parse flags bytes
-			parseInlineBinary(oh, result.BinaryInputs, start, stop)
-			_ = idx
-
-		case oh.Group == GroupBinaryOutput && oh.Variation == VarBOStatus:
-			parseInlineBinary(oh, result.BinaryOutputs, oh.Start, oh.Stop)
-
-		case oh.Group == GroupAnalogInput && oh.Variation == VarAIFloat:
-			parseInlineAnalog(oh, result.AnalogInputs, oh.Start, oh.Stop)
-
-		case oh.Group == GroupAnalogOutput && oh.Variation == VarAOFloat:
-			parseInlineAnalog(oh, result.AnalogOutputs, oh.Start, oh.Stop)
+		if !started {
+			result.Error = fmt.Errorf("connect: %w", err)
+		} else {
+			result.Error = err
 		}
 	}
-
 	return result
 }
 

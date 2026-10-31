@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/tturner/rangerdanger/services/shared"
@@ -17,6 +18,7 @@ func resetHistorianState() {
 		PollIntervalSec: 5,
 		RtacEndpoint:    "http://10.30.30.20:8080",
 		CommsOK:         true,
+		CommsError:      "",
 	}
 	audit = shared.NewAuditLog(100)
 }
@@ -172,6 +174,80 @@ func TestHistorianHistoryAndStateHandlers(t *testing.T) {
 	}
 	if stateBody["point_count"] != float64(len(want)) {
 		t.Errorf("state point_count = %v, want %d", stateBody["point_count"], len(want))
+	}
+}
+
+func TestPollRTACOnceRequiresSuccessfulHTTPAndJSON(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		body       string
+		wantOK     bool
+		wantReason string
+	}{
+		{
+			name:   "2xx JSON response",
+			status: http.StatusOK,
+			body:   `{"electrical":{"substation_bus_voltage_v":124.7}}`,
+			wantOK: true,
+		},
+		{
+			name:       "non-2xx response",
+			status:     http.StatusServiceUnavailable,
+			body:       `{"error":"unavailable"}`,
+			wantReason: "503 Service Unavailable",
+		},
+		{
+			name:       "malformed JSON response",
+			status:     http.StatusOK,
+			body:       `{"electrical":`,
+			wantReason: "invalid JSON response",
+		},
+		{
+			name:       "trailing JSON response data",
+			status:     http.StatusOK,
+			body:       `{"electrical":{}} trailing`,
+			wantReason: "invalid JSON response",
+		},
+		{
+			name:       "JSON null response",
+			status:     http.StatusOK,
+			body:       `null`,
+			wantReason: "expected an object",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetHistorianState()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = fmt.Fprint(w, tt.body)
+			}))
+			defer server.Close()
+
+			pollRTACOnce(server.Client(), server.URL)
+
+			if state.CommsOK != tt.wantOK {
+				t.Errorf("CommsOK = %v, want %v", state.CommsOK, tt.wantOK)
+			}
+			if state.LastPollTime == "" {
+				t.Error("LastPollTime is empty after poll")
+			}
+			if tt.wantReason != "" && !strings.Contains(state.CommsError, tt.wantReason) {
+				t.Errorf("CommsError = %q, want it to contain %q", state.CommsError, tt.wantReason)
+			}
+			if tt.wantOK {
+				if state.CommsError != "" {
+					t.Errorf("CommsError = %q, want empty on success", state.CommsError)
+				}
+				if state.PointCount != 1 || len(state.History) != 1 || state.History[0].SubstationVoltageV != 124.7 {
+					t.Errorf("successful poll history = (%d, %+v), want one 124.7 V point", state.PointCount, state.History)
+				}
+			} else if state.PointCount != 0 || len(state.History) != 0 {
+				t.Errorf("failed poll added history: count=%d history=%+v", state.PointCount, state.History)
+			}
+		})
 	}
 }
 

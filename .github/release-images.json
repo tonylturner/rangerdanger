@@ -33,7 +33,11 @@
       "platforms": ["linux/amd64", "linux/arm64"],
       "always_build": false,
       "inputs": [
-        {"kind": "dir", "path": "dnp3go"}
+        {"kind": "dir", "path": "dnp3go"},
+        {"kind": "file", "path": "iec104go/go.mod"},
+        {"kind": "glob", "path": "iec104go/*.go"},
+        {"kind": "dir", "path": "iec104go/cmd/iec104cmd"},
+        {"kind": "file", "path": "iec104go/LICENSE"}
       ]
     },
     {
@@ -55,7 +59,11 @@
       "platforms": ["linux/amd64", "linux/arm64"],
       "always_build": false,
       "inputs": [
-        {"kind": "dir", "path": "dnp3go"}
+        {"kind": "dir", "path": "dnp3go"},
+        {"kind": "file", "path": "iec104go/go.mod"},
+        {"kind": "glob", "path": "iec104go/*.go"},
+        {"kind": "dir", "path": "iec104go/cmd/iec104cmd"},
+        {"kind": "file", "path": "iec104go/LICENSE"}
       ]
     },
     {
@@ -74,6 +82,7 @@
       "always_build": false,
       "inputs": [
         {"kind": "dir", "path": "dnp3go"},
+        {"kind": "dir", "path": "lab-definitions/packages/us-dnp3-substation/seeds/openplc"},
         {"kind": "file", "path": "scripts/openplc-entrypoint.sh"},
         {"kind": "file", "path": "scripts/set-gateway.sh"}
       ]
@@ -85,6 +94,7 @@
       "platforms": ["linux/amd64", "linux/arm64"],
       "always_build": false,
       "inputs": [
+        {"kind": "dir", "path": "lab-definitions/packages/us-dnp3-substation/seeds/fuxa"},
         {"kind": "file", "path": "scripts/set-gateway.sh"},
         {"kind": "file", "path": "scripts/fuxa-entrypoint.sh"}
       ]
@@ -98,6 +108,7 @@
       "inputs": [
         {"kind": "file", "path": "services/go.mod"},
         {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "file", "path": "iec104go/go.mod"},
         {"kind": "glob", "path": "services/shared/*.go"},
         {"kind": "glob", "path": "dnp3go/*.go"},
         {"kind": "glob", "path": "services/rtac-sim/*.go"},
@@ -118,6 +129,7 @@
       "inputs": [
         {"kind": "file", "path": "services/go.mod"},
         {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "file", "path": "iec104go/go.mod"},
         {"kind": "glob", "path": "services/shared/*.go"},
         {"kind": "glob", "path": "dnp3go/*.go"},
         {"kind": "glob", "path": "services/relay-sim/*.go"},
@@ -135,6 +147,7 @@
       "inputs": [
         {"kind": "file", "path": "services/go.mod"},
         {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "file", "path": "iec104go/go.mod"},
         {"kind": "glob", "path": "services/shared/*.go"},
         {"kind": "glob", "path": "dnp3go/*.go"},
         {"kind": "glob", "path": "services/recloser-sim/*.go"},
@@ -152,6 +165,7 @@
       "inputs": [
         {"kind": "file", "path": "services/go.mod"},
         {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "file", "path": "iec104go/go.mod"},
         {"kind": "glob", "path": "services/shared/*.go"},
         {"kind": "glob", "path": "dnp3go/*.go"},
         {"kind": "glob", "path": "services/regulator-sim/*.go"},
@@ -169,6 +183,7 @@
       "inputs": [
         {"kind": "file", "path": "services/go.mod"},
         {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "file", "path": "iec104go/go.mod"},
         {"kind": "glob", "path": "services/shared/*.go"},
         {"kind": "glob", "path": "dnp3go/*.go"},
         {"kind": "glob", "path": "services/capbank-sim/*.go"},
@@ -186,6 +201,7 @@
       "inputs": [
         {"kind": "file", "path": "services/go.mod"},
         {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "file", "path": "iec104go/go.mod"},
         {"kind": "glob", "path": "services/shared/*.go"},
         {"kind": "glob", "path": "services/historian-sim/*.go"},
         {"kind": "file", "path": "scripts/set-gateway.sh"},
@@ -202,6 +218,7 @@
       "inputs": [
         {"kind": "file", "path": "services/go.mod"},
         {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "file", "path": "iec104go/go.mod"},
         {"kind": "glob", "path": "services/shared/*.go"},
         {"kind": "glob", "path": "services/gps-sim/*.go"},
         {"kind": "file", "path": "scripts/set-gateway.sh"},
@@ -222,7 +239,84 @@
         {"kind": "file", "path": "services/opendss-sim/models.py"},
         {"kind": "file", "path": "services/opendss-sim/runtime_state.py"},
         {"kind": "file", "path": "services/opendss-sim/time_utils.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_app.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_circuit.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_profile.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_truth_loop.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_wire.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_controls.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_state.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_models.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_dynamics.py"},
         {"kind": "dir", "path": "services/opendss-sim/dss"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-iec104",
+      "dockerfile": "services/iec104/Dockerfile",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": true,
+      "always_build_reason": "Conservatively rebuild the Go IEC 104 services and CLI on every release during cutover.",
+      "inputs": [
+        {"kind": "file", "path": "iec104go/go.mod"},
+        {"kind": "glob", "path": "iec104go/*.go"},
+        {"kind": "dir", "path": "iec104go/cmd/iec104cmd"},
+        {"kind": "file", "path": "iec104go/LICENSE"},
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "dir", "path": "services/iec104/internal"},
+        {"kind": "dir", "path": "services/iec104/cmd/iec104-rtu"},
+        {"kind": "dir", "path": "services/iec104/cmd/iec104-cc"},
+        {"kind": "file", "path": "services/iec104/entrypoint.sh"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-field-device-sim",
+      "dockerfile": "services/Dockerfile",
+      "target": "field-device-sim",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/Dockerfile"},
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "file", "path": "iec104go/go.mod"},
+        {"kind": "glob", "path": "services/shared/*.go"},
+        {"kind": "dir", "path": "services/devices"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/rtac-harden.sh"},
+        {"kind": "file", "path": "scripts/rtac-route-monitor.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-historian-eu",
+      "dockerfile": "services/Dockerfile",
+      "target": "historian-eu",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "file", "path": "iec104go/go.mod"},
+        {"kind": "glob", "path": "services/shared/*.go"},
+        {"kind": "dir", "path": "services/historian-eu"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/rtac-harden.sh"},
+        {"kind": "file", "path": "scripts/rtac-route-monitor.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-openplc-eu",
+      "dockerfile": "Dockerfile.openplc-eu",
+      "target": "",
+      "platforms": ["linux/amd64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "lab-definitions/packages/eu-iec104-substation/seeds/openplc"},
+        {"kind": "file", "path": "scripts/openplc-eu-entrypoint.sh"},
         {"kind": "file", "path": "scripts/set-gateway.sh"}
       ]
     }

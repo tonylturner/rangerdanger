@@ -24,8 +24,8 @@ python.org.
 Optional scenario id to scope the run (e.g. baseline-assessment).
 
 .NOTES
-Exit 0 = every documented command runs cleanly, non-zero = at least
-one failed. ASCII-only, BOM-free. See setup.ps1 for the encoding
+Exit 0 = every runnable command runs cleanly; skipped commands are
+reported separately. ASCII-only, BOM-free. See setup.ps1 for the encoding
 rationale.
 
 The embedded Python script is BYTE-FOR-BYTE the same parser logic
@@ -51,6 +51,7 @@ $script:fail    = 0
 $script:total   = 0
 $script:passed  = 0
 $script:skipped = 0
+$script:executed = 0
 
 function Note($msg)    { Write-Host ""; Write-Host "=== $msg ===" -ForegroundColor Cyan }
 function OK($msg)      { Write-Host "  [+] $msg" -ForegroundColor Green; $script:passed++ }
@@ -184,7 +185,6 @@ CMD_TOOL_RE = re.compile(
 
 SKIP_PATTERNS = [
     re.compile(r'/api/firewall/apply'),
-    re.compile(r'/api/firewall/apply-custom'),
     re.compile(r'docker compose '),
     re.compile(r'docker run '),
     re.compile(r'docker rm '),
@@ -304,6 +304,17 @@ try {
     exit 1
 }
 
+# These checks assert the US range. Refuse another package or a range
+# mid-switch: GET /api/range must report us-dnp3-substation ready.
+. (Join-Path $PSScriptRoot 'lib\range.ps1')
+$range = Get-RangeStatus $Api
+if (Test-RangeReady $range us-dnp3-substation) {
+    InfoOK "range us-dnp3-substation ready"
+} else {
+    Err "range is not us-dnp3-substation ready -- GET $Api/api/range: $(Format-RangeStatus $range)"
+    exit 1
+}
+
 # --- Extract commands ---------------------------------------------------
 Note "extracting commands$(if ($Scenario) { " ($Scenario)" })"
 $pyArgs = @()
@@ -313,6 +324,14 @@ $pyArgs += $Scenario
 $rows = $ExtractPy | & $Python[0] @pyArgs
 if ($LASTEXITCODE -ne 0 -or -not $rows) {
     Err "command extractor returned no rows -- check lab-definitions/ paths and pyyaml install"
+    exit 1
+}
+$minimum = @($rows | Where-Object {
+    $parts = $_ -split '\|', 7
+    $parts.Count -ge 7 -and $parts[5] -eq 'RUN'
+}).Count
+if ($minimum -lt 1) {
+    Err "no executable examples"
     exit 1
 }
 
@@ -340,7 +359,6 @@ foreach ($row in $rows) {
 
     if ($action -eq 'SKIP') {
         Skip "[$scenario step $stepIdx] $cmd"
-        $script:total--   # SKIPs don't count in the pass denominator
         continue
     }
     if (-not $container) {
@@ -369,6 +387,7 @@ foreach ($row in $rows) {
         continue
     }
 
+    $script:executed++
     $r = Invoke-LabCommand $container $cmd
     $shortCmd = if ($cmd.Length -gt 80) { $cmd.Substring(0,80) } else { $cmd }
     $label = "[$scenario s$stepIdx $(if ($cfg) { $cfg } else { 'any' })] $($container -replace '^rangerdanger-','') : $shortCmd"
@@ -383,13 +402,21 @@ foreach ($row in $rows) {
 
 # --- Summary ------------------------------------------------------------
 Note "summary"
-Write-Host "  ran    : $($script:total)"
+if ($script:executed -lt $minimum) {
+    Write-Host "  [x] executed $($script:executed) < required runnable examples $minimum" -ForegroundColor Red
+    $script:fail = 1
+}
+Write-Host "  total  : $($script:total)"
+Write-Host "  executed: $($script:executed)"
 Write-Host "  passed : $($script:passed)"
+Write-Host "  failed : $($script:executed - $script:passed)"
 Write-Host "  skipped: $($script:skipped) (mutating, interactive, or out-of-scope)"
+Write-Host "  unverified: $([Math]::Max(0, $minimum - $script:executed))"
+Write-Host "  minimum: $minimum"
 if ($script:fail -eq 0) {
-    Write-Host "  ALL DOCUMENTED LAB COMMANDS RUN CLEANLY" -ForegroundColor Green
+    Write-Host "  ALL RUNNABLE LAB COMMANDS RAN CLEANLY" -ForegroundColor Green
     exit 0
 } else {
-    Write-Host "  FAILED -- $($script:total - $script:passed) commands had issues" -ForegroundColor Red
+    Write-Host "  FAILED -- $($script:executed - $script:passed) command(s) failed; $([Math]::Max(0, $minimum - $script:executed)) unverified" -ForegroundColor Red
     exit 1
 }

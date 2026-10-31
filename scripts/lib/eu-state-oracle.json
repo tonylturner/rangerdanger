@@ -1,0 +1,572 @@
+{
+  "schema": 2,
+  "presentation": {
+    "supply_nodes": {
+      "rmu-1-source-kv": {"id": "S1-no-supply", "label": "S1 residential"},
+      "rmu-1-section-kv": {"id": "S2-no-supply", "label": "S2 commercial"},
+      "rmu-2-source-kv": {"id": "S3-no-supply", "label": "S3 industrial"},
+      "oltc-1-bus-kv": {"id": "bus20-no-supply", "label": "20 kV busbar (T1 secondary)"}
+    },
+    "voltage_limits": {
+      "feeder-voltage": [19.0, 21.0],
+      "rmu-1-section-kv": [19.0, 21.0],
+      "rmu-1-source-kv": [19.0, 21.0],
+      "rmu-2-section-kv": [19.0, 21.0],
+      "rmu-2-source-kv": [19.0, 21.0],
+      "oltc-1-bus-kv": [19.8, 21.0]
+    },
+    "asserted_alarms": ["feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-overcurrent-block", "oltc-1-at-lower", "oltc-1-at-upper"],
+    "false_alarms": ["plc-1-running", "plc-1-input-valid"],
+    "switches": {
+      "CB1": {"point": "feeder-breaker-position", "label": "CB1", "normal": "closed"},
+      "RMU1": {"point": "rmu-1-position", "label": "RMU1 · NC", "normal": "closed"},
+      "RMU2": {"point": "rmu-2-position", "label": "RMU2 · NOP", "normal": "open"},
+      "F2": {"point": "f2-position", "label": "F2", "normal": "closed"}
+    },
+    "authorities": {"T1": "oltc-1-remote", "RMU1": "rmu-1-remote", "RMU2": "rmu-2-remote"}
+  },
+  "source": "feeder.dss; eu_circuit.py switch topology/meters; eu-state-smoke/oracle.md (21 independent solver probes, tap=0, profile off, load/source=1); F2 A/MW re-probed from five-device eu_circuit.py/feeder.dss (tap=0, profile off, load/source=1)",
+  "live_kv": 0.1,
+  "current_zero_a": 0.1,
+  "rows": [
+    {
+      "id": "OOO-normal",
+      "switches": "OOO",
+      "f2": "normal",
+      "supply": [
+        "D",
+        "D",
+        "F"
+      ],
+      "cc_paths": [
+        "no supply",
+        "no supply",
+        "via F2"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        0,
+        0,
+        11.2
+      ],
+      "f2_current_a": 11.209,
+      "f2_p_mw": 0.332431
+    },
+    {
+      "id": "OOO-tripped",
+      "switches": "OOO",
+      "f2": "tripped",
+      "supply": [
+        "D",
+        "D",
+        "D"
+      ],
+      "cc_paths": [
+        "no supply",
+        "no supply",
+        "no supply"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
+    },
+    {
+      "id": "OOC-normal",
+      "switches": "OOC",
+      "f2": "normal",
+      "supply": [
+        "D",
+        "F",
+        "F"
+      ],
+      "cc_paths": [
+        "no supply",
+        "via F2",
+        "via F2"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        0,
+        18.5,
+        29.8
+      ],
+      "f2_current_a": 29.787,
+      "f2_p_mw": 0.91191
+    },
+    {
+      "id": "OOC-tripped",
+      "switches": "OOC",
+      "f2": "tripped",
+      "supply": [
+        "D",
+        "D",
+        "D"
+      ],
+      "cc_paths": [
+        "no supply",
+        "no supply",
+        "no supply"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
+    },
+    {
+      "id": "OCO-normal",
+      "switches": "OCO",
+      "f2": "normal",
+      "supply": [
+        "D",
+        "D",
+        "F"
+      ],
+      "cc_paths": [
+        "no supply",
+        "no supply",
+        "via F2"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        0,
+        0,
+        11.2
+      ],
+      "f2_current_a": 11.209,
+      "f2_p_mw": 0.332431
+    },
+    {
+      "id": "OCO-tripped",
+      "switches": "OCO",
+      "f2": "tripped",
+      "supply": [
+        "D",
+        "D",
+        "D"
+      ],
+      "cc_paths": [
+        "no supply",
+        "no supply",
+        "no supply"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
+    },
+    {
+      "id": "OCC-normal",
+      "switches": "OCC",
+      "f2": "normal",
+      "supply": [
+        "F",
+        "F",
+        "F"
+      ],
+      "cc_paths": [
+        "via F2",
+        "via F2",
+        "via F2"
+      ],
+      "vt_kv": 19.33,
+      "currents_a": [
+        0,
+        43.9,
+        62.4,
+        73.5
+      ],
+      "f2_current_a": 73.493,
+      "f2_p_mw": 2.393896
+    },
+    {
+      "id": "OCC-tripped",
+      "switches": "OCC",
+      "f2": "tripped",
+      "supply": [
+        "D",
+        "D",
+        "D"
+      ],
+      "cc_paths": [
+        "no supply",
+        "no supply",
+        "no supply"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
+    },
+    {
+      "id": "COO-normal",
+      "switches": "COO",
+      "f2": "normal",
+      "supply": [
+        "B",
+        "D",
+        "F"
+      ],
+      "cc_paths": [
+        "via CB1",
+        "no supply",
+        "via F2"
+      ],
+      "vt_kv": 19.94,
+      "currents_a": [
+        42.8,
+        0,
+        0,
+        53.6
+      ],
+      "f2_current_a": 11.231,
+      "f2_p_mw": 0.332454
+    },
+    {
+      "id": "COO-tripped",
+      "switches": "COO",
+      "f2": "tripped",
+      "supply": [
+        "B",
+        "D",
+        "D"
+      ],
+      "cc_paths": [
+        "via CB1",
+        "no supply",
+        "no supply"
+      ],
+      "vt_kv": 19.97,
+      "currents_a": [
+        42.7,
+        0,
+        0,
+        42.7
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
+    },
+    {
+      "id": "COC-normal",
+      "switches": "COC",
+      "f2": "normal",
+      "supply": [
+        "B",
+        "F",
+        "F"
+      ],
+      "cc_paths": [
+        "via CB1",
+        "via F2",
+        "via F2"
+      ],
+      "vt_kv": 19.91,
+      "currents_a": [
+        42.9,
+        0,
+        18.6,
+        72.1
+      ],
+      "f2_current_a": 29.848,
+      "f2_p_mw": 0.911986
+    },
+    {
+      "id": "COC-tripped",
+      "switches": "COC",
+      "f2": "tripped",
+      "supply": [
+        "B",
+        "D",
+        "D"
+      ],
+      "cc_paths": [
+        "via CB1",
+        "no supply",
+        "no supply"
+      ],
+      "vt_kv": 19.97,
+      "currents_a": [
+        42.7,
+        0,
+        0,
+        42.7
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
+    },
+    {
+      "id": "CCO-normal",
+      "switches": "CCO",
+      "f2": "normal",
+      "supply": [
+        "B",
+        "B",
+        "F"
+      ],
+      "cc_paths": [
+        "via CB1",
+        "via CB1",
+        "via F2"
+      ],
+      "vt_kv": 19.91,
+      "currents_a": [
+        61.4,
+        18.7,
+        0,
+        72.3
+      ],
+      "f2_current_a": 11.25,
+      "f2_p_mw": 0.332494
+    },
+    {
+      "id": "CCO-tripped",
+      "switches": "CCO",
+      "f2": "tripped",
+      "supply": [
+        "B",
+        "B",
+        "D"
+      ],
+      "cc_paths": [
+        "via CB1",
+        "via CB1",
+        "no supply"
+      ],
+      "vt_kv": 19.93,
+      "currents_a": [
+        61.3,
+        18.7,
+        0,
+        61.3
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
+    },
+    {
+      "id": "CCC-normal",
+      "switches": "CCC",
+      "f2": "normal",
+      "supply": [
+        "BF",
+        "BF",
+        "BF"
+      ],
+      "cc_paths": [
+        "via CB1 + F2",
+        "via CB1 + F2",
+        "via CB1 + F2"
+      ],
+      "vt_kv": 19.91,
+      "currents_a": [
+        40.4,
+        6,
+        21,
+        72.1
+      ],
+      "f2_current_a": 31.745,
+      "f2_p_mw": 1.046769
+    },
+    {
+      "id": "CCC-tripped",
+      "switches": "CCC",
+      "f2": "tripped",
+      "supply": [
+        "B",
+        "B",
+        "B"
+      ],
+      "cc_paths": [
+        "via CB1",
+        "via CB1",
+        "via CB1"
+      ],
+      "vt_kv": 19.91,
+      "currents_a": [
+        72.7,
+        30.3,
+        11.5,
+        72.7
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
+    },
+    {
+      "id": "S1-pre-trip",
+      "switches": "CCO",
+      "f2": "normal",
+      "supply": [
+        "D",
+        "D",
+        "F"
+      ],
+      "cc_paths": [
+        "no supply",
+        "no supply",
+        "via F2"
+      ],
+      "vt_kv": 11.53,
+      "currents_a": [
+        2701,
+        0,
+        0,
+        2707
+      ],
+      "fault":"S1",
+      "section_kv": [
+        4.679e-06,
+        4.653e-06,
+        11.5
+      ],
+      "f2_current_a": 6.61,
+      "f2_p_mw": 0.113104
+    },
+    {
+      "id": "S1-lockout",
+      "switches": "OCO",
+      "f2": "normal",
+      "supply": [
+        "D",
+        "D",
+        "F"
+      ],
+      "cc_paths": [
+        "no supply",
+        "no supply",
+        "via F2"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        0,
+        0,
+        11.2
+      ],
+      "fault":"S1",
+      "lockout": true,
+      "f2_current_a": 11.209,
+      "f2_p_mw": 0.332431
+    },
+    {
+      "id": "S1-pickup",
+      "switches": "OCC",
+      "f2": "normal",
+      "supply": [
+        "D",
+        "F",
+        "F"
+      ],
+      "cc_paths": [
+        "no supply",
+        "via F2",
+        "via F2"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        1365,
+        1373,
+        1378
+      ],
+      "fault":"S1",
+      "section_kv": [
+        2.365e-06,
+        9.13,
+        9.13
+      ],
+      "lockout": true,
+      "f2_current_a": 1377.583,
+      "f2_p_mw": 26.769845
+    },
+    {
+      "id": "S1-F2-trip",
+      "switches": "OCC",
+      "f2": "tripped",
+      "supply": [
+        "D",
+        "D",
+        "D"
+      ],
+      "cc_paths": [
+        "no supply",
+        "no supply",
+        "no supply"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "fault":"S1",
+      "lockout": true,
+      "f2_current_a": 0,
+      "f2_p_mw": 0
+    },
+    {
+      "id": "S1-isolated",
+      "switches": "OOC",
+      "f2": "normal",
+      "supply": [
+        "D",
+        "F",
+        "F"
+      ],
+      "cc_paths": [
+        "no supply",
+        "via F2",
+        "via F2"
+      ],
+      "vt_kv": 0,
+      "currents_a": [
+        0,
+        0,
+        18.5,
+        29.8
+      ],
+      "fault":"S1",
+      "lockout": true,
+      "f2_current_a": 29.787,
+      "f2_p_mw": 0.91191
+    }
+  ],
+  "interlocks": {
+    "CCC-normal-interlock": {
+      "target": "CCC-normal",
+      "predecessor": "OCC-normal",
+      "point": "feeder-breaker-command",
+      "operation": "close",
+      "reason": "live_live"
+    }
+  },
+  "unsupported": {
+    "S1-pre-trip": "instantaneous protection cannot hold this residual-voltage row for GI/DOM; oracle/offline only",
+    "S1-pickup": "F2 delayed protection cannot hold pickup for GI/DOM; oracle/offline only",
+    "S3-fault": "no process fault_s3 action",
+    "PLC-setpoint": "PLC overwrites settings each scan; no persistent control surface"
+  },
+  "point_count": 42
+}

@@ -14,9 +14,8 @@
 #   1. Creates the rangerdanger:rangerdanger user (sudo group).
 #   2. Generates SSH host keys + writes a vendor-portal landing
 #      page + writes a self-signed cert + sets the VNC password.
-#   3. Starts sshd, nginx, xrdp, and tigervnc as background daemons
-#      (this is a lab; the s6 zombie-reap warnings on nginx workers
-#      are cosmetic — nginx respawns them and stays listening).
+#   3. Starts sshd, nginx, and xrdp; configures x11vnc for its
+#      separate s6-supervised service.
 #
 # Credentials are documented in docs/lab-credentials.md.
 
@@ -150,10 +149,10 @@ if ! pgrep -x xrdp >/dev/null 2>&1; then
 fi
 
 # ── 5. VNC ──────────────────────────────────────────────────────────
-# x11vnc shares the existing X display (the same kasm desktop the
-# web UI exposes on 8082). One desktop, three access channels:
-# kasm web UI, RDP (xrdp), and VNC (x11vnc on 5900). x11vnc has its
-# own `-storepasswd` so we don't need a separate vncpasswd tool.
+# x11vnc shares the LinuxServer webtop Selkies desktop exposed by
+# its web UI. One desktop, three access channels: Selkies web UI,
+# RDP (xrdp), and VNC (x11vnc on 5900). x11vnc has its own
+# `-storepasswd` so we don't need a separate vncpasswd tool.
 log "configuring x11vnc"
 VNC_PASSWD="/etc/x11vnc.pass"
 if [ ! -s "$VNC_PASSWD" ]; then
@@ -162,7 +161,7 @@ if [ ! -s "$VNC_PASSWD" ]; then
 fi
 
 # x11vnc runs as an s6 service from /custom-services.d/x11vnc/ so
-# the supervisor can wait for the kasm Xvfb display to come up
+# the supervisor can wait for the webtop Xvfb display to come up
 # (which happens in parallel with our cont-init script) and respawn
 # x11vnc cleanly. The service script itself is installed at image
 # build time; nothing to do here.

@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "id": "cc-sequence-wrap",
+  "kind": "raw-cc",
+  "timeout_s": 600,
+  "capture_modbus": false,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {"op": "server-reports", "args": {"count": 32770, "value": 2, "timed_invalid": false}, "timeout_s": 580}
+  ]
+}

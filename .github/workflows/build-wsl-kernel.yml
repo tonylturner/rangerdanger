@@ -34,7 +34,7 @@ permissions:
 jobs:
   build:
     name: Build kernel + attach to release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
 
     env:
@@ -42,6 +42,8 @@ jobs:
       # When triggered manually, use the release_tag input.
       RELEASE_TAG: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref_name }}
       KERNEL_TAG:  ${{ github.event.inputs.kernel_tag != '' && github.event.inputs.kernel_tag || 'linux-msft-wsl-5.15.153.1' }}
+      CC: gcc-14
+      HOSTCC: gcc-14
 
     steps:
       - uses: actions/checkout@v5
@@ -60,7 +62,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
               build-essential libssl-dev libelf-dev flex bison bc \
-              dwarves cpio kmod python3 git ca-certificates
+              dwarves cpio kmod python3 git ca-certificates gcc-14
 
       - name: Clone WSL2 kernel source
         run: |
@@ -75,20 +77,23 @@ jobs:
           # Comment out any pre-existing assignment for the keys we
           # set in the overlay, so olddefconfig keeps our value rather
           # than prompting / picking the previous one.
-          for key in $(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay); do
+          while IFS= read -r key; do
               sed -i "/^${key}=/d" .config
               sed -i "/^# ${key} is not set/d" .config
-          done
+          done < <(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay)
           # Append the overlay.
           cat ../rangerdanger/wsl-kernel/config-overlay >> .config
           # Resolve dependencies (auto-answer new options with defaults).
-          make olddefconfig
+          # The kernel Makefile assigns CC itself, so the toolchain must be a
+          # make argument; an environment CC is ignored.
+          make CC="$CC" HOSTCC="$HOSTCC" olddefconfig
+          grep -E '^CONFIG_CC_VERSION_TEXT="gcc-14 ' .config
           # Surface the resolved values for the keys we care about so
           # the build log proves they ended up enabled.
           echo "--- resolved values ---"
-          for key in $(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay); do
+          while IFS= read -r key; do
               grep -E "^(${key}=|# ${key} is not set)" .config || echo "${key} MISSING"
-          done
+          done < <(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay)
 
       - name: Compute SOURCE_DATE_EPOCH (reproducible builds)
         working-directory: kernel
@@ -109,6 +114,7 @@ jobs:
 
       - name: Build bzImage
         working-directory: kernel
+        # This kernel tag predates C23-safe flags; use GCC 14 rather than 26.04's GCC 15 default.
         # Reproducible-build env vars: SOURCE_DATE_EPOCH normalizes
         # timestamps inside the binary; KBUILD_BUILD_* normalize the
         # `uname -v` version string the kernel reports at runtime so
@@ -120,7 +126,7 @@ jobs:
           KBUILD_BUILD_HOST:      rangerdanger-ci
           KBUILD_BUILD_USER:      rangerdanger
         run: |
-          make -j"$(nproc)" bzImage
+          make -j"$(nproc)" CC="$CC" HOSTCC="$HOSTCC" bzImage
           ls -lh arch/x86/boot/bzImage
 
       - name: Sanity-check resulting kernel

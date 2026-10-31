@@ -1,0 +1,132 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
+	"github.com/tturner/rangerdanger/backend/internal/manifest"
+)
+
+func TestUSValidationMatrixUsesPlanProof(t *testing.T) {
+	gen := usGeneration(nil)
+	got, err := usRecipe.resolveValidation(gen)
+	if err != nil || len(got) != 21 {
+		t.Fatalf("matrix: %d %v", len(got), err)
+	}
+	for i, proof := range gen.Package.Curriculum.Plan.Proof {
+		if got[i].ID != proof.ID || got[i].Expected != string(proof.Expect) {
+			t.Fatalf("row %d: %+v", i, got[i])
+		}
+	}
+	hosts, network, err := usRecipe.resolveCapture(gen)
+	if err != nil || strings.Join(hosts, " ") != "10.40.40.20 10.40.40.21 10.40.40.22 10.40.40.23" || strings.Join(network, ".") != "10.40.40" {
+		t.Fatalf("capture %q %q %v", hosts, network, err)
+	}
+}
+
+func TestUSTrafficResolvesToSupportedProtocolReads(t *testing.T) {
+	want := []resolvedTraffic{
+		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/state > /dev/null 2>&1 || true", "eng-ws→rtac http"},
+		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "eng-ws→rtac http health"},
+		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.30:8080/ > /dev/null 2>&1 || true", "eng-ws→openplc http"},
+		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "eng-ws→hmi fuxa"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 10.40.40.20 > /dev/null 2>&1 || true", "eng-ws→relay modbus FC01 (WEAK)"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 10.40.40.21 > /dev/null 2>&1 || true", "eng-ws→recloser modbus FC01 (WEAK)"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 10.40.40.22 > /dev/null 2>&1 || true", "eng-ws→regulator modbus FC01 (WEAK)"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 10.40.40.23 > /dev/null 2>&1 || true", "eng-ws→capbank modbus FC01 (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll -a 1 -t 3s 10.40.40.20:20000 > /dev/null 2>&1 || true", "eng-ws→relay dnp3 poll (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll -a 2 -t 3s 10.40.40.21:20000 > /dev/null 2>&1 || true", "eng-ws→recloser dnp3 poll (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll -a 3 -t 3s 10.40.40.22:20000 > /dev/null 2>&1 || true", "eng-ws→regulator dnp3 poll (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll -a 4 -t 3s 10.40.40.23:20000 > /dev/null 2>&1 || true", "eng-ws→capbank dnp3 poll (WEAK)"},
+		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "vendor→hmi fuxa"},
+		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "vendor→rtac http health"},
+	}
+	got, err := usRecipe.resolveTraffic(usGeneration(nil))
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("resolveTraffic = %v, %v\nwant %v", got, err, want)
+	}
+}
+
+func TestUSIdentitiesFromTheManifest(t *testing.T) {
+	gen := usGeneration(nil)
+	if got, err := rtacURL(gen); err != nil || got != "http://10.99.99.20:8080" {
+		t.Errorf("rtacURL = %q, %v; want the RTAC mgmt endpoint", got, err)
+	}
+	if got, err := firewallContainer(gen); err != nil || got != "rangerdanger-firewall" {
+		t.Errorf("firewallContainer = %q, %v", got, err)
+	}
+	fw, _ := nodeService(gen, "fw-1")
+	rtac, _ := nodeService(gen, "rtac-1")
+	if !isFirewall(fw) || isFirewall(rtac) {
+		t.Error("isFirewall does not follow the firewall role")
+	}
+}
+
+func TestRecipeForUnknownPackage(t *testing.T) {
+	gen := lifecycle.NewGeneration(1, labs.Package{ID: "other-package"}, &manifest.Manifest{}, nil, time.Time{})
+	if _, err := recipeFor(gen); err == nil || !strings.Contains(err.Error(), "other-package has no workshop recipe") {
+		t.Errorf("recipeFor(other-package) = %v, want no recipe", err)
+	}
+}
+
+func TestWorkshopGraphInterfaceIPsFromManifest(t *testing.T) {
+	s := routedServer(t)
+	// The topology lists the RTAC on two networks; the old lookup keyed
+	// "rtac" never matched node "rtac-1" and reported only the first.
+	s.rng.(*fakeRange).gen.Package.Template = labs.LabYAML{ID: testTemplateID, Nodes: []labs.NodeYAML{
+		{ID: "rtac-1", Type: "rtac_sim", Networks: []string{"ot_ops_net", "field_net"}, IP: "10.30.30.20", Container: "rangerdanger-rtac-sim"},
+	}}
+	rec := serve(s, http.MethodGet, "/api/workshop/graph")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/workshop/graph = %d %s", rec.Code, rec.Body)
+	}
+	var body struct {
+		Nodes []graphNode `json:"nodes"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	var zones []string
+	var rtac *graphNode
+	for i, n := range body.Nodes {
+		if n.Type == "zone" {
+			zones = append(zones, n.Data.Zone)
+		}
+		if n.ID == "rtac-1" {
+			rtac = &body.Nodes[i]
+		}
+	}
+	if strings.Join(zones, ",") != "enterprise_net,vendor_net,ot_ops_net,field_net" {
+		t.Errorf("zones = %q, want the manifest's teaching zones in order", zones)
+	}
+	want := map[string]string{"ot_ops_net": "10.30.30.20", "field_net": "10.40.40.10"}
+	if rtac == nil || !reflect.DeepEqual(rtac.Data.InterfaceIPs, want) {
+		t.Errorf("rtac-1 interface IPs = %+v, want %v", rtac, want)
+	}
+}
+
+func TestWorkshopExecUnknownNode(t *testing.T) {
+	s := newTestServer(t, "http://127.0.0.1:1")
+	rec, body := invoke(s, s.handleWorkshopExec, "POST", "/api/workshop/nodes/plc-9/exec", map[string]string{"command": "ls"})
+	if rec.Code != http.StatusNotFound || !strings.Contains(body["error"].(string), "node") {
+		t.Errorf("exec on an unknown node = %d %v", rec.Code, body)
+	}
+}
+
+func TestNetworkEventsFilterUsesTheZoneSubnets(t *testing.T) {
+	zones := zoneSubnets(usGeneration(nil))
+	for address, want := range map[string]bool{
+		"10.10.10.50": true, "10.20.20.20": true, "10.30.30.20": true, "10.40.40.23": true,
+		"10.50.50.10": false, "10.99.99.2": false, "not-an-ip": false,
+	} {
+		if got := inAnySubnet(zones, address); got != want {
+			t.Errorf("inAnySubnet(%s) = %v, want %v", address, got, want)
+		}
+	}
+}

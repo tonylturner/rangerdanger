@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "id": "zero-command",
+  "kind": "raw-rtu",
+  "timeout_s": 30,
+  "capture_modbus": false,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {
+      "op": "start",
+      "args": {},
+      "timeout_s": 5
+    },
+    {
+      "op": "zero-object",
+      "args": {
+        "type": 46
+      },
+      "timeout_s": 5
+    },
+    {
+      "op": "test",
+      "args": {},
+      "timeout_s": 5
+    },
+    {
+      "op": "stop",
+      "args": {},
+      "timeout_s": 5
+    }
+  ],
+  "malformed": [
+    {
+      "step": 1,
+      "message": "input"
+    },
+    {
+      "step": 1,
+      "message": "reply"
+    }
+  ]
+}

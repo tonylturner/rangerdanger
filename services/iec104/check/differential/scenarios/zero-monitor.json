@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "zero-monitor",
+  "kind": "raw-cc",
+  "timeout_s": 30,
+  "capture_modbus": false,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {
+      "op": "zero-object",
+      "args": {
+        "type": 3
+      },
+      "timeout_s": 5
+    }
+  ],
+  "malformed": [
+    {
+      "step": 0,
+      "message": "input"
+    }
+  ]
+}

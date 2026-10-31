@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -23,39 +23,19 @@ import (
 // and returns a change-board-ready markdown report. This is the in-app
 // equivalent of scripts/validation-report.sh.
 
-// validationProbe is one row of the segmentation validation matrix. Mirrors
-// the matrix in scripts/validation-report.sh (kept narrow + listener-backed
-// so verdicts are reliable on Docker Desktop).
+// validationProbe is one row of the segmentation validation matrix,
+// resolved against the range (packageRecipe.resolveValidation).
 type validationProbe struct {
-	Src      string // container name
-	SrcLabel string // friendly source name for the report
-	Dst      string
-	Port     string
-	Expected string // "allow" | "deny"
-	Note     string
-	Category string // "authorized" | "unauthorized"
-}
-
-var validationMatrix = []validationProbe{
-	{"rangerdanger-rtac-sim", "rtac-sim", "10.40.40.20", "502", "allow", "RTAC Modbus poll to relay", "authorized"},
-	{"rangerdanger-rtac-sim", "rtac-sim", "10.40.40.21", "20000", "allow", "RTAC DNP3 poll to recloser", "authorized"},
-	{"rangerdanger-rtac-sim", "rtac-sim", "10.40.40.22", "20000", "allow", "RTAC DNP3 poll to regulator", "authorized"},
-	{"rangerdanger-rtac-sim", "rtac-sim", "10.30.30.30", "8080", "allow", "RTAC HTTP API to OpenPLC (intra-zone)", "authorized"},
-	{"rangerdanger-fuxa-hmi", "fuxa-hmi", "10.30.30.20", "8080", "allow", "HMI to RTAC HTTP intra-zone", "authorized"},
-	{"rangerdanger-historian-sim", "historian-sim", "10.30.30.20", "8080", "allow", "Historian to RTAC intra-zone", "authorized"},
-	{"rangerdanger-vendor-jump", "vendor-jump", "10.30.30.20", "22", "allow", "Vendor SSH mgmt to RTAC", "authorized"},
-	{"rangerdanger-vendor-jump", "vendor-jump", "10.30.30.20", "443", "allow", "Vendor HTTPS mgmt to RTAC", "authorized"},
-	{"rangerdanger-kali", "kali", "10.40.40.20", "502", "deny", "Enterprise Modbus to field relay", "unauthorized"},
-	{"rangerdanger-kali", "kali", "10.40.40.20", "20000", "deny", "Enterprise DNP3 to field relay", "unauthorized"},
-	{"rangerdanger-kali", "kali", "10.30.30.30", "8080", "deny", "Enterprise HTTP to OpenPLC", "unauthorized"},
-	{"rangerdanger-kali", "kali", "10.30.30.20", "8080", "deny", "Enterprise HTTP to RTAC", "unauthorized"},
-	{"rangerdanger-kali", "kali", "10.30.30.20", "502", "deny", "Enterprise Modbus to RTAC", "unauthorized"},
-	{"rangerdanger-eng-ws", "eng-ws", "10.40.40.21", "502", "deny", "Vendor Modbus to field recloser", "unauthorized"},
-	{"rangerdanger-eng-ws", "eng-ws", "10.40.40.21", "20000", "deny", "Vendor DNP3 to field recloser", "unauthorized"},
-	{"rangerdanger-eng-ws", "eng-ws", "10.30.30.30", "8080", "deny", "Vendor HTTP to OpenPLC (only 443/22 allowed)", "unauthorized"},
-	{"rangerdanger-vendor-jump", "vendor-jump", "10.30.30.20", "502", "deny", "Vendor Modbus to RTAC (improved blocks non-mgmt)", "unauthorized"},
-	{"rangerdanger-historian-sim", "historian-sim", "10.40.40.22", "502", "deny", "Non-RTAC OT (historian) to field regulator (Modbus)", "unauthorized"},
-	{"rangerdanger-historian-sim", "historian-sim", "10.40.40.22", "20000", "deny", "Non-RTAC OT (historian) to field regulator (DNP3)", "unauthorized"},
+	Src              string // container name
+	SrcLabel         string // friendly source name for the report
+	Dst              string
+	Port             string
+	Expected         string // "allow" | "deny"
+	Note             string
+	Category         string // "authorized" | "unauthorized"
+	ID               string
+	PlanExpected     string
+	HardenedExpected string
 }
 
 type validationRow struct {
@@ -63,6 +43,7 @@ type validationRow struct {
 	Actual     string // "allow" | "deny" | "skipped"
 	DurationMs int
 	Pass       bool
+	ProbeError string
 }
 
 // validationTally is the aggregated result of a probe matrix run.
@@ -113,85 +94,135 @@ const validationPcapDurationSec = 8
 // handleValidationReport runs the probe matrix against the active policy,
 // captures PCAP, and returns the markdown report + a structured summary.
 func (s *Server) handleValidationReport(c *gin.Context) {
+	recipe, ok := supportedRecipe(c, func(r *packageRecipe) bool { return len(r.validationCapture.nodes) > 0 })
+	if !ok {
+		return
+	}
 	cli := s.orchestrator.DockerClient()
 	if cli == nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "docker client not available"})
 		return
 	}
-	ctx := context.Background()
-
+	ctx := c.Request.Context()
+	gen := rangeOf(c)
 	s.activeConfigMu.RLock()
 	active, source := s.activeConfig, s.policySource
+	policyAt, wantHash := s.policyChangedAt, s.lastAppliedHash
+	provenance := s.planProvenance
 	s.activeConfigMu.RUnlock()
 
-	hash := "unknown"
-	if s.containdClient != nil {
-		if h, err := s.containdClient.GetFirewallHash(); err == nil && h != "" {
-			hash = strings.TrimPrefix(h, "sha256:")
-			if len(hash) > 12 {
-				hash = hash[:12]
-			}
-		}
+	expectations, err := s.judgingExpectations(gen)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	matrix, err := resolveProof(gen, expectations, "", false)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	captureHosts, captureNet, err := recipe.resolveCapture(gen)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	firewall, err := firewallContainer(gen)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	reportStart := time.Now().UTC()
+	fullHash, hashErr := gen.Containd().GetFirewallHash(ctx)
+	hash := strings.TrimPrefix(fullHash, "sha256:")
+	if hashErr != nil || hash == "" {
+		hash = "unknown"
 	}
 
 	// Start a short PCAP at the firewall covering the field zone, so the
 	// report can show which sources actually reached field devices.
 	ts := time.Now().UTC().Format("20060102T150405Z")
-	pcapPath := "/data/captures/validation-" + ts + ".pcap"
-	pcapHostPath := "data/firewall/captures/validation-" + ts + ".pcap"
+	pcapPath := recipe.report.captureDir + "/validation-" + ts + ".pcap"
+	pcapHostPath := recipe.report.hostCaptureDir + "/validation-" + ts + ".pcap"
 	pcapCmd := fmt.Sprintf(
-		"mkdir -p /data/captures; timeout %d tcpdump -i any -w %s 'host 10.40.40.20 or host 10.40.40.21 or host 10.40.40.22 or host 10.40.40.23' >/dev/null 2>&1",
-		validationPcapDurationSec, pcapPath)
-	pcapOK := s.execDetached(ctx, cli, firewallContainer, []string{"sh", "-c", pcapCmd}) == nil
-	pcapStart := time.Now()
+		"mkdir -p %s 2>/tmp/validation-%s.log && timeout %d tcpdump -i any -w %s 'host %s' >/dev/null 2>>/tmp/validation-%s.log",
+		recipe.report.captureDir, ts, validationPcapDurationSec, pcapPath, strings.Join(captureHosts, " or host "), ts)
+	pcapExecID, pcapStartErr := s.execDetached(ctx, cli, firewall, []string{"sh", "-c", pcapCmd})
 	time.Sleep(1 * time.Second) // let tcpdump open the file
 
 	// Run the probe matrix concurrently (independent containers; the PCAP
-	// captures all of it). Verdicts land well inside the PCAP window.
-	rows := make([]validationRow, len(validationMatrix))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8) // cap concurrent docker execs to limit contention
-	for i, p := range validationMatrix {
-		wg.Add(1)
-		go func(i int, p validationProbe) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			verdict, ms := s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec)
-			// Authorized flows can momentarily lose a race to container /
-			// routing warmup; retry once so a transient hiccup doesn't read
-			// as a policy failure. Never retry unauthorized - a real leak
-			// must surface, not be masked by a lucky second attempt.
-			if p.Category == "authorized" && verdict != p.Expected {
-				verdict, ms = s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec)
-			}
-			rows[i] = validationRow{
-				validationProbe: p, Actual: verdict, DurationMs: ms,
-				Pass: verdict == p.Expected,
-			}
-		}(i, p)
-	}
-	wg.Wait()
+	// is supporting evidence). The bounded EU matrix may outlast the short
+	// capture window; PCAP completeness is not part of its verdict.
+	rows := runEUProbeMatrix(ctx, matrix, func(ctx context.Context, p validationProbe) validationRow {
+		return s.strictTCPProbe(ctx, cli, p)
+	})
 
 	tally := tallyValidation(rows)
 
-	// Wait for the PCAP window to close, then analyze source IPs.
+	// Wait for tcpdump to exit, then read the capture. Starting a detached
+	// exec is not evidence that tcpdump ran successfully or wrote packets.
 	pcapSummary := "(PCAP capture unavailable)"
-	if pcapOK {
-		if remain := time.Duration(validationPcapDurationSec)*time.Second - time.Since(pcapStart); remain > 0 {
-			time.Sleep(remain)
+	pcapOK := false
+	switch {
+	case pcapStartErr != nil:
+		pcapSummary = "Capture could not start: " + pcapStartErr.Error()
+	default:
+		exitCode, waitErr := s.waitDetachedExec(ctx, cli, pcapExecID, (validationPcapDurationSec+3)*time.Second)
+		logPath := "/tmp/validation-" + ts + ".log"
+		logOutput, _, logErr := s.execCapture(ctx, cli, firewall, []string{"sh", "-c", "cat " + logPath + " 2>/dev/null; rm -f " + logPath})
+		captureErr := waitErr
+		if captureErr == nil {
+			captureErr = captureCommandError(exitCode, logOutput)
 		}
-		pcapSummary = s.analyzePcapSources(ctx, cli, pcapPath)
+		if captureErr != nil {
+			if logErr != nil {
+				pcapSummary = fmt.Sprintf("Capture failed: %v (capture log unavailable: %v)", captureErr, logErr)
+			} else {
+				pcapSummary = "Capture failed: " + captureErr.Error()
+			}
+			break
+		}
+		pcapSummary, err = s.analyzePcapSources(ctx, cli, firewall, pcapPath, captureNet)
+		if err != nil {
+			pcapSummary = "Capture analysis failed: " + err.Error()
+			break
+		}
+		pcapOK = true
 	}
 
+	reportEnd := time.Now().UTC()
+	finalHash, finalHashErr := gen.Containd().GetFirewallHash(ctx)
+	s.activeConfigMu.RLock()
+	stable := hashErr == nil && finalHashErr == nil && fullHash != "" && fullHash == finalHash &&
+		fullHash == wantHash && s.lastAppliedHash == wantHash && s.policyChangedAt.Equal(policyAt)
+	s.activeConfigMu.RUnlock()
+	if !stable || !pcapOK {
+		tally.pass = false
+	}
+
+	planProof, acceptance := judgeValidation(rows, source == "plan" && provenance != nil, fullHash, stable, pcapOK)
+	if provenance != nil && provenance.PolicyHash != fullHash {
+		planProof.Pass = false
+		planProof.HashStable = false
+	}
 	authPass, authTotal := tally.authPass, tally.authTotal
 	unauthPass, unauthTotal := tally.unauthPass, tally.unauthTotal
-	skipped, result := tally.skipped, tally.pass
-	md := renderValidationMarkdown(active, source, hash, pcapHostPath, pcapOK, pcapSummary,
+	skipped, result := tally.skipped, acceptance.Pass
+	md := recipe.renderValidationMarkdown(active, source, hash, pcapHostPath, pcapOK, pcapSummary,
 		rows, authPass, authTotal, unauthPass, unauthTotal, skipped, result)
 
+	md += fmt.Sprintf("\nPolicy proof window: %s — %s; full firewall hash `%s`; stable: %t.\n", reportStart.Format(time.RFC3339Nano), reportEnd.Format(time.RFC3339Nano), fullHash, stable)
+	md += fmt.Sprintf("\nPlan proof: applicable %t; PASS %t. Hardened acceptance: PASS %t; prevention gaps: %v.\n", planProof.Applicable, planProof.Pass, acceptance.Pass, acceptance.PreventionGaps)
+	s.activeConfigMu.Lock()
+	if s.lastAppliedHash == wantHash && s.policyChangedAt.Equal(policyAt) {
+		s.lastValidationReport = &retainedValidationReport{Hash: fullHash, Markdown: md, RangeStart: gen.StartedAt, PolicyAt: policyAt, StartedAt: reportStart, FinishedAt: reportEnd, PlanProof: planProof, Acceptance: acceptance}
+	}
+	s.activeConfigMu.Unlock()
+
 	c.JSON(http.StatusOK, gin.H{
-		"markdown": md,
+		"markdown":   md,
+		"planProof":  planProof,
+		"acceptance": acceptance,
 		"summary": gin.H{
 			"authorized_pass":    authPass,
 			"authorized_total":   authTotal,
@@ -200,54 +231,130 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 			"skipped":            skipped,
 			"result":             map[bool]string{true: "PASS", false: "FAIL"}[result],
 		},
+		"policy_hash":   fullHash,
+		"window_start":  reportStart,
+		"window_end":    reportEnd,
+		"policy_stable": stable,
 		"active_config": active,
 		"policy_source": source,
 		"pcap_path":     pcapHostPath,
 	})
 }
 
-// probeTCP opens a TCP connection from src to dst:port and classifies the
-// result as allow (reached) / deny (dropped) by exit code + duration -
-// same heuristic as scripts/firewall-smoke.sh and validation-report.sh.
-func (s *Server) probeTCP(ctx context.Context, cli *client.Client, src, dst, port string, timeoutSec int) (string, int) {
-	cmd := []string{"sh", "-c", fmt.Sprintf(
-		`if command -v bash >/dev/null 2>&1; then timeout %d bash -c "exec 3<>/dev/tcp/%s/%s"; else timeout %d nc -w %d %s %s </dev/null; fi`,
-		timeoutSec, dst, port, timeoutSec, timeoutSec, dst, port)}
-	start := time.Now()
-	_, rc, err := s.execCapture(ctx, cli, src, cmd)
-	ms := int(time.Since(start).Milliseconds())
-	if err != nil {
-		return "skipped", ms
-	}
-	switch {
-	case rc == 0:
-		return "allow", ms
-	case rc == 124 || rc == 143:
-		return "deny", ms
-	case rc == 1:
-		if ms < 500 {
-			return "allow", ms
-		}
-		return "deny", ms
-	default:
-		return "deny", ms
-	}
-}
-
 // analyzePcapSources reads the capture on the firewall and aggregates the
 // source IPs that were actually FORWARDED toward field (direction "Out" on
-// tcpdump -i any). Same awk as validation-report.sh.
-func (s *Server) analyzePcapSources(ctx context.Context, cli *client.Client, pcapPath string) string {
-	awk := `tcpdump -r ` + pcapPath + ` -nn 2>/dev/null | awk '` +
-		`/^[0-9]/ { if ($3 != "Out") next; ip=$5; n=split(ip,a,"."); if (n<4) next; ` +
-		`if (a[1]=="10" && a[2]=="40" && a[3]=="40") next; print a[1]"."a[2]"."a[3]"."a[4] }' ` +
-		`| sort | uniq -c | sort -rn | head -10`
-	out, _, err := s.execCapture(ctx, cli, firewallContainer, []string{"sh", "-c", awk})
-	out = strings.TrimRight(out, "\n")
-	if err != nil || strings.TrimSpace(out) == "" {
-		return "(no packets captured during window)"
+// tcpdump -i any).
+// captureNet is the first three octets of the captured devices' /24, whose
+// own traffic the summary leaves out.
+func (s *Server) analyzePcapSources(ctx context.Context, cli *client.Client, firewall, pcapPath string, captureNet []string) (string, error) {
+	out, exitCode, err := s.execCapture(ctx, cli, firewall, []string{"tcpdump", "-r", pcapPath, "-nn"})
+	if err != nil {
+		return "", fmt.Errorf("read PCAP: %w", err)
 	}
-	return out
+	if err := commandExecutionError(exitCode, out); err != nil {
+		return "", fmt.Errorf("read PCAP: %w", err)
+	}
+	return summarizePcapOutput(out, captureNet)
+}
+
+func summarizePcapOutput(output string, captureNet []string) (string, error) {
+	if len(captureNet) < 3 {
+		return "", fmt.Errorf("capture network must contain three octets")
+	}
+	packetCount := 0
+	sourceCounts := map[string]int{}
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		packetType := false
+		for _, field := range fields {
+			if field == "IP" || field == "IP6" {
+				packetType = true
+				break
+			}
+		}
+		if !packetType {
+			continue
+		}
+		packetCount++
+		if len(fields) < 5 || fields[2] != "Out" || fields[3] != "IP" {
+			continue
+		}
+		parts := strings.Split(strings.TrimSuffix(fields[4], ":"), ".")
+		if len(parts) < 4 {
+			continue
+		}
+		source := strings.Join(parts[:4], ".")
+		if source == strings.Join(captureNet[:3], ".") || parts[0] == captureNet[0] && parts[1] == captureNet[1] && parts[2] == captureNet[2] {
+			continue
+		}
+		sourceCounts[source]++
+	}
+	if packetCount == 0 {
+		return "", fmt.Errorf("PCAP contains no analysable packets")
+	}
+	if len(sourceCounts) == 0 {
+		return fmt.Sprintf("No forwarded source packets found among %d analysable packets.", packetCount), nil
+	}
+
+	sources := make([]string, 0, len(sourceCounts))
+	for source := range sourceCounts {
+		sources = append(sources, source)
+	}
+	sort.Slice(sources, func(i, j int) bool {
+		if sourceCounts[sources[i]] == sourceCounts[sources[j]] {
+			return sources[i] < sources[j]
+		}
+		return sourceCounts[sources[i]] > sourceCounts[sources[j]]
+	})
+	if len(sources) > 10 {
+		sources = sources[:10]
+	}
+	lines := make([]string, 0, len(sources))
+	for _, source := range sources {
+		lines = append(lines, fmt.Sprintf("%5d %s", sourceCounts[source], source))
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func captureCommandError(exitCode int, output string) error {
+	if exitCode == 0 || exitCode == 124 {
+		return nil
+	}
+	return commandExecutionError(exitCode, output)
+}
+
+func commandExecutionError(exitCode int, output string) error {
+	if exitCode == 0 {
+		return nil
+	}
+	detail := strings.TrimSpace(output)
+	if detail == "" {
+		return fmt.Errorf("command exited with status %d", exitCode)
+	}
+	return fmt.Errorf("command exited with status %d: %s", exitCode, detail)
+}
+
+func (s *Server) waitDetachedExec(ctx context.Context, cli *client.Client, execID string, timeout time.Duration) (int, error) {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		inspection, err := cli.ContainerExecInspect(ctx, execID)
+		if err != nil {
+			return -1, fmt.Errorf("inspect capture exec: %w", err)
+		}
+		if !inspection.Running {
+			return inspection.ExitCode, nil
+		}
+		select {
+		case <-ctx.Done():
+			return -1, fmt.Errorf("wait for capture exec: %w", ctx.Err())
+		case <-deadline.C:
+			return -1, fmt.Errorf("capture exec did not finish within %s", timeout)
+		case <-ticker.C:
+		}
+	}
 }
 
 // execCapture runs cmd in containerName, returns combined stdout, the exit
@@ -265,25 +372,32 @@ func (s *Server) execCapture(ctx context.Context, cli *client.Client, containerN
 	}
 	defer att.Close()
 	var outBuf, errBuf bytes.Buffer
-	_, _ = stdcopy.StdCopy(&outBuf, &errBuf, att.Reader) // blocks until exec exits
+	_, copyErr := stdcopy.StdCopy(&outBuf, &errBuf, att.Reader) // blocks until exec exits
+	output := outBuf.String() + errBuf.String()
+	if copyErr != nil {
+		return output, -1, fmt.Errorf("read exec output: %w", copyErr)
+	}
 	insp, err := cli.ContainerExecInspect(ctx, execID.ID)
 	if err != nil {
-		return outBuf.String(), -1, err
+		return output, -1, err
 	}
-	return outBuf.String(), insp.ExitCode, nil
+	return output, insp.ExitCode, nil
 }
 
 // execDetached fires a command without waiting for it (used for the
-// background tcpdump capture).
-func (s *Server) execDetached(ctx context.Context, cli *client.Client, containerName string, cmd []string) error {
+// background tcpdump capture) and returns its exec ID for completion checks.
+func (s *Server) execDetached(ctx context.Context, cli *client.Client, containerName string, cmd []string) (string, error) {
 	execID, err := cli.ContainerExecCreate(ctx, containerName, container.ExecOptions{Cmd: cmd})
 	if err != nil {
-		return err
+		return "", err
 	}
-	return cli.ContainerExecStart(ctx, execID.ID, container.ExecStartOptions{Detach: true})
+	if err := cli.ContainerExecStart(ctx, execID.ID, container.ExecStartOptions{Detach: true}); err != nil {
+		return "", err
+	}
+	return execID.ID, nil
 }
 
-func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK bool, pcapSummary string,
+func (recipe *packageRecipe) renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK bool, pcapSummary string,
 	rows []validationRow, authPass, authTotal, unauthPass, unauthTotal, skipped int, result bool) string {
 
 	policyLabel := map[string]string{
@@ -297,12 +411,15 @@ func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK 
 
 	var b strings.Builder
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	fmt.Fprintf(&b, "# Substation Segmentation - Validation Report\n\n")
+	fmt.Fprintf(&b, "# %s\n\n", recipe.report.title)
 	fmt.Fprintf(&b, "| Field | Value |\n|---|---|\n")
 	fmt.Fprintf(&b, "| **Generated** | %s |\n", now)
 	fmt.Fprintf(&b, "| **Policy** | %s (source: `%s`, sha256:%s) |\n", policyLabel, source, hash)
 	if pcapOK {
 		fmt.Fprintf(&b, "| **PCAP evidence** | `%s` |\n", pcapHostPath)
+	} else if strings.HasPrefix(pcapSummary, "Capture ") {
+		detail := strings.NewReplacer("\n", " ", "|", "/").Replace(pcapSummary)
+		fmt.Fprintf(&b, "| **PCAP evidence** | FAIL — %s |\n", detail)
 	}
 	fmt.Fprintf(&b, "| **Probe timeout** | %ds |\n\n", validationProbeTimeoutSec)
 
@@ -314,9 +431,9 @@ func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK 
 	}
 	b.WriteString("\n")
 	if result {
-		fmt.Fprintf(&b, "**Result: PASS** - every authorized flow works and every unauthorized flow is blocked. The active policy is enforcing what the design specified.\n\n")
+		b.WriteString(recipe.report.passText + "\n\n")
 	} else if skipped > 0 {
-		fmt.Fprintf(&b, "**Result: FAIL** - %d probe(s) could not run (source container missing, renamed, or stopped - shown as ⊘ below), so the validation matrix did not fully execute. A report cannot claim PASS unless every probe ran. Bring the full lab stack up and re-run. Inspect any ✗ rows for genuine policy mismatches as well.\n\n", skipped)
+		fmt.Fprintf(&b, recipe.report.skippedText+"\n\n", skipped)
 	} else {
 		fmt.Fprintf(&b, "**Result: FAIL** - one or more rows did not match the expected verdict. Inspect the ✗ rows below: an authorized flow that's blocked means a rule is too tight; an unauthorized flow that succeeds means a rule is too loose or missing.\n\n")
 	}
@@ -336,23 +453,26 @@ func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK 
 			} else if !r.Pass {
 				mark = "✗"
 			}
+			note := r.Note
+			if r.ProbeError != "" {
+				note += " — Untested: " + strings.NewReplacer("\n", " ", "|", "/").Replace(r.ProbeError)
+			}
 			fmt.Fprintf(&b, "| %d | %s %s | `%s` | %s | %s | %s | %dms | %s |\n",
-				n, mark, r.SrcLabel, r.Dst, r.Port, r.Expected, r.Actual, r.DurationMs, r.Note)
+				n, mark, r.SrcLabel, r.Dst, r.Port, r.Expected, r.Actual, r.DurationMs, note)
 		}
 		b.WriteString("\n")
 	}
 	writeTable("Authorized flow tests", "Flows the substation depends on; each must succeed under the active policy.", "authorized")
-	writeTable("Unauthorized flow tests", "Flows the policy must deny. Each blocked attempt is positive evidence the segmentation is enforcing.", "unauthorized")
+	writeTable("Unauthorized flow tests", recipe.report.unauthorizedIntro, "unauthorized")
 
 	if pcapOK {
 		fmt.Fprintf(&b, "## PCAP source analysis\n\n")
-		fmt.Fprintf(&b, "Sources whose traffic the firewall forwarded toward the field zone (`10.40.40.0/24`) during the capture window:\n\n```\n%s\n```\n\n", pcapSummary)
-		fmt.Fprintf(&b, "Under a hardened policy only the RTAC (`10.30.30.20`) and the GPS/NTP server (`10.30.30.50`) should appear. Any other source IP indicates a missing rule or a leaky deny.\n\n")
+		fmt.Fprintf(&b, "%s\n\n```\n%s\n```\n\n", recipe.report.captureIntro, pcapSummary)
+		b.WriteString(recipe.report.captureLimits + "\n\n")
 	}
 
 	fmt.Fprintf(&b, "## Methodology\n\n")
-	fmt.Fprintf(&b, "- **allow** = the source container's TCP SYN reached the destination (connect succeeded, or a fast RST came back). **deny** = the SYN was dropped (timeout at the probe budget).\n")
-	fmt.Fprintf(&b, "- Probes ran from inside each source container via `/dev/tcp` (or `nc` on busybox-only hosts) - the same primitive as `scripts/firewall-smoke.sh`.\n")
-	fmt.Fprintf(&b, "- This report validates the **currently active** policy; it does not apply or change any policy.\n")
+	b.WriteString(recipe.report.methodology)
+	b.WriteString(recipe.report.limits)
 	return b.String()
 }

@@ -53,16 +53,36 @@ say()    { printf "%s[+]%s %s\n" "$GREEN" "$RESET" "$*"; }
 warn()   { printf "%s[!]%s %s\n" "$YELLOW" "$RESET" "$*" >&2; }
 die()    { printf "%s[✗]%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
 banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s─' $(seq 1 ${#1}))"; }
+. "$ROOT_DIR/scripts/lib/stage-pull.sh"
 
 [ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE not found — run from repo root."
 command -v python3 >/dev/null 2>&1 || die "python3 is required to verify the saved Docker archive manifests."
 
-# Image list comes from the release compose; Compose substitutes the
-# requested version into every first-party image reference.
-# Set VERSION for Compose itself so an existing repo .env cannot select
-# a different first-party release than the positional argument.
-if ! ALL_IMAGES=$(VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" config --images | sort -u); then
-    die "Couldn't enumerate images from $COMPOSE_FILE"
+# Each Compose project is independent: ask Compose for the image union of
+# the platform model and every package model, rather than merging files
+# whose service keys can repeat between packages.
+collect_release_images() {
+    local package_dir compose_file
+    RANGERDANGER_ROOT="$ROOT_DIR" VERSION="$VERSION" \
+        docker compose --project-directory "$ROOT_DIR" \
+        -f "$COMPOSE_FILE" config --images || return 1
+    for package_dir in "$ROOT_DIR"/lab-definitions/packages/*; do
+        [ -d "$package_dir" ] || continue
+        compose_file="$package_dir/compose.release.yml"
+        [ -f "$compose_file" ] || {
+            printf 'Missing package release Compose file: %s\n' "$compose_file" >&2
+            return 1
+        }
+        RANGERDANGER_ROOT="$ROOT_DIR" VERSION="$VERSION" \
+            docker compose --project-directory "$ROOT_DIR" \
+            -f "$compose_file" config --images || return 1
+    done
+}
+
+# The root variable is part of the deployment contract. Set VERSION for
+# Compose itself so a repo .env cannot override the requested release.
+if ! ALL_IMAGES=$(collect_release_images | sort -u); then
+    die "Couldn't enumerate the platform/package release image union"
 fi
 [ -n "$ALL_IMAGES" ] || die "Couldn't enumerate images from $COMPOSE_FILE"
 
@@ -292,19 +312,7 @@ stage_arch() {
         elif [ "$ref" != "$img" ]; then
             say "    -> $ref"
         fi
-        # Heads-up on the large images so a multi-minute pull doesn't look
-        # like a hang (issue #81). The webtop desktop images (corp-ws,
-        # eng-ws, vendor-jump) are multi-GB; openplc is also a large pull.
-        # Everything else is quick.
-        case "$img" in
-            *rangerdanger-corp-ws*|*rangerdanger-eng-ws*|*rangerdanger-vendor-jump*)
-                say "    large image (~2-3 GB desktop) — a few minutes is normal" ;;
-            *rangerdanger-openplc*)
-                say "    large image (~1 GB) — give it a minute" ;;
-        esac
-        # Show Docker's native layer progress (no --quiet) so the operator can
-        # see bytes moving on the big pulls instead of staring at a silent line.
-        docker pull "$ref" \
+        stage_pull_image "$img" "$ref" \
             || die "docker pull failed for $ref on $arch — see Docker's error above for the cause; refusing to write a partial bundle."
         # Apply the user-friendly tag locally. The tag-target form
         # cannot include @digest (docker rejects it), so strip any

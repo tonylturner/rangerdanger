@@ -1,0 +1,363 @@
+{
+  "sections": [
+    {
+      "id": "equipment",
+      "heading": "Feeder Equipment & Operations",
+      "description": "The MV feeder, its switchgear, the tap changer and the historian.",
+      "icon": "zap",
+      "accent": "sky",
+      "articles": [
+        {
+          "id": "eu-mv-feeder",
+          "title": "The CIGRE-derived 20 kV feeder and its sections",
+          "file": "eu-mv-feeder.md"
+        },
+        {
+          "id": "eu-feeder-breaker-protection",
+          "title": "Local protection survives loss of SCADA",
+          "file": "eu-feeder-breaker-protection.md"
+        },
+        {
+          "id": "eu-rmu-switchgear",
+          "title": "Ring main units: load-break ways, earthing and fault passage",
+          "file": "eu-rmu-switchgear.md"
+        },
+        {
+          "id": "eu-rmu-switching-orders",
+          "title": "Switching orders, the normally-open point and back-feed",
+          "file": "eu-rmu-switching-orders.md"
+        },
+        {
+          "id": "eu-primary-oltc",
+          "title": "The primary on-load tap changer",
+          "file": "eu-primary-oltc.md"
+        },
+        {
+          "id": "eu-voltage-regulation",
+          "title": "Voltage regulation: band, delay and runaway taps",
+          "file": "eu-voltage-regulation.md"
+        },
+        {
+          "id": "eu-openplc-tap-logic",
+          "title": "OpenPLC tap logic: auto, manual and blocking",
+          "file": "eu-openplc-tap-logic.md"
+        },
+        {
+          "id": "eu-historian",
+          "title": "The historian DMZ: what is archived and what is not",
+          "file": "eu-historian.md"
+        },
+        {
+          "id": "eu-hmi-scada",
+          "title": "HMI, SCADA and DCS supervisory layers",
+          "file": "eu-hmi-scada.md"
+        },
+        {
+          "id": "eu-power-factor-reactive-power",
+          "title": "Real power, reactive power and power factor",
+          "file": "eu-power-factor-reactive-power.md"
+        },
+        {
+          "id": "eu-reclosers",
+          "title": "Reclosers and auto-reclose (background)",
+          "file": "eu-reclosers.md"
+        },
+        {
+          "id": "eu-capacitor-banks",
+          "title": "Capacitor banks and reactive compensation (background)",
+          "file": "eu-capacitor-banks.md"
+        }
+      ]
+    },
+    {
+      "id": "protocols",
+      "heading": "IEC 104 & Station Communications",
+      "description": "The implemented wire model, control path and observation quality.",
+      "icon": "radio",
+      "accent": "violet",
+      "articles": [
+        {
+          "id": "eu-telecontrol-architecture",
+          "title": "Two hops: Control Centre observations and Physical System state",
+          "file": "eu-telecontrol-architecture.md"
+        },
+        {
+          "id": "iec104-wire-model",
+          "title": "IEC 104 frames, addresses and the implemented point map",
+          "file": "iec104-wire-model.md"
+        },
+        {
+          "id": "iec104-gi-cot-quality",
+          "title": "GI, cyclic reporting, deadbands and quality",
+          "file": "iec104-gi-cot-quality.md"
+        },
+        {
+          "id": "iec104-sbo-commands",
+          "title": "Select-before-operate is sequencing, not authorization",
+          "file": "iec104-sbo-commands.md"
+        },
+        {
+          "id": "eu-iec104-step-telemetry",
+          "title": "Step positions and regulating-step commands",
+          "file": "eu-iec104-step-telemetry.md"
+        },
+        {
+          "id": "eu-southbound-modbus",
+          "title": "Southbound Modbus: RTU polling of field devices",
+          "file": "eu-southbound-modbus.md"
+        },
+        {
+          "id": "eu-station-clock",
+          "title": "Station time records observation provenance",
+          "file": "eu-station-clock.md"
+        },
+        {
+          "id": "eu-rtu-control-centre-apis",
+          "title": "Operator APIs versus lab step actions",
+          "file": "eu-rtu-control-centre-apis.md"
+        },
+        {
+          "id": "eu-ntp-ot",
+          "title": "OT time distribution: NTP, PTP and IRIG-B (background)",
+          "file": "eu-ntp-ot.md"
+        },
+        {
+          "id": "eu-iec61850-goose",
+          "title": "IEC 61850, GOOSE and Sampled Values (background)",
+          "file": "eu-iec61850-goose.md"
+        },
+        {
+          "id": "eu-opc-ua",
+          "title": "OPC UA in OT environments (background)",
+          "file": "eu-opc-ua.md"
+        }
+      ]
+    },
+    {
+      "id": "segmentation",
+      "heading": "Zones, Conduits & Change Design",
+      "description": "Design zones and conduits and justify every change.",
+      "icon": "shield",
+      "accent": "emerald",
+      "articles": [
+        {
+          "id": "eu-zone-conduit-design",
+          "title": "Zones and conduits for the EU substation",
+          "file": "eu-zone-conduit-design.md"
+        },
+        {
+          "id": "eu-iec62443-risk-design",
+          "title": "IEC 62443-3-2 risk assessment in practice",
+          "file": "eu-iec62443-risk-design.md"
+        },
+        {
+          "id": "eu-security-objectives",
+          "title": "Security objectives for a distribution feeder",
+          "file": "eu-security-objectives.md"
+        },
+        {
+          "id": "eu-port-source-boundary",
+          "title": "Port- and source-based rules",
+          "file": "eu-port-source-boundary.md"
+        },
+        {
+          "id": "eu-established-sessions",
+          "title": "Conntrack and temporal proof of an outage",
+          "file": "eu-established-sessions.md"
+        },
+        {
+          "id": "eu-vendor-engineering-access",
+          "title": "Vendor and engineering access",
+          "file": "eu-vendor-engineering-access.md"
+        },
+        {
+          "id": "eu-control-authority",
+          "title": "Control authority: who may command what",
+          "file": "eu-control-authority.md"
+        },
+        {
+          "id": "eu-change-resource-plan",
+          "title": "Planning a change: resources, rollback and acceptance",
+          "file": "eu-change-resource-plan.md"
+        },
+        {
+          "id": "eu-segmentation-approaches",
+          "title": "Segmentation approaches and their limits",
+          "file": "eu-segmentation-approaches.md"
+        },
+        {
+          "id": "eu-purdue-model",
+          "title": "The Purdue model and the EU range",
+          "file": "eu-purdue-model.md"
+        },
+        {
+          "id": "eu-default-deny",
+          "title": "Default-deny policy patterns",
+          "file": "eu-default-deny.md"
+        },
+        {
+          "id": "eu-iec62443-security-levels",
+          "title": "IEC 62443 security levels",
+          "file": "eu-iec62443-security-levels.md"
+        },
+        {
+          "id": "eu-ics-dpi",
+          "title": "ICS deep packet inspection",
+          "file": "eu-ics-dpi.md"
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "heading": "Tools & Evidence Recipes",
+      "description": "Collect evidence without confusing decoding with enforcement.",
+      "icon": "wrench",
+      "accent": "amber",
+      "articles": [
+        {
+          "id": "tool-iec104cmd",
+          "title": "iec104cmd recipes and evidence limits",
+          "file": "tool-iec104cmd.md"
+        },
+        {
+          "id": "tool-iec104-tshark",
+          "title": "Decode IEC 104 evidence with tshark",
+          "file": "tool-iec104-tshark.md"
+        },
+        {
+          "id": "eu-tool-mbpoll",
+          "title": "mbpoll reads and boundary limits",
+          "file": "eu-tool-mbpoll.md"
+        },
+        {
+          "id": "eu-tool-tcpdump",
+          "title": "Capture conduit traffic with tcpdump",
+          "file": "eu-tool-tcpdump.md"
+        },
+        {
+          "id": "eu-tool-curl-exports",
+          "title": "CC, field and historian evidence with curl",
+          "file": "eu-tool-curl-exports.md"
+        },
+        {
+          "id": "eu-tool-nmap-probes",
+          "title": "Probe boundaries with nmap",
+          "file": "eu-tool-nmap-probes.md"
+        }
+      ]
+    },
+    {
+      "id": "internals",
+      "heading": "Range Internals",
+      "description": "How the range is built, reset and verified.",
+      "icon": "layers",
+      "accent": "slate",
+      "articles": [
+        {
+          "id": "eu-range-node-map",
+          "title": "Range node map: zones, addresses and roles",
+          "file": "eu-range-node-map.md"
+        },
+        {
+          "id": "eu-policy-comparison",
+          "title": "Weak versus improved policy",
+          "file": "eu-policy-comparison.md"
+        },
+        {
+          "id": "eu-evidence-lifecycle",
+          "title": "Evidence lifecycle: capture, retention and reset",
+          "file": "eu-evidence-lifecycle.md"
+        },
+        {
+          "id": "eu-reset-acceptance",
+          "title": "Reset and acceptance checks",
+          "file": "eu-reset-acceptance.md"
+        },
+        {
+          "id": "eu-process-reference-cases",
+          "title": "Process reference cases",
+          "file": "eu-process-reference-cases.md"
+        },
+        {
+          "id": "eu-telecontrol-deep-dive",
+          "title": "Telecontrol, stale observation and local protection",
+          "file": "eu-telecontrol-deep-dive.md"
+        },
+        {
+          "id": "eu-conduit-deep-dive",
+          "title": "Station conduit assurance and maintenance boundaries",
+          "file": "eu-conduit-deep-dive.md"
+        },
+        {
+          "id": "eu-switching-deep-dive",
+          "title": "Optional RMU switching and restoration investigation",
+          "file": "eu-switching-deep-dive.md"
+        },
+        {
+          "id": "eu-regulation-deep-dive",
+          "title": "Optional PLC regulation, historian and clock investigation",
+          "file": "eu-regulation-deep-dive.md"
+        },
+        {
+          "id": "eu-live-firewall-events",
+          "title": "The Live DPI Events panel: L4 evidence, not DPI",
+          "file": "eu-live-firewall-events.md"
+        },
+        {
+          "id": "eu-plan-coverage-pipeline",
+          "title": "The plan-coverage pipeline across labs",
+          "file": "eu-plan-coverage-pipeline.md"
+        },
+        {
+          "id": "eu-containd-policy-enforcement",
+          "title": "containd L4 policy enforcement",
+          "file": "eu-containd-policy-enforcement.md"
+        }
+      ]
+    },
+    {
+      "id": "threats",
+      "heading": "Threats & Operational Practice",
+      "description": "Attack cases, regulation and the consequences operators manage.",
+      "icon": "target",
+      "accent": "rose",
+      "articles": [
+        {
+          "id": "eu-telecontrol-attack-cases",
+          "title": "Telecontrol attack cases: Industroyer and after",
+          "file": "eu-telecontrol-attack-cases.md"
+        },
+        {
+          "id": "eu-trusted-host-misuse",
+          "title": "Misuse of trusted hosts",
+          "file": "eu-trusted-host-misuse.md"
+        },
+        {
+          "id": "eu-dso-regulatory-context",
+          "title": "DSO regulatory context: NIS2 and the network code",
+          "file": "eu-dso-regulatory-context.md"
+        },
+        {
+          "id": "eu-bdew-security-context",
+          "title": "BDEW/OE/VSE whitepaper security context",
+          "file": "eu-bdew-security-context.md"
+        },
+        {
+          "id": "eu-outage-voltage-consequences",
+          "title": "Outage and voltage consequences",
+          "file": "eu-outage-voltage-consequences.md"
+        },
+        {
+          "id": "eu-acceptance-handover",
+          "title": "Acceptance and handover",
+          "file": "eu-acceptance-handover.md"
+        },
+        {
+          "id": "eu-outage-costs-saidi-saifi",
+          "title": "Reliability indices: SAIDI, SAIFI and CAIDI",
+          "file": "eu-outage-costs-saidi-saifi.md"
+        }
+      ]
+    }
+  ]
+}

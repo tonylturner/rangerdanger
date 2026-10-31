@@ -1,4 +1,6 @@
-FROM golang:1.27-alpine AS dnp3-builder
+ARG GO_IMAGE=golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba
+FROM ${GO_IMAGE} AS dnp3-builder
+ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY dnp3go/ .
 RUN --mount=type=cache,target=/root/.cache/go-build \
@@ -6,7 +8,15 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -o /dnp3poll ./cmd/dnp3poll \
  && CGO_ENABLED=0 go build -o /dnp3cmd ./cmd/dnp3cmd
 
-FROM kalilinux/kali-rolling
+# IEC 104 CLI: standalone static Go build, independent of the service image.
+FROM ${GO_IMAGE} AS iec104cmd-builder
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOPROXY=off
+WORKDIR /src/iec104go
+COPY iec104go/go.mod iec104go/*.go ./
+COPY iec104go/cmd/iec104cmd/ ./cmd/iec104cmd/
+RUN go build -trimpath -o /out/iec104cmd ./cmd/iec104cmd
+
+FROM kalilinux/kali-rolling:latest@sha256:4be87f78671419c13dcf4f207ead1cfc0de178ea281b3f69c0f49b69ba4e79b1
 
 # Avoid prompts during package installation.
 ENV DEBIAN_FRONTEND=noninteractive
@@ -118,9 +128,13 @@ RUN set -eu; \
 COPY --from=dnp3-builder /dnp3poll /usr/local/bin/dnp3poll
 COPY --from=dnp3-builder /dnp3cmd /usr/local/bin/dnp3cmd
 
+# IEC 104 CLI (Apache-2.0); unrelated base-image components retain their licences.
+COPY --from=iec104cmd-builder /out/iec104cmd /usr/local/bin/iec104cmd
+COPY iec104go/LICENSE /usr/share/licenses/iec104/LICENSE
+
 # Create workspace
 RUN mkdir -p /home/kali/workspace
 WORKDIR /home/kali
 
 # Set containd as gateway and keep container running
-CMD ["sh", "-c", "[ -x /usr/local/bin/set-gateway.sh ] && /usr/local/bin/set-gateway.sh || true; sleep infinity"]
+CMD ["sh", "-c", "/usr/local/bin/set-gateway.sh && exec sleep infinity"]

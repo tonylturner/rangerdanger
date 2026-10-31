@@ -1,0 +1,321 @@
+// @vitest-environment jsdom
+import { act, fireEvent, render, waitFor, type RenderResult } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { FieldState, OperatorState, ProcessElectrical } from "../lib/operator-api";
+import initialProcess from "../lib/fixtures/process-initial.json";
+import { AUDIT, FEEDER_STATE, JOURNAL, NOW, TRUTH } from "../lib/operator-fixtures.test-util";
+import { EU_ORACLE, oracleFixture } from "../lib/eu-oracle.test-util";
+import { physicalAbnormalities } from "../lib/physical-abnormalities";
+import { physicalSystemObservations } from "../lib/observation-readings";
+import { PhysicalSystem, PhysicalSystemScreen } from "./physical-system";
+import { AuditTable } from "./physical-system-audit";
+import { PhysicalDiagnostics } from "./physical-system-diagnostics";
+import { EquipmentCard } from "./physical-system-equipment";
+import { ControlCentreScreen, ControlCentreView } from "./control-centre-view";
+
+const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+const clients: QueryClient[] = [];
+const scrollTargets: Element[] = [];
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value(this: Element) { scrollTargets.push(this); },
+});
+function mount(node: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
+  return render(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
+}
+const props = { field: TRUTH, stateError: null, operator: FEEDER_STATE, now: NOW };
+const output = (tree: RenderResult) => tree.container.innerHTML;
+const button = (tree: RenderResult, label: string) => [...tree.container.querySelectorAll("button")].find((b) => b.textContent?.includes(label))!;
+afterEach(() => {
+  clients.splice(0).forEach((client) => client.clear());
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+  scrollTargets.length = 0;
+  window.history.replaceState(null, "", "/");
+});
+function normalField() {
+  const field = oracleFixture(EU_ORACLE[12]).field;
+  field.devices["f2-breaker"].measurements.current_a = 11.2;
+  for (const d of Object.values(field.devices)) {
+    const m = d.measurements;
+    const apparentMva = Math.sqrt(3) * m.voltage_kv_ll! * m.current_a! / 1000;
+    m.pf = .957;
+    m.p_mw = apparentMva * m.pf;
+    m.q_mvar = apparentMva * Math.sqrt(1 - m.pf ** 2);
+    Object.assign(field.process.devices[d.device_id], { p_mw: m.p_mw, q_mvar: m.q_mvar });
+  }
+  return field;
+}
+function matchingOperator(field: FieldState): OperatorState {
+  const read = physicalSystemObservations(field);
+  return { ...FEEDER_STATE, points: FEEDER_STATE.points.map((p) => {
+    const r = read(p.id);
+    return r.condition === "good" ? { ...p, value: r.value ?? null } : p;
+  }) };
+}
+
+describe("Physical System presentation", () => {
+  it("shows a quiet normal state, every device and the required section order", () => {
+    const field = normalField(), operator = matchingOperator(field);
+    expect(Object.values(field.process.buses).every((bus) => bus.live && bus.kv! > 19)).toBe(true);
+    expect(field.devices["breaker-1"].measurements.current_a).toBe(61.4);
+    expect(field.devices["oltc-1"].measurements.current_a).toBe(72.3);
+    expect(field.devices["oltc-1"].measurements.p_mw).toBeGreaterThan(0);
+    const body = <PhysicalSystemScreen {...props} field={field} operator={operator} />;
+    const html = renderToStaticMarkup(<ControlCentreScreen state={operator} stateError={null} stateUpdatedAt={NOW} journal={JOURNAL} now={NOW} view="physical-system" physicalSystem={body} />);
+    const out = text(html);
+    for (const value of ["Physical System State", "Live electrical and device conditions from the simulation, independent of SCADA communications.", "Simulation observations · Independent of IEC 104", "No active physical abnormalities", "CB1 — Feeder breaker", "T1 — Transformer / OLTC", "RMU1", "RMU2 · NOP", "SCADA data quality:", "Physical agreement: 35 matched / 0 mismatched", "CC alarm limits 19.8–21.0 kV"]) expect(out).toContain(value);
+    const sections = ["Physical abnormalities", "System overview", "Physical system vs. Control Centre", "Electrical network overview", "Equipment overview", "Advanced diagnostics"];
+    const indices = sections.map((label) => html.indexOf(`aria-label="${label}"`));
+    expect(indices.every((i) => i >= 0)).toBe(true);
+    expect(indices).toEqual([...indices].sort((a, b) => a - b));
+    expect(out).not.toContain("Instructor"); expect(out).not.toContain("faceplate");
+    expect(html).toContain("max-w-full overflow-x-auto");
+    expect(out).not.toContain("Solver epoch"); expect(out).not.toContain("Device audit");
+  });
+  it("renders the Physical System without a clock and declares its absence in Station time", () => {
+    const field = { ...normalField(), clock: null };
+    const tree = mount(<PhysicalSystemScreen {...props} field={field} />);
+    expect(physicalAbnormalities(field).some((a) => a.id === "clock")).toBe(false);
+    expect(output(tree)).toContain("No active physical abnormalities");
+    expect(output(tree)).not.toContain("Time-sync warning");
+    fireEvent.click(button(tree, "Advanced diagnostics"));
+    const stationTime = [...tree.container.querySelectorAll("h4")].find((h) => h.textContent === "Station time")!.parentElement!;
+    expect(stationTime.querySelector("p")?.textContent).toBe("No station clock declared.");
+    expect(output(tree)).toContain("Device diagnostics");
+    expect(output(tree)).not.toContain("Time-sync warning");
+  });
+  it("keeps NOP open quiet, off-normal switching informational and clock warnings separate", () => {
+    const field = normalField();
+    expect(physicalAbnormalities(field)).toEqual([]);
+    const rmu = field.devices["rmu-2"];
+    if (rmu.kind === "rmu") rmu.position = "closed";
+    expect(physicalAbnormalities(field)).toEqual([expect.objectContaining({ tone: "info", text: "RMU2 closed · off-normal switching" })]);
+    field.clock = { ...field.clock!, sync_status: "freerun", alarm: true, comms_ok: false };
+    expect(physicalAbnormalities(field).find((a) => a.id === "clock")).toMatchObject({ tone: "warning", text: expect.stringContaining("Time-sync warning") });
+  });
+  it("surfaces protection, interlocks, delivery failures and stale process inputs without opening diagnostics", () => {
+    const field = structuredClone(TRUTH);
+    const t1 = field.devices["oltc-1"], rmu = field.devices["rmu-1"];
+    if (t1.kind === "oltc") { t1.blocked = true; t1.remote_enabled = false; }
+    if (rmu.kind === "rmu") { rmu.earth_closed = true; rmu.measurements.valid = false; }
+    field.devices["breaker-1"].protection.picked_up = true;
+    field.process.devices["rmu-1"].delivered = false;
+    field.process.truth_stale = true;
+    const f2 = field.devices["f2-breaker"];
+    if (f2.kind === "breaker") f2.protection_tripped = true;
+    const out = text(renderToStaticMarkup(<PhysicalSystemScreen {...props} field={field} />));
+    for (const value of ["CB1 protection TRIPPED", "CB1 LOCKOUT", "CB1 protection picked up", "RMU1 earth CLOSED", "RMU1 fault passage LATCHED", "T1 OLTC effective block", "T1 LOCAL control authority", "RMU1 measurements INVALID", "Fault section S1", "F2 protection TRIPPED", "device input STALE", "rmu-1 device delivery FAILED"]) expect(out).toContain(value);
+  });
+  it("shows physical API failure without inventing a SCADA outage", () => {
+    const out = text(renderToStaticMarkup(<PhysicalSystemScreen {...props} stateError={new Error("device offline")} />));
+    expect(out).toContain("Physical system unavailable: device offline");
+    expect(out).toContain("Showing retained observations, not current conditions.");
+    expect(out).not.toContain("Control centre API unavailable");
+    expect(out).toContain("Physical topology path: unknown");
+  });
+  it.each(["holdover", "freerun"] as const)("preserves %s clock evidence and treats it as time synchronization", (sync_status) => {
+    const field = { ...TRUTH, clock: { ...TRUTH.clock!, sync_status, alarm: true, comms_ok: false, time_offset_sec: -30 } };
+    const out = text(renderToStaticMarkup(<PhysicalDiagnostics field={field} audit={null} />));
+    expect(out).toContain(`Sync status ${sync_status.toUpperCase()}`);
+    expect(out).toContain("Time offset -30.000 s");
+    expect(out).toContain("Alarm / comms OK YES / no");
+    expect(physicalAbnormalities(field).find((a) => a.id === "clock")?.text).toContain("Time-sync warning");
+  });
+  it("promotes a genuine mismatch with a red text-and-symbol badge and independent physical values", () => {
+    const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} />);
+    expect(html).toContain("≠ MISMATCH"); expect(html).toContain("border-red-700");
+    expect(html).toContain("CB1: OPEN · GOOD · sim");
+    expect(html).toContain("F2 · CLOSED · GOOD · sim");
+    expect(html).toContain("Physical topology path: via F2");
+    expect(html).toContain("ENERGIZED"); expect(html).toContain("solver bus live");
+    expect(html).toContain("received 29 s ago"); expect(html).toContain("Source UTC");
+    const noOperator = renderToStaticMarkup(<PhysicalSystemScreen {...props} operator={undefined} />);
+    expect(noOperator).not.toContain("CC alarm limits"); expect(noOperator).toContain("? UNKNOWN");
+  });
+  it("distinguishes stale-but-equal from agreement and promotes secondary rows", () => {
+    const field = normalField(), operator = matchingOperator(field);
+    const p = operator.points.find((p) => p.id === "rmu-2-source-kv")!;
+    p.quality = { ...p.quality, iv: true, nt: true }; p.stale_reason = "link_lost";
+    const tree = mount(<PhysicalSystemScreen {...props} field={field} operator={operator} />);
+    const row = tree.container.querySelector(`[data-comparison="${p.id}"]`)!;
+    expect(row.getAttribute("data-status")).toBe("STALE");
+    expect(output(tree)).toContain("CC↔RTU link lost");
+    expect(button(tree, "All comparable points (35)").getAttribute("aria-expanded")).toBe("false");
+  });
+  it("never turns null into zero and distinguishes validity, freshness, energization and known positions", () => {
+    const field = structuredClone(TRUTH);
+    field.devices["oltc-1"].measurements.current_a = null;
+    field.devices["oltc-1"].measurements.voltage_kv_ll = null;
+    field.devices["rmu-1"].measurements.valid = false;
+    field.process.truth_stale = true;
+    delete field.devices["breaker-1"];
+    const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} field={field} />);
+    expect(html).toContain("I unknown"); expect(html).toContain("Bus voltage");
+    expect(html).toContain("CB1: unknown · UNKNOWN · sim");
+    expect(html).toContain("INVALID · retained measurements");
+    expect(html).toContain("F2 · CLOSED · GOOD · sim");
+    expect(html).toContain("Physical topology path: unknown");
+    expect(html).toContain("UNKNOWN · solver bus live");
+  });
+  it("shows solver energization separately from measured kV on the physical lower branch", () => {
+    const field = structuredClone(TRUTH);
+    field.process.buses.s3.live = false;
+    const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} field={field} />);
+    expect(html).toContain("S3 industrial · LIVE");
+    expect(html).toContain("NOT ENERGIZED · solver bus live");
+    expect(html.match(/<line x1="337"[^>]*>/)?.[0]).toContain('stroke="#94a3b8"');
+    expect(html.match(/<line x1="337"[^>]*>/)?.[0]).not.toContain("stroke-dasharray");
+    field.process.truth_stale = true;
+    const stale = renderToStaticMarkup(<PhysicalSystemScreen {...props} field={field} />);
+    expect(stale.match(/<line x1="337"[^>]*>/)?.[0]).toContain('stroke="#fbbf24"');
+  });
+  it("distinguishes completed tap, target tap and motion", () => {
+    const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} />);
+    expect(text(html)).toContain("Completed tap 1 MANUAL · moving · target 2");
+    expect(html).toContain("Tap 1 · TRANSIENT · GOOD · sim");
+  });
+  it("retains every engineering group and applies only fields meaningful to the equipment", () => {
+    const render = (id: string) => renderToStaticMarkup(<EquipmentCard id="CB1" title={id} device={TRUTH.devices[id]} open onToggle={() => {}} stale={false} />);
+    const cb1 = text(render("breaker-1")), t1 = text(render("oltc-1")), rmu = text(render("rmu-1"));
+    for (const value of ["Electrical", "Switching &amp; control", "Protection &amp; interlocks", "Events &amp; timestamps", "Diagnostics", "Active power P", "Reactive power Q", "Power factor PF", "Section / source voltage", "Section / source energization", "Control authority REMOTE", "Protection function", "Pickup / configured delay 400 A / 1000 ms", "Instantaneous pickup 3000 A", "Protection picked up", "Last trip current", "Revision / generation", "Event sequence", "Changed (UTC)", "Solver epoch", "Measurement received (UTC)"]) expect(cb1).toContain(value);
+    expect(cb1).not.toContain("Completed tap"); expect(cb1).not.toContain("Earth closed");
+    expect(t1).toContain("Target tap 2"); expect(t1).toContain("Manual block / armed"); expect(t1).toContain("PLC request result not_auto"); expect(t1).toContain("Heartbeat 200");
+    expect(rmu).toContain("Earth closed"); expect(rmu).toContain("Fault passage"); expect(rmu).not.toContain("Lockout");
+  });
+  it("uses F2 device protection for equipment, abnormalities and advanced diagnostics", () => {
+    const field = normalField();
+    const f2 = field.devices["f2-breaker"];
+    if (f2.kind !== "breaker") throw new Error("Expected F2 breaker");
+    Object.assign(f2, { position: "open", protection_tripped: true, lockout: true });
+    Object.assign(f2.protection, { picked_up: true, picked_up_since: "2026-10-09T12:00:12Z", last_trip_current_a: 2010 });
+    // The process summary cannot override independently owned device evidence.
+    field.process.f2_tripped = false;
+    expect(physicalAbnormalities(field).filter((a) => a.device === "F2")).toEqual([
+      { id: "f2-breaker-trip", text: "F2 protection TRIPPED", tone: "fault", device: "F2" },
+      { id: "f2-breaker-lockout", text: "F2 LOCKOUT", tone: "fault", device: "F2" },
+      { id: "f2-breaker-pickup", text: "F2 protection picked up", tone: "warning", device: "F2" },
+    ]);
+    const card = text(renderToStaticMarkup(<EquipmentCard id="F2" title="F2" device={f2} open onToggle={() => {}} stale={false} />));
+    const diagnostics = mount(<PhysicalDiagnostics field={field} audit={null} />);
+    const group = [...diagnostics.container.querySelectorAll("h4")].find((h) => h.textContent === "f2-breaker")!.parentElement!;
+    const details = [...group.querySelectorAll("span")].map((span) => span.textContent).join(" ");
+    for (const value of ["Protection tripped YES", "Lockout YES", "Protection picked up YES", "Instantaneous pickup 2000 A", "Last trip current 2010.0 A"]) expect(card).toContain(value);
+    for (const value of ["Protection tripped YES", "Lockout YES", "Protection picked up YES", "Instantaneous pickup 2000 A", "Last trip current 2010.0 A", "overcurrent"]) expect(details).toContain(value);
+    expect(details).not.toContain("3000 A");
+  });
+  it("labels the initial process tap unknown rather than inventing tap zero", () => {
+    const field = { ...TRUTH, process: initialProcess as ProcessElectrical };
+    const out = text(renderToStaticMarkup(<PhysicalDiagnostics field={field} audit={null} />));
+    expect(out).toContain("Source / tap 1 p.u. / unknown");
+    expect(out).toContain("f2-breaker delivery FAILED · solved rev unknown / current unknown");
+    expect(out).toContain("f2-breaker delivered I / P / Q unknown / unknown / unknown");
+  });
+  it("preserves solver, clock, delivery and audit evidence in advanced diagnostics", () => {
+    const html = renderToStaticMarkup(<PhysicalDiagnostics field={TRUTH} audit={<AuditTable audit={AUDIT} />} />);
+    const out = text(html);
+    for (const value of ["Simulation engine", "OpenDSS", "Solver epoch e1", "Device input stale", "residential profile factor 0.800 ×", "Station time", "Sync status LOCKED", "Time offset 2.500 s", "Satellites 9", "Reported time (UTC) 2026-10-09T12:00:32.000Z", "Actual time (UTC) 2026-10-09T12:00:29.500Z", "Device diagnostics", "Heartbeat 200", "solved rev 5 / current 5", "close rejected modbus · station · 10.30.30.20:41000 lockout", "closed → open"]) expect(out).toContain(value);
+    expect(out.indexOf("first_solve")).toBeLessThan(out.indexOf("local_protection_trip"));
+  });
+});
+
+describe("Physical System interactions", () => {
+  it("reveals on selection and availability changes without undoing a manual collapse on polling", () => {
+    const tree = mount(<PhysicalSystemScreen {...props} field={undefined} selected="CB1" revealSelected />);
+    const update = (field: FieldState | undefined, selected: "CB1" | "RMU1") =>
+      tree.rerender(<QueryClientProvider client={clients[0]}>
+        <PhysicalSystemScreen {...props} field={field} selected={selected} revealSelected />
+      </QueryClientProvider>);
+    update(TRUTH, "CB1");
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(button(tree, "CB1 — Feeder breaker"));
+    const scrolls = scrollTargets.length;
+    update(structuredClone(TRUTH), "CB1");
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("false");
+    expect(scrollTargets).toHaveLength(scrolls);
+    update(TRUTH, "RMU1");
+    expect(tree.container.querySelector('[aria-controls="physical-details-RMU1"]')?.getAttribute("aria-expanded")).toBe("true");
+    update(TRUTH, "CB1");
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("expands from overview, keeps state and scroll fixed during polling, and discloses matching secondary rows", () => {
+    const tree = mount(<PhysicalSystemScreen {...props} />);
+    fireEvent.click(button(tree, "Feeder breaker"));
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(button(tree, "Advanced diagnostics"));
+    const calls = scrollTargets.length;
+    tree.rerender(<QueryClientProvider client={clients[0]}><PhysicalSystemScreen {...props} field={structuredClone(TRUTH)} /></QueryClientProvider>);
+    expect(button(tree, "Advanced diagnostics").getAttribute("aria-expanded")).toBe("true");
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
+    expect(scrollTargets).toHaveLength(calls);
+    fireEvent.click(button(tree, "SCADA agreement"));
+    expect(button(tree, "All comparable points (35)").getAttribute("aria-expanded")).toBe("true");
+  });
+  it("shares device selection across views in both directions", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : url.includes("journal") ? JOURNAL : FEEDER_STATE)));
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.replaceState(null, "", "/substation");
+    const tree = mount(<ControlCentreView />);
+    const breaker = () => tree.container.querySelector<SVGGElement>('g[role="button"][aria-label^="CB1:"]')!;
+    await waitFor(() => expect(breaker()).not.toBeNull());
+    fireEvent.click(breaker());
+    fireEvent.click(button(tree, "Physical System"));
+    await waitFor(() => expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true"));
+    expect(window.location.search).toBe("?view=physical-system");
+    expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
+    const cb1 = () => tree.container.querySelector("#physical-equipment-CB1");
+    await waitFor(() => expect(cb1()).not.toBeNull());
+    await waitFor(() => expect(scrollTargets).toContain(cb1()));
+    expect(breaker().getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(tree.container.querySelector<SVGGElement>('g[role="button"][aria-label^="RMU2 ·"]')!);
+    fireEvent.click(button(tree, "Control Centre"));
+    expect(output(tree)).toContain("RMU2 faceplate");
+    fireEvent.click(tree.container.querySelector<SVGGElement>('g[role="button"][aria-label^="F2 indication"]')!);
+    fireEvent.click(button(tree, "Physical System"));
+    await waitFor(() => expect(button(tree, "F2 — Alternative feeder").getAttribute("aria-expanded")).toBe("true"));
+    expect(button(tree, "F2 — Alternative feeder").getAttribute("aria-expanded")).toBe("true");
+    const f2 = () => tree.container.querySelector("#physical-equipment-F2");
+    await waitFor(() => expect(f2()).not.toBeNull());
+    await waitFor(() => expect(scrollTargets).toContain(f2()));
+    fireEvent.click(button(tree, "Control Centre"));
+    expect(output(tree)).toContain("F2 faceplate");
+    expect(tree.container.querySelectorAll("button").length).toBeGreaterThan(0);
+    expect([...tree.container.querySelectorAll("button")].some((entry) => entry.textContent?.includes("Confirm"))).toBe(false);
+  });
+  it("retains audit evidence on audit failure independently of physical and SCADA availability", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes("/field/state")) return new Response(JSON.stringify(TRUTH));
+      throw new Error("audit offline");
+    }));
+    const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
+    await waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
+    clients[0].setQueryData(["field", "audit", "breaker-1"], AUDIT);
+    fireEvent.click(button(tree, "Advanced diagnostics"));
+    await waitFor(() => expect(output(tree)).toContain("audit offline"));
+    expect(output(tree)).toContain("Showing the last answer.");
+    expect(output(tree)).toContain("rejected");
+    expect(output(tree)).not.toContain("Physical system unavailable");
+    expect(output(tree)).not.toContain("Control centre API unavailable");
+  });
+  it.each(["rmu-2", "f2-breaker"])("polls audit only inside the expanded advanced section and retains %s through data refresh", async (device) => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : AUDIT)));
+    vi.stubGlobal("fetch", fetchMock);
+    const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
+    await waitFor(() => expect(output(tree)).toContain("Equipment overview"));
+    expect(fetchMock.mock.calls.some(([url]) => url.includes("/field/audit"))).toBe(false);
+    fireEvent.click(button(tree, "Advanced diagnostics"));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=breaker-1"))).toBe(true));
+    fireEvent.change(tree.container.querySelector('select[aria-label="Audit device"]')!, { target: { value: device } });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith(`device=${device}`))).toBe(true));
+    expect(fetchMock.mock.calls.some(([url]) => url.endsWith(`device=${device}`))).toBe(true);
+    act(() => { clients[0].setQueryData(["field", "state"], structuredClone(TRUTH)); });
+    expect((tree.container.querySelector('select[aria-label="Audit device"]') as HTMLSelectElement).value).toBe(device);
+    fireEvent.click(button(tree, "Advanced diagnostics"));
+    expect(clients[0].getQueryCache().findAll({ queryKey: ["field", "audit"] }).every((q) => q.getObserversCount() === 0)).toBe(true);
+  });
+});

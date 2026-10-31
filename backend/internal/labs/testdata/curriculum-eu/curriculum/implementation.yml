@@ -1,0 +1,18 @@
+phases:
+  rules: |-
+    Implement the six required operational conduits. Default deny after.
+
+    {{noPlan}}{{ruleTable}}
+  positive: |-
+    Verify operations:
+
+    {{tests}}
+  negative: |-
+    Verify blocked exposures:
+
+    {{tests}}
+noPlan: |+
+  Build a [plan](/exercises/{{planRole}}).
+
+tests: []
+negativeEmpty: No selected exposure closures to test yet.

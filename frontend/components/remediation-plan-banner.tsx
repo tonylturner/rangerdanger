@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ClipboardList } from "lucide-react";
-import { loadRemediationPlan, ACTION_IMPACT, type RemediationPlan } from "../lib/remediation-plan";
+import { loadRemediationPlan } from "../lib/remediation-plan";
+import type { PlanProvenance } from "../lib/api";
+import { planLabel } from "../lib/policy-wording";
+import { useCurriculumScope } from "../lib/curriculum-scope";
+import { useHydrated } from "../lib/use-hydrated";
 
 type RemediationPlanBannerProps = {
   currentExerciseId: string;
+  appliedPlan?: PlanProvenance;
 };
 
 // RemediationPlanBanner renders at the top of later exercises to show which
@@ -17,21 +22,21 @@ type RemediationPlanBannerProps = {
 //   - no plan has been saved yet
 //   - the current exercise is the planning exercise itself
 //   - the current exercise is the baseline (no plan yet)
-export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBannerProps) {
-  const [plan, setPlan] = useState<RemediationPlan | null>(null);
+export function RemediationPlanBanner({ currentExerciseId, appliedPlan }: RemediationPlanBannerProps) {
+  const scope = useCurriculumScope();
+  const hydrated = useHydrated();
+  const plan = useMemo(
+    () => hydrated && !scope.curriculum?.activities[currentExerciseId]?.hideBanner
+      ? loadRemediationPlan(scope) : null,
+    [scope, currentExerciseId, hydrated],
+  );
   const [expanded, setExpanded] = useState(false);
 
-  useEffect(() => {
-    setPlan(loadRemediationPlan());
-  }, [currentExerciseId]);
+  const binding = scope.curriculum;
+  if (!binding || binding.activities[currentExerciseId]?.hideBanner) return null;
 
-  // Hide on exercises where the banner isn't meaningful
-  if (currentExerciseId === "baseline-assessment") return null;
-  if (currentExerciseId === "remediation-planning") return null;
-  if (currentExerciseId === "segmentation-requirements") return null;
-  if (currentExerciseId === "firewall-implementation") return null;
-
-  if (!plan || plan.selectedActionIds.length === 0) {
+  const selectedIds = appliedPlan?.actionIds ?? plan?.selectedActionIds ?? [];
+  if (!plan && !appliedPlan) {
     return (
       <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -52,13 +57,12 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
   // the current exercise (per ACTION_IMPACT mapping).
   const relevantSelected: { id: string; note: string }[] = [];
   const relevantMissed: { id: string; note: string }[] = [];
-  for (const [actionId, impact] of Object.entries(ACTION_IMPACT)) {
+  for (const actionId of binding.impactOrder) {
+    const impact = binding.impact[actionId];
     if (!impact.defends.includes(currentExerciseId)) continue;
-    if (plan.selectedActionIds.includes(actionId)) {
-      relevantSelected.push({ id: actionId, note: impact.note });
-    } else {
-      relevantMissed.push({ id: actionId, note: impact.note });
-    }
+    const label = !selectedIds.includes(actionId) ? "deferred" : appliedPlan ? "applied in your plan" : "planned";
+    const item = { id: actionId, note: impact.note + (label ? ` — ${label}` : "") };
+    (selectedIds.includes(actionId) ? relevantSelected : relevantMissed).push(item);
   }
 
   const hasRelevance = relevantSelected.length > 0 || relevantMissed.length > 0;
@@ -72,10 +76,10 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
         <div className="flex items-center gap-2">
           <ClipboardList className="h-4 w-4 text-sky-400" />
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            Your Remediation Plan
+            Your Remediation Plan{appliedPlan ? ` — ${planLabel(appliedPlan.label)}` : ""}
           </div>
           <div className="text-[11px] text-slate-500">
-            {plan.selectedActionIds.length} action{plan.selectedActionIds.length === 1 ? "" : "s"} selected
+            {selectedIds.length} action{selectedIds.length === 1 ? "" : "s"} {appliedPlan ? "applied in your plan" : "planned"}
           </div>
           {hasRelevance && (
             <div
@@ -86,8 +90,8 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
               }`}
             >
               {relevantSelected.length > 0
-                ? `${relevantSelected.length} defense${relevantSelected.length === 1 ? "" : "s"} active`
-                : "no defenses for this attack"}
+                ? `${relevantSelected.length} actions ${appliedPlan ? "applied in your plan" : "planned"}`
+                : "no actions selected for this exercise"}
             </div>
           )}
         </div>
@@ -99,11 +103,11 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
           {relevantSelected.length > 0 && (
             <div>
               <div className="text-[9px] font-bold uppercase tracking-wider text-green-600 mb-1">
-                Active defenses for this exercise
+                Actions for this exercise
               </div>
               <ul className="space-y-1">
                 {relevantSelected.map((r) => (
-                  <li key={r.id} className="text-[11px] text-slate-400 pl-3 border-l-2 border-green-700">
+                  <li key={r.id} className="text-[11px] text-slate-400">
                     {r.note}
                   </li>
                 ))}
@@ -113,11 +117,11 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
           {relevantMissed.length > 0 && (
             <div>
               <div className="text-[9px] font-bold uppercase tracking-wider text-red-600 mb-1">
-                Missed - attack paths remain open
+                Deferred actions (not applied by these selections)
               </div>
               <ul className="space-y-1">
                 {relevantMissed.map((r) => (
-                  <li key={r.id} className="text-[11px] text-slate-400 pl-3 border-l-2 border-red-900">
+                  <li key={r.id} className="text-[11px] text-slate-400">
                     {r.note}
                   </li>
                 ))}

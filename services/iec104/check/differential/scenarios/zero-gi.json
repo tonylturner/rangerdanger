@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "id": "zero-gi",
+  "kind": "raw-rtu",
+  "timeout_s": 30,
+  "capture_modbus": false,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {
+      "op": "start",
+      "args": {},
+      "timeout_s": 5
+    },
+    {
+      "op": "zero-object",
+      "args": {
+        "type": 100
+      },
+      "timeout_s": 5
+    }
+  ],
+  "malformed": [
+    {
+      "step": 1,
+      "message": "input"
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -9,6 +11,9 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
+	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
 // hashServerForFirewall stands up a tiny HTTP server that returns
@@ -35,10 +40,9 @@ func TestObserver_NoChange_NoReclassify(t *testing.T) {
 	defer ts.Close()
 
 	s := &Server{
-		containdClient: containd.NewClient(ts.URL),
-		activeConfig:   "improved",
-		policySource:   "hardened-reference",
-		lastAppliedAt:  time.Now().Add(-1 * time.Hour), // outside grace
+		activeConfig:  "improved",
+		policySource:  "hardened-reference",
+		lastAppliedAt: time.Now().Add(-1 * time.Hour), // outside grace
 	}
 	// Seed lastAppliedHash with the same hash containd will return.
 	configBytes, _ := json.Marshal(map[string]any{"firewall": fw})
@@ -48,7 +52,7 @@ func TestObserver_NoChange_NoReclassify(t *testing.T) {
 	}
 	s.lastAppliedHash = h
 
-	s.observePolicyOnce()
+	s.observePolicyOnce(context.Background(), observedGeneration(ts.URL))
 
 	s.activeConfigMu.RLock()
 	defer s.activeConfigMu.RUnlock()
@@ -82,16 +86,15 @@ func TestObserver_HashDivergence_FlipsManualCustom(t *testing.T) {
 	defer ts.Close()
 
 	s := &Server{
-		containdClient: containd.NewClient(ts.URL),
-		activeConfig:   "improved",
-		policySource:   "hardened-reference",
+		activeConfig: "improved",
+		policySource: "hardened-reference",
 		// Seed with a DIFFERENT hash, so divergence fires.
 		lastAppliedHash: "deadbeef",
 		// Apply happened well outside the grace window.
 		lastAppliedAt: time.Now().Add(-1 * time.Hour),
 	}
 
-	s.observePolicyOnce()
+	s.observePolicyOnce(context.Background(), observedGeneration(ts.URL))
 
 	s.activeConfigMu.RLock()
 	defer s.activeConfigMu.RUnlock()
@@ -116,14 +119,13 @@ func TestObserver_GraceWindow_SuppressesFlip(t *testing.T) {
 	defer ts.Close()
 
 	s := &Server{
-		containdClient:  containd.NewClient(ts.URL),
 		activeConfig:    "improved",
 		policySource:    "hardened-reference",
 		lastAppliedHash: "deadbeef", // would diverge
 		lastAppliedAt:   time.Now(), // INSIDE the grace window
 	}
 
-	s.observePolicyOnce()
+	s.observePolicyOnce(context.Background(), observedGeneration(ts.URL))
 
 	s.activeConfigMu.RLock()
 	defer s.activeConfigMu.RUnlock()
@@ -142,13 +144,12 @@ func TestObserver_FirstObservation_SeedsBaseline(t *testing.T) {
 	defer ts.Close()
 
 	s := &Server{
-		containdClient: containd.NewClient(ts.URL),
-		activeConfig:   "weak",
-		policySource:   "",
+		activeConfig: "weak",
+		policySource: "",
 		// no lastAppliedHash set
 	}
 
-	s.observePolicyOnce()
+	s.observePolicyOnce(context.Background(), observedGeneration(ts.URL))
 
 	s.activeConfigMu.RLock()
 	defer s.activeConfigMu.RUnlock()
@@ -170,16 +171,16 @@ func TestObserver_ConcurrentApplyAndObserve(t *testing.T) {
 	defer ts.Close()
 
 	s := &Server{
-		containdClient: containd.NewClient(ts.URL),
-		activeConfig:   "weak",
+		activeConfig: "weak",
 	}
+	gen := observedGeneration(ts.URL)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			s.observePolicyOnce()
+			s.observePolicyOnce(context.Background(), gen)
 		}()
 		go func() {
 			defer wg.Done()
@@ -192,4 +193,76 @@ func TestObserver_ConcurrentApplyAndObserve(t *testing.T) {
 	// If we get here without -race shouting, the lock discipline
 	// is at least consistent. The assertion is the absence of a
 	// panic / data-race report.
+}
+
+// observedGeneration is a live generation whose firewall is url.
+func observedGeneration(url string) *lifecycle.Generation {
+	return lifecycle.NewGeneration(1, labs.Package{}, &manifest.Manifest{}, containd.NewClient(url), time.Time{})
+}
+
+// TestObserver_StoppedGenerationDropsObservation: an observation that
+// lands after its range stopped must not relabel the next range's policy.
+func TestObserver_StoppedGenerationDropsObservation(t *testing.T) {
+	ts := hashServerForFirewall(t, map[string]any{"defaultAction": "ALLOW", "rules": []any{}})
+	defer ts.Close()
+	s := &Server{
+		activeConfig:    "weak",
+		lastAppliedHash: "deadbeef",
+		lastAppliedAt:   time.Now().Add(-1 * time.Hour),
+	}
+	gen := observedGeneration(ts.URL)
+	if err := gen.Stop(time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	s.observePolicyOnce(context.Background(), gen)
+
+	s.activeConfigMu.RLock()
+	defer s.activeConfigMu.RUnlock()
+	if s.activeConfig != "weak" || s.lastAppliedHash != "deadbeef" {
+		t.Errorf("state = %q %q, want the stale observation dropped", s.activeConfig, s.lastAppliedHash)
+	}
+}
+
+// The first response is delayed while a second manual commit happens. Neither
+// response completion time can be the next observation's safe lower bound.
+func TestObserver_DelayedSuccessiveManualCommits(t *testing.T) {
+	requestStart := make(chan time.Time, 2)
+	release := make(chan struct{})
+	calls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		requestStart <- time.Now().UTC()
+		<-release
+		fmt.Fprintf(w, `{"firewall":{"defaultAction":"DENY","rules":[],"comment":"commit-%d"}}`, calls)
+	}))
+	defer ts.Close()
+	s := &Server{lastAppliedHash: "old", policyObservedAt: time.Now().Add(-time.Hour).UTC()}
+	gen := observedGeneration(ts.URL)
+	var previousRequest time.Time
+	for i := 0; i < 2; i++ {
+		before := time.Now().UTC()
+		done := make(chan struct{})
+		go func() { s.observePolicyOnce(t.Context(), gen); close(done) }()
+		handlerStart := <-requestStart
+		responseStart := time.Now().UTC()
+		release <- struct{}{}
+		<-done
+		if s.policyObservedAt.Before(before) || s.policyObservedAt.After(handlerStart) || s.policyChangedAt.Before(responseStart) {
+			t.Fatalf("request bound=%s upper=%s", s.policyObservedAt, s.policyChangedAt)
+		}
+		if i == 1 && !s.policyEvidenceSince.Equal(previousRequest) {
+			t.Fatal("lost first request's lower bound")
+		}
+		if s.policyObservedAt.Location() != time.UTC || s.policyChangedAt.Location() != time.UTC || s.policyEvidenceSince.Location() != time.UTC {
+			t.Fatal("non-UTC policy evidence")
+		}
+		previousRequest = s.policyObservedAt
+	}
+	s.recordApplyLocked([]byte(`{"defaultAction":"DENY","rules":[]}`))
+	for _, at := range []time.Time{s.lastAppliedAt, s.policyChangedAt, s.policyObservedAt, s.policyEvidenceSince} {
+		if at.Location() != time.UTC {
+			t.Fatal("non-UTC apply timestamp")
+		}
+	}
 }

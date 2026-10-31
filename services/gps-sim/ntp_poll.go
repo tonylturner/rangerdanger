@@ -19,26 +19,53 @@ package main
 // help from the traffic generator.
 
 import (
+	"fmt"
 	"log"
 	"net"
+	"os"
+	"strings"
 	"time"
 )
+
+var defaultNTPPollTargets = []string{
+	"10.40.40.20:123", // relay
+	"10.40.40.21:123", // recloser
+	"10.40.40.22:123", // regulator
+	"10.40.40.23:123", // capbank
+	"10.30.30.20:123", // rtac (intra-zone, not visible at firewall)
+}
+
+func ntpPollTargetsFromEnv() ([]string, error) {
+	value, set := os.LookupEnv("NTP_POLL_TARGETS")
+	return parseNTPPollTargets(value, set)
+}
+
+func parseNTPPollTargets(value string, set bool) ([]string, error) {
+	if !set {
+		return append([]string(nil), defaultNTPPollTargets...), nil
+	}
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, ",")
+	targets := make([]string, 0, len(parts))
+	for _, part := range parts {
+		host := strings.TrimSpace(part)
+		if host == "" || strings.ContainsAny(host, ":/[]") || strings.ContainsAny(host, " \t\r\n") {
+			return nil, fmt.Errorf("invalid NTP_POLL_TARGETS host %q", part)
+		}
+		targets = append(targets, net.JoinHostPort(host, "123"))
+	}
+	return targets, nil
+}
 
 // broadcastNTP runs as a goroutine and sends NTP v3 client packets to a
 // list of field device IPs at a steady interval. It respects the
 // state.NTPEnabled flag so students can disable it in scenarios that
 // test time-source failure.
-func broadcastNTP() {
+func broadcastNTP(targets []string) {
 	// Give the rest of the stack a moment to come up before first send
 	time.Sleep(5 * time.Second)
-
-	targets := []string{
-		"10.40.40.20:123", // relay
-		"10.40.40.21:123", // recloser
-		"10.40.40.22:123", // regulator
-		"10.40.40.23:123", // capbank
-		"10.30.30.20:123", // rtac (intra-zone, not visible at firewall)
-	}
 
 	// NTPv3 client request: Leap=0, Version=3, Mode=3 → first byte 0x1b.
 	// Rest of the 48-byte packet is zero (no stratum, no root delay, etc).
@@ -46,7 +73,7 @@ func broadcastNTP() {
 	ntpPacket[0] = 0x1b
 
 	interval := 12 * time.Second
-	log.Printf("NTP client broadcast started (interval=%s, targets=%d)", interval, len(targets))
+	log.Printf("NTP client generator started (interval=%s, targets=%d)", interval, len(targets))
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

@@ -54,34 +54,69 @@ function Banner($m) {
 
 $RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
+. "$PSScriptRoot/scripts/lib/docker-bounded.ps1"
+. "$PSScriptRoot/scripts/lib/windows-root.ps1"
+. "$PSScriptRoot/scripts/lib/stage-bounded.ps1"
 
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
 # tar.exe (bsdtar) ships with Windows 10 1803+ and Windows 11. It reads the
 # saved archives' manifest.json for verification -- no Python needed.
-$TarExe = Join-Path $env:SystemRoot "System32\tar.exe"
-if (-not (Test-Path $TarExe)) {
+$TarExe = if ($env:SystemRoot) { Join-Path $env:SystemRoot "System32\tar.exe" } else { $null }
+if (-not $TarExe -or -not (Test-Path $TarExe)) {
     $tarCmd = Get-Command tar -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $tarCmd) { Die "tar.exe is required to verify the saved Docker archives (built into Windows 10 1803+ and Windows 11)." }
     $TarExe = $tarCmd.Source
 }
 
-# --- Enumerate images from compose --------------------------------------
+# --- Enumerate the platform/package image union ------------------------
+$releaseFiles = @($ComposeFile)
+$packagesRoot = Join-Path $RootDir "lab-definitions/packages"
+if (Test-Path $packagesRoot) {
+    foreach ($packageDir in (Get-ChildItem -Path $packagesRoot -Directory | Sort-Object Name)) {
+        $packageCompose = Join-Path $packageDir.FullName "compose.release.yml"
+        if (-not (Test-Path $packageCompose)) {
+            Die "Missing package release Compose file: $packageCompose"
+        }
+        $releaseFiles += $packageCompose
+    }
+}
 $hadComposeVersion = Test-Path Env:VERSION
 $previousComposeVersion = $env:VERSION
+$hadRoot = Test-Path Env:RANGERDANGER_ROOT
+$previousRoot = $env:RANGERDANGER_ROOT
+$composeOutput = @()
+$composeStatus = 0
 try {
     $env:VERSION = $Version
-    $composeOutput = & docker compose -f $ComposeFile config --images 2>$null
-    $composeStatus = $LASTEXITCODE
+    # Unlike setup.ps1, staging also runs under pwsh on macOS/Linux.
+    # Use the same Windows host discriminator as Assert-DesktopWsl2,
+    # without requiring a daemon probe just to interpolate Compose.
+    $env:RANGERDANGER_ROOT = if ($env:OS -eq 'Windows_NT') {
+        ConvertTo-DesktopRoot $RootDir
+    } else { $RootDir }
+    foreach ($releaseFile in $releaseFiles) {
+        $run = Invoke-DockerBounded @('compose', '--project-directory', $RootDir,
+            '-f', $releaseFile, 'config', '--images') 30
+        $composeStatus = if (-not $run -or $run.TimedOut) { 1 } else { $run.ExitCode }
+        if ($composeStatus -ne 0) { break }
+        $imagesForFile = $run.StdOut -split '\r?\n' | Where-Object { $_ }
+        $composeOutput += $imagesForFile
+    }
 } finally {
     if ($hadComposeVersion) {
         $env:VERSION = $previousComposeVersion
     } else {
         Remove-Item Env:VERSION -ErrorAction SilentlyContinue
     }
+    if ($hadRoot) {
+        $env:RANGERDANGER_ROOT = $previousRoot
+    } else {
+        Remove-Item Env:RANGERDANGER_ROOT -ErrorAction SilentlyContinue
+    }
 }
-if ($composeStatus -ne 0) { Die "Could not enumerate images from $ComposeFile" }
+if ($composeStatus -ne 0) { Die "Could not enumerate the platform/package release image union" }
 $allImages = @($composeOutput | Sort-Object -Unique)
-if (-not $allImages) { Die "Could not enumerate images from $ComposeFile" }
+if (-not $allImages) { Die "Could not enumerate images from the release models" }
 
 # Compose interpolation is the only version-selection mechanism. Refuse
 # an environment/configuration mismatch before creating the output dir.
@@ -137,20 +172,13 @@ function Stop-ManifestInspection($img, $details) {
 }
 
 function Get-PlatformRefs($img) {
-    $errorFile = [System.IO.Path]::GetTempFileName()
-    try {
-        $inspectionOutput = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            & docker buildx imagetools inspect $img --format '{{json .}}' 2> $errorFile
-        }
-        $inspectStatus = $LASTEXITCODE
-        $inspectError = Get-Content -Path $errorFile -Raw -ErrorAction SilentlyContinue
-    } finally {
-        Remove-Item -Path $errorFile -Force -ErrorAction SilentlyContinue
+    $inspectionRun = Invoke-DockerBounded @('buildx', 'imagetools', 'inspect', $img, '--format', '{{json .}}') 120
+    if (-not $inspectionRun -or $inspectionRun.TimedOut) {
+        Stop-ManifestInspection $img 'docker unavailable or registry inspection timed out after 120s'
     }
-    if ($inspectStatus -ne 0) { Stop-ManifestInspection $img $inspectError }
+    if ($inspectionRun.ExitCode -ne 0) { Stop-ManifestInspection $img $inspectionRun.StdErr }
 
-    $json = ($inspectionOutput -join "`n").Trim()
+    $json = $inspectionRun.StdOut.Trim()
     if (-not $json) { Stop-ManifestInspection $img "inspection returned no manifest JSON" }
     try {
         $inspection = ConvertFrom-Json -InputObject $json -ErrorAction Stop
@@ -254,30 +282,19 @@ function Invoke-StageArch($arch) {
             Say "    -> $ref"
         }
 
-        # Heads-up on the large images so a multi-minute pull doesn't look
-        # like a hang (issue #81); show native layer progress (no --quiet).
-        if ($img -match 'rangerdanger-(eng-ws|vendor-jump)') {
-            Say "    large image (~2-3 GB desktop) -- a few minutes is normal"
-        } elseif ($img -match 'rangerdanger-openplc') {
-            Say "    large image (~1 GB) -- give it a minute"
-        }
-        & docker pull $ref
-        if ($LASTEXITCODE -ne 0) {
-            Die "pull failed for $ref on $arch -- refusing to write a partial bundle. Fix the upstream issue (auth, network, image name), then re-run."
-        }
+        $null = Invoke-StagePull $img $ref 3600 -StreamOutput
 
         # Re-tag locally so the saved tarball carries the friendly tag.
         $targetTag = $img -replace '@.*$',''
         if ($ref -ne $targetTag) {
-            & docker tag $ref $targetTag
-            if ($LASTEXITCODE -ne 0) { Die "docker tag $ref -> $targetTag failed" }
+            $null = Invoke-StageDocker @('tag', $ref, $targetTag) 60
         }
         $pulledTags += $targetTag
     }
 
     Say "save $arch -> $tarball"
-    & docker save -o $tarball @pulledTags
-    if ($LASTEXITCODE -ne 0) { Die "docker save failed for $arch" }
+    try { $null = Invoke-StageDocker (@('save', '-o', $tarball) + $pulledTags) 7200 -StreamOutput }
+    catch { Remove-StagePartial $tarball; throw }
     if ($arch -eq 'amd64') {
         $script:AMD64_TAGS = @($pulledTags)
     } else {
@@ -309,8 +326,8 @@ $tgzPath = Join-Path $OutDir "rangerdanger.tgz"
 # instead of scattering repo files into the extract target (which made
 # the generated README's `cd ~/rangerdanger` fail). All extract docs
 # assume this prefix.
-& git -C $RootDir archive --prefix=rangerdanger/ --format=tar.gz -o $tgzPath HEAD
-if ($LASTEXITCODE -ne 0) { Die "git archive failed" }
+try { $null = Invoke-StageNative 'git' @('-C', $RootDir, 'archive', '--prefix=rangerdanger/', '--format=tar.gz', '-o', $tgzPath, 'HEAD') 600 }
+catch { Remove-StagePartial $tgzPath; throw }
 $tgzSizeMB = [math]::Round((Get-Item $tgzPath).Length / 1MB, 2)
 Say "wrote $tgzPath (${tgzSizeMB} MB)"
 
@@ -335,9 +352,9 @@ function Verify-Archive($arch, $expectedTags) {
     $extractDir = Join-Path ([System.IO.Path]::GetTempPath()) ("rd-verify-" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $extractDir | Out-Null
     try {
-        & { $ErrorActionPreference = 'SilentlyContinue'; & $TarExe -xf $archivePath -C $extractDir manifest.json *>$null }
+        $null = Invoke-StageNative $TarExe @('-xf', $archivePath, '-C', $extractDir, 'manifest.json') 1800
         $manifestPath = Join-Path $extractDir "manifest.json"
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $manifestPath)) {
+        if (-not (Test-Path $manifestPath)) {
             Die "cannot verify ${archivePath}: no manifest.json (not a Docker save archive?)"
         }
         try {
@@ -400,7 +417,7 @@ if ($kernelPublished) {
     try {
         Say "Downloading $kernelUrl"
         try {
-            Invoke-WebRequest -Uri $kernelUrl -OutFile $kernelPath -UseBasicParsing -ErrorAction Stop
+            Invoke-WebRequest -Uri $kernelUrl -OutFile $kernelPath -UseBasicParsing -TimeoutSec 600 -ErrorAction Stop
         } catch {
             Remove-Item -Path $kernelPath, $shaPath -Force -ErrorAction SilentlyContinue
             Die "WSL2 kernel download failed; refusing to stage an unverifiable kernel. Re-run stage-ssd.ps1, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OutDir by hand. $_"
@@ -410,7 +427,7 @@ if ($kernelPublished) {
         $shaError = ""
         foreach ($attempt in 1, 2) {
             try {
-                Invoke-WebRequest -Uri $kernelShaUrl -OutFile $shaPath -UseBasicParsing -ErrorAction Stop
+                Invoke-WebRequest -Uri $kernelShaUrl -OutFile $shaPath -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
                 $shaError = ""
                 break
             } catch {
@@ -461,8 +478,8 @@ if ($kernelPublished) {
 }
 
 Banner "Write README"
-$shortSha = & git -C $RootDir rev-parse --short HEAD
-$lastSubject = & git -C $RootDir log -1 --format=%s
+$shortSha = (Invoke-StageNative 'git' @('-C', $RootDir, 'rev-parse', '--short', 'HEAD') 30).Trim()
+$lastSubject = (Invoke-StageNative 'git' @('-C', $RootDir, 'log', '-1', '--format=%s') 30).TrimEnd([char[]]"`r`n")
 $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $readme = @"
 # RangerDanger -- offline / SSD install

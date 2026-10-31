@@ -1,0 +1,55 @@
+[
+  {
+    "id": "eu-baseline-assessment",
+    "steps": []
+  },
+  {
+    "id": "eu-segmentation-requirements",
+    "steps": [
+      {
+        "id": "decisions",
+        "description": ":::decision id=enterprise-to-field\n:::decision id=enterprise-to-station\n:::decision id=vendor-to-station\n:::decision id=non-rtu-to-field\n:::decision id=unauth-control options=\"BLOCK,BLOCK and LOG,RESTRICT,ALLOW,LOG\"\n:::decision id=ot-eng-availability options=AVAILABLE,STRETCHED,UNAVAILABLE\n:::decision id=fw-admin-skills options=IN_HOUSE,VENDOR_LED,GAP\n:::decision id=vendor-change-window options=SECURED,NEGOTIATING,NOT_DISCUSSED\n:::decision id=risk-acceptance-authority options=CLEAR,UNCLEAR,DISPUTED"
+      }
+    ]
+  },
+  {
+    "id": "eu-remediation-planning",
+    "steps": [
+      {
+        "id": "plan",
+        "action": {
+          "type": "decision"
+        }
+      }
+    ]
+  },
+  {
+    "id": "eu-firewall-implementation",
+    "steps": [
+      {
+        "id": "implement-rules",
+        "title": "A translated title"
+      },
+      {
+        "id": "test-positive",
+        "title": "A translated title"
+      },
+      {
+        "id": "test-negative",
+        "title": "A translated title"
+      }
+    ]
+  },
+  {
+    "id": "eu-hardening-configurations",
+    "steps": []
+  },
+  {
+    "id": "eu-vendor-rdp-compromise",
+    "steps": []
+  },
+  {
+    "id": "eu-validation-evidence",
+    "steps": []
+  }
+]

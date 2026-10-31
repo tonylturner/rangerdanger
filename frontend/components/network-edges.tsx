@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { createPortal } from "react-dom";
 import { EdgeLabelRenderer, EdgeProps, getBezierPath } from "reactflow";
+import { TRAFFIC_LABEL_HEIGHT, trafficLabelWidth } from "../lib/network-graph";
 
 // Portal-based tooltip rendered in document.body. Tooltips inside SVG
 // foreignObjects inherit opacity, transform, and clipping from their
@@ -20,12 +21,12 @@ function MapTooltip({
   y: number;
   children: React.ReactNode;
 }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  if (!mounted || !visible) return null;
+  // Visibility is enabled only by a pointer event on a mounted edge, so the
+  // portal cannot be opened during SSR or the initial hydration render.
+  if (!visible) return null;
   return createPortal(
     <div
-      className="pointer-events-none fixed z-[60] rounded-lg border border-slate-700 px-3 py-2 text-[11px] text-slate-100 shadow-2xl"
+      className="pointer-events-none fixed z-60 rounded-lg border border-slate-700 px-3 py-2 text-[11px] text-slate-100 shadow-2xl"
       style={{
         left: x + 14,
         top: y + 14,
@@ -41,7 +42,7 @@ function MapTooltip({
 
 // Custom edge component with tooltip for firewall policy details. The
 // label uses a pill background so it stays readable on the dark canvas
-// and an action-aware leading icon (✓ allow / ✕ deny / ⚠ mixed) so the
+// and a state-aware leading icon (✓ allow / ✕ deny / ⚠ mixed / ? unknown) so the
 // student can scan policy state without reading the label.
 function PolicyEdge({
   id,
@@ -76,13 +77,14 @@ function PolicyEdge({
 
   const label = data?.label || "";
   const color = data?.color || "#64748b";
-  const action = data?.action || "ALLOW";
+  const action = data?.action || "UNKNOWN";
   const details = data?.details || [];
   const dimmed = data?.dimmed === true;
 
-  const actionIcon = action === "DENY" ? "\u2715" : action === "MIXED" ? "\u26A0" : "\u2713";
+  const unknown = data?.permissiveness === "unknown" || action === "UNKNOWN";
+  const actionIcon = unknown ? "?" : action === "DENY" ? "\u2715" : action === "MIXED" ? "\u26A0" : "\u2713";
   const iconColor =
-    action === "DENY" ? "#ef4444" : action === "MIXED" ? "#f59e0b" : "#22c55e";
+    unknown ? "#94a3b8" : action === "DENY" ? "#ef4444" : action === "MIXED" ? "#f59e0b" : "#22c55e";
 
   const labelWidth = Math.max(78, label.length * 6 + 28);
   const dimOpacity = dimmed ? 0.45 : 1;
@@ -91,7 +93,6 @@ function PolicyEdge({
   const zoneMeta = data?.zoneMeta as
     | {
         label: string;
-        iface: string;
         role: string;
         subnet: string;
         fwIp: string;
@@ -172,9 +173,9 @@ function PolicyEdge({
               {zoneMeta.label} Interface
             </div>
             <div className="mb-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
-              <span className="text-slate-500">Iface</span>
+              <span className="text-slate-500">Zone</span>
               <span className="font-mono text-slate-200">
-                {zoneMeta.iface} <span className="text-slate-500">({zoneMeta.role})</span>
+                {zoneMeta.role}
               </span>
               <span className="text-slate-500">Subnet</span>
               <span className="font-mono text-slate-200">{zoneMeta.subnet}</span>
@@ -189,7 +190,7 @@ function PolicyEdge({
         {details.length > 0 && (
           <>
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              Active Rules ({details.length})
+              Inbound Rules ({details.length})
             </div>
             <ul className="space-y-1">
               {details.slice(0, 8).map((detail: string, i: number) => {
@@ -252,15 +253,13 @@ function TrafficEdge({
     targetPosition,
     curvature: 0.4,
   });
-  const labelX = centerX;
-  const labelY = centerY;
-
   const label = data?.label || "";
-  const status: "active" | "idle" | "down" = data?.status || "idle";
+  const status: "active" | "idle" | "down" | "unknown" = data?.status || "idle";
   const tooltipLines: string[] = data?.tooltipLines || [];
 
   const isActive = status === "active";
   const isDown = status === "down";
+  const isUnknown = status === "unknown";
   const isScenario = data?.category === "scenario";
   const highlighted = data?.highlighted === true;
   const dimmedByHighlight = data?.dimmedByHighlight === true;
@@ -280,20 +279,22 @@ function TrafficEdge({
     ? "#ffffff"
     : isActive
     ? activeColor
-    : isDown ? "#64748b" : "#64748b";
+    : isUnknown ? "#d97706" : "#64748b";
   const labelColor = highlighted
     ? "#ffffff"
     : isActive
     ? (isScenario ? "#fbbf24" : "#67e8f9")
-    : "#94a3b8";
+    : isUnknown ? "#fbbf24" : "#94a3b8";
   const extraGlow = highlighted
     ? `drop-shadow(0 0 10px ${activeColor}) drop-shadow(0 0 20px ${activeColor}88)`
     : undefined;
   const overrideOpacity = dimmedByHighlight ? 0.2 : undefined;
-  const labelWidth = Math.max(56, label.length * 6 + 16);
-
   const dx = targetX - sourceX;
   const dy = targetY - sourceY;
+  // The graph planner reserves inter-host lanes and packs every pill
+  // together. Keep its offset relative to the live path when dragging.
+  const labelX = centerX + data.labelOffset.x;
+  const labelY = centerY + data.labelOffset.y;
   const edgeLen = Math.max(1, Math.sqrt(dx * dx + dy * dy));
   const ux = dx / edgeLen;
   const uy = dy / edgeLen;
@@ -304,11 +305,6 @@ function TrafficEdge({
   const triY = targetY - uy * 6;
   const xMarkX = targetX - ux * 22;
   const xMarkY = targetY - uy * 22;
-
-  // Labels sit at the bezier midpoint - no perpendicular offset.
-  // The natural curve of the bezier + the vertical stagger of
-  // nodes within each zone column creates a clean vertical column
-  // of labels between zones.
 
   const arrowSize = 8;
   const arrowAngle = Math.atan2(dy, dx);
@@ -376,8 +372,10 @@ function TrafficEdge({
           onMouseLeave={() => setTip((t) => ({ ...t, visible: false }))}
         >
           <div
-            className="cursor-help whitespace-nowrap rounded-full border px-2 py-0.5 text-center text-[9px] font-semibold"
+            className="flex cursor-help items-center justify-center whitespace-nowrap rounded-full border text-center text-[9px] font-semibold"
             style={{
+              width: trafficLabelWidth(label),
+              height: TRAFFIC_LABEL_HEIGHT,
               backgroundColor: '#0f172a',
               borderColor: `${stroke}cc`,
               color: labelColor,
@@ -426,7 +424,7 @@ function TrafficEdge({
       <MapTooltip visible={tip.visible} x={tip.x} y={tip.y}>
         <div className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-cyan-400">
           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: stroke }} />
-          Observed flow · {status}
+          Configured flow · {status}
         </div>
         {tooltipLines.map((l, i) => (
           <div key={i} className="text-slate-200">{l}</div>
@@ -441,7 +439,7 @@ function TrafficEdge({
           {data?.tooltipLines?.[0] || ''}
         </div>
         {data?.blockReason && (
-          <div className="mt-1 rounded border border-red-800/40 bg-red-950/20 px-2 py-1 text-[10px] leading-snug text-red-300">
+          <div className="mt-1 rounded-sm border border-red-800/40 bg-red-950/20 px-2 py-1 text-[10px] leading-snug text-red-300">
             {data.blockReason}
           </div>
         )}

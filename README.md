@@ -24,31 +24,58 @@ RangerDanger teaches network segmentation by putting students inside a working e
 
 - **Interactive topology map** at `/console`. IEC 62443 zone bands (Enterprise SL-1, DMZ SL-2, Supervisory SL-3, Field SL-2) with a live policy overlay that shows which conduits are allowed or blocked under the active firewall config. Click any node to inspect device state, open its web UI, or drop into a terminal. Drawers surface protocol details and live traffic context per node.
 - **Embedded container terminals**. xterm.js plus WebSocket exec into every lab container. No SSH client, no port forwards. Terminal state persists across navigation via a shared React context, and PTY size propagates so `stty` queries return the right values.
-- **Exercise runner** at `/exercises/[id]`. Each lab is a step-by-step walk-through with inline command blocks (one-click run), persistent per-exercise notes, and live state-reading validators that show green/red chips as students hit checkpoints. The Lab 1.4 plan is a design artifact; Lab 2.2 applies the hardened reference ([workshop errata, RD-01](docs/v0.1.36-hotfix.md#your-enforcement-self-check)).
+- **Exercise runner** at `/exercises/[id]`. Each lab is a step-by-step walk-through with inline command blocks (one-click run), persistent per-exercise notes, and live state-reading validators that show green/red chips as students hit checkpoints. Apply Your Plan compiles selected actions on the backend; later checks compare results with the applied plan.
 - **Process view** at `/substation`. Live feeder state from the RTAC via the OpenDSS power-flow solver. Modbus FC5/FC6 writes and DNP3 CROB attacks measurably change breaker positions, regulator taps, voltages, and load energization within ~3 seconds. Customer-service tile shows how many customers and how much critical load (hospital, fire station) is currently energized.
-- **containd NGFW integration**. ICS-aware NGFW at the conduit. Modbus function-code filtering, DNP3 protocol awareness, IT-side DPI for TLS/SNI, HTTP, RDP. Students apply policy from the lab UI; containd's full web console is iframed at `/containd/` for direct inspection of rules, audit log, and session state.
+- **containd NGFW integration**. ICS-aware NGFW at the conduit. Modbus function-code filtering, DNP3 protocol awareness, IT-side DPI for TLS/SNI, HTTP, RDP. The L4 source pin enforces; DPI detects and logs. Students apply policy from the lab UI; containd's full web console is iframed at `/containd/` for direct inspection of rules, audit log, and session state.
 - **Knowledge wiki** at `/knowledge`. Curated reference for substation equipment, ICS protocols, segmentation patterns, and the lab's specific architecture. Searchable, markdown-rendered, useful both during exercises and afterward.
 - **Modbus and DNP3 simulators**. Every field device (relay, recloser, regulator, capacitor bank, RTAC) speaks Modbus TCP, DNP3 TCP, and HTTP simultaneously against shared state. Field-device controls work via any of the three protocols; the RTAC's Modbus and DNP3 outstations are read-only.
-- **PCAP capture and change-board evidence**. Capture cross-zone traffic at the firewall during attack and validation runs. `scripts/validation-report.sh` assembles a ready-to-review evidence package (probe matrix, policy fingerprint, PCAP source analysis) from a clean run.
+- **PCAP capture and change-board evidence**. Capture cross-zone traffic at the firewall during attack and validation runs. `scripts/validation-report.sh` requests the backend's validation report for the currently running policy, including its probe matrix, policy proof, Hardened acceptance comparison, and PCAP evidence. It does not apply a policy.
 - **Validation-driven exercises**. Per-lab Go validators read live simulator state, electrical readings, audit log entries, and active firewall config. Green/red feedback is per-checkpoint, no instructor-side grading required.
 
 ## Student journey
 
-Each lab builds on the previous. Your Lab 1.4 remediation plan guides design review; Lab 2.2 applies the hardened reference, not a generated plan ([RD-01](docs/v0.1.36-hotfix.md#your-enforcement-self-check)). ≈83 minutes (Guided path) for the six core labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.4), plus ~12 minutes for the optional 2.3-bonus.
+Each lab builds on the previous. Your Lab 1.4 remediation plan is compiled and applied in Lab 2.2; subsequent checks test the running policy against that plan. ≈83 minutes (Guided path) for the six core labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.4), plus ~12 minutes for the optional 2.3-bonus.
 
 | Step | Lab | What you do |
 |---|---|---|
 | 1 | **1.2 Baseline** | Capture cross-zone traffic at the firewall. Build a flow inventory. Probe for latent exposure that passive monitoring missed. |
 | 2 | **1.3 Requirements** | Translate findings into a zone-pair rule grid. Pick BLOCK / RESTRICT / ALLOW per direction. Anchor the design to operational requirements. |
 | 3 | **1.4 Plan** | Choose which findings to fix first under a finite labor budget. Per-role utilization updates in real time as you pick actions. |
-| 4 | **2.2 Implement** | Apply and verify the hardened reference policy. Review its rules in containd; keep your Lab 1.4 plan as a design artifact. |
+| 4 | **2.2 Implement** | Compile and apply your Lab 1.4 plan. Review the generated rules in containd and verify the running policy against your plan. |
 | 5 | **2.3 Harden** | Stress-test against a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser — the canonical distribution-substation attack vector. Watch the process view as voltages drop, breakers open, downstream loads de-energize. Re-test under the hardened policy. Optional Modbus FC5/FC6 sidebars cover the same defense pattern. |
 | 5b | **2.3-bonus** | Optional kill-chain exercise: vendor RDP/VNC pivot from enterprise to vendor to field. Demonstrates both the perimeter rule and defense-in-depth. |
 | 6 | **2.4 Validate** | Capture PCAP under the hardened policy. Assemble change-board evidence. Confirm attacks fail and authorized flows still work. |
 
+## v0.2.0 environments
+
+v0.2.0 uses selectable lab packages; tagged commands below require its published images.
+Choose **US distribution substation (DNP3)** (`us-dnp3-substation`) or
+**EU telecontrol substation (IEC 104)** (`eu-iec104-substation`). The portal's
+Range selector switches the active environment; only one range runs at a time.
+The L4 source pin enforces; DPI detects and logs.
+
+The persistent platform is `rangerdanger-platform` (root Compose files).
+Each replaceable `rangerdanger` range owns its models, manifest, routes and
+curriculum under `lab-definitions/packages/<id>/`. US source exercises remain
+in `lab-definitions/scenarios/`; generated US guidance is package-owned.
+
+Setup defaults to US on a fresh install. Select EU with
+`./setup.sh --package eu-iec104-substation`; add `--from-source` for a local
+build before release images exist. On Windows, use
+`.\setup.ps1 -Package eu-iec104-substation` (or add `-FromSource`).
+Re-running setup acquires all images before
+migration teardown, then restarts the range and resets policy. Save evidence,
+desktop work and local changes first; old browser progress is not migrated.
+See [upgrading](docs/quickstart.md#upgrading-to-v020) and
+[offline distribution](docs/workshop-ssd.md). Windows supports Docker Desktop
+with the WSL2 backend and a physical local-drive checkout, not UNC, `\\wsl$`,
+mapped network drives, junctions or Hyper-V. Setup checks the root mapping
+before starting the platform; real-hardware Windows release acceptance remains
+to be verified.
+
 ## Quick start
 
-**Recommended capacity:** Docker Desktop or Docker Engine + Compose v2 · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free. These are recommendations: `setup.sh` only warns on disk and Docker memory; it reads host RAM only on native Linux Docker. See [the quickstart](docs/quickstart.md#prerequisites) for what the preflight measures.
+**Recommended capacity:** Docker Desktop 4.42+ or Docker Engine 28.1+ with Compose 2.36+ · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free. The Docker versions are a hard floor that `setup.sh` checks; the rest are recommendations: `setup.sh` only warns on disk and Docker memory; it reads host RAM only on native Linux Docker. See [the quickstart](docs/quickstart.md#prerequisites) for what the preflight measures.
 
 **macOS / Linux:**
 
@@ -58,7 +85,7 @@ cd rangerdanger
 ./setup.sh
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell, Docker Desktop WSL2; clone onto a local drive):**
 
 ```powershell
 git clone https://github.com/tonylturner/rangerdanger
@@ -69,7 +96,7 @@ cd rangerdanger
 **Build from source instead** (developers):
 
 ```bash
-docker compose up -d --build
+./setup.sh --from-source     # or ./scripts/dev-up.sh; see CONTRIBUTING.md
 ```
 
 **Offline / SSD** (for workshops where bandwidth is constrained):
@@ -80,7 +107,7 @@ docker compose up -d --build
 
 Use `./stage-ssd.sh /Volumes/WORKSHOP_SSD vX.Y.Z` to populate the SSD. The version argument selects the image tags whatever the repo's `.env` says, and the helper verifies both archives against it before reporting success. GitHub releases carry the WSL2 kernel asset, not image tarballs, so students install from an instructor-staged bundle. Full install walkthrough including the offline path and common errors: [`docs/quickstart.md`](docs/quickstart.md). Workshop operators running multi-laptop classroom deployments: [`docs/workshop-ssd.md`](docs/workshop-ssd.md) covers initial staging, mid-workshop delta patches, and recovery.
 
-For an existing install, follow the [release update procedure](docs/quickstart.md#updating-to-v0136). See the [v0.1.36 workshop errata](docs/v0.1.36-hotfix.md) for remaining application limits.
+For an existing install, follow the [release update procedure](docs/quickstart.md#upgrading-to-v020). See the [v0.1.36 workshop errata](docs/v0.1.36-hotfix.md) for remaining application limits.
 
 Once the stack is up:
 
@@ -151,11 +178,11 @@ Most OT segmentation labs hand students a PDF workbook, a Wireshark capture, and
 | Lab content | PDF workbook | Inline command runner, embedded terminals, persistent notes, dynamic content from earlier-lab choices |
 | Reference material | "Look it up in the textbook" | Integrated wiki at `/knowledge` with curated substation, protocol, and segmentation articles |
 | Evidence | Wireshark exports manually correlated | One-command change-board evidence: probe matrix + policy fingerprint + PCAP source analysis |
-| Distribution | Bring-your-own VMs | Single `docker compose up -d` or `setup.sh --from-tarballs` for offline workshops; runs on a laptop |
+| Distribution | Bring-your-own VMs | Single `./setup.sh`, or `setup.sh --from-tarballs` for offline workshops; runs on a laptop |
 
 ## Architecture at a glance
 
-A Next.js dashboard fronts a Go + Gin backend that orchestrates Docker containers, talks to containd over REST, and runs the scenario validators. Field-device simulators implement Modbus TCP + DNP3 TCP + REST against shared state, with OpenDSS providing feeder physics. Five network zones plus a management plane; all cross-zone traffic transits the containd firewall, including RTAC-to-field, kernel-pinned via `rtac-harden.sh` so the multi-homed RTAC can't bypass policy.
+A Next.js dashboard fronts a Go + Gin backend that orchestrates Docker containers, talks to containd over REST, and runs the scenario validators. Field-device simulators implement Modbus TCP + DNP3 TCP + REST against shared state, with OpenDSS providing feeder physics. The US package has four teaching zones plus management and physics; isolated platform-owned bridges deliver the student desktops without a management NIC. Teaching inter-zone traffic transits the containd firewall; the US RTAC-to-field path is kernel-pinned via `rtac-harden.sh` so the multi-homed RTAC can't bypass policy.
 
 ```mermaid
 flowchart LR
@@ -167,7 +194,7 @@ flowchart LR
         Frontend["Frontend<br/>Next.js 15"]
     end
 
-    subgraph FW["containd NGFW · multi-homed across all 4 zones"]
+    subgraph FW["containd NGFW · all 4 teaching zones + mgmt"]
         Containd["Web UI · SSH · ICS DPI<br/>nft engine"]
     end
 
@@ -202,6 +229,9 @@ flowchart LR
     Proxy --> Backend
     Proxy --> Frontend
     Proxy -. iframe .-> Containd
+    Proxy -. desk_corp_net · 10.98.1.0/28 .-> CorpWS
+    Proxy -. desk_vendor_net · 10.98.2.0/28 .-> VJump
+    Proxy -. desk_eng_net · 10.98.3.0/28 .-> EngWS
 
     Backend -. Docker SDK .-> Mgmt
     Backend -. JWT REST .-> Containd

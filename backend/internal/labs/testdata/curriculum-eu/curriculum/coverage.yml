@@ -1,0 +1,145 @@
+impact:
+  block-enterprise-to-field:
+    defends:
+      - eu-hardening-configurations
+    note: block enterprise to field
+  block-enterprise-to-station:
+    defends:
+      - eu-hardening-configurations
+    note: block enterprise to station
+  restrict-vendor-to-station:
+    defends:
+      - eu-hardening-configurations
+    note: restrict vendor to station
+  block-vendor-to-field:
+    defends:
+      - eu-hardening-configurations
+    note: block vendor to field
+  pin-rtu-to-field:
+    defends:
+      - eu-hardening-configurations
+    note: pin rtu to field
+  modbus-dpi:
+    defends:
+      - eu-hardening-configurations
+    note: modbus dpi
+  iec104-dpi:
+    defends:
+      - eu-hardening-configurations
+    note: iec104 dpi
+  improve-logging:
+    defends:
+      - eu-hardening-configurations
+    note: improve logging
+  station-architecture-review:
+    defends:
+      - eu-validation-evidence
+    note: station architecture review
+  tighten-firewall-objects:
+    defends:
+      - eu-hardening-configurations
+    note: tighten firewall objects
+  positive-validation:
+    defends:
+      - eu-validation-evidence
+    note: positive validation
+  ids-deployment:
+    defends:
+      - eu-validation-evidence
+    note: ids deployment
+  ot-asset-inventory:
+    defends:
+      - eu-validation-evidence
+    note: ot asset inventory
+  vendor-zta-broker:
+    defends:
+      - eu-validation-evidence
+    note: vendor zta broker
+groups:
+  block-enterprise-to-field:
+    title: block enterprise to field
+    description: EU segmentation planning example
+    effect: closes
+  block-enterprise-to-station:
+    title: block enterprise to station
+    description: EU segmentation planning example
+    effect: closes
+  restrict-vendor-to-station:
+    title: restrict vendor to station
+    description: EU segmentation planning example
+    effect: restricts
+  block-vendor-to-field:
+    title: block vendor to field
+    description: EU segmentation planning example
+    effect: closes
+  pin-rtu-to-field:
+    title: pin rtu to field
+    description: EU segmentation planning example
+    effect: restricts
+  modbus-dpi:
+    title: modbus dpi
+    description: EU segmentation planning example
+    effect: semantic
+  iec104-dpi:
+    title: iec104 dpi
+    description: EU segmentation planning example
+    effect: semantic
+  improve-logging:
+    title: improve logging
+    description: EU segmentation planning example
+    effect: logging
+  station-architecture-review:
+    title: station architecture review
+    description: EU segmentation planning example
+    effect: conceptual
+  tighten-firewall-objects:
+    title: tighten firewall objects
+    description: EU segmentation planning example
+    effect: restricts
+  positive-validation:
+    title: positive validation
+    description: EU segmentation planning example
+    effect: conceptual
+  ids-deployment:
+    title: ids deployment
+    description: EU segmentation planning example
+    effect: conceptual
+  ot-asset-inventory:
+    title: ot asset inventory
+    description: EU segmentation planning example
+    effect: conceptual
+  vendor-zta-broker:
+    title: vendor zta broker
+    description: EU segmentation planning example
+    effect: conceptual
+planningOnly: []
+groupOrder:
+  - block-enterprise-to-field
+  - block-enterprise-to-station
+  - restrict-vendor-to-station
+  - block-vendor-to-field
+  - pin-rtu-to-field
+  - modbus-dpi
+  - iec104-dpi
+  - improve-logging
+  - station-architecture-review
+  - tighten-firewall-objects
+  - positive-validation
+  - ids-deployment
+  - ot-asset-inventory
+  - vendor-zta-broker
+impactOrder:
+  - block-enterprise-to-field
+  - block-enterprise-to-station
+  - restrict-vendor-to-station
+  - block-vendor-to-field
+  - pin-rtu-to-field
+  - modbus-dpi
+  - iec104-dpi
+  - improve-logging
+  - station-architecture-review
+  - tighten-firewall-objects
+  - positive-validation
+  - ids-deployment
+  - ot-asset-inventory
+  - vendor-zta-broker

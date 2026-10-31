@@ -46,10 +46,12 @@ work. Realistic expectations:
 
 Most "the lab won't start" issues fall into one of these:
 
-1. **Docker isn't running** or **Compose v2 isn't installed.** Run
+1. **Docker isn't running**, **Compose v2 isn't installed**, or **Docker
+   is older than Desktop 4.42** (Engine 28.1 with Compose 2.36). Run
    `./setup.sh --check-only` (or `setup.ps1 -CheckOnly` on Windows).
 2. **Ports already in use** (`8088`, `9080`, `9443`, `2222`). Same
-   pre-flight catches this.
+   pre-flight catches this. Existing RangerDanger listeners are accepted on
+   reruns; foreign or unknown listeners stop setup.
 3. **Out of disk** during a 6+ GB image pull. Free up ≥30 GB.
 4. **Out of memory** on Docker Desktop's allocated VM. Bump to ≥8 GB
    in Settings → Resources.
@@ -58,11 +60,26 @@ Most "the lab won't start" issues fall into one of these:
    the offline path: `./stage-ssd.sh <out>` from a machine that has
    pull access, then `setup.sh --from-tarballs <out>` on the target.
 
+6. **Windows backend or checkout path is unsupported.** Use Docker
+   Desktop with WSL2 and a physical local-drive checkout, not Hyper-V,
+   UNC/`\\wsl$`, mapped network drives or junctions. Setup checks the
+   daemon root mapping before starting the platform. See
+   [Windows setup checks](docs/quickstart.md#windows-docker-desktop-wsl2-only).
+
+For v0.1.x → v0.2.0, follow the
+[setup rerun upgrade procedure](docs/quickstart.md#upgrading-to-v020).
+Setup acquires all platform/package images before migrating and restarting;
+platform volumes are kept, but range desktop state resets. Select
+`us-dnp3-substation` or `eu-iec104-substation` with `--package` (PowerShell:
+`-Package`); include that package ID and install mode in bug reports.
+
 If none of those, a good bug report includes:
 
 - The output of `./setup.sh --check-only` (or `-CheckOnly`)
-- `docker compose -f docker-compose.release.yml logs <service>`
-  for whichever service didn't come up
+- `curl -s http://localhost:8088/api/range` (the range phase and its
+  error, if any)
+- `docker logs rangerdanger-<service>` for whichever service didn't
+  come up (for example `rangerdanger-backend`, `rangerdanger-firewall`)
 - `GET /api/build` if the API is reachable at all
 - The relevant excerpt from `~/Library/Logs/Docker Desktop/log.log`
   (macOS) or `%LOCALAPPDATA%\Docker\log` (Windows) if Docker itself

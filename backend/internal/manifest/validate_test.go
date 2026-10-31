@@ -1,0 +1,589 @@
+package manifest
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"gopkg.in/yaml.v3"
+)
+
+const fixtureRoot = "testdata/valid"
+
+func TestValidFixture(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	m, err := Load(root, "valid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(m, root); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	pkg := loadFixtureTopology(t, root)
+	if err := CheckTopology(m, pkg); err != nil {
+		t.Fatalf("CheckTopology: %v", err)
+	}
+	platformSource := fixtureNormalized(t, root, "platform.source.json")
+	platformRelease := fixtureNormalized(t, root, "platform.release.json")
+	if err := CheckPlatform(m, platformSource); err != nil {
+		t.Fatalf("CheckPlatform source: %v", err)
+	}
+	if err := CheckPlatform(m, platformRelease); err != nil {
+		t.Fatalf("CheckPlatform release: %v", err)
+	}
+	if err := CheckPlatformCrossMode(platformSource, platformRelease); err != nil {
+		t.Fatalf("CheckPlatformCrossMode: %v", err)
+	}
+	source := fixtureNormalized(t, root, "range.source.json")
+	release := fixtureNormalized(t, root, "range.release.json")
+	if err := CheckCompose(m, ModeSource, root, source); err != nil {
+		t.Fatalf("CheckCompose source: %v", err)
+	}
+	if err := CheckCompose(m, ModeRelease, root, release); err != nil {
+		t.Fatalf("CheckCompose release: %v", err)
+	}
+	if err := CheckCrossMode(source, release); err != nil {
+		t.Fatalf("CheckCrossMode: %v", err)
+	}
+	if err := CheckCrossPackage("valid", source, "other", source); err != nil {
+		t.Fatalf("CheckCrossPackage: %v", err)
+	}
+}
+
+func TestValidateNegativeManifestFixtures(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	files, err := filepath.Glob(filepath.Join("testdata", "invalid", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no negative manifest fixtures")
+	}
+	for _, file := range files {
+		t.Run(strings.TrimSuffix(filepath.Base(file), ".json"), func(t *testing.T) {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var m Manifest
+			if err := json.Unmarshal(data, &m); err != nil {
+				t.Fatal(err)
+			}
+			if err := Validate(&m, root); err == nil {
+				t.Fatal("Validate accepted negative fixture")
+			}
+		})
+	}
+}
+
+func TestValidateHasSpecificFailures(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	cases := []struct {
+		file string
+		want string
+	}{
+		{"duplicate-service-key.json", `duplicate service key "firewall"`},
+		{"duplicate-container.json", `share container "fixture-firewall"`},
+		{"duplicate-node.json", `share node "fw-1"`},
+		{"duplicate-ip.json", `IP "10.40.40.2" is shared`},
+		{"unknown-role.json", `unknown role "unknown"`},
+		{"missing-platform-network.json", "exactly one management platform network"},
+		{"wrong-platform-name.json", "must be named rangerdanger_mgmt_net"},
+		{"unknown-interface-network.json", `undeclared network "missing_net"`},
+		{"ip-outside-subnet.json", "is outside network"},
+		{"gateway-ip.json", "uses network"},
+		{"endpoint-not-management-ip.json", "must be its management IP"},
+		{"firewall-api-missing.json", "firewall service with an api endpoint is required"},
+	}
+	for _, test := range cases {
+		t.Run(test.file, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("testdata", "invalid", test.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var m Manifest
+			if err := json.Unmarshal(data, &m); err != nil {
+				t.Fatal(err)
+			}
+			err = Validate(&m, root)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Validate error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestValidateRequiresAllPackageFiles(t *testing.T) {
+	root := t.TempDir()
+	packageDir := Dir(root, "valid")
+	if err := os.MkdirAll(packageDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"package.yml", FileName, ComposeFile(ModeSource), ComposeFile(ModeRelease)} {
+		if err := os.WriteFile(filepath.Join(packageDir, name), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m, err := Load(fixturePath(t, fixtureRoot), "valid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(m, root); err == nil || !strings.Contains(err.Error(), RoutesFile) {
+		t.Fatalf("Validate error = %v, want missing route file", err)
+	}
+}
+
+func TestCheckPlatformFailures(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	m, err := Load(root, "valid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := fixtureNormalized(t, root, "platform.source.json")
+	t.Run("network IPAM", func(t *testing.T) {
+		model := jsonObject(t, source)
+		networks := object(t, model["networks"])
+		networks["mgmt_net"].(map[string]any)["ipam"].(map[string]any)["config"].([]any)[0].(map[string]any)["subnet"] = "10.98.99.0/24"
+		err := CheckPlatform(m, marshalObject(t, model))
+		if err == nil || !strings.Contains(err.Error(), "IPAM") {
+			t.Fatalf("CheckPlatform error = %v, want IPAM mismatch", err)
+		}
+	})
+	t.Run("IP collision", func(t *testing.T) {
+		model := jsonObject(t, source)
+		service := object(t, object(t, model["services"])["backend"])
+		object(t, service["networks"])["mgmt_net"].(map[string]any)["ipv4_address"] = "10.99.99.2"
+		err := CheckPlatform(m, marshalObject(t, model))
+		if err == nil || !strings.Contains(err.Error(), "collides") {
+			t.Fatalf("CheckPlatform error = %v, want collision", err)
+		}
+	})
+}
+
+func TestCheckTopologyFailures(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	m, err := Load(root, "valid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := loadFixtureTopology(t, root)
+	t.Run("manifest node missing", func(t *testing.T) {
+		bad := *m
+		bad.Services = append([]Service(nil), m.Services...)
+		bad.Services[0].Node = "missing"
+		err := CheckTopology(&bad, pkg)
+		if err == nil || !strings.Contains(err.Error(), "does not exist") {
+			t.Fatalf("CheckTopology error = %v, want missing node", err)
+		}
+	})
+	t.Run("container mapping missing", func(t *testing.T) {
+		bad := *m
+		bad.Services = append([]Service(nil), m.Services...)
+		bad.Services[0].Container = "other-container"
+		err := CheckTopology(&bad, pkg)
+		if err == nil || !strings.Contains(err.Error(), "does not match topology node") {
+			t.Fatalf("CheckTopology error = %v, want container mismatch", err)
+		}
+	})
+	t.Run("zone missing", func(t *testing.T) {
+		bad := *m
+		bad.Networks = append([]Network(nil), m.Networks...)
+		bad.Networks[1].Zone = "wrong-zone"
+		err := CheckTopology(&bad, pkg)
+		if err == nil || !strings.Contains(err.Error(), "unknown topology zone") {
+			t.Fatalf("CheckTopology error = %v, want unknown zone", err)
+		}
+	})
+}
+
+func TestCheckComposeSafetyAndAgreement(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	m, err := Load(root, "valid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := fixtureNormalized(t, root, "range.source.json")
+	cases := []struct {
+		name   string
+		mutate func(map[string]any)
+		want   string
+	}{
+		{"missing service", func(value map[string]any) { delete(object(t, value["services"]), "firewall") }, "service set"},
+		{"wrong container", func(value map[string]any) {
+			object(t, object(t, value["services"])["firewall"])["container_name"] = "wrong"
+		}, "container_name"},
+		{"wrong static IP", func(value map[string]any) {
+			object(t, object(t, object(t, value["services"])["firewall"])["networks"])["field_net"].(map[string]any)["ipv4_address"] = "10.40.40.3"
+		}, "IPv4"},
+		{"wrong network name", func(value map[string]any) {
+			object(t, value["networks"])["field_net"].(map[string]any)["name"] = "wrong"
+		}, "network"},
+		{"wrong range subnet", func(value map[string]any) {
+			object(t, object(t, value["networks"])["field_net"])["ipam"].(map[string]any)["config"].([]any)[0].(map[string]any)["subnet"] = "10.41.40.0/24"
+		}, "IPAM"},
+		{"platform not external", func(value map[string]any) {
+			object(t, value["networks"])["mgmt_net"].(map[string]any)["external"] = false
+		}, "must be external"},
+		{"platform has IPAM", func(value map[string]any) {
+			object(t, object(t, value["networks"])["mgmt_net"])["ipam"] = map[string]any{"config": []any{map[string]any{"subnet": "10.99.99.0/24"}}}
+		}, "must not declare IPAM"},
+		{"published outside loopback", func(value map[string]any) {
+			object(t, object(t, object(t, value["services"])["firewall"])["ports"].([]any)[0])["host_ip"] = "0.0.0.0"
+		}, "published port binds"},
+		{"relative bind", func(value map[string]any) {
+			object(t, object(t, object(t, value["services"])["firewall"])["volumes"].([]any)[0])["source"] = "./data/firewall"
+		}, "not resolved to an absolute path"},
+		{"outside bind", func(value map[string]any) {
+			object(t, object(t, object(t, value["services"])["firewall"])["volumes"].([]any)[0])["source"] = "/tmp/outside"
+		}, "outside installation root"},
+		{"docker socket", func(value map[string]any) {
+			volume := object(t, object(t, object(t, value["services"])["firewall"])["volumes"].([]any)[0])
+			volume["source"] = "/var/run/docker.sock"
+			volume["target"] = "/var/run/docker.sock"
+		}, "Docker socket"},
+		{"named volume", func(value map[string]any) {
+			volume := object(t, object(t, object(t, value["services"])["firewall"])["volumes"].([]any)[0])
+			volume["type"] = "volume"
+			volume["source"] = "persistent-data"
+		}, "named volume"},
+		{"top-level named volume", func(value map[string]any) { value["volumes"] = map[string]any{"persistent-data": map[string]any{}} }, "declares named volumes"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			model := jsonObject(t, original)
+			test.mutate(model)
+			err := CheckCompose(m, ModeSource, root, marshalObject(t, model))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("CheckCompose error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestRawComposeFailures(t *testing.T) {
+	cases := []struct {
+		file string
+		want string
+	}{
+		{"profiles.yml", "forbidden \"profiles\""},
+		{"extends.yml", "forbidden \"extends\""},
+		{"include.yml", "forbidden \"include\""},
+		{"wrong-name.yml", `top-level name is "rangerdanger-platform"`},
+	}
+	for _, test := range cases {
+		t.Run(test.file, func(t *testing.T) {
+			err := CheckRawCompose(filepath.Join("testdata", "invalid", "raw", test.file))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("CheckRawCompose error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestCrossModeAndCrossPackageFailures(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	source := fixtureNormalized(t, root, "range.source.json")
+	release := fixtureNormalized(t, root, "range.release.json")
+	differentMode := jsonObject(t, release)
+	object(t, object(t, differentMode["services"])["firewall"])["container_name"] = "release-container"
+	if err := CheckCrossMode(source, marshalObject(t, differentMode)); err == nil || !strings.Contains(err.Error(), "services.firewall.container_name") {
+		t.Fatalf("CheckCrossMode error = %v, want first differing path", err)
+	}
+	rangeSource := jsonObject(t, source)
+	rangeSourceFirewall := object(t, object(t, rangeSource["services"])["firewall"])
+	rangeSourceFirewall["environment"] = map[string]any{"SHARED": "yes"}
+	rangeModeDifference := jsonObject(t, release)
+	rangeFirewall := object(t, object(t, rangeModeDifference["services"])["firewall"])
+	rangeFirewall["environment"] = map[string]any{"SHARED": "yes", "RANGERDANGER_MODE": "release"}
+	if err := CheckCrossMode(marshalObject(t, rangeSource), marshalObject(t, rangeModeDifference)); err == nil || !strings.Contains(err.Error(), "services.firewall.environment.RANGERDANGER_MODE") {
+		t.Fatalf("CheckCrossMode error = %v, want unignored range environment path", err)
+	}
+	differentBuild := jsonObject(t, source)
+	object(t, object(t, object(t, differentBuild["services"])["firewall"])["build"])["context"] = "/other"
+	if err := CheckCrossPackage("valid", source, "other", marshalObject(t, differentBuild)); err == nil || !strings.Contains(err.Error(), "inconsistent source build") {
+		t.Fatalf("CheckCrossPackage error = %v, want build divergence", err)
+	}
+}
+
+func TestPlatformCrossModeFixturesAndPaths(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	source := fixtureNormalized(t, root, "platform.source.json")
+	release := fixtureNormalized(t, root, "platform.release.json")
+	if err := CheckPlatformCrossMode(source, release); err != nil {
+		t.Fatalf("valid platform pair: %v", err)
+	}
+
+	wrongMode, err := os.ReadFile(filepath.Join("testdata", "invalid", "compose", "platform-mode-mismatch.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = CheckPlatformCrossMode(source, wrongMode)
+	if err == nil || !strings.Contains(err.Error(), "services.backend.environment.RANGERDANGER_MODE") || !strings.Contains(err.Error(), `want "release"`) {
+		t.Fatalf("mode mismatch error = %v, want mode selector path and expected value", err)
+	}
+
+	differentSetting := jsonObject(t, release)
+	backend := object(t, object(t, differentSetting["services"])["backend"])
+	object(t, backend["environment"])["RANGERDANGER_DB_PATH"] = "/different/db"
+	err = CheckPlatformCrossMode(source, marshalObject(t, differentSetting))
+	if err == nil || !strings.Contains(err.Error(), "services.backend.environment.RANGERDANGER_DB_PATH") {
+		t.Fatalf("platform cross-mode error = %v, want first differing path", err)
+	}
+}
+
+func fixturePath(t *testing.T, relative string) string {
+	t.Helper()
+	path, err := filepath.Abs(relative)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func fixtureNormalized(t *testing.T, root, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, "normalized", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var model map[string]any
+	if err := json.Unmarshal(data, &model); err != nil {
+		t.Fatal(err)
+	}
+	if name == "range.source.json" || name == "range.release.json" {
+		service := object(t, object(t, model["services"])["firewall"])
+		volume := object(t, service["volumes"].([]any)[0])
+		source := volume["source"].(string)
+		oldRoot := strings.TrimSuffix(source, "/data/firewall")
+		replaceRoot(model, oldRoot, root)
+	}
+	encoded, err := json.Marshal(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+func replaceRoot(value any, oldRoot, newRoot string) {
+	switch current := value.(type) {
+	case map[string]any:
+		for key, nested := range current {
+			switch text := nested.(type) {
+			case string:
+				if strings.HasPrefix(text, oldRoot) {
+					suffix := strings.TrimPrefix(text, oldRoot)
+					current[key] = filepath.Join(newRoot, filepath.FromSlash(strings.TrimPrefix(suffix, "/")))
+				}
+			default:
+				replaceRoot(nested, oldRoot, newRoot)
+			}
+		}
+	case []any:
+		for index := range current {
+			replaceRoot(current[index], oldRoot, newRoot)
+		}
+	}
+}
+
+func loadFixtureTopology(t *testing.T, root string) labs.Package {
+	t.Helper()
+	path := filepath.Join(root, "lab-definitions", "packages", "valid", "topology.yml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topology labs.LabYAML
+	if err := yaml.Unmarshal(data, &topology); err != nil {
+		t.Fatal(err)
+	}
+	return labs.Package{ID: "valid", Template: topology}
+}
+
+func jsonObject(t *testing.T, data []byte) map[string]any {
+	t.Helper()
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatal(err)
+	}
+	return value
+}
+
+func object(t *testing.T, value any) map[string]any {
+	t.Helper()
+	result, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object, got %T (%v)", value, value)
+	}
+	return result
+}
+
+func marshalObject(t *testing.T, value map[string]any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestFixtureContainsDockerNormalizedOutputs(t *testing.T) {
+	for _, name := range []string{"platform.source.json", "platform.release.json", "range.source.json", "range.release.json"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(fixtureRoot, "normalized", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var value map[string]any
+			if err := json.Unmarshal(data, &value); err != nil {
+				t.Fatal(err)
+			}
+			if value["name"] == nil || value["services"] == nil || value["networks"] == nil {
+				t.Fatalf("normalized Compose fixture lacks required fields: %s", fmt.Sprint(value))
+			}
+		})
+	}
+}
+
+func TestIPv4SubnetRejectsIPv6(t *testing.T) {
+	if _, _, err := parseIPv4Subnet("2001:db8::/64"); err == nil {
+		t.Fatal("parseIPv4Subnet accepted IPv6")
+	}
+	if ip := net.ParseIP("10.0.0.1"); ip == nil || ip.To4() == nil {
+		t.Fatal("unexpected IPv4 parser failure")
+	}
+}
+
+// TestValidateEURoles accepts the EU telecontrol roles and endpoint names
+// and resolves them by role.
+func TestValidateEURoles(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	m, err := Load(root, "valid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Services = append(m.Services,
+		Service{Key: "iec104_rtu", Container: "fixture-rtu", Roles: []Role{RoleRTU},
+			Interfaces: []Interface{{Network: "field_net", IPv4: "10.40.40.20"}}},
+		Service{Key: "control_centre", Container: "fixture-cc", Roles: []Role{RoleControlCentre},
+			Interfaces: []Interface{{Network: "mgmt_net", IPv4: "10.99.99.21"}},
+			Endpoints:  map[string]string{"api": "http://10.99.99.21:8080"}},
+		Service{Key: "feeder_breaker", Container: "fixture-breaker", Roles: []Role{RoleFieldDevice},
+			Interfaces: []Interface{{Network: "mgmt_net", IPv4: "10.99.99.22"}},
+			Endpoints:  map[string]string{"sim": "http://10.99.99.22:8080"}},
+	)
+	if err := Validate(m, root); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if url, ok := m.Endpoint(RoleControlCentre, "api"); !ok || url != "http://10.99.99.21:8080" {
+		t.Errorf("control-centre api = %q, %v", url, ok)
+	}
+	if url, ok := m.Endpoint(RoleFieldDevice, "sim"); !ok || url != "http://10.99.99.22:8080" {
+		t.Errorf("field-device sim = %q, %v", url, ok)
+	}
+	if svc, ok := m.ServiceByRole(RoleRTU); !ok || svc.Container != "fixture-rtu" {
+		t.Errorf("rtu service = %+v, %v", svc, ok)
+	}
+}
+
+// TestValidateSingleHolders rejects a second holder of the roles the
+// backend resolves to one service, and a sim endpoint that is
+// outside a field device or time source. Multiple sims are allowed.
+func TestValidateSingleHolders(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	service := func(key, ip string, role Role, endpoints map[string]string) Service {
+		return Service{Key: key, Container: "fixture-" + key, Roles: []Role{role},
+			Interfaces: []Interface{{Network: "mgmt_net", IPv4: ip}}, Endpoints: endpoints}
+	}
+	sim := func(ip string) map[string]string {
+		return map[string]string{EndpointSim: "http://" + ip + ":8080"}
+	}
+	cases := []struct {
+		name  string
+		extra []Service
+		want  string
+	}{
+		{"two rtus", []Service{service("rtu_a", "10.99.99.31", RoleRTU, nil), service("rtu_b", "10.99.99.32", RoleRTU, nil)},
+			`role "rtu" is held by rtu_a, rtu_b`},
+		{"two control centres", []Service{service("cc_a", "10.99.99.31", RoleControlCentre, nil), service("cc_b", "10.99.99.32", RoleControlCentre, nil)},
+			`role "control-centre" is held by cc_a, cc_b`},
+		{"two process solvers", []Service{service("dss_a", "10.99.99.31", RoleProcessSolver, nil), service("dss_b", "10.99.99.32", RoleProcessSolver, nil)},
+			`role "process-solver" is held by dss_a, dss_b`},
+		{"sim outside permitted roles", []Service{service("cc", "10.99.99.31", RoleControlCentre, sim("10.99.99.31"))},
+			`service "cc" has a sim endpoint but neither the field-device nor time-source role`},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			m, err := Load(root, "valid")
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.Services = append(m.Services, test.extra...)
+			if err := Validate(m, root); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Validate error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+
+	m, err := Load(root, "valid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Services = append(m.Services, service("breaker", "10.99.99.31", RoleFieldDevice, sim("10.99.99.31")), service("rmu", "10.99.99.32", RoleFieldDevice, sim("10.99.99.32")))
+	if err := Validate(m, root); err != nil {
+		t.Fatalf("Validate many sim endpoints: %v", err)
+	}
+	if svc, url, ok := m.ServiceWithEndpoint(EndpointSim); !ok || svc.Key != "breaker" || url != "http://10.99.99.31:8080" {
+		t.Errorf("ServiceWithEndpoint = %+v %q %v", svc, url, ok)
+	}
+}
+
+func TestValidateSimEndpointRoles(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	tests := []struct {
+		name  string
+		roles []Role
+		valid bool
+	}{
+		{"field device", []Role{RoleFieldDevice}, true},
+		{"time source", []Role{RoleTimeSource}, true},
+		{"field device with another role", []Role{RolePLC, RoleFieldDevice}, true},
+		{"time source with another role", []Role{RolePLC, RoleTimeSource}, true},
+		{"both permitted roles", []Role{RoleFieldDevice, RoleTimeSource}, true},
+		{"no roles", nil, false},
+	}
+	for role := range Roles {
+		if role != RoleFieldDevice && role != RoleTimeSource {
+			tests = append(tests, struct {
+				name  string
+				roles []Role
+				valid bool
+			}{string(role), []Role{role}, false})
+		}
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			m, err := Load(root, "valid")
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.Services = append(m.Services, Service{
+				Key: "sim_test", Container: "fixture-sim-test", Node: "sim-1", Roles: test.roles,
+				Interfaces: []Interface{{Network: "mgmt_net", IPv4: "10.99.99.31"}},
+				Endpoints:  map[string]string{EndpointSim: "http://10.99.99.31:8080"},
+			})
+			err = Validate(m, root)
+			if test.valid {
+				if err != nil {
+					t.Fatalf("permitted sim role rejected: %v", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "neither the field-device nor time-source role") {
+				t.Fatalf("sim role must be rejected, got %v", err)
+			}
+		})
+	}
+}

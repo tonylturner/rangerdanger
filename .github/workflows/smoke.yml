@@ -1,8 +1,11 @@
 name: Smoke
 
-# Bring the lab up against the locally-built images, run a layered
-# series of correctness gates, then tear it down:
+# Bring the lab up against the locally-built images (./scripts/dev-up.sh:
+# the platform, then the US range through POST /api/range), run a layered
+# series of correctness gates, then tear it down (./scripts/dev-down.sh,
+# label-only by Compose project):
 #
+#   0. GET /api/range reports us-dnp3-substation ready (range gate)
 #   1. /api/health and /api/build respond              (boot gate)
 #   2. lab inventory matches the workshop deck         (content gate)
 #   3. sim healthchecks pass                           (init gate)
@@ -10,8 +13,9 @@ name: Smoke
 #   5. reviewed YAML/CLI command examples satisfy semantic oracles
 #   6. the workshop test-suite reports no step/reset failures
 #
-# Runs on every push to main + PR. Catches startup regressions and
-# lab-doc rot before a workshop student trips over them.
+# The US smoke job catches startup regressions and lab-doc rot. The separate
+# EU job runs its package gate on the iec104 branch without sharing a Docker
+# daemon with the US range.
 #
 # Budget: ~9–12 min on a GitHub-hosted runner. ~6 min for the build
 # (no cache pull), ~2 min for boot, ~3 min for the matrix probes
@@ -21,9 +25,9 @@ name: Smoke
 
 on:
   push:
-    branches: [main, hotfix/v0.1.36-rc.1]
+    branches: [main, iec104]
   pull_request:
-    branches: [main]
+    branches: [main, iec104]
   workflow_dispatch:
 
 permissions:
@@ -38,16 +42,25 @@ env:
 jobs:
   smoke:
     name: docker compose up + health check
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v5
 
       - name: Validate compose syntax
+        # Platform files under the platform project, every package's range
+        # files under the range project, with the checkout as the project
+        # directory and RANGERDANGER_ROOT, as setup runs them.
         run: |
-          docker compose config -q
-          docker compose -f docker-compose.release.yml config -q
+          set -euo pipefail
+          export RANGERDANGER_ROOT="$PWD"
+          for f in docker-compose.yml docker-compose.release.yml; do
+            docker compose -p rangerdanger-platform --project-directory "$PWD" -f "$f" config -q
+          done
+          for f in lab-definitions/packages/*/compose.source.yml lab-definitions/packages/*/compose.release.yml; do
+            docker compose -p rangerdanger --project-directory "$PWD" -f "$f" config -q
+          done
 
       - name: Free disk space (GH runner has ~14 GB by default)
         run: |
@@ -64,23 +77,24 @@ jobs:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build the stack
-        run: docker compose build --parallel
+      - name: Install the Docker Engine the range needs
+        # The runner image's Engine 28.0.4 cannot create the firewall's
+        # pinned interface names (Compose interface_name needs 28.1+).
+        run: ./scripts/ci-docker-engine.sh
 
-      - name: Bring up the stack
-        run: docker compose up -d
+      - name: Build and bring up the platform and the US range
+        # setup.sh --from-source: build every platform and package image,
+        # start the platform, wait for /api/health, POST /api/range and
+        # wait until the range reports ready.
+        run: ./scripts/dev-up.sh
 
-      - name: Wait for backend to report healthy
+      - name: Confirm the US range is ready
         run: |
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8088/api/health >/dev/null 2>&1; then
-              echo "backend healthy after ${i}0 seconds"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "backend did not report healthy in 5 minutes"
-          exit 1
+          set -euo pipefail
+          range=$(curl -fsS http://localhost:8088/api/range)
+          echo "$range"
+          echo "$range" | jq -e '.package == "us-dnp3-substation" and .phase == "ready"' >/dev/null \
+            || { echo "::error::range is not us-dnp3-substation ready"; exit 1; }
 
       - name: Probe API endpoints
         run: |
@@ -103,7 +117,8 @@ jobs:
             [ -n "$image" ] && image_list+=("$image")
           done <<<"$ids"
           docker image inspect "${image_list[@]}" > build/smoke-receipts/images.json
-          docker image inspect ghcr.io/tonylturner/containd:latest > build/smoke-receipts/containd.json
+          # Source mode builds the firewall locally; record the image it runs.
+          docker image inspect "$(docker inspect --format '{{.Image}}' rangerdanger-firewall)" > build/smoke-receipts/containd.json
           curl -fsS --max-time 10 http://localhost:8088/api/build > build/smoke-receipts/api-build.json
           curl -fsS --max-time 10 http://localhost:8088/api/firewall/active > build/smoke-receipts/firewall-active.json
 
@@ -166,8 +181,15 @@ jobs:
           # All 7 alpine sims + opendss expose /api/health; rtac depends
           # on the field sims being healthy via service_healthy gates.
           # If startup ordering broke, this is where it surfaces.
-          docker compose ps --format '{{.Service}} {{.Status}}'
-          healthy=$(docker compose ps --format '{{.Status}}' | grep -c '(healthy)')
+          # Platform + range, label-only from an empty directory (from the
+          # checkout Compose would load docker-compose.yml as the model).
+          cd "$(mktemp -d)"
+          ps_all() {
+            docker compose -p rangerdanger-platform ps "$@"
+            docker compose -p rangerdanger ps "$@"
+          }
+          ps_all --format '{{.Service}} {{.Status}}'
+          healthy=$(ps_all --format '{{.Status}}' | grep -c '(healthy)')
           [ "$healthy" -ge 8 ] || { echo "expected >=8 healthy services, got $healthy"; exit 1; }
 
       - name: Firewall traffic enforcement smoke
@@ -223,14 +245,13 @@ jobs:
           set -euo pipefail
           ./scripts/test-suite-smoke.sh
 
-      - name: Known defects RD-01 - generated full plan must block all 11 unauthorized flows
-        # The frontend generator is unchanged. Keep its advisory conformance
-        # check on the disposable built-image stack, not on cached old images.
-        continue-on-error: true
+      - name: Compiled full plan must meet hardened acceptance
         run: |
           set -euo pipefail
           API=http://localhost:8088
           receipts=build/smoke-receipts/rd01
+          golden=frontend/lib/testdata/plans/us-full.json
+          oracle=scripts/tests/fixtures
           mkdir -p "$receipts"
           restore_weak() {
             local rc=$?
@@ -243,21 +264,54 @@ jobs:
             exit "$rc"
           }
           trap restore_weak EXIT
-          jq '.config' scripts/tests/fixtures/rd01-full-plan.json >"$receipts/plan.json"
+          jq -L "$oracle" 'include "plan-gate"; plan_request' "$golden" >"$receipts/plan.json"
           curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' \
-            --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-custom" >"$receipts/apply.json"
+            --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-plan" >"$receipts/apply.json"
+          jq -e -L "$oracle" --slurpfile golden "$golden" \
+            'include "plan-gate"; plan_applied($golden[0])' "$receipts/apply.json"
           sleep 3
           curl -fsS --max-time 90 -X POST "$API/api/firewall/validation-report" >"$receipts/report.json"
-          jq -e '.summary | .result == "PASS" and .authorized_pass == 8 and
-            .authorized_total == 8 and .unauthorized_pass == 11 and
-            .unauthorized_total == 11 and .skipped == 0' "$receipts/report.json"
+          jq -e -L "$oracle" --slurpfile golden "$golden" \
+            'include "plan-gate"; plan_report($golden[0])' "$receipts/report.json"
 
-      - name: Dump compose logs on failure
+      - name: Compiled partial plan must prove its remaining prevention gaps
+        run: |
+          set -euo pipefail
+          API=http://localhost:8088
+          receipts=build/smoke-receipts/rd01-partial
+          golden=frontend/lib/testdata/plans/us-partial.json
+          oracle=scripts/tests/fixtures
+          mkdir -p "$receipts"
+          restore_weak() {
+            local rc=$?
+            trap - EXIT
+            if ! curl -fsS --max-time 30 -X POST -H 'Content-Type: application/json' \
+                -d '{"config":"weak"}' "$API/api/firewall/apply" >"$receipts/restore.json"; then
+              echo "partial-plan cleanup failed" >&2
+              rc=1
+            fi
+            exit "$rc"
+          }
+          trap restore_weak EXIT
+          jq -L "$oracle" 'include "plan-gate"; plan_request' "$golden" >"$receipts/plan.json"
+          curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' \
+            --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-plan" >"$receipts/apply.json"
+          jq -e -L "$oracle" --slurpfile golden "$golden" \
+            'include "plan-gate"; plan_applied($golden[0])' "$receipts/apply.json"
+          sleep 3
+          curl -fsS --max-time 90 -X POST "$API/api/firewall/validation-report" >"$receipts/report.json"
+          jq -e -L "$oracle" --slurpfile golden "$golden" \
+            'include "plan-gate"; plan_report($golden[0])' "$receipts/report.json"
+
+      - name: Dump container logs on failure
         if: failure()
         run: |
           mkdir -p /tmp/logs
-          for svc in backend firewall rtac_sim relay_sim recloser_sim regulator_sim capbank_sim opendss_sim fuxa_hmi proxy frontend; do
-            docker compose logs --tail=200 "$svc" > "/tmp/logs/$svc.log" 2>&1 || true
+          curl -sS http://localhost:8088/api/range > /tmp/logs/range.json 2>&1 || true
+          for project in rangerdanger-platform rangerdanger; do
+            for c in $(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Names}}'); do
+              docker logs --tail=200 "$c" > "/tmp/logs/$c.log" 2>&1 || true
+            done
           done
 
       - name: Upload logs on failure
@@ -281,4 +335,82 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down -v
+        run: ./scripts/dev-down.sh
+
+  eu-smoke:
+    name: EU IEC104 source gate
+    runs-on: ubuntu-26.04
+    # A clean run takes about 43 minutes; a slow apt mirror adds ten more.
+    timeout-minutes: 60
+    env:
+      EU_GATE_EVIDENCE_DIR: /tmp/eu-gate-evidence
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Install host tshark
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tshark
+          tshark --version
+
+      - name: Verify EU gate host tools
+        run: |
+          set -euo pipefail
+          for tool in curl jq python3 docker tshark; do
+            command -v "$tool"
+          done
+          docker compose version
+
+      - name: Prepare evidence directory
+        run: mkdir -p "$EU_GATE_EVIDENCE_DIR"
+
+      - name: Install the Docker Engine the range needs
+        # The runner image's Engine 28.0.4 cannot create the firewall's
+        # pinned interface names (Compose interface_name needs 28.1+).
+        run: ./scripts/ci-docker-engine.sh
+
+      - name: Build and bring up the platform and EU range
+        run: ./scripts/dev-up.sh --package eu-iec104-substation
+
+      - name: Confirm the EU range is ready
+        run: |
+          set -euo pipefail
+          range=$(curl -fsS http://localhost:8088/api/range)
+          echo "$range"
+          echo "$range" | jq -e '.package == "eu-iec104-substation" and .phase == "ready"' >/dev/null \
+            || { echo "::error::range is not eu-iec104-substation ready"; exit 1; }
+
+      - name: EU IEC104 smoke gate
+        run: ./scripts/eu-iec104-smoke.sh
+
+      - name: Collect range logs and EU gate evidence
+        if: always()
+        run: |
+          mkdir -p /tmp/logs "$EU_GATE_EVIDENCE_DIR"
+          curl -sS http://localhost:8088/api/range > /tmp/logs/range.json 2>&1 || true
+          for project in rangerdanger-platform rangerdanger; do
+            for c in $(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Names}}'); do
+              docker logs --tail=200 "$c" > "/tmp/logs/$c.log" 2>&1 || true
+            done
+          done
+
+      - name: Upload EU evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: eu-compose-logs-and-gate-evidence
+          path: |
+            /tmp/logs/
+            /tmp/eu-gate-evidence/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Tear down EU range and platform
+        if: always()
+        run: ./scripts/dev-down.sh

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
-	"github.com/tturner/rangerdanger/backend/internal/models"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 // StepExecutionResult is the response from executing a scenario step action.
@@ -30,6 +31,7 @@ type StepExecutionResult struct {
 type StepActionResult struct {
 	Action   string   `json:"action"`
 	Success  bool     `json:"success"`
+	Blocked  bool     `json:"-"`
 	Detail   string   `json:"detail"`
 	Impact   string   `json:"impact,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
@@ -38,6 +40,8 @@ type StepActionResult struct {
 // handleExecuteStep executes the action defined in a scenario step.
 // POST /api/scenarios/:id/steps/:stepIdx/execute
 func (s *Server) handleExecuteStep(c *gin.Context) {
+	ctx := c.Request.Context()
+	gen := rangeOf(c)
 	scenarioID := c.Param("id")
 	stepIdxStr := c.Param("stepIdx")
 	stepIdx, err := strconv.Atoi(stepIdxStr)
@@ -46,9 +50,8 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		return
 	}
 
-	// Load scenario
-	var scenario models.Scenario
-	if err := s.db.First(&scenario, "id = ?", scenarioID).Error; err != nil {
+	scenario, err := s.findActiveScenario(scenarioID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return
 	}
@@ -82,12 +85,12 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 
 	switch step.Action.Type {
 	case "command":
-		result := s.executeCommand(step.Action.Device, step.Action.Command, step.Action.Source, step.Action.Value)
+		result := s.executeCommand(ctx, gen, step.Action.Device, step.Action.Command, step.Action.Source, step.Action.Value)
 		results = append(results, result)
 
 	case "sequence":
 		for _, cmd := range step.Action.Commands {
-			result := s.executeCommand(cmd.Device, cmd.Command, cmd.Source, cmd.Value)
+			result := s.executeCommand(ctx, gen, cmd.Device, cmd.Command, cmd.Source, cmd.Value)
 			results = append(results, result)
 			if !result.Success {
 				break
@@ -96,15 +99,18 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		}
 
 	case "firewall":
-		result := s.executeFirewallAction(step.Action.Config)
+		result := s.executeFirewallAction(ctx, gen, step.Action.Config)
 		results = append(results, result)
 
 	case "check":
-		checkResults := s.executeCheck(step.Action.Expect)
+		checkResults := s.executeCheck(ctx, gen, step.Action.Expect)
 		results = append(results, checkResults...)
 
+	case "session-cut":
+		results = append(results, s.executeSessionCut(ctx, gen, step.Action.Flow))
+
 	case "probe":
-		results = s.executeProbe(step)
+		results = s.executeProbe(ctx, gen, step)
 
 	default:
 		results = append(results, StepActionResult{
@@ -132,25 +138,15 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 	})
 }
 
-// executeCommand sends a command to a field device via RTAC.
-// When the improved firewall config is active, it enforces source authorization:
-// only the RTAC and operator sources can reach field devices.
-func (s *Server) executeCommand(device, command, source string, value *float64) StepActionResult {
-	// Check if the source is authorized under the current firewall policy.
-	// In "improved" mode, only RTAC (10.30.30.20) and "operator" can send
-	// commands to field devices — all other sources are blocked by containd.
-	s.activeConfigMu.RLock()
-	activeConfig := s.activeConfig
-	s.activeConfigMu.RUnlock()
-
-	if activeConfig == "improved" && !isAuthorizedSource(source) {
-		zone := sourceZoneLabel(source)
-		return StepActionResult{
-			Action:  fmt.Sprintf("%s/%s from %s", device, command, source),
-			Success: false,
-			Detail:  fmt.Sprintf("BLOCKED by containd — %s not authorized to reach field devices", source),
-			Impact:  fmt.Sprintf("containd NGFW blocked %s→%s traffic [%s zone denied]", source, device, zone),
-		}
+// executeRTACCommand evaluates the actual running L4 policy before simulating
+// a source's command through the RTAC transport. A missing identity is untested.
+func (s *Server) executeRTACCommand(ctx context.Context, gen *lifecycle.Generation, _ *packageRecipe, device, command, source string, value *float64) StepActionResult {
+	verdict, err := s.commandVerdict(ctx, gen, device, command, source)
+	if err != nil {
+		return StepActionResult{Action: fmt.Sprintf("%s/%s from %s", device, command, source), Detail: "Cannot evaluate running policy: " + err.Error()}
+	}
+	if verdict == labs.VerdictDeny {
+		return StepActionResult{Action: fmt.Sprintf("%s/%s from %s", device, command, source), Blocked: true, Detail: "BLOCKED by running L4 policy for this source → device tuple"}
 	}
 
 	payload := map[string]any{
@@ -162,12 +158,11 @@ func (s *Server) executeCommand(device, command, source string, value *float64) 
 	}
 
 	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Post(
-		s.rtacURL()+"/api/command/"+device,
-		"application/json",
-		bytes.NewReader(body),
-	)
+	rtac, err := rtacURL(gen)
+	if err != nil {
+		return StepActionResult{Action: fmt.Sprintf("%s/%s", device, command), Detail: err.Error()}
+	}
+	resp, err := rtacRequest(ctx, http.MethodPost, rtac+"/api/command/"+device, bytes.NewReader(body))
 	if err != nil {
 		return StepActionResult{
 			Action:  fmt.Sprintf("%s/%s", device, command),
@@ -195,41 +190,9 @@ func (s *Server) executeCommand(device, command, source string, value *float64) 
 	}
 }
 
-// isAuthorizedSource returns true if the source is allowed to command field
-// devices under the hardened ("improved") firewall policy.
-//
-// After the RTAC harden fix, all RTAC -> field traffic is routed through the
-// OT Ops firewall and the wire-visible source IP is 10.30.30.20. The RTAC's
-// field_net interface (10.40.40.10) still exists for realism but is no
-// longer used as an active source for any routed traffic.
-func isAuthorizedSource(source string) bool {
-	switch source {
-	case "operator", "rtac", "rtac-sim",
-		"10.30.30.20": // RTAC on ot_ops_net (the only routed source)
-		return true
-	}
-	return false
-}
-
-// sourceZoneLabel returns a human-readable zone label for a source IP.
-func sourceZoneLabel(source string) string {
-	switch {
-	case strings.HasPrefix(source, "10.10.10."):
-		return "enterprise"
-	case strings.HasPrefix(source, "10.20.20."):
-		return "vendor"
-	case strings.HasPrefix(source, "10.30.30."):
-		return "ot_ops"
-	case strings.HasPrefix(source, "10.40.40."):
-		return "field"
-	default:
-		return "unknown"
-	}
-}
-
 // executeFirewallAction applies a firewall configuration.
-func (s *Server) executeFirewallAction(configName string) StepActionResult {
-	warnings, err := s.applyFirewallConfigInternal(configName)
+func (s *Server) executeFirewallAction(ctx context.Context, gen *lifecycle.Generation, configName string) StepActionResult {
+	warnings, err := s.applyFirewallConfigInternal(ctx, gen, configName)
 	if err != nil {
 		return StepActionResult{
 			Action:  "Apply firewall: " + configName,
@@ -238,9 +201,9 @@ func (s *Server) executeFirewallAction(configName string) StepActionResult {
 		}
 	}
 
-	label := "weak baseline"
-	if configName == "improved" {
-		label = "hardened (RTAC-only field access)"
+	label := configName
+	if recipe, err := recipeFor(gen); err == nil {
+		label = recipe.policyLabel(configName)
 	}
 	detail := "containd policy set to " + label
 	if len(warnings) > 0 {
@@ -258,10 +221,21 @@ func (s *Server) executeFirewallAction(configName string) StepActionResult {
 }
 
 // executeCheck validates current substation state against expectations.
-func (s *Server) executeCheck(expect map[string]any) []StepActionResult {
+func (s *Server) executeCheck(ctx context.Context, gen *lifecycle.Generation, expect map[string]any) []StepActionResult {
+	recipe, err := recipeFor(gen)
+	if err != nil {
+		return []StepActionResult{{Action: "Check", Detail: err.Error()}}
+	}
+	if recipe.check == nil {
+		return []StepActionResult{{Action: "Check", Detail: "checks not supported by this package"}}
+	}
+	return recipe.check(s, ctx, gen, expect)
+}
+
+func (s *Server) executeUSCheck(ctx context.Context, gen *lifecycle.Generation, expect map[string]any) []StepActionResult {
 	var results []StepActionResult
 
-	state, err := s.fetchRTACState()
+	state, err := s.fetchRTACState(ctx, gen)
 	if err != nil {
 		return []StepActionResult{{
 			Action:  "Check substation state",
@@ -329,16 +303,15 @@ func (s *Server) executeCheck(expect map[string]any) []StepActionResult {
 			}
 
 		case "firewall_config":
-			s.activeConfigMu.RLock()
-			actual := s.activeConfig
-			s.activeConfigMu.RUnlock()
 			expected, _ := expectedVal.(string)
-			// "improved" expectation also accepts "custom" (student's own policy from Exercise 3)
-			match := actual == expected || (expected == "improved" && actual == "custom")
-			if match {
-				results = append(results, StepActionResult{Action: "Firewall policy", Success: true, Detail: "Active config: " + actual})
+			if expected == "improved" {
+				judgment := s.usPolicyJudgment(ctx, gen)
+				results = append(results, StepActionResult{Action: judgment.Name, Success: judgment.Status == "pass", Detail: judgment.Detail})
 			} else {
-				results = append(results, StepActionResult{Action: "Firewall policy", Success: false, Detail: fmt.Sprintf("Expected %s but got %s", expected, actual)})
+				s.activeConfigMu.RLock()
+				actual := s.activeConfig
+				s.activeConfigMu.RUnlock()
+				results = append(results, StepActionResult{Action: "Firewall policy", Success: actual == expected, Detail: "Active config: " + actual})
 			}
 		}
 	}

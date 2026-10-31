@@ -1,0 +1,82 @@
+{
+  "schema": 3,
+  "profile_id": "eu-cigre-mv-teaching",
+  "solver_epoch": "688b61d3-381c-4bcb-9645-a3f7018eb0a2",
+  "solve_seq": 0,
+  "solved_at": null,
+  "truth_stale": true,
+  "fault_section": "none",
+  "load_multiplier": 1.0,
+  "source_pu": 1.0,
+  "tap": null,
+  "f2_tripped": null,
+  "profile": {
+    "enabled": true,
+    "load_factors": {
+      "residential": null,
+      "commercial": null,
+      "industrial": null
+    },
+    "source_pu": null
+  },
+  "buses": {
+    "bus20": {
+      "kv": null,
+      "live": null
+    },
+    "s1": {
+      "kv": null,
+      "live": null
+    },
+    "s2": {
+      "kv": null,
+      "live": null
+    },
+    "s3": {
+      "kv": null,
+      "live": null
+    }
+  },
+  "devices": {
+    "feeder-breaker": {
+      "delivered": false,
+      "solved_revision": null,
+      "revision": null,
+      "current_a": null,
+      "p_mw": null,
+      "q_mvar": null
+    },
+    "rmu-1": {
+      "delivered": false,
+      "solved_revision": null,
+      "revision": null,
+      "current_a": null,
+      "p_mw": null,
+      "q_mvar": null
+    },
+    "rmu-2": {
+      "delivered": false,
+      "solved_revision": null,
+      "revision": null,
+      "current_a": null,
+      "p_mw": null,
+      "q_mvar": null
+    },
+    "oltc-1": {
+      "delivered": false,
+      "solved_revision": null,
+      "revision": null,
+      "current_a": null,
+      "p_mw": null,
+      "q_mvar": null
+    },
+    "f2-breaker": {
+      "delivered": false,
+      "solved_revision": null,
+      "revision": null,
+      "current_a": null,
+      "p_mw": null,
+      "q_mvar": null
+    }
+  }
+}

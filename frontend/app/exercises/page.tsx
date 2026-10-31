@@ -8,6 +8,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "../../components/ui/too
 import { Toast, type ToastState } from "../../components/ui/toast";
 import { downloadExercisePDF, downloadWorkbookPDF } from "../../lib/pdf-download";
 import type { Scenario } from "../../lib/api";
+import { errorMessage } from "../../lib/utils";
 
 export default function ExercisesPage() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function ExercisesPage() {
       setToast({
         kind: "error",
         title: "PDF export failed",
-        detail: err instanceof Error ? err.message : String(err),
+        detail: errorMessage(err),
       });
     }
   }, []);
@@ -63,7 +64,7 @@ export default function ExercisesPage() {
       setToast({
         kind: "error",
         title: "Workbook export failed",
-        detail: err instanceof Error ? err.message : String(err),
+        detail: errorMessage(err),
       });
     } finally {
       setWorkbookExporting(false);
@@ -72,7 +73,7 @@ export default function ExercisesPage() {
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-10">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold text-white">Exercises</h1>
           <p className="text-slate-400">
@@ -85,7 +86,7 @@ export default function ExercisesPage() {
               onClick={handleExportWorkbook}
               disabled={workbookExporting}
               aria-label="Export full workbook as PDF"
-              className="inline-flex shrink-0 items-center gap-2 rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-900/40 hover:border-amber-600 disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-2 rounded-sm border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-900/40 hover:border-amber-600 disabled:opacity-50"
             >
               <BookOpen className={`h-4 w-4 ${workbookExporting ? "animate-pulse" : ""}`} />
               <span>{workbookExporting ? "Generating…" : "Workbook PDF"}</span>

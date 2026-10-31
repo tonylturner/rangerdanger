@@ -1,43 +1,34 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
-	"github.com/tturner/rangerdanger/backend/internal/models"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
+	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
-const workshopTemplateID = "substation-segmentation"
-
-// handleGetWorkshopGraph returns the topology graph for the active workshop template.
-// This does not require a lab instance — it reads directly from the template.
+// handleGetWorkshopGraph returns the serving range's topology as a graph,
+// with zones and addresses from its manifest.
 func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
-	var template models.LabTemplate
-	if err := s.db.First(&template, "id = ?", workshopTemplateID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "workshop template not found — run seed first"})
-		return
-	}
+	gen := rangeOf(c)
+	topology := gen.Package.Template
+	statuses := s.workshopNodeStatuses(c.Request.Context(), gen)
 
-	var topo struct {
-		Networks []labs.NetworkYAML `json:"networks"`
-		Nodes    []labs.NodeYAML    `json:"nodes"`
-	}
-	if err := json.Unmarshal([]byte(template.Topology), &topo); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid topology"})
-		return
-	}
-
-	zoneOrder := []string{
-		"enterprise_net", "vendor_net", "ot_ops_net", "field_net",
-	}
+	zoneOrder := manifestZones(gen)
 	zoneCounts := map[string]int{}
 
-	var nodes []graphNode
+	nodes := []graphNode{}
 	for idx, zone := range zoneOrder {
 		nodes = append(nodes, graphNode{
 			ID:   "zone-" + zone,
@@ -55,9 +46,9 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 		})
 	}
 
-	var edges []graphEdge
+	edges := []graphEdge{}
 
-	for _, n := range topo.Nodes {
+	for _, n := range topology.Nodes {
 		zone := ""
 		if len(n.Networks) > 0 {
 			zone = n.Networks[0]
@@ -72,16 +63,9 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 		count := zoneCounts[zone]
 		zoneCounts[zone] = count + 1
 
-		uiPath, externalURL := getNodeUIConfig(n.Type, n.Container, "workshop", n.ID)
+		uiPath, externalURL := getNodeUIConfig(n.Type)
 
-		interfaceIPs := map[string]string{}
-		if n.IP != "" && len(n.Networks) > 0 {
-			interfaceIPs[n.Networks[0]] = n.IP
-		}
-		// For multi-homed nodes, build IPs from the known addresses
-		if len(n.Networks) > 1 {
-			interfaceIPs = buildWorkshopInterfaceIPs(n)
-		}
+		interfaceIPs := manifestInterfaceIPs(gen, n)
 
 		nodes = append(nodes, graphNode{
 			ID:   n.ID,
@@ -94,7 +78,7 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 				Label:         n.Name,
 				Zone:          zone,
 				Networks:      n.Networks,
-				Status:        "running",
+				Status:        statuses[n.ID],
 				IP:            n.IP,
 				InterfaceIPs:  interfaceIPs,
 				UIPath:        uiPath,
@@ -112,82 +96,194 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"nodes": nodes, "edges": edges})
+	flows := topology.Flows
+	if flows == nil {
+		flows = []labs.TopologyFlow{}
+	}
+	bindings := topology.Liveness
+	if bindings == nil {
+		bindings = map[string]labs.LivenessBinding{}
+	}
+	networks := topology.Networks
+	if networks == nil {
+		networks = []labs.NetworkYAML{}
+	}
+	recipe, _ := recipeFor(gen)
+	c.JSON(http.StatusOK, gin.H{
+		"nodes": nodes, "edges": edges, "flows": flows, "liveness": bindings, "networks": networks,
+		"operations": gin.H{"traffic_generation": recipe != nil && len(recipe.traffic) > 0},
+	})
 }
 
-// handleGetWorkshopStatus returns the status of the workshop environment.
+// handleGetWorkshopStatus returns the status of the workshop environment:
+// the firewall, the curriculum, and the package's supervisory service (the
+// RTAC's health and device comms, or the control centre's link and GI).
 func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
-	// Check RTAC health
-	rtacOk := false
-	rtacState, err := s.fetchRTACState()
-	if err == nil && rtacState != nil {
-		rtacOk = true
-	}
+	gen := rangeOf(c)
+	ctx := c.Request.Context()
 
 	// Check containd health
-	fwOk := false
-	if s.containdClient != nil {
-		_, err := s.containdClient.GetHealth()
-		fwOk = err == nil
-	}
+	_, fwErr := gen.Containd().GetHealth(ctx)
+	fwOk := fwErr == nil
 
 	// Count scenarios
 	var scenarioCount int64
-	s.db.Model(&models.Scenario{}).Where("lab_template_id = ?", workshopTemplateID).Count(&scenarioCount)
+	s.activeScenarios().Count(&scenarioCount)
 
 	// Get active firewall config
 	s.activeConfigMu.RLock()
 	activeConfig := s.activeConfig
 	s.activeConfigMu.RUnlock()
 
-	// Get device comms from RTAC state
-	deviceComms := map[string]bool{}
-	if rtacState != nil {
-		if comms, ok := rtacState["device_comms"].(map[string]any); ok {
-			for k, v := range comms {
-				if b, ok := v.(bool); ok {
-					deviceComms[k] = b
-				}
-			}
-		}
+	name := gen.Package.Template.Name
+	if recipe, err := recipeFor(gen); err == nil && recipe.workshopName != "" {
+		name = recipe.workshopName
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"workshop_id":     workshopTemplateID,
-		"workshop_name":   "Distribution Substation Segmentation",
-		"rtac_online":     rtacOk,
+	status := gin.H{
+		"workshop_id":     gen.Package.Template.ID,
+		"workshop_name":   name,
 		"firewall_online": fwOk,
 		"firewall_config": activeConfig,
 		"scenario_count":  scenarioCount,
-		"device_comms":    deviceComms,
-	})
+	}
+	if _, ok := gen.Manifest.ServiceByRole(manifest.RoleRTAC); ok {
+		status["rtac_online"], status["device_comms"] = s.rtacStatus(ctx, gen)
+	}
+	if cc, ok := controlCentreURL(gen); ok {
+		status["control_centre"] = controlCentreLinkStatus(ctx, cc)
+	}
+	c.JSON(http.StatusOK, status)
 }
 
-// buildWorkshopInterfaceIPs creates interface IP mapping for multi-homed workshop nodes.
-// Uses known IP assignments from the substation topology.
-func buildWorkshopInterfaceIPs(n labs.NodeYAML) map[string]string {
-	// Known multi-homed node IPs from docker-compose
-	knownIPs := map[string]map[string]string{
-		"rtac": {
-			"ot_ops_net": "10.30.30.20",
-			"field_net":  "10.40.40.10",
-		},
-		// openplc: single-homed on ot_ops_net (audit F-011). Kept in
-		// the multi-homed map as a single-entry key so callers that
-		// look up "which IP on which network" still resolve cleanly.
-		"openplc": {
-			"ot_ops_net": "10.30.30.30",
-		},
+// rtacStatus is whether the RTAC answers, and its device comms.
+func (s *Server) rtacStatus(ctx context.Context, gen *lifecycle.Generation) (bool, map[string]bool) {
+	deviceComms := map[string]bool{}
+	rtacState, err := s.fetchRTACState(ctx, gen)
+	if err != nil || rtacState == nil {
+		return false, deviceComms
 	}
+	if comms, ok := rtacState["device_comms"].(map[string]any); ok {
+		for k, v := range comms {
+			if b, ok := v.(bool); ok {
+				deviceComms[k] = b
+			}
+		}
+	}
+	return true, deviceComms
+}
 
-	if ips, ok := knownIPs[n.ID]; ok {
+// ccLinkStatus is the control centre's link and GI state in the workshop
+// status; both are null while the control centre does not answer.
+type ccLinkStatus struct {
+	Link *string `json:"link"`
+	GI   *string `json:"gi"`
+}
+
+func controlCentreLinkStatus(ctx context.Context, cc string) ccLinkStatus {
+	body, err := fetchUpstreamObject(ctx, controlCentreService, cc+"/api/state")
+	if err != nil {
+		return ccLinkStatus{}
+	}
+	var state struct {
+		Schema int `json:"schema"`
+		Link   struct {
+			State *string `json:"state"`
+			GI    struct {
+				State          *string `json:"state"`
+				LastCompleteAt *string `json:"last_complete_at"`
+			} `json:"gi"`
+		} `json:"link"`
+	}
+	if err := json.Unmarshal(body, &state); err != nil || state.Schema != 3 {
+		return ccLinkStatus{}
+	}
+	var integrity *string
+	if state.Link.GI.State != nil {
+		value := "none"
+		if state.Link.GI.LastCompleteAt != nil {
+			value = "complete"
+		} else if *state.Link.GI.State == "running" {
+			value = "running"
+		}
+		integrity = &value
+	}
+	return ccLinkStatus{Link: state.Link.State, GI: integrity}
+}
+
+// manifestZones is the teaching zones' network keys, in manifest order.
+func manifestZones(gen *lifecycle.Generation) []string {
+	var zones []string
+	for _, network := range gen.Manifest.Networks {
+		if network.Zone != "" {
+			zones = append(zones, network.Key)
+		}
+	}
+	return zones
+}
+
+// manifestInterfaceIPs maps each of the node's topology networks to the
+// node's address there, from the manifest. A node without a manifest
+// service keeps its topology address on its first network.
+func manifestInterfaceIPs(gen *lifecycle.Generation, n labs.NodeYAML) map[string]string {
+	ips := map[string]string{}
+	svc, ok := gen.Manifest.ServiceByNode(n.ID)
+	if !ok {
+		if n.IP != "" && len(n.Networks) > 0 {
+			ips[n.Networks[0]] = n.IP
+		}
 		return ips
 	}
-
-	// Fallback: use primary IP for first network
-	result := map[string]string{}
-	if n.IP != "" && len(n.Networks) > 0 {
-		result[n.Networks[0]] = n.IP
+	for _, network := range n.Networks {
+		if ip, err := interfaceIP(svc, network); err == nil {
+			ips[network] = ip
+		}
 	}
-	return result
+	return ips
+}
+
+// workshopNodeStatuses uses one bounded inventory read, including stopped containers.
+// An unavailable daemon is unknown, not proof that a container is missing.
+func (s *Server) workshopNodeStatuses(ctx context.Context, gen *lifecycle.Generation) map[string]string {
+	states := map[string]string{}
+	for _, node := range gen.Package.Template.Nodes {
+		states[node.ID] = "unknown"
+	}
+	if s.orchestrator == nil || s.orchestrator.DockerClient() == nil {
+		return states
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	containers, err := s.orchestrator.DockerClient().ContainerList(ctx, container.ListOptions{
+		All: true, Filters: filters.NewArgs(filters.Arg("label", "com.docker.compose.project="+manifest.RangeProject)),
+	})
+	if err != nil {
+		return states
+	}
+	byName := map[string]string{}
+	for _, item := range containers {
+		// Check the label as well as the query: never display a platform container.
+		if item.Labels["com.docker.compose.project"] != manifest.RangeProject {
+			continue
+		}
+		state := "unknown"
+		switch item.State {
+		case "running", "exited", "restarting", "paused":
+			state = item.State
+		}
+		for _, name := range item.Names {
+			byName[strings.TrimPrefix(name, "/")] = state
+		}
+	}
+	for _, node := range gen.Package.Template.Nodes {
+		service, ok := gen.Manifest.ServiceByNode(node.ID)
+		if !ok {
+			continue
+		}
+		state, found := byName[service.Container]
+		if !found {
+			state = "missing"
+		}
+		states[node.ID] = state
+	}
+	return states
 }

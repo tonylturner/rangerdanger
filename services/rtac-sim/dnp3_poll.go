@@ -6,6 +6,8 @@ package main
 //
 // The HTTP polling in pollDevices() remains the primary data source.
 // DNP3 polling runs in parallel for protocol visibility.
+// This observer sends only READs, not startup WRITE/clear-restart commands.
+// Persistent IIN1.7 is diagnostic, not a poll failure or a reconnect trigger.
 
 import (
 	"log"
@@ -65,10 +67,10 @@ func pollDNP3Devices() {
 				continue
 			}
 
-			log.Printf("DNP3 poll %s (addr %d): BI=%d BO=%d AI=%d AO=%d",
+			log.Printf("DNP3 poll %s (addr %d): BI=%d BO=%d AI=%d AO=%d IIN=0x%04X",
 				t.name, t.outstationAddr,
 				len(result.BinaryInputs), len(result.BinaryOutputs),
-				len(result.AnalogInputs), len(result.AnalogOutputs))
+				len(result.AnalogInputs), len(result.AnalogOutputs), result.IIN)
 		}
 	}
 }

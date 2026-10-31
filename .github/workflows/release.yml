@@ -40,7 +40,7 @@ env:
 jobs:
   plan:
     name: Plan image builds and promotions
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       commit: ${{ steps.commit.outputs.commit }}
@@ -176,7 +176,7 @@ jobs:
   publish:
     name: ${{ matrix.image }}
     needs: plan
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -450,9 +450,9 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - platform: linux/arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     steps:
       - name: Resolve target tag
         id: tag
@@ -583,7 +583,7 @@ jobs:
   frontend-merge:
     name: rangerdanger-frontend (merge)
     needs: [plan, frontend]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Resolve target tag
         id: tag
@@ -780,196 +780,18 @@ jobs:
     name: GitHub Release
     needs: [plan, publish, frontend, frontend-merge]
     if: always() && needs.plan.result == 'success'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Resolve target tag
-        id: tag
-        env:
-          DISPATCH_TAG: ${{ inputs.tag }}
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "name=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create release draft or require an existing draft
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ steps.tag.outputs.name }}
-        run: |
-          release_view_error="$RUNNER_TEMP/release-view-error"
-          if is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>"$release_view_error")"; then
-            if [ "$is_draft" != "true" ]; then
-              echo "::error::Release $TAG is already published. Delete or unpublish it before rerunning this workflow."
-              exit 1
-            fi
-          else
-            if ! grep -Fxq "release not found" "$release_view_error"; then
-              cat "$release_view_error" >&2
-              exit 1
-            fi
-            prerelease_flag=()
-            if [[ "$TAG" == *-* ]]; then
-              prerelease_flag+=(--prerelease)
-            fi
-            gh release create "$TAG" \
-              --title "$TAG" \
-              --notes "Image publication and release record are in progress." \
-              --verify-tag \
-              --draft \
-              "${prerelease_flag[@]}"
-          fi
-
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.plan.outputs.commit }}
-          fetch-depth: 1
-
-      - name: Extract CHANGELOG section for tag
-        id: notes
-        env:
-          TAG: ${{ steps.tag.outputs.name }}
-        run: |
-          tag="$TAG"
-          awk -v tag="$tag" '
-            $0 ~ "^## \\[" tag "\\] - " { found=1; next }
-            found && /^## \[/ { exit }
-            found { print }
-          ' CHANGELOG.md \
-            | sed -e '/./,$!d' \
-                  -e :a -e '/^$/{$d;N;ba' -e '}' \
-            > release-body.md
-          if [ ! -s release-body.md ]; then
-            echo "Release ${tag}. See CHANGELOG.md for details." > release-body.md
-          fi
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: release-plan-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/release-plan
-
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: plan-result-*-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/image-results
-          merge-multiple: true
-
-      - name: Validate all image results and compose release record
-        env:
-          PLAN_PATH: ${{ runner.temp }}/release-plan/release-plan.json
-          RESULTS_PATH: ${{ runner.temp }}/image-results
-          RECORD_PATH: ${{ runner.temp }}/release-images.json
-          INVENTORY_PATH: .github/release-images.json
-          RELEASE_TAG: ${{ steps.tag.outputs.name }}
-          RELEASE_COMMIT: ${{ needs.plan.outputs.commit }}
-          OVERRIDE: ${{ needs.plan.outputs.override }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          from pathlib import Path
-          plan = json.loads(Path(os.environ["PLAN_PATH"]).read_text())
-          inventory = json.loads(Path(os.environ["INVENTORY_PATH"]).read_text())
-          result_paths = sorted(Path(os.environ["RESULTS_PATH"]).glob("plan-result-*.json"))
-          results = [json.loads(path.read_text()) for path in result_paths]
-          expected = {image["image"]: image for image in plan["images"]}
-          if set(expected) != {image["image"] for image in inventory["images"]}: raise SystemExit("Plan does not cover the image inventory")
-          if (plan["release"], plan["commit"], str(plan["override"]).lower()) != (os.environ["RELEASE_TAG"], os.environ["RELEASE_COMMIT"], os.environ["OVERRIDE"]): raise SystemExit("Plan identity or override disagrees")
-          names = [result.get("image") for result in results]
-          if len(names) != len(set(names)) or set(names) != set(expected):
-              raise SystemExit(f"Image results incomplete/duplicated: expected={sorted(expected)}, got={sorted(names)}")
-          observed = dict(zip(names, results))
-
-          images = []
-          for image_name, planned in expected.items():
-              result = observed[image_name]
-              if (
-                  result.get("repository") != planned["repository"]
-                  or result.get("decision") != planned["decision"]
-                  or sorted(result.get("platforms", [])) != sorted(planned["platforms"])
-                  or result.get("policy_version") != plan["policy_version"]
-                  or not re.fullmatch(r"sha256:[0-9a-f]{64}", result.get("root_digest", ""))
-                  or not re.fullmatch(r"[0-9a-f]{40}", result.get("build_revision", ""))
-                  or not result.get("build_created") or not result.get("source_release")
-              ):
-                  raise SystemExit(f"{image_name}: result is incomplete or disagrees with the plan")
-              if planned["decision"] == "build":
-                  if result["build_revision"] != plan["commit"] or result["source_release"] != plan["release"]:
-                      raise SystemExit(f"{image_name}: build metadata does not describe this release")
-              elif any(result.get(key) != planned.get(source) for key, source in (
-                  ("root_digest", "source_digest"), ("build_revision", "source_build_revision"),
-                  ("build_created", "source_build_created"), ("source_release", "source_release"),
-              )):
-                  raise SystemExit(f"{image_name}: promotion differs from the recorded evidence")
-              if image_name == "rangerdanger-frontend" and planned["decision"] == "build":
-                  # A promoted frontend carries whatever provenance the source
-                  # record held; only a fresh build owes both native timestamps.
-                  platform_builds = result.get("platform_builds", [])
-                  if (
-                      sorted(build["platform"] for build in platform_builds) != sorted(planned["platforms"])
-                      or any(not build.get("build_created") for build in platform_builds)
-                  ):
-                      raise SystemExit("Frontend result must preserve every native build timestamp")
-                  if any(build["build_revision"] != result["build_revision"] for build in platform_builds):
-                      raise SystemExit("Frontend platform build revisions disagree")
-              images.append(result)
-
-          record = {
-              "schema": 1,
-              "release": plan["release"],
-              "commit": plan["commit"],
-              "previous_release": plan.get("previous_release"),
-              "override": plan["override"],
-              "policy_version": plan["policy_version"],
-              "images": images,
-          }
-          Path(os.environ["RECORD_PATH"]).write_text(
-              json.dumps(record, indent=2, sort_keys=True) + "\n"
-          )
-          print(f"Validated {len(images)} image results for {record['release']}")
-          PY
-
-      - name: Upload and verify release-images.json asset
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.name }}
-          RECORD_PATH: ${{ runner.temp }}/release-images.json
-        run: |
-          gh release upload "$TAG" "$RECORD_PATH" --clobber
-          mkdir -p "${RUNNER_TEMP}/uploaded-record"
-          gh release download "$TAG" \
-            --pattern release-images.json \
-            --dir "${RUNNER_TEMP}/uploaded-record"
-          cmp "$RECORD_PATH" "${RUNNER_TEMP}/uploaded-record/release-images.json"
-
-      - name: Publish complete GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.name }}
-        run: |
-          prerelease_flag=()
-          latest_flag=()
-          if [[ "$TAG" == *-* ]]; then
-            prerelease_flag+=(--prerelease)
-          else
-            latest_flag+=(--latest)
-          fi
-          gh release edit "$TAG" \
-            --title "$TAG" \
-            --notes-file release-body.md \
-            --draft=false \
-            "${prerelease_flag[@]}" \
-            "${latest_flag[@]}"
+    uses: ./.github/workflows/release-record.yml
+    with:
+      tag: ${{ inputs.tag }}
+      commit: ${{ needs.plan.outputs.commit }}
+      override: ${{ needs.plan.outputs.override }}
 
   release-failed:
     # Alert on failure; incomplete results keep the GitHub Release as a draft.
     name: Alert on release failure
     needs: [plan, publish, frontend, frontend-merge, github-release]
     if: failure()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       issues: write
       contents: read
@@ -1002,7 +824,7 @@ jobs:
           body=$(printf '%s\n' \
             "The Release workflow for \`${TAG}\` did not complete: ${RUN_URL}" \
             "" \
-            "Likely effects: if image jobs started, one or more GHCR images may be missing or partial. An existing published release is never re-drafted; otherwise, incomplete runs keep the release as a draft and do not publish it without all 16 verified image results and its release-images.json asset." \
+            "Likely effects: if image jobs started, one or more GHCR images may be missing or partial. An existing published release is never re-drafted; otherwise, incomplete runs keep the release as a draft and do not publish it until every image in the release inventory has a verified result and the release-images.json asset is attached." \
             "" \
             "Recover: fix the failing job above. If the existing-published-release guard failed, delete or unpublish that release first. Then re-run via Actions -> Release -> \"Run workflow\" -> tag \`${TAG}\`. Manual runs build all images; set rebuild_all to refresh moving upstream bases and packages." \
             "" \

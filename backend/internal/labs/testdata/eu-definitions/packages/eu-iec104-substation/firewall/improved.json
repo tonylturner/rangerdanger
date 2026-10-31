@@ -1,0 +1,12 @@
+{"interfaces":[{"name":"lan3","zone":"lan3"}],
+  "schema_version": "0.1.0",
+  "firewall": {
+    "defaultAction": "DENY",
+    "rules": [
+      {"id": "cc-to-rtu", "sourceZones": ["lan4"], "destZones": ["lan1"],
+       "sources": ["10.60.60.20/32"], "destinations": ["10.30.30.20/32"],
+       "protocols": [{"name": "tcp", "port": "2404"}], "action": "ALLOW"},
+      {"id": "deny-2404", "protocols": [{"name": "tcp", "port": "2404"}], "action": "DENY", "log": true}
+    ]
+  }
+}

@@ -1,0 +1,101 @@
+id: eu-remediation-planning
+order: '1.4'
+name: Remediation Planning Under Constraint
+summary: Choose EU remediation within 500 hours and the unchanged four-role capacity constraints.
+estimated_minutes: 18
+description: Fund a defensible subset of the station design. Balance the shared labor budget against specialist
+  capacity, readiness and operational risk. Selected closures affect the generated policy; semantic controls remain
+  planning-only and emit no rules, as do organizational controls.
+nodes:
+- kali-1
+- eng-ws-1
+- fw-1
+- cc-1
+- rtu-1
+- vendor-jump-1
+tags:
+- iec104
+- eu-substation
+- planning
+- requirements
+- defense
+- tradeoffs
+steps:
+- id: review-the-findings-you-captured
+  title: Review the findings you captured
+  expected_config: weak
+  description: |
+    Review your passive and latent findings and committed design before spending capacity.
+
+    :::findings-panel from=eu-baseline-assessment title="Observed exposures"
+    enterprise-to-field: Enterprise/vendor → field on Modbus/502
+    enterprise-to-station: Enterprise → station RTU on IEC 104/2404
+    vendor-to-station: Vendor DMZ → station engineering access
+    non-rtu-to-field: Non-RTU hosts → field (except PLC→OLTC)
+    unauth-control: Unauthorized IEC 104 commands / Modbus writes
+    :::
+
+    :::findings-panel from=eu-baseline-assessment title="Latent paths"
+    latent-exposure-confirmed: Reachability missed by passive observation
+    :::
+
+    :::findings-panel from=eu-segmentation-requirements title="Design verdicts"
+    enterprise-to-field: Enterprise/vendor → field on Modbus/502
+    enterprise-to-station: Enterprise → station RTU on IEC 104/2404
+    vendor-to-station: Vendor DMZ → station engineering access
+    non-rtu-to-field: Non-RTU hosts → field (except PLC→OLTC)
+    unauth-control: Unauthorized IEC 104 commands / Modbus writes
+    :::
+
+    :::hint Read coverage as a plan
+    Coverage describes selected actions, not measured firewall enforcement. An ALLOW verdict is n/a, not a closed exposure.
+    :::
+- id: understand-the-team-budget
+  title: Understand the team budget
+  description: |
+    You have **500 labor hours** this quarter. Role capacity is unchanged from the US workshop:
+
+    | Role | Capacity h |
+    |---|---:|
+    | OT Engineer | 120 |
+    | Firewall Admin | 140 |
+    | Network Engineer | 120 |
+    | Security Analyst | 120 |
+
+    Effort splits across each action's roles, rounded per role. Total hours may fit while a specialist role is already over capacity. Readiness answers add warnings or blocked advisories; they do not shrink the budget or disable selection.
+
+    :::hint Binding role
+    A 500-hour envelope is not 500 interchangeable hours. Record which role becomes the bottleneck and which operational review or vendor window you need before shipping.
+    :::
+- id: choose-your-remediation-plan
+  title: Choose your remediation plan
+  description: |
+    Select actions in the planner below. Total labor and role caps guide the tradeoff.
+    Budget overrun is a warning only. Empty, partial and over-budget plans are valid. The package curriculum is the only catalog authority.
+
+    Selected enforceable actions remove their Weak exposure. Deferred actions leave it open. Required operational conduits stay in every plan.
+
+    | Kind | Actions | Effect when applied |
+    |---|---|---|
+    | Enforceable | `restrict-enterprise-to-vendor`, `block-enterprise-to-field`, `block-enterprise-to-station`, `restrict-vendor-to-station`, `block-vendor-to-field`, `pin-rtu-to-field`, `tighten-firewall-objects` | Change L4 reachability |
+    | Detection-only | None | EU emits no ICS inspection |
+    | Planning-only | `modbus-dpi`, `iec104-dpi`, `improve-logging`, `station-architecture-review`, `positive-validation`, `ids-deployment`, `ot-asset-inventory`, `vendor-zta-broker` | Emit no firewall change |
+
+    Required diagnostic denies always log. The logging selection changes no rule. The L4 source pin enforces; DPI detects and logs. In EU, DPI is disabled; a selected DPI action does not enable it. Empty and planning-only plans leave Weak exposures open.
+
+    :::plan-coverage title="Coverage of your design"
+    :::
+
+    :::hint Commit the tradeoff
+    Compare coverage, readiness and the binding role before saving. Coverage is not evidence that a rule has been applied. Your plan carries into Lab 2.2 and the attack labs.
+    :::
+  action:
+    type: decision
+- id: reflect-what-are-you-accepting
+  title: Reflect - what are you accepting?
+  description: |
+    In Notes, name the finding each funded action closes and the consequence of every deferral. Which role bound first? Did readiness, hours or risk acceptance drive the compromise? Who owns each residual risk, and what test will establish completion next quarter?
+
+    :::hint Defensible deferral
+    A DPI selection is planning-only, not a live control or a promise of future enforcement. A broker or IDS selection deploys no infrastructure. Commands on allowed CC sessions and same-subnet paths remain residual risks. Continue to [implementation](/exercises/eu-firewall-implementation) with a saved plan.
+    :::
