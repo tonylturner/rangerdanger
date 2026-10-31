@@ -22,7 +22,24 @@ class PackageGuardTests(unittest.TestCase):
     def test_all_packages_and_zero_command_scenarios_are_pinned(self):
         for package_id in extract.packages():
             with self.subTest(package=package_id):
-                self.assertGreater(extract.check_package(ROOT, package_id), 0)
+                data = json.loads(extract.expectations_path(ROOT, package_id).read_text())
+                self.assertEqual(extract.check_package(ROOT, package_id), data["minimum_executed"])
+
+    def test_explicitly_pinned_all_prose_package_is_valid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            package_id = "eu-iec104-substation"
+            scenarios = root / "lab-definitions/packages" / package_id / "scenarios"
+            counts = {}
+            for path in scenarios.glob("*.yml"):
+                doc = extract.yaml.safe_load(path.read_text())
+                for step in doc["steps"]:
+                    step["description"] = "Prose only."
+                path.write_text(extract.yaml.safe_dump(doc))
+                counts[doc["id"]] = {"RUN": 0, "SKIP": 0}
+            extract.expectations_path(root, package_id).write_text(json.dumps({
+                "schema": 1, "inventory": counts, "minimum_executed": 0, "commands": {}}))
+            self.assertEqual(extract.check_package(root, package_id), 0)
 
     def test_new_command_and_empty_scenario_fail_with_author_instructions(self):
         for command in ("", "    curl http://example.invalid"):
