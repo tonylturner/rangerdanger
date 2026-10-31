@@ -320,6 +320,16 @@ Direct operations against the containd NGFW.
 `/api/firewall/health` includes containd's `ipv4Forwarding` (`enabled`, `disabled`, `unknown`)
 and `managementBinding.state` (`configured`, `unbound-appliance`, `unknown`).
 HTTP 200/status `ok` is management liveness, not forwarding readiness.
+The response also preserves `managementRecovery` and `enforcement` (each with
+`state` and `reason`), and `icsEnforcement` (`state`, `enforcing`, `partial`,
+`notEnforcing`, `monitoring` counts). Omitted diagnostics are not healthy
+observations. Recovery states are `inactive`, `active`, `pending`, `failed`
+or `unknown`; active recovery means fail-closed new transit, not normal
+forwarding. Enforcement states are `enforcing`, `degraded`, `disabled`,
+`unavailable` or `unknown`. ICS coverage states are `none`, `monitoring`,
+`enforcing`, `partial`, `not_enforcing` or `unknown`.
+These diagnostics never gate management access or a repairing seed commit.
+After any apply, re-read health; readiness alone does not certify enforcement.
 Its `managementReservation` preserves the raw authenticated
 `GET /api/v1/system/management-reservation` status, including `bootFault`,
 `recovery`, `listenerFaults` and guard fault history. A failed diagnostic read

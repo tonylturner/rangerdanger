@@ -19,6 +19,27 @@ type HealthStatus struct {
 	Time              time.Time                `json:"time"`      // containd's clock, UTC
 	IPv4Forwarding    string                   `json:"ipv4Forwarding"`
 	ManagementBinding *ManagementBindingStatus `json:"managementBinding"`
+	// Diagnostic pointers distinguish an omitted observation from a healthy
+	// zero value. The server embeds these in /api/firewall/health unchanged.
+	ManagementRecovery *HealthDiagnostic     `json:"managementRecovery,omitempty"`
+	Enforcement        *HealthDiagnostic     `json:"enforcement,omitempty"`
+	ICSEnforcement     *ICSEnforcementStatus `json:"icsEnforcement,omitempty"`
+}
+
+// HealthDiagnostic preserves an appliance-owned operational state and reason.
+// Neither recovery nor enforcement is a management liveness/readiness gate.
+type HealthDiagnostic struct {
+	State  string `json:"state"`
+	Reason string `json:"reason"`
+}
+
+// ICSEnforcementStatus summarizes applied ICS coverage, not management liveness.
+type ICSEnforcementStatus struct {
+	State        string `json:"state"`
+	Enforcing    int    `json:"enforcing"`
+	Partial      int    `json:"partial"`
+	NotEnforcing int    `json:"notEnforcing"`
+	Monitoring   int    `json:"monitoring"`
 }
 
 // ManagementBindingStatus describes the appliance's management NIC binding.
