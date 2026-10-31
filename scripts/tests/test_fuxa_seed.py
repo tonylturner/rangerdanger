@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import subprocess
 import tempfile
@@ -22,9 +23,11 @@ class FuxaSeedTests(unittest.TestCase):
             {"phase": "none"},
             {"phase": "ready", "package": "eu-iec104-substation"},
         ):
-            with self.subTest(state=state), patch.object(
+            with urllib.error.HTTPError(
+                "test", 502, "no upstream", {}, io.BytesIO()
+            ) as error, self.subTest(state=state), patch.object(
                 live.ViewerClient, "request", side_effect=[
-                    urllib.error.HTTPError("test", 502, "no upstream", {}, None),
+                    error,
                     json.dumps(state),
                 ],
             ):
@@ -33,8 +36,10 @@ class FuxaSeedTests(unittest.TestCase):
                         "test_viewer_receives_six_fresh_read_only_values").debug()
 
     def test_live_check_does_not_skip_an_unavailable_active_us_hmi(self):
-        with patch.object(live.ViewerClient, "request", side_effect=[
-            urllib.error.HTTPError("test", 502, "no upstream", {}, None),
+        with urllib.error.HTTPError(
+            "test", 502, "no upstream", {}, io.BytesIO()
+        ) as error, patch.object(live.ViewerClient, "request", side_effect=[
+            error,
             json.dumps({"phase": "ready", "package": "us-dnp3-substation"}),
         ]):
             with self.assertRaises(urllib.error.HTTPError):

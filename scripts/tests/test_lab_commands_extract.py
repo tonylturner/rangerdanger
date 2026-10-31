@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import os
 import shlex
@@ -6,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -288,24 +290,34 @@ class ExtractTests(unittest.TestCase):
         row = {"scenario": "fixture", "step": 1, "container": "fixture",
                "command": "mbpoll fixture", "prompt": "shell", "entry": ""}
         result = subprocess.CompletedProcess([], 0, "[1]: 1\n", "tool diagnostic\n")
+        stdout, stderr = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as directory, patch.object(
-                extract.subprocess, "run", return_value=result) as run:
+                extract.subprocess, "run", return_value=result) as run, \
+                redirect_stdout(stdout), redirect_stderr(stderr):
             self.assertTrue(extract.execute(
                 row, {"intent": "read", "match": r"\[1\]: 1"}, Path(directory), 5))
             self.assertEqual((Path(directory) / "command.stdout").read_text(), result.stdout)
             self.assertEqual((Path(directory) / "command.stderr").read_text(), result.stderr)
             self.assertEqual(run.call_args.args[0][:2], ["docker", "exec"])
+        self.assertIn(result.stdout, stdout.getvalue())
+        self.assertIn("PASS rc=0:", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), result.stderr)
 
     def test_export_does_not_pass_on_printed_json_without_file(self):
         row = {"scenario": "fixture", "step": 1, "container": "rangerdanger-firewall",
                "command": "export config > /tmp/policy.json", "prompt": "cli", "entry": ""}
         responses = [subprocess.CompletedProcess([], 0, '{"firewall": {}}', ""),
                      subprocess.CompletedProcess([], 1, "", "No such file")]
+        stdout, stderr = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as directory, patch.object(
-                extract.subprocess, "run", side_effect=responses):
+                extract.subprocess, "run", side_effect=responses), \
+                redirect_stdout(stdout), redirect_stderr(stderr):
             self.assertFalse(extract.execute(
                 row, {"intent": "cli", "match": "firewall", "file": "/tmp/policy.json"},
                 Path(directory), 5))
+        self.assertIn(responses[0].stdout, stdout.getvalue())
+        self.assertIn("FAIL rc=0:", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
 
     def test_staged_transition_preserves_shell_input(self):
         fixture = (
@@ -330,12 +342,16 @@ class ExtractTests(unittest.TestCase):
                 (path / ("control.json" if positive else "result.json")).write_text('{"passed":true}')
                 observed = [{}, {"reclose_enabled": True}, {"reclose_enabled": after},
                             {}, {"reclose_enabled": True}]
+                stdout = io.StringIO()
                 with patch.object(extract, "device_request", side_effect=observed) as request, \
                         patch.object(extract, "execute_command", return_value=True), \
-                        patch.object(extract.time, "sleep"):
+                        patch.object(extract.time, "sleep"), redirect_stdout(stdout):
                     self.assertEqual(extract.execute(
                         row, oracle, path, 5, positive=positive, control=True), expected)
                     self.assertTrue(request.call_args_list[-2].kwargs["reset"])
+                self.assertIn(
+                    f'{"PASS" if expected else "FAIL"} device-state oracle:',
+                    stdout.getvalue())
 
     def test_no_ack_cleanup_failure_is_fatal(self):
         row = {"scenario": "fixture", "step": 1, "command": "dnp3cmd fixture -no-ack"}
