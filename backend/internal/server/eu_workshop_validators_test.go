@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
@@ -170,6 +171,47 @@ func TestEUWorkshopValidators(t *testing.T) {
 				assertEUChecks(t, slot, ev, false)
 			}
 		})
+	}
+}
+
+func TestRecoveredImprovedPolicyProvidesEUWorkshopEvidence(t *testing.T) {
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	s := &Server{
+		activeConfig:     "weak",
+		policyHashNames:  map[string]string{"improved-hash": "improved"},
+		policyObservedAt: startedAt,
+	}
+	s.classifyObservedPolicy("improved-hash", time.Now().UTC())
+
+	s.activeConfigMu.RLock()
+	active, source := s.activeConfig, s.policySource
+	policyAt, hardeningSince := s.policyChangedAt, s.policyEvidenceSince
+	s.activeConfigMu.RUnlock()
+	if active != "improved" || source != "hardened-reference" {
+		t.Fatalf("recovered policy = %q/%q, want improved/hardened-reference", active, source)
+	}
+	if !hardeningSince.Equal(startedAt) || policyAt.IsZero() {
+		t.Fatalf("recovered evidence boundaries = %s/%s, want generation start and observation time", hardeningSince, policyAt)
+	}
+
+	check := euWorkshopPolicy(euWorkshopEvidence{
+		policy: active, policyAt: policyAt, start: startedAt, now: time.Now().UTC(),
+	}, false)
+	if check.Status != "pass" {
+		t.Fatalf("EU running-policy check = %+v, want pass", check)
+	}
+
+	inspect := dockertypes.ContainerJSON{
+		ContainerJSONBase: &dockertypes.ContainerJSONBase{
+			ID: "rtu",
+			State: &dockertypes.ContainerState{
+				Running:   true,
+				StartedAt: startedAt.Add(-time.Second).Format(time.RFC3339Nano),
+			},
+		},
+	}
+	if _, err := euRTUIdentityFromInspect(inspect, hardeningSince); err != nil {
+		t.Fatalf("RTU identity rejected recovered hardening boundary: %v", err)
 	}
 }
 

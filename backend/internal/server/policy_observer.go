@@ -151,11 +151,15 @@ func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 	// actual running hash against policy hashes captured at activation.
 	if s.lastAppliedHash == "" {
 		if name, ok := s.policyHashNames[hash]; ok {
+			if name != s.activeConfig {
+				s.setPolicyEvidenceBoundaryLocked(observedSince)
+			} else {
+				s.policyObservedAt = observedSince
+			}
 			s.activeConfig = name
 			s.policySource = policySourceForName(name)
 			s.planProvenance, s.appliedPlan = nil, nil
 			s.lastAppliedHash = hash
-			s.policyObservedAt = observedSince
 			return
 		}
 		s.markManualCustomLocked(hash, observedSince)
@@ -180,14 +184,20 @@ func (s *Server) markManualCustomLocked(hash string, observedSince time.Time) {
 	s.policySource = "manual-custom"
 	s.planProvenance, s.appliedPlan = nil, nil
 	s.lastAppliedHash = hash
+	s.setPolicyEvidenceBoundaryLocked(observedSince)
+	// Don't touch lastAppliedAt — leaving it as-is so a subsequent
+	// backend apply still wins the grace check correctly.
+	log.Printf("policy-observer: running policy is custom/manual-custom (was %q)", prev)
+}
+
+// setPolicyEvidenceBoundaryLocked advances the conservative policy evidence
+// window. The caller holds activeConfigMu.
+func (s *Server) setPolicyEvidenceBoundaryLocked(observedSince time.Time) {
 	s.policyEvidenceSince = s.policyObservedAt.UTC()
 	s.policyChangedAt = time.Now().UTC()
 	// A response can describe a snapshot taken at any point during the
 	// request. The next change must retain this request start, not its end.
-	s.policyObservedAt = observedSince
-	// Don't touch lastAppliedAt — leaving it as-is so a subsequent
-	// backend apply still wins the grace check correctly.
-	log.Printf("policy-observer: running policy is custom/manual-custom (was %q)", prev)
+	s.policyObservedAt = observedSince.UTC()
 }
 
 // recordApply is called by the apply handlers (and apply-plan)

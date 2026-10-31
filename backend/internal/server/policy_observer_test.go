@@ -169,12 +169,13 @@ func TestObserver_FirstObservationClassifiesRunningPolicy(t *testing.T) {
 		running          any
 		wantConfig       string
 		wantSource       string
+		wantBoundary     bool
 		divergeAfterSeed bool
 	}{
-		{"fresh default", weak, "weak", "weak", false},
-		{"adopted improved", improved, "improved", "hardened-reference", false},
-		{"adopted unknown", unknown, "custom", "manual-custom", false},
-		{"later divergence", improved, "improved", "hardened-reference", true},
+		{"fresh default", weak, "weak", "weak", false, false},
+		{"adopted improved", improved, "improved", "hardened-reference", true, false},
+		{"adopted custom", unknown, "custom", "manual-custom", true, false},
+		{"later divergence", improved, "improved", "hardened-reference", true, true},
 	}
 
 	for _, tt := range tests {
@@ -198,7 +199,8 @@ func TestObserver_FirstObservationClassifiesRunningPolicy(t *testing.T) {
 				FirewallConfigPath: "weak.json",
 				Policies:           map[string]string{"weak": "weak.json", "improved": "improved.json"},
 			}
-			gen := lifecycle.NewGeneration(1, pkg, &manifest.Manifest{}, containd.NewClient(ts.URL), time.Time{})
+			startedAt := time.Now().UTC().Add(-time.Hour)
+			gen := lifecycle.NewGeneration(1, pkg, &manifest.Manifest{}, containd.NewClient(ts.URL), startedAt)
 			defer func() {
 				if err := gen.Stop(time.Second); err != nil {
 					t.Errorf("stop generation: %v", err)
@@ -206,16 +208,29 @@ func TestObserver_FirstObservationClassifiesRunningPolicy(t *testing.T) {
 			}()
 			s := &Server{cfg: &config.Config{LabDefinitionsPath: definitions}}
 			s.activateRange(gen)
+			observationStart := time.Now().UTC()
 			s.observePolicyOnce(context.Background(), gen)
+			observationEnd := time.Now().UTC()
 
 			s.activeConfigMu.RLock()
 			gotConfig, gotSource, gotHash := s.activeConfig, s.policySource, s.lastAppliedHash
+			policyChangedAt, policyEvidenceSince := s.policyChangedAt, s.policyEvidenceSince
 			s.activeConfigMu.RUnlock()
 			if gotConfig != tt.wantConfig || gotSource != tt.wantSource {
 				t.Errorf("first observation = %q/%q, want %q/%q", gotConfig, gotSource, tt.wantConfig, tt.wantSource)
 			}
 			if gotHash == "" {
 				t.Error("first observation did not seed the running hash")
+			}
+			if tt.wantBoundary {
+				if !policyEvidenceSince.Equal(startedAt) {
+					t.Errorf("policyEvidenceSince = %s, want generation start %s", policyEvidenceSince, startedAt)
+				}
+				if policyChangedAt.Before(observationStart) || policyChangedAt.After(observationEnd) {
+					t.Errorf("policyChangedAt = %s, want observation window [%s, %s]", policyChangedAt, observationStart, observationEnd)
+				}
+			} else if !policyChangedAt.IsZero() || !policyEvidenceSince.IsZero() {
+				t.Errorf("default policy boundaries = %s/%s, want both zero", policyChangedAt, policyEvidenceSince)
 			}
 
 			if tt.divergeAfterSeed {
