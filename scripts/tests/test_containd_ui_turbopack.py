@@ -121,6 +121,10 @@ class TurbopackTests(unittest.TestCase):
     def test_known_runtime_without_lazy_imports_is_verifiable(self):
         self.assertEqual(probe.ondemand_chunks({"runtime.js": prefix.TURBOPACK}), [])
 
+    def test_object_spread_is_not_a_dynamic_loader_call(self):
+        chunks = {"runtime.js": prefix.TURBOPACK, "config.js": 'function o(t){return{...l(t),pending:[]}}'}
+        self.assertEqual(probe.ondemand_chunks(chunks), [])
+
 
 if __name__ == "__main__":
     unittest.main()

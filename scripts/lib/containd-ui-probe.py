@@ -154,7 +154,8 @@ def ondemand_chunks(chunks):
     for path, body in chunks.items():
         imports = list(TURBOPACK_IMPORT.finditer(body))
         remainder = TURBOPACK_IMPORT.sub("", body)
-        if "static/chunks/" in remainder or re.search(r"\.l\s*\(", remainder):
+        # ...l(value) is an object spread, not a call to the runtime's .l loader.
+        if "static/chunks/" in remainder or re.search(r"(?<!\.)\.l\s*\(", remainder):
             raise ProbeError(f"{path}: unsupported Turbopack dependency shape; inspect the live bundle")
         for dependency in imports:
             sources.extend(prefix + source for source in CHUNK_LITERAL.findall(dependency.group("paths")))
