@@ -4,11 +4,29 @@ import re
 import unittest
 
 from .test_containd_ui_prefix import (
-    AUTODETECT_CASES, CLI_CHUNK, DOUBLE_PREFIXED, FIXTURES, IMPORTS, NAV, ROOT, RUNTIME, ROUTE_CASES, ROUTE_CHUNKS,
-    ROUTE_FAILURES, ROUTE_PAGES, ROUTE_REQUESTS, SERVED, TOO_MANY_ROUTES, TURBO_PATHS, TURBOPACK, TURBOPACK_CASES, UNREWRITTEN_CASES, USERS, probe,
+    AUTODETECT_CASES,
+    CLI_CHUNK,
+    DOUBLE_PREFIXED,
+    FIXTURES,
+    IMPORTS,
+    NAV,
+    ROOT,
+    ROUTE_CASES,
+    ROUTE_CHUNKS,
+    ROUTE_FAILURES,
+    ROUTE_PAGES,
+    ROUTE_REQUESTS,
+    RUNTIME,
+    SERVED,
+    TOO_MANY_ROUTES,
+    TURBO_PATHS,
+    TURBOPACK,
+    TURBOPACK_CASES,
+    UNREWRITTEN_CASES,
+    USERS,
+    probe,
 )
 from .test_setup_ps1_root import powershell
-
 
 GOOD_CHUNK = RUNTIME + SERVED
 PAGE = (FIXTURES / "page.js").read_text()
@@ -129,32 +147,32 @@ foreach ($body in ($env:BODIES | ConvertFrom-Json)) {
 def with_routes(data):
     data["/containd/_next/static/main.js"]["body"] += NAV
     for path, body in ROUTE_PAGES.items():
-        data[path] = dict(status=200, type="text/html; charset=utf-8", body=body)
+        data[path] = {"status": 200, "type": "text/html; charset=utf-8", "body": body}
     for path, body in ROUTE_CHUNKS.items():
-        data[path] = dict(status=200, type="application/javascript", body=body)
+        data[path] = {"status": 200, "type": "application/javascript", "body": body}
     return data
 
 
 def fixture():
     return {
-        "/containd/": dict(status=200, type="text/html",
-                           body='<script src="/containd/_next/static/main.js"></script>' + RUNTIME_SCRIPT),
-        "/containd/_next/static/main.js": dict(status=200, type="application/javascript", body=GOOD_CHUNK + IMPORTS),
-        "/containd/_next/static/turbopack.js": dict(status=200, type="application/javascript", body=TURBOPACK),
-        TURBO_PATHS[0]: dict(status=200, type="application/javascript", body=""),
-        TURBO_PATHS[1]: dict(status=200, type="text/javascript; charset=utf-8", body=CLI_CHUNK),
-        "/containd/api/v1/auth/login": dict(status=200, type="application/json", body='{"token":"lab-token"}'),
-        "/containd/api/v1/auth/me": dict(status=200, type="application/json", body='{"username":"containd"}'),
-        TICKET: dict(status=200, type="application/json", body="", expiresIn=30, omitTicket=False),
-        PCAP: dict(status=400, type="application/json; charset=utf-8",
-                   body='{"error":"engine pcap download status 404"}', raise_="ps7"),
+        "/containd/": {"status": 200, "type": "text/html",
+                           "body": '<script src="/containd/_next/static/main.js"></script>' + RUNTIME_SCRIPT},
+        "/containd/_next/static/main.js": {"status": 200, "type": "application/javascript", "body": GOOD_CHUNK + IMPORTS},
+        "/containd/_next/static/turbopack.js": {"status": 200, "type": "application/javascript", "body": TURBOPACK},
+        TURBO_PATHS[0]: {"status": 200, "type": "application/javascript", "body": ""},
+        TURBO_PATHS[1]: {"status": 200, "type": "text/javascript; charset=utf-8", "body": CLI_CHUNK},
+        "/containd/api/v1/auth/login": {"status": 200, "type": "application/json", "body": '{"token":"lab-token"}'},
+        "/containd/api/v1/auth/me": {"status": 200, "type": "application/json", "body": '{"username":"containd"}'},
+        TICKET: {"status": 200, "type": "application/json", "body": "", "expiresIn": 30, "omitTicket": False},
+        PCAP: {"status": 400, "type": "application/json; charset=utf-8",
+                   "body": '{"error":"engine pcap download status 404"}', "raise_": "ps7"},
     }
 
 
 def with_lazy(data):
     data["/containd/_next/static/main.js"]["body"] = GOOD_CHUNK + PAGE
-    data[STYLE] = dict(status=200, type="text/css; charset=utf-8", body=".console{}")
-    data[LAZY] = dict(status=200, type="text/javascript", body=IMPORTS)
+    data[STYLE] = {"status": 200, "type": "text/css; charset=utf-8", "body": ".console{}"}
+    data[LAZY] = {"status": 200, "type": "text/javascript", "body": IMPORTS}
     return data
 
 
@@ -204,7 +222,7 @@ class ContaindProbeTests(unittest.TestCase):
             ("chunkLiteral", probe.CHUNK_LITERAL.pattern),
         ):
             with self.subTest(name=name):
-                match = re.search(rf"^    \${name} = '((?:''|[^'])*)'$", text, re.M)
+                match = re.search(rf"^    \${name} = '((?:''|[^'])*)'$", text, re.MULTILINE)
                 self.assertIsNotNone(match)
                 self.assertEqual(match.group(1).replace("''", "'"), expected)
         self.assertIn(f"$maxChunks = {probe.MAX_CHUNKS}\n", text)
@@ -214,12 +232,12 @@ class ContaindProbeTests(unittest.TestCase):
         for name, pattern in (("containdRoute", probe.CONTAIND_ROUTE), ("linkRoute", probe.LINK_ROUTE),
                               ("flightLink", probe.FLIGHT_LINK)):
             with self.subTest(name=name):
-                match = re.search(rf"^    \${name} = '((?:''|[^'])*)'$", text, re.M)
+                match = re.search(rf"^    \${name} = '((?:''|[^'])*)'$", text, re.MULTILINE)
                 self.assertIsNotNone(match)
                 self.assertEqual(match.group(1).replace("''", "'"), pattern.pattern)
         for name, names in (("notRoutes", probe.NOT_ROUTES), ("linkExempt", probe.LINK_EXEMPT)):
             with self.subTest(name=name):
-                match = re.search(rf"^    \${name} = @\(((?:'[^']*'(?:, )?)*)\)$", text, re.M)
+                match = re.search(rf"^    \${name} = @\(((?:'[^']*'(?:, )?)*)\)$", text, re.MULTILINE)
                 self.assertIsNotNone(match)
                 self.assertEqual(tuple(re.findall(r"'([^']*)'", match.group(1))), names)
         self.assertIn(f"$maxRoutePages = {probe.MAX_ROUTE_PAGES}\n", text)
@@ -293,7 +311,7 @@ class ContaindProbeTests(unittest.TestCase):
         for path, (body, content_type, status), message in ROUTE_FAILURES:
             with self.subTest(path=path, body=body, status=status):
                 data = with_routes(fixture())
-                data[path] = dict(status=status, type=content_type, body=body)
+                data[path] = {"status": status, "type": content_type, "body": body}
                 result = self.run_probe(data)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn(message, result.stdout)
@@ -331,11 +349,11 @@ class ContaindProbeTests(unittest.TestCase):
     def test_lazy_css_and_transitive_javascript_keep_all_fetch_guards(self):
         for path in (STYLE, LAZY, TURBO_PATHS[1]):
             for change, message in (
-                (dict(status=404), "expected 200"),
-                (dict(type="text/html"), "expected 200"),
-                (dict(type="application/javascript" if path == STYLE else "text/css"), "expected 200"),
-                (dict(error="fixture timeout"), "fixture timeout"),
-                (dict(invalidUtf8=True), "FAIL containd UI"),
+                ({"status": 404}, "expected 200"),
+                ({"type": "text/html"}, "expected 200"),
+                ({"type": "application/javascript" if path == STYLE else "text/css"}, "expected 200"),
+                ({"error": "fixture timeout"}, "fixture timeout"),
+                ({"invalidUtf8": True}, "FAIL containd UI"),
             ):
                 with self.subTest(path=path, change=change):
                     data = with_lazy(fixture())
@@ -351,7 +369,7 @@ class ContaindProbeTests(unittest.TestCase):
         data["/containd/_next/static/main.js"]["body"] = GOOD_CHUNK + NAV
         data[USERS]["body"] = PAGE
         data[LAZY]["body"] += 'href:"/containd/console/";'
-        data["/containd/console/"] = dict(status=200, type="text/html", body="<html>console</html>")
+        data["/containd/console/"] = {"status": 200, "type": "text/html", "body": "<html>console</html>"}
         result = self.run_probe(data)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("8 chunks (3 on demand), 5 route pages, 1 on-demand stylesheets", result.stdout)
@@ -471,10 +489,10 @@ class ContaindProbeTests(unittest.TestCase):
                 data["/containd/_next/static/main.js"]["body"] = (
                     'window.location.pathname.startsWith("/containd/") ? "/containd" : ""' + IMPORTS
                 )
-                data["/containd/_next/static/second.js"] = dict(
-                    status=200, type="application/javascript",
-                    body='"/api/v1/auth/me";' + ('"/containd/api/v1/other";' if invalid else ""),
-                )
+                data["/containd/_next/static/second.js"] = {
+                    "status": 200, "type": "application/javascript",
+                    "body": '"/api/v1/auth/me";' + ('"/containd/api/v1/other";' if invalid else ""),
+                }
                 result = self.run_probe(data)
                 self.assertEqual(result.returncode, 1 if invalid else 0, result.stdout + result.stderr)
                 self.assertIn("runtime-based API literal" if invalid else "5 chunks", result.stdout)
@@ -536,12 +554,12 @@ class ContaindProbeTests(unittest.TestCase):
     def test_api_routes_answered_by_the_ui_page_or_not_refused_fail(self):
         for path in (PCAP,):
             for change, message in (
-                (dict(status=200, type="text/html; charset=utf-8", raise_=None), "expected a 400 refusal"),
-                (dict(type="text/html"), "expected a 400 refusal"),
-                (dict(type="text/html", raise_="legacy"), "expected a 400 refusal"),
-                (dict(status=401, type="application/json"), "expected a 400 refusal"),
-                (dict(status=302, raise_=None), "expected a 400 refusal"),
-                (dict(error="fixture timeout"), "fixture timeout"),
+                ({"status": 200, "type": "text/html; charset=utf-8", "raise_": None}, "expected a 400 refusal"),
+                ({"type": "text/html"}, "expected a 400 refusal"),
+                ({"type": "text/html", "raise_": "legacy"}, "expected a 400 refusal"),
+                ({"status": 401, "type": "application/json"}, "expected a 400 refusal"),
+                ({"status": 302, "raise_": None}, "expected a 400 refusal"),
+                ({"error": "fixture timeout"}, "fixture timeout"),
             ):
                 with self.subTest(path=path, change=change):
                     data = fixture()
@@ -555,11 +573,11 @@ class ContaindProbeTests(unittest.TestCase):
     def test_each_fetch_rejects_status_mime_timeout_and_invalid_utf8(self):
         for path in (path for path in fixture() if path not in (CLI, PCAP, TICKET)):
             for change, message in (
-                (dict(status=302), "expected 200"),
-                (dict(status=401), "expected 200"),
-                (dict(type="text/plain"), "expected 200"),
-                (dict(error="fixture timeout"), "fixture timeout"),
-                (dict(invalidUtf8=True), "FAIL containd UI"),
+                ({"status": 302}, "expected 200"),
+                ({"status": 401}, "expected 200"),
+                ({"type": "text/plain"}, "expected 200"),
+                ({"error": "fixture timeout"}, "fixture timeout"),
+                ({"invalidUtf8": True}, "FAIL containd UI"),
             ):
                 with self.subTest(path=path, change=change):
                     data = fixture()

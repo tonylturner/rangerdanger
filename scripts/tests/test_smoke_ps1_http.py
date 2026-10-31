@@ -1,19 +1,20 @@
 """Loopback portal fixture proves sessions and browser-origin CLI upgrades in both twins."""
 import base64
-from contextlib import contextmanager
 import hashlib
-from http.client import HTTPConnection
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import subprocess
 import sys
 import threading
 import unittest
+from contextlib import contextmanager
+from http.client import HTTPConnection
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
+from .test_containd_ui_prefix import ROOT, TURBOPACK
 from .test_setup_ps1_root import powershell
 from .test_smoke_ps1_probe import CLI, GOOD_CHUNK, PCAP, RUNTIME_SCRIPT, TICKET
-from .test_containd_ui_prefix import ROOT, TURBOPACK
+
 
 @contextmanager
 def portal(mode):
@@ -160,7 +161,7 @@ catch { Write-Output "FAIL: $_"; exit 1 }
                 else:
                     result = subprocess.run(
                         [sys.executable, str(ROOT / "scripts/lib/containd-ui-probe.py"), origin],
-                        capture_output=True, text=True, timeout=30,
+                        capture_output=True, text=True, timeout=30, check=False,
                     )
                 success = mode in ("ok", "strip-host")
                 self.assertEqual(result.returncode, 0 if success else 1, result.stdout + result.stderr)
@@ -201,7 +202,7 @@ catch { Write-Output "FAIL: $_"; exit 1 }
         self.check_twin("python")
 
     def test_upgrade_without_ticket_is_rejected_even_with_bearer(self):
-        with portal("ok") as (origin, errors, seen, closed):
+        with portal("ok") as (origin, errors, _seen, _closed):
             url = urlsplit(origin)
             connection = HTTPConnection(url.hostname, url.port, timeout=3)
             try:
