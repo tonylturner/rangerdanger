@@ -9,21 +9,53 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// rejectForbiddenPlanICS inspects key presence, including null and {}. Legacy
+// checkPlanICSPlacement inspects key presence, including null and {}. Legacy
 // curriculum fields are deliberately outside the new plan's schema boundary.
-func rejectForbiddenPlanICS(document *yaml.Node) error {
-	var walk func(*yaml.Node) error
-	walk = func(node *yaml.Node) error {
+func checkPlanICSPlacement(document *yaml.Node, mode string) error {
+	active := map[*yaml.Node]bool{}
+	var walk func(*yaml.Node, string) error
+	walk = func(node *yaml.Node, path string) error {
+		if active[node] {
+			return fmt.Errorf("plan: recursive YAML alias")
+		}
+		active[node] = true
+		defer delete(active, node)
+		if node.Kind == yaml.AliasNode {
+			return walk(node.Alias, path)
+		}
 		if node.Kind == yaml.MappingNode {
 			for i := 0; i < len(node.Content); i += 2 {
-				if node.Content[i].Value == "ics" {
-					return fmt.Errorf("plan: ics key is forbidden")
+				key := node.Content[i].Value
+				if key == "<<" {
+					merge := node.Content[i+1]
+					parents := []*yaml.Node{merge}
+					if merge.Kind == yaml.SequenceNode {
+						parents = merge.Content
+					}
+					for _, parent := range parents {
+						if err := walk(parent, path); err != nil {
+							return err
+						}
+					}
+					continue
+				}
+				if key == "ics" {
+					parts := strings.Split(path, "/")
+					observation := len(parts) == 5 && parts[1] == "detect" && parts[3] == "rules" && parts[4] == "item"
+					if mode == ICSRulesForbidden || (mode == ICSRulesMonitor && !observation) {
+						return fmt.Errorf("plan: ics key is forbidden at %s/ics", path)
+					}
+				}
+				if err := walk(node.Content[i+1], path+"/"+key); err != nil {
+					return err
 				}
 			}
 		}
-		for _, child := range node.Content {
-			if err := walk(child); err != nil {
-				return err
+		if node.Kind == yaml.SequenceNode {
+			for _, child := range node.Content {
+				if err := walk(child, path+"/item"); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -34,7 +66,7 @@ func rejectForbiddenPlanICS(document *yaml.Node) error {
 	root := document.Content[0]
 	for i := 0; root.Kind == yaml.MappingNode && i < len(root.Content); i += 2 {
 		if root.Content[i].Value == "plan" {
-			return walk(root.Content[i+1])
+			return walk(root.Content[i+1], "")
 		}
 	}
 	return nil
@@ -106,6 +138,9 @@ func validatePlan(pkg Package, c *Curriculum) (map[string]PlanActionKind, error)
 	}
 	for _, slot := range c.Plan.Rules {
 		if slot.Required != nil {
+			if pkg.ICSRules == ICSRulesMonitor && slot.Required.ICS != nil {
+				return fail("ics key is forbidden on required rules under monitor")
+			}
 			if slot.Action != "" || slot.Selected != nil || slot.Deferred != nil {
 				return fail("required slot cannot declare action, selected or deferred")
 			}
@@ -122,18 +157,25 @@ func validatePlan(pkg Package, c *Curriculum) (map[string]PlanActionKind, error)
 		}
 		for _, variant := range [][]PlanRule{slot.Selected, slot.Deferred} {
 			for _, rule := range variant {
+				if pkg.ICSRules == ICSRulesMonitor && rule.ICS != nil {
+					return fail("ics key is forbidden on slot rules under monitor")
+				}
 				if err := addRule(rule); err != nil {
 					return nil, err
 				}
 			}
 		}
 	}
+	allIDs := map[string]bool{}
+	for id := range rules {
+		allIDs[id] = true
+	}
 	icsOwners := map[string]string{}
 	for id, detection := range c.Plan.Detect {
 		if err := claim(id, PlanActionDetect); err != nil {
 			return nil, err
 		}
-		if len(detection.Log) == 0 && len(detection.ICS) == 0 {
+		if len(detection.Log) == 0 && len(detection.ICS) == 0 && len(detection.Rules) == 0 {
 			return fail("detect action %s must declare metadata", id)
 		}
 		seen := map[string]bool{}
@@ -146,8 +188,20 @@ func validatePlan(pkg Package, c *Curriculum) (map[string]PlanActionKind, error)
 			}
 			seen[target] = true
 		}
-		if pkg.ICSRules == ICSRulesForbidden && detection.ICS != nil {
+		if (pkg.ICSRules == ICSRulesForbidden || pkg.ICSRules == ICSRulesMonitor) && detection.ICS != nil {
 			return fail("detect action %s: ics key is forbidden", id)
+		}
+		for _, rule := range detection.Rules {
+			if rule.ICS == nil || rule.ICS.Protocol == "" || rule.ICS.Mode != "monitor" {
+				return fail("detect action %s rules require ics protocol and mode monitor", id)
+			}
+			if allIDs[rule.ID] {
+				return fail("duplicate rule id %s", rule.ID)
+			}
+			if err := validatePlanRule(rule, zones, pkg.ICSRules); err != nil {
+				return fail("detect rule %s: %v", rule.ID, err)
+			}
+			allIDs[rule.ID] = true
 		}
 		for target, predicate := range detection.ICS {
 			rule, exists := rules[target]
@@ -242,18 +296,21 @@ func validatePlanRule(rule PlanRule, zones map[string]bool, icsRules string) err
 		if icsRules == ICSRulesForbidden {
 			return fmt.Errorf("ics key is forbidden")
 		}
+		if icsRules == ICSRulesMonitor && (rule.ICS.Protocol == "" || rule.ICS.Mode != "monitor") {
+			return fmt.Errorf("ics requires protocol and mode monitor")
+		}
 		return validatePlanICS(*rule.ICS)
 	}
 	return nil
 }
 
-func validatePlanICS(predicate PlanICS) error {
+func validateGenericPlanICS(predicate PlanICS) error {
 	for _, code := range predicate.FunctionCode {
 		if code < 0 || code > 255 {
 			return fmt.Errorf("ics functionCode must be in 0..255")
 		}
 	}
-	if !slices.Contains([]string{"", "modbus", "dnp3"}, predicate.Protocol) {
+	if !slices.Contains([]string{"", "modbus", "dnp3", "iec104"}, predicate.Protocol) {
 		return fmt.Errorf("invalid ics protocol %q", predicate.Protocol)
 	}
 	if !slices.Contains([]string{"", "request", "response"}, predicate.Direction) {
@@ -276,7 +333,7 @@ func validatePlanICS(predicate PlanICS) error {
 	if len(predicate.ObjectClasses) != 0 {
 		return fmt.Errorf("ics objectClasses require unsupported cip")
 	}
-	if predicate.ReadOnly && predicate.WriteOnly {
+	if predicate.ReadOnly && predicate.WriteOnly != nil && *predicate.WriteOnly {
 		return fmt.Errorf("ics cannot be both readOnly and writeOnly")
 	}
 	return nil

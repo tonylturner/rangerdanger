@@ -70,7 +70,7 @@ func TestPlanSemanticValidation(t *testing.T) {
 		{"bad ICS direction", func(_ *Package, c *Curriculum) { c.Plan.Rules[0].Selected[0].ICS = &PlanICS{Direction: "foreign"} }, "invalid ics direction"},
 		{"bad ICS mode", func(_ *Package, c *Curriculum) { c.Plan.Rules[0].Selected[0].ICS = &PlanICS{Mode: "foreign"} }, "invalid ics mode"},
 		{"contradictory ICS", func(_ *Package, c *Curriculum) {
-			c.Plan.Rules[0].Selected[0].ICS = &PlanICS{ReadOnly: true, WriteOnly: true}
+			c.Plan.Rules[0].Selected[0].ICS = &PlanICS{ReadOnly: true, WriteOnly: boolPointer(true)}
 		}, "both readOnly"},
 		{"duplicate proof id", func(_ *Package, c *Curriculum) { c.Plan.Proof[1].ID = c.Plan.Proof[0].ID }, "duplicate proof"},
 		{"invalid category", func(_ *Package, c *Curriculum) { c.Plan.Proof[0].Category = "foreign" }, "invalid category"},
@@ -143,7 +143,7 @@ func TestPlanICSVocabulary(t *testing.T) {
 			}
 		})
 	}
-	for _, protocol := range []string{"s7comm", "mms", "bacnet", "opcua", "cip", "iec104"} {
+	for _, protocol := range []string{"s7comm", "mms", "bacnet", "opcua", "cip"} {
 		t.Run(protocol, func(t *testing.T) {
 			if err := validatePlanICS(PlanICS{Protocol: protocol}); err == nil || !strings.Contains(err.Error(), "invalid ics protocol") {
 				t.Fatalf("error = %v, want unsupported protocol", err)
