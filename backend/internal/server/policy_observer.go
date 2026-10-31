@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
@@ -82,6 +84,53 @@ func (s *Server) observePolicyOnce(ctx context.Context, gen *lifecycle.Generatio
 	gen.Commit(func() { s.classifyObservedPolicy(hash, observedSince) })
 }
 
+// namedPolicyHashes reads the exact policy bytes used by applyFirewallConfigInternal
+// once per generation, then records containd's canonical firewall hashes.
+func (s *Server) namedPolicyHashes(pkg labs.Package) map[string]string {
+	defaultName, ok := pkg.PolicyName(pkg.FirewallConfigPath)
+	if !ok {
+		log.Printf("policy-observer: package %s default policy %s is not named", pkg.ID, pkg.FirewallConfigPath)
+		return map[string]string{}
+	}
+
+	names := make([]string, 0, len(pkg.Policies))
+	for name := range pkg.Policies {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	hashNames := make(map[string]string, len(names))
+	defaultHash := ""
+	for _, name := range names {
+		path, err := s.policyPath(pkg, name)
+		if err != nil {
+			log.Printf("policy-observer: package %s policy %s: %v", pkg.ID, name, err)
+			continue
+		}
+		data, err := readPolicyJSONWithRetry(path)
+		if err != nil {
+			log.Printf("policy-observer: package %s policy %s: %v", pkg.ID, name, err)
+			continue
+		}
+		hash, err := containd.FirewallHashFromBytes(data)
+		if err != nil {
+			log.Printf("policy-observer: package %s policy %s hash failed: %v", pkg.ID, name, err)
+			continue
+		}
+		if name == defaultName {
+			defaultHash = hash
+			continue
+		}
+		if _, exists := hashNames[hash]; !exists {
+			hashNames[hash] = name
+		}
+	}
+	if defaultHash != "" {
+		hashNames[defaultHash] = defaultName
+	}
+	return hashNames
+}
+
 // classifyObservedPolicy compares containd's running hash with the last
 // backend apply and relabels the policy as a manual commit on divergence.
 func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
@@ -97,15 +146,19 @@ func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 		return
 	}
 
-	// No baseline yet (range just activated, nothing applied since) —
-	// adopt the current running hash as the baseline. Don't try to
-	// label it; activateRange set activeConfig from the package's
-	// default policy. This just stops the next tick from spuriously
-	// flipping to manual-custom because the very first observation
-	// looks "different from empty".
+	// No baseline yet: this can be a fresh start (whose default was just
+	// committed) or a range adopted after a backend restart. Classify its
+	// actual running hash against policy hashes captured at activation.
 	if s.lastAppliedHash == "" {
-		s.lastAppliedHash = hash
-		s.policyObservedAt = observedSince
+		if name, ok := s.policyHashNames[hash]; ok {
+			s.activeConfig = name
+			s.policySource = policySourceForName(name)
+			s.planProvenance, s.appliedPlan = nil, nil
+			s.lastAppliedHash = hash
+			s.policyObservedAt = observedSince
+			return
+		}
+		s.markManualCustomLocked(hash, observedSince)
 		return
 	}
 
@@ -116,6 +169,12 @@ func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 
 	// Divergence persists past the grace window — student
 	// committed a policy outside this backend.
+	s.markManualCustomLocked(hash, observedSince)
+}
+
+// markManualCustomLocked publishes a running config that does not match a
+// named policy. The caller holds activeConfigMu.
+func (s *Server) markManualCustomLocked(hash string, observedSince time.Time) {
 	prev := s.activeConfig
 	s.activeConfig = "custom"
 	s.policySource = "manual-custom"
@@ -128,7 +187,7 @@ func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 	s.policyObservedAt = observedSince
 	// Don't touch lastAppliedAt — leaving it as-is so a subsequent
 	// backend apply still wins the grace check correctly.
-	log.Printf("policy-observer: detected manual containd commit (was %q, now custom/manual-custom)", prev)
+	log.Printf("policy-observer: running policy is custom/manual-custom (was %q)", prev)
 }
 
 // recordApply is called by the apply handlers (and apply-plan)

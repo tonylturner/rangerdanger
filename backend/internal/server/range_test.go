@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/tturner/rangerdanger/backend/internal/config"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
@@ -202,6 +204,7 @@ func TestActivateRangeResetsStateAndStartsObserver(t *testing.T) {
 	s := &Server{activeConfig: "custom", policySource: "plan", lastAppliedHash: "old",
 		planProvenance: &planProvenance{}, appliedPlan: &labs.CompiledPlan{},
 		pcap: pcapState{Capturing: true}, traffic: trafficState{Generating: true}}
+	definitions := t.TempDir()
 	// The default's name comes from the package's policies by exact path,
 	// whatever the file is called.
 	pkg := labs.Package{ID: "p", FirewallConfigPath: "packages/p/firewall/b.json", Policies: map[string]string{
@@ -209,6 +212,20 @@ func TestActivateRangeResetsStateAndStartsObserver(t *testing.T) {
 		"improved": "packages/p/firewall/b.json.improved",
 		"weak":     "packages/p/firewall/a.json",
 	}}
+	for relative, data := range map[string]string{
+		"packages/p/firewall/a.json":          `{"firewall":{"defaultAction":"DENY","rules":[]}}`,
+		"packages/p/firewall/b.json":          `{"firewall":{"defaultAction":"DROP","rules":[]}}`,
+		"packages/p/firewall/b.json.improved": `{"firewall":{"defaultAction":"ACCEPT","rules":[]}}`,
+	} {
+		path := filepath.Join(definitions, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.cfg = &config.Config{LabDefinitionsPath: definitions}
 	start := time.Date(2026, 10, 16, 12, 0, 0, 0, time.FixedZone("local", -5*60*60))
 	gen := lifecycle.NewGeneration(2, pkg, &manifest.Manifest{}, containd.NewClient("http://127.0.0.1:1"), start)
 	s.activateRange(gen)
@@ -218,7 +235,7 @@ func TestActivateRangeResetsStateAndStartsObserver(t *testing.T) {
 		t.Error("activation policy timestamp is not UTC")
 	}
 	s.activeConfigMu.RUnlock()
-	if activeConfig != "strict" || source != "" || hash != "" {
+	if activeConfig != "strict" || source != "strict" || hash != "" {
 		t.Errorf("policy state = %q %q %q, want the package default and no apply", activeConfig, source, hash)
 	}
 	if s.planProvenance != nil || s.appliedPlan != nil {
