@@ -6,6 +6,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.0-rc.5] - 2026-10-30
+
+Fifth release candidate for v0.2.0 and the first built on Ubuntu 26.04
+runners. The range itself is unchanged from rc.4. The pre-release
+publishes images under its own tag and does not move `latest`; install it
+with `./setup.sh --version v0.2.0-rc.5`.
+
 ### Changed
 
 - CI and release workflows now run on Ubuntu 26.04 GitHub-hosted runners.
@@ -3326,7 +3333,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.4...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.5...HEAD
+[v0.2.0-rc.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.5
 [v0.2.0-rc.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.4
 [v0.2.0-rc.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.3
 [v0.2.0-rc.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.2
