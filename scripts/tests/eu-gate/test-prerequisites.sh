@@ -102,7 +102,7 @@ STAGED_INPUT="$TMP_DIR/staged-input.json"
 EFFECTIVE_INPUT="$TMP_DIR/effective-input.json"
 RUNNING_INPUT="$TMP_DIR/running-input.json"
 manual_fixture_reset() {
-  printf '%s\n' '{"dataplane":{"enforcement":false,"dpiEnabled":false},
+  printf '%s\n' '{"dataplane":{"enforcement":false,"dpiEnabled":true},
     "interfaces":[{"name":"mgmt","device":"policy-mgmt","zone":"management"},
       {"name":"field","device":"policy-field"},{"name":"unbound","device":"policy-unbound"},
       {"name":"empty","device":"policy-empty"},{"name":"logical","zone":"logical"}],
@@ -183,7 +183,7 @@ t_expect_eq "$(cat "$DOCKER_LOG")" "$(printf 'bindings\ncandidate\ncommit\nreadb
 t_expect_eq "$ACTIVE_CALLS" 12 "custom with plan source cannot satisfy manual observation"
 t_expect_eq "$SLEEPS" 11 "observer convergence may exceed the ten-second grace plus tick"
 t_run jq -e --slurpfile original "$MANUAL_INPUT" \
-  '.dataplane.enforcement == true and .dataplane.dpiEnabled == false
+  '.dataplane.enforcement == true and .dataplane.dpiEnabled == true
    and .firewall == $original[0].firewall' "$STAGED_INPUT"
 t_expect_eq "$T_STATUS" 0 "staging enables enforcement without changing rules or other dataplane fields"
 t_run jq -e '.interfaces == [
@@ -332,5 +332,30 @@ jq '.firewall.rules[0] |= (.ics = {} | .id = "unexpected-rule")' \
 t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 1 "changed rule field still fails despite empty ICS normalization"
 t_expect_out "before session kill" "effective readback failure retains its ordering diagnostic"
+
+manual_fixture_reset
+ACTIVE_AFTER=0
+jq --slurpfile monitors "$T_FIXTURES/monitor-rules.json" \
+  '.firewall.rules += $monitors[0]' "$EFFECTIVE_INPUT" >"$MANUAL_INPUT"
+jq '(.firewall.rules[] | select(.ics.mode == "monitor") | .ics.readOnly) = false' \
+  "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 0 "documented readOnly:false no-op may be echoed on monitor IEC104 predicates"
+for mutation in \
+  'del(.firewall.rules[-1].ics.negative)' \
+  'del(.firewall.rules[-1].ics.test)' \
+  '.firewall.rules[-1].ics.negative=true' \
+  '.firewall.rules[-1].ics.test=true' \
+  '.firewall.rules[-1].ics.readOnly=true' \
+  '.firewall.rules[-1].ics.writeOnly=false' \
+  '.firewall.rules[-1].ics.commandStates=[1,2]' \
+  'del(.firewall.rules[-1].ics.mode)' \
+  '.firewall.rules[-1].ics.mode="enforce"' \
+  '.firewall.rules[-1].ics.unknownDefault=false'; do
+  jq "$mutation" "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
+  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_expect_eq "$T_STATUS" 1 "monitor readback retains all meaningful/undocumented fields: $mutation"
+  t_expect_out "before session kill" "predicate mismatch stops before any session cut"
+done
 
 t_finish

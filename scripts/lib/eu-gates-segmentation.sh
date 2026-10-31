@@ -172,9 +172,9 @@ eu_gate_G7() {
   g7_policy="$TMP_DIR/improved-without-cc.json"
   eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$CC_IP" "$RTU_IP" 2404 "$g7_policy" || return
   if eu_policy_has_no_ephemeral_allow "$g7_policy"; then
-    pass "G7 custom policy has no ICS keys or ephemeral destination-port allow"
+    pass "G7 custom policy has only explicit-monitor IEC104 ICS and no ephemeral destination-port allow"
   else
-    fail "G7 custom policy has an ICS key, unbounded TCP allow, or ephemeral-port allow"
+    fail "G7 custom policy has invalid/non-monitor IEC104 ICS, unbounded TCP allow, or ephemeral-port allow"
   fi
   eu_commit_manual_policy "$g7_policy" "G7 improved minus CC allow" || return
   eu_check_nft_chain G7-custom || true
