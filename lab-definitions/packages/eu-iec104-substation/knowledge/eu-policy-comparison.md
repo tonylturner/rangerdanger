@@ -36,7 +36,7 @@ The improved policy permits the following named exchanges:
 | Source | Destination | Purpose |
 | --- | --- | --- |
 | CC 10.60.60.20 | RTU 10.30.30.20:2404 | IEC 104 |
-| RTU 10.30.30.20 | Field .20–.23 in 10.40.40.0/24:502 | Breaker/RMU/OLTC polling and control |
+| RTU 10.30.30.20 | Field .20–.24 in 10.40.40.0/24:502 | Breaker/RMU/OLTC polling and control (including F2 .24) |
 | PLC 10.30.30.30 | OLTC 10.40.40.23:502 | Automatic tap control |
 | CC 10.60.60.20 | Historian 10.70.70.40:8081 | Snapshot push |
 | Enterprise 10.10.10.0/24 | Historian 10.70.70.40:8080 | Read-only history |
