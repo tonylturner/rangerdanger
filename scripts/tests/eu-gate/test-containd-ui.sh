@@ -3,7 +3,7 @@
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-python3 "$T_REPO/scripts/tests/test_containd_ui_prefix.py" || exit 1
+(cd "$T_REPO" && python3 -m unittest scripts.tests.test_containd_ui_prefix scripts.tests.test_containd_ui_turbopack) || exit 1
 
 # shellcheck disable=SC2329 # dispatched by G23
 python3() {
