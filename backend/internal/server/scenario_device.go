@@ -144,9 +144,9 @@ func (s *Server) executeSessionCut(ctx context.Context, gen *lifecycle.Generatio
 			result.Detail = fmt.Sprintf("need exactly one complete %s session (found %d); nothing was killed", flowID, count)
 			return result
 		}
-		err = gen.Containd().KillSession(ctx, tuple)
+		_, err = gen.Containd().KillSession(ctx, tuple)
 		result.Success = err == nil
-		result.Detail = boolDetail(err == nil, "Deleted "+tupleText(tuple)+"; the next packet meets the active policy", errStr(err))
+		result.Detail = boolDetail(err == nil, "Deleted "+tupleText(tuple)+"; exact tuple revoked in both directions for 60 seconds; a fresh source port still meets the active policy", errStr(err))
 		return result
 	}
 	result.Detail = "package has no flow " + flowID

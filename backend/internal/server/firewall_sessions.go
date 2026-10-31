@@ -14,8 +14,8 @@ import (
 
 // Firewall session routes: the range firewall's conntrack table and the
 // deletion of one entry. They are generic: every package's firewall is
-// containd. Deleting an entry is not a reset; the flow's next packet is new
-// and meets the active policy, so it dies only if that policy denies it.
+// containd. Killing an entry revokes the exact tuple in both directions
+// for 60 seconds by default; a fresh source port still meets active policy.
 
 // sessionListLimit is how many conntrack entries the list reads; filtering
 // happens here, so the whole table is fetched.
@@ -25,6 +25,12 @@ const sessionListLimit = 5000
 type sessionList struct {
 	Sessions []containd.Session `json:"sessions"`
 	Count    int                `json:"count"`
+}
+
+type sessionKillResponse struct {
+	*containd.SessionKillResult
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
 }
 
 // handleFirewallSessions lists the firewall's conntrack entries, optionally
@@ -82,14 +88,16 @@ func (s *Server) handleFirewallSessionKill(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	err := rangeOf(c).Containd().KillSession(c.Request.Context(), tuple)
+	result, err := rangeOf(c).Containd().KillSession(c.Request.Context(), tuple)
 	switch {
 	case errors.Is(err, containd.ErrSessionNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "no conntrack entry " + tupleText(tuple), "detail": err.Error()})
+	case err != nil && result != nil:
+		c.JSON(http.StatusBadGateway, sessionKillResponse{SessionKillResult: result, Status: "failed", Error: err.Error()})
 	case err != nil:
 		upstreamFailed(c, err)
 	default:
-		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+		c.JSON(http.StatusOK, sessionKillResponse{SessionKillResult: result, Status: "deleted"})
 	}
 }
 

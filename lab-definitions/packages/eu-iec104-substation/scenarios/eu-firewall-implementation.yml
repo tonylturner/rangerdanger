@@ -162,7 +162,7 @@ steps:
 
     A 202 queues the actual connection close; normal reconnect runs at the inventory-configured interval (currently 2 s), followed by connect GI. A 409 means reconnect pending or a command in flight; 503 means the link is already down and retrying. Do not blindly repeat. If testing CR-22, expect the CC link/conduit down, last values retained with IV/NT `link_lost`, and a logged CC→RTU deny. Restore the exported known-good policy, wait for reconnect/GI and inspect every inventory observation. Field truth may still show a healthy supplied feeder: observation loss is not supply loss. No trip/reset is needed to repair communications.
 
-    Exact firewall session retirement remains an instructor diagnostic, not the normal fresh-session action: deleting conntrack under an allowed policy does not reliably close the old TCP connection. With a silent blackhole, detection can take configured t3+t1 (currently about 35 s). See [established sessions](/knowledge#eu-established-sessions).
+    Exact firewall session retirement remains an instructor diagnostic, not the normal fresh-session action: the session-kill API revokes the exact tuple in both directions for 60 seconds by default, with TCP resets signalled on subsequent matching packets. A fresh source port still meets the active policy. With a silent blackhole, detection can take configured t3+t1 (currently about 35 s). See [established sessions](/knowledge#eu-established-sessions).
 
     :::hint A timeout is a specific result
     Strict active probes count only connection timeout as denied. Connection refused means the packet reached a host; a missing tool or failed container exec is missing evidence, never a pass. A logged SYN deny cannot reveal the denied command payload.

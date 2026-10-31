@@ -77,7 +77,15 @@ func TestKillSession(t *testing.T) {
 		notFound bool
 		wantErr  string
 	}{
-		{"deleted", http.StatusOK, `{"status":"deleted"}`, false, ""},
+		{"deleted", http.StatusOK, `{"scope":"connection","matched":1,"deleted":1,"conntrackDeleted":true,"revocationInstalled":true,"blockedUntil":"2026-10-31T12:01:00Z","closure":"TCP resets on next matching packet"}`, false, ""},
+		{"deletion failed", http.StatusOK, `{"scope":"connection","matched":1,"deleted":0,"conntrackDeleted":false,"deleteError":"permission denied","revocationInstalled":true,"closure":"TCP resets on next matching packet"}`, false, "permission denied"},
+		{"deletion false without detail", http.StatusOK, `{"scope":"connection","matched":1,"deleted":0,"conntrackDeleted":false,"revocationInstalled":true,"closure":"TCP resets on next matching packet"}`, false, "conntrack deletion failed"},
+		{"delete error despite flag", http.StatusOK, `{"scope":"connection","matched":1,"deleted":1,"conntrackDeleted":true,"deleteError":"partial failure","revocationInstalled":true,"closure":"TCP resets on next matching packet"}`, false, "partial failure"},
+		{"revocation failed", http.StatusOK, `{"scope":"connection","matched":1,"deleted":1,"conntrackDeleted":true,"revocationInstalled":false,"revocationError":"unavailable","closure":""}`, false, "session revocation failed"},
+		{"revocation error despite flag", http.StatusOK, `{"scope":"connection","matched":1,"deleted":1,"conntrackDeleted":true,"revocationInstalled":true,"revocationError":"partial failure","closure":""}`, false, "session revocation failed"},
+		{"malformed", http.StatusOK, `{`, false, "decode conntrack kill result"},
+		{"obsolete response", http.StatusOK, `{"status":"deleted"}`, false, "conntrack deletion failed"},
+		{"null", http.StatusOK, `null`, false, "conntrack deletion failed"},
 		{"not found", http.StatusBadGateway, `{"error":"engine conntrack delete status 500: {\"error\":\"conntrack delete: not found\"}"}`, true, "not found"},
 		{"other engine failure", http.StatusBadGateway, `{"error":"engine conntrack delete status 500: permission denied"}`, false, "returned 502"},
 		{"unsupported", http.StatusNotImplemented, `{"error":"conntrack delete not supported"}`, false, "returned 501"},
@@ -97,7 +105,18 @@ func TestKillSession(t *testing.T) {
 				io.WriteString(w, test.body)
 			}))
 			defer srv.Close()
-			err := newTestClient(srv.URL).KillSession(context.Background(), tuple)
+			result, err := newTestClient(srv.URL).KillSession(context.Background(), tuple)
+			if test.status == http.StatusOK && test.name != "malformed" {
+				var want SessionKillResult
+				if decodeErr := json.Unmarshal([]byte(test.body), &want); decodeErr != nil {
+					t.Fatal(decodeErr)
+				}
+				if !reflect.DeepEqual(result, &want) {
+					t.Fatalf("result = %+v, want %+v", result, want)
+				}
+			} else if result != nil {
+				t.Fatalf("unexpected result = %+v", result)
+			}
 			if test.wantErr == "" {
 				if err != nil {
 					t.Fatalf("KillSession = %v", err)
@@ -111,6 +130,14 @@ func TestKillSession(t *testing.T) {
 				t.Errorf("errors.Is(ErrSessionNotFound) = %v, want %v", !test.notFound, test.notFound)
 			}
 		})
+	}
+}
+
+func TestKillSessionTransportFailure(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	srv.Close()
+	if result, err := newTestClient(srv.URL).KillSession(context.Background(), SessionTuple{}); err == nil || result != nil {
+		t.Fatalf("result = %+v, error = %v; want transport failure", result, err)
 	}
 }
 

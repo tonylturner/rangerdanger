@@ -18,7 +18,9 @@ POST /api/firewall/sessions/kill
 
 This is a route/body reference; `<observed-port>` must be replaced with the actual original-direction source port. Require exactly one matching TCP session. If there are zero or multiple candidates, stop and resolve the ambiguity. Never guess, use a wildcard, flush all sessions or replace this step with a forged TCP reset.
 
-Deleting conntrack state does not itself send a reset. Subsequent traffic meets the active restrictive policy, and link-failure detection takes time. If the allow rule remains active, the connection can recover instead of demonstrating isolation.
+The session-kill API first installs a revocation, then deletes conntrack state. By default it blocks the exact tuple in both directions for 60 seconds. TCP resets are signalled on each endpoint's next matching packet, not injected at deletion time or proof of confirmed endpoint closure. A fresh source port is allowed by the revocation and meets the active policy, so the restrictive policy is needed to prevent reconnection.
+
+Check the response's per-step fields: `conntrackDeleted` and `revocationInstalled` must both be true, with no `deleteError` or `revocationError`. RangerDanger returns `status: "deleted"` only for full success; partial failures return HTTP 502 with `status: "failed"` and the outcome fields, including any `blockedUntil`. Do not infer success from a deletion count alone.
 
 ### Build a temporal proof
 
@@ -26,7 +28,7 @@ Collect a before snapshot and the CC journal cursor, perform the prescribed inte
 
 1. Fresh observations and a working operator link.
 2. Restrictive policy confirmed active.
-3. Exact session deletion acknowledged.
+3. Exact session revocation and conntrack deletion acknowledged.
 4. Reconnection attempts denied, link loss detected and points marked stale.
 5. Local device/process events during that stale interval.
 6. Improved policy restored, reconnect and GI, then fresh point recovery.
@@ -43,6 +45,6 @@ Keep source-time invalidity distinct from value invalidity, and CC receipt times
 
 ### Post-commit proof in Labs 2.2 and 2.3
 
-Use `curl -fsS -X POST http://localhost:8088/api/operator/reconnect` from the host, or `wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect` in cc-1. This closes the actual IEC 104 connection via the CC link worker. It is necessary under a correct allow: conntrack deletion alone may recreate state without closing TCP. No policy, device or cache reset occurs. Wait for a strictly post-commit `link.since`, a matched completed GI on that connection, and every inventory point non-null/GOOD received since GI start. A later GI on a pre-commit session is insufficient.
+Use `curl -fsS -X POST http://localhost:8088/api/operator/reconnect` from the host, or `wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect` in cc-1. This closes the actual IEC 104 connection via the CC link worker without the session-kill API's temporary tuple revocation. No policy, device or cache reset occurs. Wait for a strictly post-commit `link.since`, a matched completed GI on that connection, and every inventory point non-null/GOOD received since GI start. A later GI on a pre-commit session is insufficient.
 
 CR-22 in Lab 2.2 omits the CC allow. Correct it before commit, or test only with rollback ready. The reference's explicit logged `deny-unauthorized-iec104` covers the CC zone after the allow, so new rejected CC connections appear in Live DPI Events. Correlate CC link loss, Network Map conduit and the deny tuple without calling observation loss a physical outage. A correct solution passes without ever losing telemetry. Silent blackhole detection uses t3+t1, plus reconnect and observation margin; G7 derives its deadline from `protocols/points.json` rather than assuming 30 s.

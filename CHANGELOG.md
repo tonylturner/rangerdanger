@@ -25,6 +25,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Session kills now report containd's deletion and revocation outcomes,
+  including partial failures; EU lessons describe the default 60-second
+  exact-tuple revocation and fresh-source-port reconnection semantics.
 - The embedded containd console checks in the smoke scripts (shell and
   PowerShell) support containd 0.1.36's Turbopack UI bundle, including
   on-demand chunks and stylesheets.
