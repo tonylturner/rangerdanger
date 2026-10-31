@@ -92,6 +92,8 @@ jobs:
           # CRITICAL + HIGH only at the gate; ignore unfixed for now.
           # Tighten as the triage pipeline matures.
           severity: CRITICAL,HIGH
+          # SARIF otherwise carries every severity into the Security tab.
+          limit-severities-for-sarif: true
           ignore-unfixed: true
           exit-code: "0"   # advisory: don't fail the job, let SARIF upload + summary tell the story
           vuln-type: os,library
