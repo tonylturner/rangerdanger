@@ -43,7 +43,7 @@ or CI-gate change accompanies this table.
 | Backend and webtops: Compose `golang.org/x/net`, CVE-2026-78669 | Current bundled Compose still embeds v0.58.0; v0.60.0 fixes it. Refresh the complete upstream binary when available, not its embedded module metadata. |
 | Frontend: global npm's `undici` | npm 11.21.1 still bundles 6.29.0; CVE-2026-109383, CVE-2026-109869 and CVE-2026-87018 require 6.29.1. These affect the installed package-manager CLI, not Next.js's application dependency tree. Follow a patched bundled npm release. |
 | Webtops: `pebble` standard library; Buildx `github.com/moby/go-archive` and `golang.org/x/net` | The refreshed upstream desktop still ships these older compiled components. Follow upstream rebuilt binaries; do not replace desktop-management tools piecemeal. A desktop is a student-controlled lab host, not a trusted general-purpose workstation. |
-| FUXA: application dependencies under `server/node_modules`, including its separate npm tree | The current upstream application still contains axios, body-parser, brace-expansion, form-data, ip-address, js-yaml, jsonata, multer, nodemailer, pacote, path-to-regexp, picomatch, serialize-javascript, sigstore, socket.io-parser, tar and ws findings. These are not all unreachable: the lab intentionally exposes the HMI to its student. Follow an upstream lockfile/runtime update with importer, driver and viewer acceptance; do not force major transitive replacements into its installed tree. |
+| FUXA: application dependencies under `server/node_modules`, including its separate npm tree | The current upstream application still contains axios, body-parser, brace-expansion, follow-redirects, form-data, ip-address, js-yaml, jsonata, multer, nodemailer, pacote, path-to-regexp, picomatch, serialize-javascript, sigstore, socket.io-parser, tar and ws findings. These are not all unreachable: the lab intentionally exposes the HMI to its student. Follow an upstream lockfile/runtime update with importer, driver and viewer acceptance; do not force major transitive replacements into its installed tree. |
 | FUXA: global npm's brace-expansion, ip-address, pacote, picomatch and sigstore | The refreshed upstream image still bundles these older CLI dependencies. Preserve the image's lock-only installation contract; follow a patched base or a separately reviewed, integrity-locked CLI installation rather than an unlocked install in the application image. |
 | OpenPLC US/EU: Python 2.7 Flask 1.1.1 / Werkzeug 0.16.0 | CVE-2023-30861, CVE-2023-25577 and CVE-2024-34069 need releases that no longer support the upstream Python 2.7 runtime. A supported OpenPLC runtime migration is required; public OS updates do not make Bionic or Python 2 supported. Keep this default-credential lab UI isolated. |
 
@@ -53,6 +53,12 @@ Its refreshed base removes 51 old occurrences but introduces two high
 occurrences in the global npm tree: pacote's CVE-2026-9496 in a new nested
 copy, and picomatch's CVE-2026-33671. Both fall under the CLI exception
 above; the net count falls from 111 to 62, not to zero.
+
+A 2026-10-31 re-check of `main` and the rc.5 images, with the same Trivy
+settings and a current database, found one new high occurrence:
+follow-redirects' CVE-2026-116689 in the FUXA application tree (63 in total).
+Every upstream base was still the pinned digest, and npm 12.2.1 still bundles
+undici 6.29.0, so no accepted group cleared.
 
 ### Resolved image groups
 

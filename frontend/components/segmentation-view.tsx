@@ -369,7 +369,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function ActionChip({ action }: { action: string; label?: string }) {
+function ActionChip({ action }: { action: string }) {
   if (!action) return null;
   const cls =
     action === "ALLOW"
@@ -384,26 +384,17 @@ function ActionChip({ action }: { action: string; label?: string }) {
   );
 }
 
-// eventVerdict returns the kernel-side disposition for firewall.rule.hit
-// events ONLY. IDS anomalies are NOT treated as DENY here even though
-// they're suspicious - anomalies are alerts, not drops, and conflating
-// them inflates the deny counter + paints amber-categorized rows red.
-// Operators read "N deny" as "the firewall actually stopped N packets";
-// anomalies belong in the separate `ids` count alongside the amber
-// row tone. (Review on PR #47 caught the original conflation.)
-//
-function eventVerdict(e: NetworkEvent): "ALLOW" | "DENY" {
-  if (e.attributes?.action === "DENY") return "DENY";
-  return "ALLOW";
+// Only actual firewall rule hits carry packet verdicts. A configured
+// shadow action and an IDS alert are observations, not denied packets.
+function eventVerdict(e: NetworkEvent): "ALLOW" | "DENY" | null {
+  if (e.kind !== "firewall.rule.hit") return null;
+  return e.attributes?.action ?? null;
 }
 
-// Classify an event for visual chip + label purposes. Three kinds reach
-// this strip; each gets a distinct look so an operator can tell at a
-// glance whether they're looking at "policy made a verdict" vs "DPI
-// decoded a protocol message" vs "IDS noticed something off."
-type EventCategory = "rule" | "dpi" | "ids" | "other";
+type EventCategory = "rule" | "monitor" | "dpi" | "ids" | "other";
 function eventCategory(e: NetworkEvent): EventCategory {
   if (e.kind === "firewall.rule.hit") return "rule";
+  if (e.kind === "ics.decision" && e.attributes?.mode === "monitor") return "monitor";
   if (e.kind === "anomaly") return "ids";
   // Modbus/DNP3 decoder events come through with kind="request" or
   // "response"; lumping both as "dpi" keeps the chip set tight.
@@ -417,6 +408,7 @@ function eventCategory(e: NetworkEvent): EventCategory {
 function eventLabel(e: NetworkEvent): string {
   const a = e.attributes ?? {};
   switch (eventCategory(e)) {
+    case "monitor":
     case "rule":
       return a.ruleId ?? "(unnamed rule)";
     case "dpi": {
@@ -463,7 +455,7 @@ function LiveEvents({
   // many rule.hit ALLOW + zero ids = normal RTAC chatter; ids > 0 or
   // rule.hit DENY > 0 means something is being noticed.
   const ruleCount = events.filter((e) => eventCategory(e) === "rule").length;
-  const dpiCount = events.filter((e) => eventCategory(e) === "dpi").length;
+  const dpiCount = events.filter((e) => ["dpi", "monitor"].includes(eventCategory(e))).length;
   const idsCount = events.filter((e) => eventCategory(e) === "ids").length;
   const maxRows = compact ? 5 : 10;
 
@@ -486,11 +478,17 @@ function LiveEvents({
 
       {expanded && (
         <div className={`space-y-1 overflow-y-auto rounded-sm border border-slate-800/60 bg-slate-900/30 p-1.5 ${compact ? "max-h-32" : "max-h-56"}`}>
+          {data?.historyTruncated && (
+            <div className="text-[10px] text-amber-400">Event history is truncated; this is not a complete record.</div>
+          )}
+          {data?.engineError && (
+            <div className="text-[10px] text-amber-400">DPI engine error: {data.engineError}</div>
+          )}
           {unavailable ? (
             <div className="py-2 text-center text-[10px] text-slate-600">
               containd unreachable
             </div>
-          ) : events.length === 0 ? (
+          ) : events.length === 0 && !data?.engineError ? (
             <EmptyEventsHint compact={compact} activeConfig={activeConfig} usWording={usWording} />
           ) : (
             events.slice(0, maxRows).map((e, i) => <LiveEventRow key={`${e.id}-${i}`} e={e} />)
@@ -578,11 +576,14 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
     <div className={`rounded-sm border p-1.5 text-[10px] ${rowTone}`}>
       <div className="flex items-center gap-1.5">
         <span className="w-14 shrink-0 text-[9px] text-slate-600">{ts}</span>
-        {/* For firewall.rule.hit rows show the ALLOW/DENY action chip;
-            for dpi/ids rows show a kind chip in its own color so the
-            three event sources are visually distinct in a mixed list. */}
+        {/* Shadow decisions stay hypothetical, regardless of configured action. */}
         {category === "rule" ? (
-          <ActionChip action={verdict} />
+          <ActionChip action={verdict ?? ""} />
+        ) : category === "monitor" ? (
+          <ActionChip action={
+            e.attributes?.decision === "would_drop" ? "would deny (monitor)"
+              : e.attributes?.decision === "would_allow" ? "would allow (monitor)" : "monitor observation"
+          } />
         ) : (
           <KindChip category={category} />
         )}

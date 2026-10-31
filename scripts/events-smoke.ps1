@@ -88,6 +88,24 @@ function Get-FreshKaliDenyCount($Events, [decimal]$Boundary) {
     }).Count
 }
 
+function Get-FreshDpiRequestCount(
+    $Events, [decimal]$Boundary, [string]$Protocol, [int]$FunctionCode,
+    [string]$SourceIp, [string]$DestinationIp, [int]$DestinationPort
+) {
+    return @($Events | Where-Object {
+        $_.proto -ceq $Protocol -and
+        $_.kind -ceq 'request' -and
+        $_.attributes.ics -eq $true -and
+        $_.attributes.function_code -eq $FunctionCode -and
+        $_.srcIp -ceq $SourceIp -and
+        $_.dstIp -ceq $DestinationIp -and
+        $_.srcPort -gt 0 -and
+        $_.dstPort -eq $DestinationPort -and
+        $_.transport -ceq 'tcp' -and
+        (ConvertTo-EventEpochNs $_.timestamp) -gt $Boundary
+    }).Count
+}
+
 function ConvertTo-Base64Url([byte[]]$bytes) {
     ([Convert]::ToBase64String($bytes)).TrimEnd('=').Replace('+','-').Replace('/','_')
 }
@@ -307,30 +325,44 @@ finally: s.close()
         # via `sh -c "cat > /tmp/..."` exactly the way the .sh does.
         $probePy | & docker exec -i rangerdanger-rtac-sim sh -c "cat > /tmp/_smoke_modbus.py"
 
-        # Fire FC8 from RTAC and check the resulting DPI evidence record.
+        $dpiBoundaryRaw = docker exec rangerdanger-firewall date -u +%s%N
+        if ($LASTEXITCODE -ne 0 -or "$dpiBoundaryRaw" -notmatch '^\d{19}$') {
+            Err "cannot capture range-clock Modbus event boundary"
+            exit 1
+        }
+        $dpiBoundary = [decimal]$dpiBoundaryRaw
+
+        # Fire FC8 from RTAC and check fresh decoded DPI event evidence.
         & {
             $ErrorActionPreference = 'SilentlyContinue'
             docker exec rangerdanger-rtac-sim python3 /tmp/_smoke_modbus.py 10.40.40.20 fc8 *>$null
         }
-        Start-Sleep -Seconds $ProbeWaitSec
-
-        $blockRaw = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            (docker exec rangerdanger-firewall sh -c "nft list set inet containd block_flows 2>/dev/null" 2>$null) -join "`n"
+        $modbusCount = 0
+        $eventQueryError = $false
+        for ($elapsed = 0; $elapsed -le $EventPollBudget; $elapsed++) {
+            $rawEvents = & {
+                $ErrorActionPreference = 'SilentlyContinue'
+                docker exec rangerdanger-firewall sh -c "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>$null
+            }
+            try {
+                $events = if ($rawEvents) { @($rawEvents | ConvertFrom-Json -ErrorAction Stop) } else { @() }
+                $modbusCount = Get-FreshDpiRequestCount $events $dpiBoundary modbus 8 `
+                    '10.30.30.20' '10.40.40.20' 502
+            } catch {
+                Err "cannot read or parse bounded Modbus DPI events: $_"
+                $eventQueryError = $true
+                break
+            }
+            if ($modbusCount -ge 1 -or $elapsed -eq $EventPollBudget) { break }
+            Start-Sleep -Seconds 1
         }
-        $blockMatches = ([regex]::Matches($blockRaw, '10\.30\.30\.20.*10\.40\.40\.20.*502')).Count
-        if ($blockMatches -lt 1) {
-            Err "Modbus FC8 from RTAC did not produce DPI function-code evidence"
-        } else {
-            OK "Modbus FC8 produced function-code evidence for 10.30.30.20.10.40.40.20.502"
+        if (-not $eventQueryError) {
+            if ($modbusCount -lt 1) {
+                Err "no fresh Modbus FC8 request event for 10.30.30.20 -> 10.40.40.20:502 within ${EventPollBudget}s"
+            } else {
+                OK "$modbusCount fresh Modbus FC8 request event(s) for 10.30.30.20 -> 10.40.40.20:502"
+            }
         }
-
-        # Clear the DPI evidence record so the next gate starts clean.
-        & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" *>$null
-        }
-        Start-Sleep -Seconds 1
     }
 }
 
@@ -357,23 +389,44 @@ if (-not $nfqAlive) {
         } catch { }
         Start-Sleep -Seconds 2
 
-        # Fire a DNP3 Direct Operate (FC5) and check the resulting DPI
-        # evidence record. Restore the relay afterwards.
+        $dpiBoundaryRaw = docker exec rangerdanger-firewall date -u +%s%N
+        if ($LASTEXITCODE -ne 0 -or "$dpiBoundaryRaw" -notmatch '^\d{19}$') {
+            Err "cannot capture range-clock DNP3 event boundary"
+            exit 1
+        }
+        $dpiBoundary = [decimal]$dpiBoundaryRaw
+
+        # Fire a DNP3 Direct Operate (FC5) and check its fresh decoded DPI
+        # event. Restore the relay afterwards.
         & {
             $ErrorActionPreference = 'SilentlyContinue'
             docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip *>$null
         }
-        Start-Sleep -Seconds $ProbeWaitSec
-
-        $dnp3BlockRaw = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            (docker exec rangerdanger-firewall sh -c "nft list set inet containd block_flows 2>/dev/null" 2>$null) -join "`n"
+        $dnp3Count = 0
+        $eventQueryError = $false
+        for ($elapsed = 0; $elapsed -le $EventPollBudget; $elapsed++) {
+            $rawEvents = & {
+                $ErrorActionPreference = 'SilentlyContinue'
+                docker exec rangerdanger-firewall sh -c "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>$null
+            }
+            try {
+                $events = if ($rawEvents) { @($rawEvents | ConvertFrom-Json -ErrorAction Stop) } else { @() }
+                $dnp3Count = Get-FreshDpiRequestCount $events $dpiBoundary dnp3 5 `
+                    '10.30.30.20' '10.40.40.20' 20000
+            } catch {
+                Err "cannot read or parse bounded DNP3 DPI events: $_"
+                $eventQueryError = $true
+                break
+            }
+            if ($dnp3Count -ge 1 -or $elapsed -eq $EventPollBudget) { break }
+            Start-Sleep -Seconds 1
         }
-        $dnp3Matches = ([regex]::Matches($dnp3BlockRaw, '10\.30\.30\.20.*10\.40\.40\.20.*20000')).Count
-        if ($dnp3Matches -lt 1) {
-            Err "DNP3 FC5 from RTAC did not produce DPI function-code evidence"
-        } else {
-            OK "DNP3 FC5 produced function-code evidence for 10.30.30.20.10.40.40.20.20000"
+        if (-not $eventQueryError) {
+            if ($dnp3Count -lt 1) {
+                Err "no fresh DNP3 FC5 request event for 10.30.30.20 -> 10.40.40.20:20000 within ${EventPollBudget}s"
+            } else {
+                OK "$dnp3Count fresh DNP3 FC5 request event(s) for 10.30.30.20 -> 10.40.40.20:20000"
+            }
         }
 
         # Restore the baseline before cleaning up the flow record, then
@@ -388,10 +441,6 @@ if (-not $nfqAlive) {
         & {
             $ErrorActionPreference = 'SilentlyContinue'
             docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close *>$null
-        }
-        & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" *>$null
         }
     }
 }

@@ -202,7 +202,7 @@
         },
         {
           "id": "eu-ics-dpi",
-          "title": "ICS deep packet inspection",
+          "title": "IEC 104 monitor rules, shadow evidence and PCAP review",
           "file": "eu-ics-dpi.md"
         }
       ]
@@ -300,7 +300,7 @@
         },
         {
           "id": "eu-live-firewall-events",
-          "title": "The Live DPI Events panel: L4 evidence, not DPI",
+          "title": "Live firewall verdicts versus monitor observations",
           "file": "eu-live-firewall-events.md"
         },
         {
@@ -310,7 +310,7 @@
         },
         {
           "id": "eu-containd-policy-enforcement",
-          "title": "containd L4 policy enforcement",
+          "title": "containd L4 enforcement and IEC 104 monitoring",
           "file": "eu-containd-policy-enforcement.md"
         }
       ]

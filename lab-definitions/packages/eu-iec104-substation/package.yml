@@ -1,7 +1,7 @@
 schema: 1
 id: eu-iec104-substation
 title: European feeder telecontrol (IEC104)
-revision: 5
+revision: 6
 topology: topology.yml
 knowledge: knowledge/index.yml
 scenarios: scenarios
@@ -13,7 +13,7 @@ policies:
   weak: firewall/weak.json
   improved: firewall/improved.json
 operator_view: eu-iec104
-ics_rules: forbidden
+ics_rules: monitor
 curriculum:
   dir: curriculum
   roles:

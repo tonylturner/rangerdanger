@@ -4,7 +4,7 @@
       "dpiMode": "enforce",
       "nflogGroup": 100,
       "nfqueueGroup": 101,
-      "dpiEnabled": false
+      "dpiEnabled": true
     },
     "firewall": {
       "defaultAction": "DENY",
@@ -255,6 +255,149 @@
           ],
           "action": "DENY",
           "log": true
+        },
+        {
+          "id": "observe-cc-breaker-command",
+          "description": "Monitor only: CC breaker commands; never admits or denies",
+          "sourceZones": [
+            "lan4"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "sources": [
+            "10.60.60.20/32"
+          ],
+          "destinations": [
+            "10.30.30.20/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "2404"
+            }
+          ],
+          "ics": {
+            "protocol": "iec104",
+            "direction": "request",
+            "mode": "monitor",
+            "typeIds": [
+              46
+            ],
+            "ca": [
+              1
+            ],
+            "ioa": [
+              {
+                "start": 3001,
+                "end": 3001
+              }
+            ]
+          },
+          "action": "DENY"
+        },
+        {
+          "id": "observe-cc-oltc-step",
+          "description": "Monitor only: CC OLTC steps; never admits or denies",
+          "sourceZones": [
+            "lan4"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "sources": [
+            "10.60.60.20/32"
+          ],
+          "destinations": [
+            "10.30.30.20/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "2404"
+            }
+          ],
+          "ics": {
+            "protocol": "iec104",
+            "direction": "request",
+            "mode": "monitor",
+            "typeIds": [
+              47
+            ],
+            "ca": [
+              1
+            ],
+            "ioa": [
+              {
+                "start": 3301,
+                "end": 3301
+              }
+            ],
+            "cot": [
+              6
+            ],
+            "negative": false,
+            "test": false,
+            "commandStates": [
+              1,
+              2
+            ],
+            "commandQualifiers": [
+              0
+            ]
+          },
+          "action": "ALLOW"
+        },
+        {
+          "id": "observe-cc-oltc-raise-only",
+          "description": "Monitor only: CC OLTC raises; never admits or denies",
+          "sourceZones": [
+            "lan4"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "sources": [
+            "10.60.60.20/32"
+          ],
+          "destinations": [
+            "10.30.30.20/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "2404"
+            }
+          ],
+          "ics": {
+            "protocol": "iec104",
+            "direction": "request",
+            "mode": "monitor",
+            "typeIds": [
+              47
+            ],
+            "ca": [
+              1
+            ],
+            "ioa": [
+              {
+                "start": 3301,
+                "end": 3301
+              }
+            ],
+            "cot": [
+              6
+            ],
+            "negative": false,
+            "test": false,
+            "commandStates": [
+              2
+            ],
+            "commandQualifiers": [
+              0
+            ]
+          },
+          "action": "ALLOW"
         }
       ]
     },
@@ -714,6 +857,167 @@
       "origin": {
         "kind": "required"
       }
+    },
+    {
+      "rule": {
+        "id": "observe-cc-breaker-command",
+        "description": "Monitor only: CC breaker commands; never admits or denies",
+        "sourceZones": [
+          "lan4"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "sources": [
+          "10.60.60.20/32"
+        ],
+        "destinations": [
+          "10.30.30.20/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "2404"
+          }
+        ],
+        "ics": {
+          "protocol": "iec104",
+          "direction": "request",
+          "mode": "monitor",
+          "typeIds": [
+            46
+          ],
+          "ca": [
+            1
+          ],
+          "ioa": [
+            {
+              "start": 3001,
+              "end": 3001
+            }
+          ]
+        },
+        "action": "DENY"
+      },
+      "origin": {
+        "kind": "observe",
+        "action": "iec104-dpi"
+      }
+    },
+    {
+      "rule": {
+        "id": "observe-cc-oltc-step",
+        "description": "Monitor only: CC OLTC steps; never admits or denies",
+        "sourceZones": [
+          "lan4"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "sources": [
+          "10.60.60.20/32"
+        ],
+        "destinations": [
+          "10.30.30.20/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "2404"
+          }
+        ],
+        "ics": {
+          "protocol": "iec104",
+          "direction": "request",
+          "mode": "monitor",
+          "typeIds": [
+            47
+          ],
+          "ca": [
+            1
+          ],
+          "ioa": [
+            {
+              "start": 3301,
+              "end": 3301
+            }
+          ],
+          "cot": [
+            6
+          ],
+          "negative": false,
+          "test": false,
+          "commandStates": [
+            1,
+            2
+          ],
+          "commandQualifiers": [
+            0
+          ]
+        },
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "observe",
+        "action": "iec104-dpi"
+      }
+    },
+    {
+      "rule": {
+        "id": "observe-cc-oltc-raise-only",
+        "description": "Monitor only: CC OLTC raises; never admits or denies",
+        "sourceZones": [
+          "lan4"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "sources": [
+          "10.60.60.20/32"
+        ],
+        "destinations": [
+          "10.30.30.20/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "2404"
+          }
+        ],
+        "ics": {
+          "protocol": "iec104",
+          "direction": "request",
+          "mode": "monitor",
+          "typeIds": [
+            47
+          ],
+          "ca": [
+            1
+          ],
+          "ioa": [
+            {
+              "start": 3301,
+              "end": 3301
+            }
+          ],
+          "cot": [
+            6
+          ],
+          "negative": false,
+          "test": false,
+          "commandStates": [
+            2
+          ],
+          "commandQualifiers": [
+            0
+          ]
+        },
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "observe",
+        "action": "iec104-dpi"
+      }
     }
   ],
   "actions": [
@@ -754,7 +1058,7 @@
     },
     {
       "id": "iec104-dpi",
-      "kind": "plan",
+      "kind": "detect",
       "chosen": true
     },
     {
@@ -795,8 +1099,8 @@
   ],
   "label": "hardened",
   "packageId": "eu-iec104-substation",
-  "revision": 5,
-  "policyHash": "3f11ed1707dca7cb2720c4973e8ac49a81158812db819d78cec1b56469a53817",
+  "revision": 6,
+  "policyHash": "1d9c61d773fc94c0c3c4d08f43ab1130054ac8fb6c5f8b63f83905064627eb7c",
   "expectations": [
     {
       "id": "A1",

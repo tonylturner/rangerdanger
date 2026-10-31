@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("server-owned plans across packages and selection states", () => {
   it.each([
     { plans: US_PLANS, binding: US_CURRICULUM, revision: 3, authorized: 8, unauthorized: 13, ruleCounts: [12, 12, 12], deferredCounts: [7, 6, 0], remoteIds: ["U12", "U13"] },
-    { plans: EU_PLANS, binding: fixtureCurriculum("lab-definitions/packages/eu-iec104-substation"), revision: 5, authorized: 10, unauthorized: 27, ruleCounts: [20, 19, 10], deferredCounts: [10, 9, 0], remoteIds: ["U3", "U4"] },
+    { plans: EU_PLANS, binding: fixtureCurriculum("lab-definitions/packages/eu-iec104-substation"), revision: 6, authorized: 10, unauthorized: 27, ruleCounts: [20, 19, 13], deferredCounts: [10, 9, 0], remoteIds: ["U3", "U4"] },
   ])("renders the real $authorized + $unauthorized tuple universe at revision $revision", ({ plans, binding, revision, authorized, unauthorized, ruleCounts, deferredCounts, remoteIds }) => {
     expect(plans.map((p) => p.label)).toEqual(["weak", "partial", "hardened"]);
     expect(new Set(plans.map((p) => p.policyHash)).size).toBe(3);
@@ -49,7 +49,10 @@ describe("server-owned plans across packages and selection states", () => {
     expect(plans[1].expectations.filter((r, i) => r.planVerdict !== plans[0].expectations[i].planVerdict).map((r) => r.id)).toEqual(remoteIds);
   });
   it("represents EU closures by removing deferred rules, not invented selected rules", () => {
-    expect(EU_PLANS[2].rules.every((r) => r.origin.kind === "required")).toBe(true);
+    expect(EU_PLANS[2].rules.slice(0, 10).every((r) => r.origin.kind === "required")).toBe(true);
+    expect(EU_PLANS[2].rules.slice(10).map(({ rule, origin }) => ({ id: rule.id, origin, mode: rule.ics?.mode }))).toEqual([
+      "observe-cc-breaker-command", "observe-cc-oltc-step", "observe-cc-oltc-raise-only",
+    ].map((id) => ({ id, origin: { kind: "observe", action: "iec104-dpi" }, mode: "monitor" })));
     expect(EU_PLANS[1].rules.map((r) => r.rule.id)).not.toContain("weak-enterprise-vendor-remote");
     expect(US_PLANS[1].rules[0]).toMatchObject({ rule: { id: "enterprise-to-vendor-only" }, origin: { kind: "selected", action: "restrict-enterprise-to-vendor" } });
   });

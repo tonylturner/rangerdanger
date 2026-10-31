@@ -35,7 +35,7 @@ export function readCurriculumSections(packageDir: string, directory: string): R
 export function fixtureCurriculum(packageDir: string, topologyFile?: string): CurriculumBinding {
   const root = resolve(__dirname, "../..");
   const dir = resolve(root, packageDir);
-  const manifest = load(readFileSync(resolve(dir, "package.yml"), "utf8")) as { topology: string; curriculum: { dir: string }; ics_rules?: "allowed" | "forbidden" };
+  const manifest = load(readFileSync(resolve(dir, "package.yml"), "utf8")) as { topology: string; curriculum: { dir: string }; ics_rules?: CurriculumBinding["icsRules"] };
   const topology = load(readFileSync(topologyFile ?? resolve(dir, manifest.topology), "utf8")) as {
     nodes: { id: string; ip: string }[];
     networks: { id: string; zone: string; subnet: string; name: string }[];

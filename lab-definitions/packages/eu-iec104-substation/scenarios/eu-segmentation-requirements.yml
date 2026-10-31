@@ -62,7 +62,7 @@ steps:
     :::
 
     :::hint Expected requirements, not proof of enforcement
-    Block enterprise/vendor field access and enterprise RTU access. Restrict vendor engineering access to the named eng-ws→PLC web conduit, not the whole vendor zone. Pin field access to RTU, with the PLC→OLTC exception. Cross-zone foreign-source prevention needs the enterprise, vendor and non-RTU field closures plus the enterprise/vendor station restrictions. Required diagnostic denies always log. DPI and logging selections are planning-only and emit nothing. No action in this package authorizes commands within an allowed CC session. A LOG-only verdict has no selectable live implementation; retain its monitoring requirement in Notes. No allowed port establishes user identity.
+    Block enterprise/vendor field access and enterprise RTU access. Restrict vendor engineering access to the named eng-ws→PLC web conduit, not the whole vendor zone. Pin field access to RTU, with the PLC→OLTC exception. Cross-zone foreign-source prevention needs the enterprise, vendor and non-RTU field closures plus the enterprise/vendor station restrictions. Required diagnostic denies always log. IEC 104 DPI adds monitor-only CC command observations; Modbus DPI and logging selections emit no rules. Monitoring never satisfies a BLOCK requirement. No action in this package authorizes commands within an allowed CC session. The existing LOG-only foreign-source requirement has no selectable live implementation; the CC monitor rules do not cover that requirement. Retain it in Notes. No allowed port establishes user identity.
     :::
 
     | Required conduit | Pin | Port |
@@ -108,7 +108,7 @@ steps:
     1. New Kali→RTU:2404 and enterprise/vendor→field:502 connections time out under hardened policy.
     2. Vendor engineering access is named-source PLC web only; enterprise→vendor 3389/5900 is closed.
     3. All six operational intents survive, with completed current-connection GI inside the attempt window, non-null GOOD observations received since its start and healthy device/process state. Quiet status does not age out; missing GI evidence calls for **Interrogate station**, not a forced reconnect.
-    4. Unauthorized control is constrained by L4 today; semantic command restrictions remain a planned second layer. Do not certify DPI before it is live.
+    4. Unauthorized foreign-source control is constrained by L4; explicit IEC 104 monitoring records allowed-CC command matches but never prevents them. Verify applied shadow evidence separately from TCP proof.
     5. Export policy, test results, UTC bounds and PCAP; name an owner for each deferred risk.
 
     :::hint IEC 62443, NIS2 and BDEW

@@ -354,7 +354,7 @@ export async function getSubstationHealth() {
 // containd events use camelCase keys and semantic data in a nested
 // `attributes` object. The backend maps containd's `proto` to `protocol`.
 //
-// Three event `kind` values reach this endpoint:
+// Event kinds include:
 //   - "firewall.rule.hit" — nft drop/accept with attributes.action +
 //     attributes.ruleId; this is what students see as the segmentation
 //     enforcement signal in /console.
@@ -363,9 +363,14 @@ export async function getSubstationHealth() {
 //     event for the same packet carries the verdict).
 //   - "anomaly"           — IDS protocol-violation alerts with
 //     attributes.anomaly_type / message / severity.
+//   - "ics.decision"      — rule-local shadow decisions in monitor mode,
+//     not packet verdicts.
 export type NetworkEventAttributes = {
-  action?: "ALLOW" | "DENY";   // firewall.rule.hit only
-  ruleId?: string;             // firewall.rule.hit only
+  action?: "ALLOW" | "DENY";   // Actual rule hit or configured shadow action.
+  ruleId?: string;
+  decision?: "would_allow" | "would_drop";
+  mode?: "monitor" | "enforce";
+  reason?: string;
   proto?: string;
   port?: string;
   srcZone?: string;
@@ -393,8 +398,17 @@ export type NetworkEvent = {
   attributes?: NetworkEventAttributes;
 };
 
+export type NetworkEventsResponse = {
+  events: NetworkEvent[];
+  source: string;
+  message?: string;
+  since?: string;
+  historyTruncated?: boolean;
+  engineError?: string;
+};
+
 export async function getSubstationNetworkEvents() {
-  return request<{ events: NetworkEvent[]; source: string; message?: string }>("/substation/network-events");
+  return request<NetworkEventsResponse>("/substation/network-events");
 }
 
 // Firewall policy comparison (weak vs improved)
@@ -481,7 +495,7 @@ export type PlanExpectation = {
 export type CompiledPlan = {
   packageId: string; revision: number; label: PlanLabel; policyHash: string;
   actions: PlanAction[];
-  rules: { rule: PlanRule; origin: { kind: "required" | "selected" | "deferred"; action?: string } }[];
+  rules: { rule: PlanRule; origin: { kind: "required" | "selected" | "deferred" | "observe"; action?: string } }[];
   expectations: PlanExpectation[];
   config: Record<string, unknown>;
 };
@@ -684,7 +698,7 @@ export type CurriculumBinding = {
   roles: Record<string, string>;
   activities: Record<string, { policyActions: boolean; hideBanner: boolean; validate?: boolean }>;
   dynamicSteps: Record<string, "rules" | "positive" | "negative">;
-  icsRules: "allowed" | "forbidden";
+  icsRules: "allowed" | "forbidden" | "monitor";
   requirementOrder: string[];
   groupOrder: string[];
   impactOrder: string[];
@@ -710,14 +724,54 @@ export type CurriculumBinding = {
   nodeInference: { node: string; ip: string; pattern: string }[];
 };
 
-export type PlanICS = {
-  protocol?: string;
-  functionCode?: number[];
-  unitId?: number;
-  addresses?: string[];
-  objectClasses?: number[];
-  readOnly?: boolean;
-  writeOnly?: boolean;
-  direction?: string;
-  mode?: string;
+type PlanIEC104Selectors = {
+  typeIds?: number[];
+  classes?: ("monitor" | "control" | "system" | "unknown")[];
+  ca?: number[];
+  ioa?: { start: number; end: number }[];
+  cot?: number[];
+  originators?: number[];
+  negative?: boolean;
+  test?: boolean;
+  selectExecute?: "select" | "execute";
+  commandStates?: number[];
+  commandQualifiers?: number[];
 };
+
+export type PlanICS = {
+  objectClasses?: never; // CIP is not supported by plans.
+  readOnly?: boolean;
+  direction?: "" | "request" | "response";
+} & (
+  | (PlanIEC104Selectors & {
+      protocol: "iec104";
+      mode?: "" | "monitor" | "enforce";
+      functionCode?: never;
+      unitId?: never;
+      addresses?: never;
+      writeOnly?: never;
+    })
+  | ({ [K in keyof PlanIEC104Selectors]?: never } & {
+      functionCode?: number[];
+      writeOnly?: boolean;
+    } & (
+      | {
+          protocol: "modbus";
+          unitId?: number;
+          addresses?: string[];
+          mode?: "" | "monitor" | "enforce"; // Empty/absent inherits the envelope.
+        }
+      | {
+          protocol: "dnp3";
+          unitId?: never;
+          addresses?: never; // Point indexes need groups, which plans cannot express.
+          mode?: "" | "monitor" | "enforce";
+        }
+      | {
+          protocol?: "";
+          unitId?: never;
+          addresses?: never;
+          mode?: "";
+        }
+    ))
+);

@@ -64,17 +64,29 @@ describe("EU curriculum example — shared machinery, EU facts", () => {
       ["ids-deployment", 80], ["ot-asset-inventory", 100], ["vendor-zta-broker", 150],
     ]);
   });
-  it("describes protocol reviews as planning-only, not future enforcement", () => {
+  it("distinguishes planning-only Modbus review from IEC 104 monitoring", () => {
     const suffix = "Planning-only protocol review; this range emits no protocol rule. The L4 source pin enforces; DPI detects and logs.";
     expect(EU.catalog.find((action) => action.id === "modbus-dpi")?.why).toBe(
       `Plan function-code restrictions for southbound Modbus. ${suffix}`,
     );
     expect(EU.catalog.find((action) => action.id === "iec104-dpi")?.why).toBe(
-      `Plan breaker IOA 3001 denial, even from CC; preserve monitoring, system reads and RMU/OLTC commands. ${suffix}`,
+      "Observe CC breaker and OLTC commands with three explicit monitor rules; compare lower and raise matches. Monitoring never blocks or satisfies a BLOCK requirement. The L4 source pin enforces; DPI detects and logs.",
     );
+    expect(EU.icsRules).toBe("monitor");
   });
-  it.each(EU_PLANS)("renders server-owned $label rules without introducing ICS predicates", (plan) => {
-    expect(JSON.stringify(plan.config)).not.toMatch(/"ics"\s*:/);
+  it.each(EU_PLANS)("renders server-owned $label observations only when selected", (plan) => {
+    const observations = plan.rules.filter(({ rule }) => rule.ics);
+    if (plan.label === "hardened") {
+      expect(observations).toHaveLength(3);
+      for (const { rule, origin } of observations) {
+        expect(rule.ics).toMatchObject({ protocol: "iec104", mode: "monitor" });
+        expect(origin).toEqual({ kind: "observe", action: "iec104-dpi" });
+      }
+      expect(JSON.stringify(plan.config).match(/"ics"\s*:/g)).toHaveLength(3);
+    } else {
+      expect(observations).toEqual([]);
+      expect(JSON.stringify(plan.config)).not.toMatch(/"ics"\s*:/);
+    }
     const rules = renderRuleTable(plan, EU);
     expect(rules).toContain("control-centre-to-rtu-iec104");
     expect(rules).toContain("rtu-to-feeder-modbus");
@@ -82,7 +94,8 @@ describe("EU curriculum example — shared machinery, EU facts", () => {
     expect(renderPlanTests(plan, EU, "implementation", "negative")).toContain("TCP/3389");
     expect(renderPlanTests(plan, EU, "hardening", "negative")).not.toContain("TCP/3389");
     expect(renderPlanTests(plan, EU, "hardening", "negative")).toContain("TCP/2404");
-    expect(actionEffectLabel(plan.actions.find((a) => a.id === "iec104-dpi")!.kind)).toBe("planning only: no firewall change");
+    expect(actionEffectLabel(plan.actions.find((a) => a.id === "iec104-dpi")!.kind)).toBe("detects and logs or inspects; changes no verdict");
+    expect(actionEffectLabel(plan.actions.find((a) => a.id === "modbus-dpi")!.kind)).toBe("planning only: no firewall change");
   });
 
   it("requires both enterprise and vendor field closures for the combined EU requirement", () => {

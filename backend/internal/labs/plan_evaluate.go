@@ -37,6 +37,9 @@ type PlanRoute struct {
 // lists match anything. ICS and logging never affect an L4 connection verdict.
 func Evaluate(rules []PlanRule, defaultAction string, tuple PlanTuple) Verdict {
 	for _, rule := range rules {
+		if rule.ICS != nil && rule.ICS.Mode == "monitor" {
+			continue
+		}
 		if !planZoneMatches(rule.SourceZones, tuple.SrcZone) ||
 			!planZoneMatches(rule.DestZones, tuple.DstZone) ||
 			!planAddressMatches(rule.Sources, tuple.SrcIP) ||

@@ -14,7 +14,7 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// Snapshots were updated for intentional catalog prose and unused presentation-data removal, and readiness-driven budgets.
 	for id, want := range map[string]string{
 		"us-dnp3-substation":   "1283db69bebb3f6604575c8b0b5e031b12925d978f8b5bc7c6ebb0c454367a74",
-		"eu-iec104-substation": "c7d6f368cc392eaed0ea4c681bb7f68ba2311818365703bd753ac830d2649010",
+		"eu-iec104-substation": "854e3e55dccc8c21a175862feba7e28a03b983256715dc55aa9df1689705b70d",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

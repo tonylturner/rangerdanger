@@ -45,6 +45,24 @@ describe("compiled tables", () => {
     expect(renderRuleTable(plan, binding)).not.toContain("undefined");
     expect(renderPlanTests(plan, binding, "hardening", "positive")).toContain("A1:");
   });
+  it("labels monitor actions as hypothetical observations, not verdicts or L4 rules", () => {
+    const plan = EU_PLANS[2];
+    const before = JSON.stringify(plan);
+    const table = renderRuleTable(plan, eu);
+    expect(table).toContain("| Decision / effect |");
+    expect(table).not.toContain("Verdict");
+    const observations = table.split("\n").filter((row) => row.includes("| observation:"));
+    expect(observations).toHaveLength(3);
+    expect(observations[0]).toContain("| would deny (monitor) |");
+    expect(observations[1]).toContain("| would allow (monitor) |");
+    expect(observations[2]).toContain("| would allow (monitor) |");
+    for (const row of observations) {
+      expect(row).toContain("observation: Iec104 dpi (iec104-dpi) — monitor only, not an L4 rule");
+      expect(row).not.toMatch(/\| (ALLOW|DENY) \|/);
+    }
+    expect(table.split("\n").find((row) => row.includes("control-centre-to-rtu-iec104:"))).toContain("| ALLOW | required |");
+    expect(JSON.stringify(plan)).toBe(before);
+  });
   it("trusts detect-only verdicts and renders bridged rows as invariant", () => {
     const plan = structuredClone(US_PLANS[0]);
     plan.actions.find((a) => a.id === "modbus-dpi")!.chosen = true;
@@ -52,7 +70,7 @@ describe("compiled tables", () => {
     expect(renderPlanTests(plan, binding, "hardening", "negative")).toContain("allow | deny");
     expect(renderPlanTests(plan, binding, "hardening", "positive")).toContain("A4: rtac-1 (10.30.30.20) → openplc-1 (10.30.30.30) TCP/8080 | allow | allow | invariant | bridged");
   });
-  it.each(EU_PLANS)("never synthesizes US addresses or ICS for EU $label", (plan) => {
+  it.each(EU_PLANS)("never synthesizes US addresses or changes server ICS for EU $label", (plan) => {
     const before = JSON.stringify(plan);
     expect(renderRuleTable(plan, eu)).not.toContain("20000");
     expect(JSON.stringify(plan)).toBe(before);

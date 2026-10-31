@@ -1,17 +1,16 @@
 """Offline route regression guard and embedded-UI probe tests; no live range."""
 
-from contextlib import redirect_stdout
-from email.message import Message
 import importlib.util
 import io
 import json
-from pathlib import Path
 import re
 import shlex
 import unittest
-from unittest.mock import patch
+from contextlib import redirect_stdout
+from email.message import Message
+from pathlib import Path
+from unittest.mock import call, patch
 from urllib.error import HTTPError, URLError
-
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -27,14 +26,24 @@ OLD_BYPASSES = (
     '\nsub_filter \'"/api/\' \'"/containd/api/\';\n',
 )
 RUNTIME = (
-    'function a(e){return(null!=e?e:window.location.pathname).startsWith("/containd/")?"/containd":""};'
+    'function r(e){let t=e??window.location.pathname;return"/containd"===t||t.startsWith("/containd/")?"/containd":""};'
     'U("/api/v1/auth/me");'
 )
-# Shared with the native PowerShell probe tests to pin both accepted shapes
+# Shared with the native PowerShell probe tests to pin the accepted shapes
 # and reject detections that do not derive the base from the pathname.
 AUTODETECT_CASES = (
     ('window.location.pathname.startsWith("/containd/")?"/containd":""', True),
     (RUNTIME, True),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===t||t.startsWith("/containd/")?"/containd":""}', True),
+    ("function base_$(path$) { let local_1 = path$ ?? window.location.pathname; return '/containd' === local_1 || local_1.startsWith( '/containd/' ) ? '/containd' : ''; }", True),
+    ('function r(e){let t=other??window.location.pathname;return"/containd"===t||t.startsWith("/containd/")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.search;return"/containd"===t||t.startsWith("/containd/")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===other||t.startsWith("/containd/")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===t||other.startsWith("/containd/")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===t||t.startsWith("/containd")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===t||t.includes("/containd/")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===t||t.startsWith("/containd/")?"/other":""}', False),
+    ('function r(e){let t=e??window.location.pathname;t=other;return"/containd"===t||t.startsWith("/containd/")?"/containd":""}', False),
     ("( null != path_1$ ? path_1$ : window.location.pathname ).startsWith( '/containd/' ) ? '/containd' : ''", True),
     ('location.pathname.startsWith("/containd/")?"/containd":""', False),
     ('window.location.search.startsWith("/containd/")?"/containd":""', False),
@@ -57,34 +66,32 @@ DOUBLE_PREFIXED = (
     'function w(e){return(0,r.Sw)("/containd/api/v1/pcap/download/".concat(encodeURIComponent(e)))};',
     't=(0,i.Le)("/containd/api/v1/cli/ws",window.location.protocol,window.location.host);',
 )
-# The served webpack runtime (with its CSS map); chunk 3888 has a named file, 6625 is the CLI console.
-WEBPACK = (
-    'r.u=e=>"static/chunks/"+(3888===e?"e868780c":e)+"."'
-    '+({3888:"cd737c579891689c",6625:"caa6f620978d1981"})[e]+".js",'
-    'r.miniCssF=e=>"static/css/"+({3786:"659eccb5db697b76"})[e]+".css",r.p="/containd/_next/",'
-)
-ON_DEMAND = (
-    "/containd/_next/static/chunks/e868780c.cd737c579891689c.js",
-    "/containd/_next/static/chunks/6625.caa6f620978d1981.js",
-)
 CLI_CHUNK = DOUBLE_PREFIXED[1].replace('"/containd/api/', '"/api/')
-# Shared with the native PowerShell probe tests: runtime shapes and the failure they
-# must give (None passes). Unknown shapes fail rather than skip on-demand chunks.
-WEBPACK_CASES = (
-    (WEBPACK, None),
-    ('t.p="/elsewhere/",' + WEBPACK, None),
-    (WEBPACK + 'r.p="/containd/_next/";', None),
-    # The first ===-test for an id decides its name, as in the JavaScript conditional chain.
-    (WEBPACK.replace('(3888===e?"e868780c":e)', '(3888===e?"e868780c":3888===e?"later":e)'), None),
-    ("", "0 webpack runtime chunk maps, expected 1"),
-    (WEBPACK + WEBPACK, "2 webpack runtime chunk maps, expected 1"),
-    (WEBPACK.replace('r.p="/containd/_next/",', ""), "exactly one public path"),
-    (WEBPACK + 'r.p="/other/";', "exactly one public path"),
-    (WEBPACK.replace('"/containd/_next/"', '"/_next/"'), "on-demand chunk: /_next/static/chunks/"),
-    (WEBPACK.replace("r.u=e=>", "r.u=function(e){return ").replace('".js",r.miniCssF', '".js"},r.miniCssF'),
-     "0 webpack runtime chunk maps"),
-    (WEBPACK.replace('6625:"caa6f620978d1981"', '6625:"../../x"'), "0 webpack runtime chunk maps"),
-    (WEBPACK.replace('"e868780c":e', '"e868780c":t'), "0 webpack runtime chunk maps"),
+
+FIXTURES = ROOT / "scripts/tests/fixtures/containd-ui-turbopack"
+TURBOPACK = (FIXTURES / "runtime.js").read_text()
+IMPORTS = (FIXTURES / "console.js").read_text()
+TURBO_PATHS = (
+    "/containd/_next/static/chunks/1ixu-i6j99dj0.js",
+    "/containd/_next/static/chunks/3h4dmpbixi6eo.js",
+)
+
+# Runtime/import variants are shared by the Python and native PowerShell tests.
+TURBOPACK_CASES = (
+    (TURBOPACK, IMPORTS, None),
+    ("", IMPORTS, "unsupported or ambiguous Turbopack runtime"),
+    ('r.u=e=>"static/chunks/"+e+".js",r.p="/containd/_next/";', IMPORTS,
+     "unsupported or ambiguous Turbopack runtime"),
+    (TURBOPACK * 2, IMPORTS, "unsupported or ambiguous Turbopack runtime"),
+    (TURBOPACK.replace("return M(e,t,r)", "return other(e,t,r)"), IMPORTS, "unsupported Turbopack loader"),
+    (TURBOPACK.replace("return`${t}${r}${n}`", "return r"), IMPORTS, "unsupported Turbopack loader"),
+    (TURBOPACK + 'TURBOPACK_CHUNK_BASE_PATH="/other/";', IMPORTS, "unsupported Turbopack loader"),
+    (TURBOPACK, IMPORTS.replace(".l(t)", ".l(x)"), "unsupported Turbopack dependency"),
+    (TURBOPACK, IMPORTS.replace("Promise.all", "load"), "unsupported Turbopack dependency"),
+    (TURBOPACK, IMPORTS + 'load("static/chunks/unknown.js")', "unsupported Turbopack dependency"),
+    (TURBOPACK, IMPORTS.replace("1ixu-i6j99dj0.js", "../other.js"), "unsupported Turbopack dependency"),
+    (TURBOPACK, 'e.l(dynamicPath);', "unsupported Turbopack dependency"),
+    (TURBOPACK, IMPORTS + 'e.l("static/"+name+".js");', "unsupported Turbopack dependency"),
 )
 
 # Route-page literals and the pages they name (shared with the PowerShell probe tests).
@@ -261,18 +268,6 @@ class ChunkTests(unittest.TestCase):
             with self.subTest(body=body), self.assertRaises(probe.ProbeError):
                 probe.check_chunks({"shared.js": RUNTIME, "bad.js": body})
 
-    def test_ondemand_chunks_follow_the_runtime_chunk_map(self):
-        self.assertEqual(probe.ondemand_chunks({"a.js": RUNTIME, "webpack.js": WEBPACK}), list(ON_DEMAND))
-        self.assertEqual(
-            probe.ondemand_chunks({"w.js": 'n.p="/p/",n.u=t=>"static/chunks/"+t+"."+({})[t]+".js"'}), [],
-        )
-        self.assertEqual(
-            probe.ondemand_chunks({"w.js": 'n.p="/p/";n.u=t=>"static/chunks/"+t+"."+({1:"a",22:"b"})[t]+".js"'}),
-            ["/p/static/chunks/1.a.js", "/p/static/chunks/22.b.js"],
-        )
-        with self.assertRaisesRegex(probe.ProbeError, "2 webpack runtime chunk maps"):
-            probe.ondemand_chunks({"a.js": WEBPACK, "b.js": WEBPACK})
-
     def test_route_pages_from_path_literals(self):
         for body, pages in ROUTE_CASES:
             with self.subTest(body=body):
@@ -316,45 +311,72 @@ class ProbeTests(unittest.TestCase):
     def setUp(self):
         self.responses = {
             "/containd/": (
-                '<script src="/containd/_next/static/chunks/shared.js"></script>'
-                '<script src="/containd/_next/static/chunks/console.js"></script>'
-                '<script src="/containd/_next/static/chunks/shared.js"></script>'
-                '<script src="/containd/_next/static/chunks/webpack.js"></script>',
+                (
+                    '<script src="/containd/_next/static/chunks/shared.js"></script>'
+                    '<script src="/containd/_next/static/chunks/console.js"></script>'
+                    '<script src="/containd/_next/static/chunks/shared.js"></script>'
+                    '<script src="/containd/_next/static/chunks/turbopack.js"></script>'
+                ),
                 "text/html", 200,
             ),
             "/containd/_next/static/chunks/shared.js": (RUNTIME, "application/javascript", 200),
-            "/containd/_next/static/chunks/console.js": (SERVED, "text/javascript", 200),
-            "/containd/_next/static/chunks/webpack.js": (WEBPACK, "application/javascript", 200),
-            ON_DEMAND[0]: ("", "application/javascript", 200),
-            ON_DEMAND[1]: (CLI_CHUNK, "application/javascript", 200),
+            "/containd/_next/static/chunks/console.js": (SERVED + IMPORTS, "text/javascript", 200),
+            "/containd/_next/static/chunks/turbopack.js": (TURBOPACK, "application/javascript", 200),
+            TURBO_PATHS[0]: ("", "application/javascript", 200),
+            TURBO_PATHS[1]: (CLI_CHUNK, "application/javascript", 200),
             "/containd/api/v1/auth/login": (
                 '{"token":"test-token","user":{"username":"containd"}}', "application/json", 200,
             ),
             "/containd/api/v1/auth/me": ('{"username":"containd"}', "application/json", 200),
-            probe.API_ROUTES[0]: REFUSED,
-            probe.API_ROUTES[1]: (
+            "/containd/api/v1/cli/ws/ticket": (
+                '{"ticket":"fixture-ticket","expiresIn":30}', "application/json", 200,
+            ),
+            probe.API_ROUTES[0]: (
                 '{"error":"engine pcap download status 404"}', "application/json", 400,
             ),
         }
         self.requests = []
+        self.ticket_count = 0
+        self.ticket_expires_in = 30
+        self.ticket_missing = False
 
     def open(self, request, timeout):
         self.assertEqual(timeout, 15)
         self.assertTrue(request.full_url.startswith("http://127.0.0.1:8088/containd/"))
         path = request.full_url.removeprefix("http://127.0.0.1:8088")
         self.requests.append(request)
+        if path == "/containd/api/v1/cli/ws/ticket":
+            self.ticket_count += 1
+            self.assertEqual(request.get_method(), "POST")
+            self.assertIsNone(request.data)
+            self.assertEqual(request.get_header("Authorization"), "Bearer test-token")
+            self.assertIsNone(request.get_header("Cookie"))
+            body = {"expiresIn": self.ticket_expires_in}
+            if not self.ticket_missing:
+                body["ticket"] = f"fixture-ticket-{self.ticket_count}"
+            return Response(json.dumps(body), "application/json")
         response = self.responses[path]
         if isinstance(response, Exception):
             raise response
         return Response(*response)
 
     def run_probe(self):
+        self.ticket_count = 0
+        self.requests = []
         output = io.StringIO()
         with patch.object(probe, "build_opener") as build, patch.object(probe, "cli_upgrade") as upgrade, \
                 redirect_stdout(output):
             build.return_value.open.side_effect = self.open
             probe.probe("http://127.0.0.1:8088/")
-            upgrade.assert_called_once_with("http://127.0.0.1:8088", "test-token")
+            upgrade.assert_has_calls([
+                call("http://127.0.0.1:8088", expected_status=401),
+                call("http://127.0.0.1:8088", token="test-token", expected_status=401),
+                call("http://127.0.0.1:8088", token="test-token", query_token=True, expected_status=401),
+                call("http://127.0.0.1:8088", ticket="fixture-ticket-1"),
+                call("http://127.0.0.1:8088", ticket="fixture-ticket-2"),
+                call("http://127.0.0.1:8088", ticket="fixture-ticket-2", expected_status=401),
+            ])
+            self.assertEqual(upgrade.call_count, 6)
         return output.getvalue()
 
     def test_probes_all_chunks_then_logs_in_reads_me_and_checks_api_routes(self):
@@ -362,48 +384,50 @@ class ProbeTests(unittest.TestCase):
         self.assertIn("5 chunks (2 on demand)", output)
         self.assertIn("/containd/api/v1/auth/me: 200 application/json", output)
         self.assertIn("400 from the containd API", output)
-        self.assertEqual(len(self.requests), 10)
+        self.assertEqual(len(self.requests), 11)
         self.assertEqual([req.full_url.removeprefix("http://127.0.0.1:8088") for req in self.requests[4:6]],
-                         list(ON_DEMAND))
-        login, me, cli, pcap = self.requests[-4:]
+                         list(TURBO_PATHS))
+        login, me, ticket1, ticket2, pcap = self.requests[-5:]
         self.assertEqual(login.get_method(), "POST")
         self.assertEqual(json.loads(login.data), {"username": "containd", "password": "containd"})
-        for request, path in ((me, "/containd/api/v1/auth/me"), (cli, probe.API_ROUTES[0]),
-                              (pcap, probe.API_ROUTES[1])):
-            self.assertEqual(request.get_method(), "GET")
-            self.assertEqual(request.full_url, "http://127.0.0.1:8088" + path)
+        self.assertEqual(me.get_method(), "GET")
+        self.assertEqual(me.full_url, "http://127.0.0.1:8088/containd/api/v1/auth/me")
+        self.assertEqual(me.get_header("Authorization"), "Bearer test-token")
+        for request in (ticket1, ticket2):
+            self.assertEqual(request.get_method(), "POST")
+            self.assertEqual(request.full_url, "http://127.0.0.1:8088/containd/api/v1/cli/ws/ticket")
             self.assertEqual(request.get_header("Authorization"), "Bearer test-token")
+            self.assertIsNone(request.get_header("Cookie"))
+        self.assertEqual(pcap.get_method(), "GET")
+        self.assertEqual(pcap.full_url, "http://127.0.0.1:8088" + probe.API_ROUTES[0])
+        self.assertEqual(pcap.get_header("Authorization"), "Bearer test-token")
         self.assertTrue(all("/containd/containd/" not in req.full_url for req in self.requests))
 
+    def test_ticket_issuance_requires_nonempty_ticket_and_exact_ttl(self):
+        for missing, ttl in ((True, 30), (False, 29), (False, 31)):
+            with self.subTest(missing=missing, ttl=ttl):
+                self.ticket_missing = missing
+                self.ticket_expires_in = ttl
+                with self.assertRaisesRegex(probe.ProbeError, "expected an opaque ticket and expiresIn=30"):
+                    self.run_probe()
+
     def test_bad_literal_only_in_an_on_demand_chunk_fails_before_login(self):
-        # Regression: the CLI console chunk is not a page script; only the runtime map names it.
-        self.responses[ON_DEMAND[1]] = (DOUBLE_PREFIXED[1], "application/javascript", 200)
+        # A lazy console dependency is not among the page scripts.
+        self.responses[TURBO_PATHS[1]] = (DOUBLE_PREFIXED[1], "application/javascript", 200)
         with self.assertRaisesRegex(
             probe.ProbeError,
-            "6625.caa6f620978d1981.js: runtime-based API literal was rewritten: /containd/api/v1/cli/ws$",
+            "3h4dmpbixi6eo.js: runtime-based API literal was rewritten: /containd/api/v1/cli/ws$",
         ):
             self.run_probe()
         self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
 
     def test_on_demand_chunk_must_be_served_as_javascript(self):
-        self.responses[ON_DEMAND[0]] = ("<html>fallback</html>", "text/html", 200)
-        with self.assertRaisesRegex(probe.ProbeError, "e868780c.cd737c579891689c.js: expected 200"):
+        self.responses[TURBO_PATHS[0]] = ("<html>fallback</html>", "text/html", 200)
+        with self.assertRaisesRegex(probe.ProbeError, "1ixu-i6j99dj0.js: expected 200"):
             self.run_probe()
 
-    def test_webpack_runtime_shapes(self):
-        for body, message in WEBPACK_CASES:
-            with self.subTest(body=body):
-                self.requests = []
-                self.responses["/containd/_next/static/chunks/webpack.js"] = (body, "text/javascript", 200)
-                if message is None:
-                    self.assertIn("5 chunks (2 on demand)", self.run_probe())
-                else:
-                    with self.assertRaisesRegex(probe.ProbeError, re.escape(message)):
-                        self.run_probe()
-                    self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
-
     def add_routes(self):
-        self.responses["/containd/_next/static/chunks/console.js"] = (SERVED + NAV, "text/javascript", 200)
+        self.responses["/containd/_next/static/chunks/console.js"] = (SERVED + IMPORTS + NAV, "text/javascript", 200)
         for path, body in ROUTE_PAGES.items():
             self.responses[path] = (body, "text/html; charset=utf-8", 200)
         for path, body in ROUTE_CHUNKS.items():
@@ -414,9 +438,9 @@ class ProbeTests(unittest.TestCase):
         output = self.run_probe()
         self.assertIn("8 chunks (2 on demand), 4 route pages", output)
         paths = [req.full_url.removeprefix("http://127.0.0.1:8088") for req in self.requests]
-        self.assertEqual(paths[4:6], list(ON_DEMAND))
-        self.assertEqual(paths[6:-4], ROUTE_REQUESTS)
-        self.assertTrue(all(req.get_method() == "GET" for req in self.requests[:-4]))
+        self.assertEqual(paths[4:6], list(TURBO_PATHS))
+        self.assertEqual(paths[6:-5], ROUTE_REQUESTS)
+        self.assertTrue(all(req.get_method() == "GET" for req in self.requests[6:-5]))
 
     def test_bad_literal_only_in_a_route_page_chunk_fails_before_login(self):
         # Regression: a route's page chunk loads only from that route's HTML, here a
@@ -434,7 +458,7 @@ class ProbeTests(unittest.TestCase):
         # Regression: the proxy rewrote no "/identities link, so the UI link left containd.
         self.add_routes()
         self.responses["/containd/_next/static/chunks/console.js"] = (
-            SERVED + NAV.replace('"/containd/identities/"', '"/identities/"'), "text/javascript", 200,
+            SERVED + IMPORTS + NAV.replace('"/containd/identities/"', '"/identities/"'), "text/javascript", 200,
         )
         with self.assertRaisesRegex(
             probe.ProbeError,
@@ -471,7 +495,7 @@ class ProbeTests(unittest.TestCase):
                 self.assertFalse(any(req.get_method() == "POST" for req in self.requests))
 
     def test_route_crawl_is_bounded(self):
-        self.responses["/containd/_next/static/chunks/console.js"] = (SERVED + TOO_MANY_ROUTES, "text/javascript", 200)
+        self.responses["/containd/_next/static/chunks/console.js"] = (SERVED + IMPORTS + TOO_MANY_ROUTES, "text/javascript", 200)
         with self.assertRaisesRegex(probe.ProbeError, f"more than {probe.MAX_ROUTE_PAGES} route pages"):
             self.run_probe()
         self.assertFalse(any("/containd/r" in req.full_url for req in self.requests))
@@ -556,11 +580,15 @@ class ProbeTests(unittest.TestCase):
             URLError("offline"),
             HTTPError("http://127.0.0.1:8088/containd/", 502, "Bad Gateway", {}, io.BytesIO()),
         ):
-            with self.subTest(error=error), patch.object(probe, "probe", side_effect=error):
-                with patch.object(probe.sys, "argv", ["probe"]), redirect_stdout(io.StringIO()):
-                    with patch.object(probe.sys, "stderr", new_callable=io.StringIO) as stderr:
-                        self.assertEqual(probe.main(), 1)
-                        self.assertIn("FAIL containd UI:", stderr.getvalue())
+            with (
+                self.subTest(error=error),
+                patch.object(probe, "probe", side_effect=error),
+                patch.object(probe.sys, "argv", ["probe"]),
+                redirect_stdout(io.StringIO()),
+                patch.object(probe.sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                self.assertEqual(probe.main(), 1)
+                self.assertIn("FAIL containd UI:", stderr.getvalue())
 
 
 if __name__ == "__main__":

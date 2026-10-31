@@ -320,6 +320,16 @@ Direct operations against the containd NGFW.
 `/api/firewall/health` includes containd's `ipv4Forwarding` (`enabled`, `disabled`, `unknown`)
 and `managementBinding.state` (`configured`, `unbound-appliance`, `unknown`).
 HTTP 200/status `ok` is management liveness, not forwarding readiness.
+The response also preserves `managementRecovery` and `enforcement` (each with
+`state` and `reason`), and `icsEnforcement` (`state`, `enforcing`, `partial`,
+`notEnforcing`, `monitoring` counts). Omitted diagnostics are not healthy
+observations. Recovery states are `inactive`, `active`, `pending`, `failed`
+or `unknown`; active recovery means fail-closed new transit, not normal
+forwarding. Enforcement states are `enforcing`, `degraded`, `disabled`,
+`unavailable` or `unknown`. ICS coverage states are `none`, `monitoring`,
+`enforcing`, `partial`, `not_enforcing` or `unknown`.
+These diagnostics never gate management access or a repairing seed commit.
+After any apply, re-read health; readiness alone does not certify enforcement.
 Its `managementReservation` preserves the raw authenticated
 `GET /api/v1/system/management-reservation` status, including `bootFault`,
 `recovery`, `listenerFaults` and guard fault history. A failed diagnostic read
@@ -335,8 +345,8 @@ Policy applies use only `POST /api/v1/config/candidate` followed by
 `POST /api/v1/config/commit`; both must succeed. There is no legacy
 `/config/import` fallback. Before staging, the backend copies appliance-owned
 NIC `device` bindings from the running configuration by logical interface name.
-The backend enforces the containd 0.1.35 minimum at seed readiness and range
-adoption after a backend restart; a 0.1.35 prerelease is below that floor.
+The backend enforces the containd 0.1.36 minimum at seed readiness and range
+adoption after a backend restart; a 0.1.36 prerelease is below that floor.
 
 The compile response's `label` is `weak`, `partial` or `hardened`.
 `actions` lists `{id, kind, chosen}` in catalog order (`kind` is `enforce`,

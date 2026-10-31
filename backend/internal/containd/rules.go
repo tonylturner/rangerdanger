@@ -32,6 +32,7 @@ type Protocol struct {
 // backend reads. containd's GET /api/v1/config always serialises
 // functionCode as a numeric array.
 type ICSConfig struct {
+	Mode          string `json:"mode,omitempty"`
 	Protocol      string `json:"protocol,omitempty"`     // "modbus", "dnp3", etc.
 	FunctionCodes []int  `json:"functionCode,omitempty"` // Allowed function codes
 	ReadOnly      bool   `json:"readOnly,omitempty"`     // containd's read-only class
@@ -117,6 +118,10 @@ func (c *Client) GetZoneRuleSummaries(ctx context.Context) ([]ZoneRuleSummary, e
 	pairRules := make(map[zonePair][]FirewallRule)
 
 	for _, rule := range rules {
+		// Observation rules neither admit nor deny and do not restrict edges.
+		if rule.ICS != nil && rule.ICS.Mode == "monitor" {
+			continue
+		}
 		srcZones := rule.SourceZones
 		if len(srcZones) == 0 {
 			srcZones = []string{"any"}

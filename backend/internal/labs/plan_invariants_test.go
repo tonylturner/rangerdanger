@@ -59,7 +59,7 @@ func TestPlanInvariants(t *testing.T) {
 		bits                  int
 	}{
 		{"us-dnp3-substation", 8, 13, 9},
-		{"eu-iec104-substation", 10, 27, 7},
+		{"eu-iec104-substation", 10, 27, 8},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			pkg := planPackage(t, tc.id)

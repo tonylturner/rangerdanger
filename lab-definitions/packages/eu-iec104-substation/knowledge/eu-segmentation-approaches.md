@@ -4,7 +4,7 @@
 
 **Separation** limits which systems have a path to one another. **Enforcement** decides whether a particular exchange may cross a boundary. **Inspection** describes what information the enforcement point can evaluate. These are related but not interchangeable: a VLAN can separate broadcast domains without deciding whether a Modbus request is a read or a write, while a firewall rule can permit a service without authorizing every operation that service carries.
 
-Treat the approaches below as a general design taxonomy, not a list of capabilities demonstrated by this range. In the EU reference package, the firewall policy is enforced at L4 and DPI is disabled. No IEC 104 ASDU, common-address or IOA predicate, or Modbus function-code/register filter is demonstrated. A decoded packet is evidence of observation, not command-aware enforcement.
+Treat the approaches below as a general design taxonomy, not a list of capabilities demonstrated by this range. In the EU reference package, the firewall policy is enforced at L4. Improved adds explicit-monitor IEC 104 ASDU, common-address, IOA and command-state observations, but no command denial or Modbus function-code/register filter. A decoded packet is evidence of observation, not command-aware enforcement.
 
 ### Physical separation and one-way links
 
@@ -36,7 +36,7 @@ Stateful rules also make timing relevant: a policy change that blocks new sessio
 
 Deep packet inspection (DPI) is a generic capability in which a supported application parser examines protocol content in addition to network headers. In principle, a product with a suitable parser and policy controls could make decisions about selected application fields or operations. Actual coverage depends on the product, protocol support and configuration; a label such as “next-generation firewall” is not evidence that a particular command predicate is enforced.
 
-For this EU package, DPI is explicitly disabled in the reference policy and command-aware IEC 104 or Modbus filtering is not demonstrated. Do not claim that the firewall allows or blocks IEC 104 commands by ASDU type, common address or IOA, or Modbus operations by function code or register. Captures and decoders can explain what was observed, but do not change the L4 enforcement boundary. The [risk-design workflow](#eu-iec62443-risk-design) likewise treats the absence of command-aware enforcement as a design limitation, not a hidden feature.
+For this EU package, Improved enables three explicit-monitor IEC 104 rules for CC breaker and OLTC requests; command-aware IEC 104 or Modbus prevention is not demonstrated. Do not claim that the firewall allows or blocks IEC 104 commands by ASDU type, common address or IOA, or Modbus operations by function code or register. Captures and decoders can explain what was observed, but do not change the L4 enforcement boundary. The [risk-design workflow](#eu-iec62443-risk-design) likewise treats the absence of command-aware enforcement as a design limitation, not a hidden feature.
 
 ### Host controls and controls within a zone
 
@@ -54,7 +54,7 @@ Start with the function and its necessary communication, then identify initiator
 | VLAN / Layer 2 | Separates broadcast domains | Does not authorize application operations |
 | Router ACL / Layer 3 | Restricts routed addresses and services | Does not identify commands within an allowed service |
 | Stateful firewall / Layer 4 | Controls new flows and tracks sessions | A permitted service can still carry multiple operations |
-| DPI / Layer 7 | May inspect supported application content | Capability and enforcement depend on parser and policy; disabled and not demonstrated here |
+| DPI / Layer 7 | May inspect supported application content | Explicit-monitor IEC 104 observations here; no command prevention. NFQUEUE 101 adds latency and an engine forwarding dependency |
 | Host controls | Can limit selected endpoint or within-zone paths | Coverage depends on endpoint support and configuration |
 | Data diode | Enforces a designed one-way transfer | Not suited by itself to interactive, bidirectional control |
 

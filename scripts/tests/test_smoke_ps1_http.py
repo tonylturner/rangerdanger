@@ -1,22 +1,19 @@
 """Loopback portal fixture proves sessions and browser-origin CLI upgrades in both twins."""
 import base64
-from contextlib import contextmanager
 import hashlib
-from http.client import HTTPConnection
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import subprocess
 import sys
 import threading
 import unittest
-from urllib.parse import urlsplit
+from contextlib import contextmanager
+from http.client import HTTPConnection
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
+from .test_containd_ui_prefix import ROOT, TURBOPACK
 from .test_setup_ps1_root import powershell
-from .test_smoke_ps1_probe import CLI, GOOD_CHUNK, PCAP, RUNTIME_SCRIPT
-from .test_containd_ui_prefix import ROOT
-
-# A webpack runtime with no on-demand chunks: this fixture covers the HTTP session.
-EMPTY_RUNTIME = 'r.u=e=>"static/chunks/"+e+"."+({})[e]+".js",r.p="/containd/_next/";'
+from .test_smoke_ps1_probe import CLI, GOOD_CHUNK, PCAP, RUNTIME_SCRIPT, TICKET
 
 
 @contextmanager
@@ -24,6 +21,9 @@ def portal(mode):
     errors = []
     seen = []
     closed = threading.Event()
+    issued = set()
+    consumed = set()
+    next_ticket = 0
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -45,19 +45,17 @@ def portal(mode):
 
         def do_GET(self):
             seen.append(self.path)
-            if self.path == CLI and self.headers.get("Upgrade", "").lower() == "websocket":
+            request = urlsplit(self.path)
+            if request.path == CLI and self.headers.get("Upgrade", "").lower() == "websocket":
                 if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}":
                     errors.append("browser Origin lost")
-                if self.headers.get("Authorization") != "Bearer lab-token":
-                    self.reply(401, "application/json", '{"error":"unauthorized"}')
+                query = parse_qs(request.query)
+                ticket = query.get("ticket", [""])[0]
+                if (not ticket or query.get("token") or self.headers.get("Authorization")
+                        or ticket not in issued or ticket in consumed):
+                    self.reply(401, "application/json", '{"error":"ticket required"}')
                     return
-                # Model the upstream's Host/Origin rule; strip-host simulates nginx's old $host.
-                host = self.headers.get("Host", "")
-                if mode == "strip-host":
-                    host = urlsplit("//" + host).hostname
-                if host != urlsplit(self.headers.get("Origin", "")).netloc:
-                    self.reply(403, "text/plain", "Forbidden\n")
-                    return
+                consumed.add(ticket)
                 key = self.headers.get("Sec-WebSocket-Key", "")
                 if (len(base64.b64decode(key)) != 16 or self.headers.get("Sec-WebSocket-Version") != "13"
                         or self.headers.get("Connection", "").lower() != "upgrade"):
@@ -89,10 +87,10 @@ def portal(mode):
                            **{"Set-Cookie": "session=fixture; Path=/containd/; HttpOnly"})
             elif self.path == "/containd/_next/static/main.js":
                 self.reply(200, "application/javascript", GOOD_CHUNK)
-            elif self.path == "/containd/_next/static/webpack.js":
-                self.reply(200, "application/javascript", EMPTY_RUNTIME)
-            elif self.path in (CLI, PCAP):
-                # The containd API refuses a plain GET to the websocket and a missing capture.
+            elif self.path == "/containd/_next/static/turbopack.js":
+                self.reply(200, "application/javascript", TURBOPACK)
+            elif request.path == PCAP:
+                # A missing PCAP must remain an API refusal, not an HTML fallback.
                 if self.headers.get("Authorization") != "Bearer lab-token":
                     errors.append(f"bearer missing on {self.path}")
                 self.reply(400, "application/json", '{"error":"bad request"}')
@@ -114,7 +112,21 @@ def portal(mode):
 
         def do_POST(self):
             seen.append(self.path)
-            if self.path != "/containd/api/v1/auth/login":
+            nonlocal next_ticket
+            request = urlsplit(self.path)
+            if request.path == TICKET:
+                if self.headers.get("Authorization") != "Bearer lab-token":
+                    errors.append("Bearer credential missing on ticket issuance")
+                    self.reply(401, "application/json", '{"error":"unauthorized"}')
+                    return
+                if self.headers.get("Cookie"):
+                    errors.append("ticket issuance unexpectedly used ambient cookie")
+                next_ticket += 1
+                ticket = f"fixture-ticket-{next_ticket}"
+                issued.add(ticket)
+                self.reply(200, "application/json", json.dumps({"ticket": ticket, "expiresIn": 30}))
+                return
+            if request.path != "/containd/api/v1/auth/login":
                 errors.append(f"unexpected POST {self.path}")
             if self.headers.get("Cookie") != "session=fixture":
                 errors.append("cookie missing on login")
@@ -149,25 +161,39 @@ catch { Write-Output "FAIL: $_"; exit 1 }
                 else:
                     result = subprocess.run(
                         [sys.executable, str(ROOT / "scripts/lib/containd-ui-probe.py"), origin],
-                        capture_output=True, text=True, timeout=30,
+                        capture_output=True, text=True, timeout=30, check=False,
                     )
-                self.assertEqual(result.returncode, 0 if mode == "ok" else 1, result.stdout + result.stderr)
+                success = mode in ("ok", "strip-host")
+                self.assertEqual(result.returncode, 0 if success else 1, result.stdout + result.stderr)
                 self.assertNotIn("VoidTaskResult", result.stdout)
-                if mode in ("ok", "bad-accept"):
+                if mode in ("ok", "strip-host", "bad-accept"):
                     self.assertTrue(closed.wait(3), "probe must close immediately after 101")
-                if mode in ("strip-host", "fallback"):
-                    status = "403" if mode == "strip-host" else "200"
+                if mode == "fallback":
                     version = "" if twin == "python" else "HTTP/1.1 "
-                    self.assertIn(f"expected websocket 101, got {version}{status}",
+                    self.assertIn(f"expected HTTP 101, got {version}200",
                                   result.stdout + result.stderr)
                 if mode == "bad-accept":
                     self.assertIn("invalid websocket upgrade headers", result.stdout + result.stderr)
                 self.assertEqual(errors, [])
-                self.assertEqual(seen, [
-                    "/containd/", "/containd/_next/static/main.js", "/containd/_next/static/webpack.js",
+                common = [
+                    "/containd/", "/containd/_next/static/main.js", "/containd/_next/static/turbopack.js",
                     "/containd/api/v1/auth/login",
-                ] + ({"redirect": ["/containd/api/v1/auth/me"], "auth": []}.get(
-                    mode, ["/containd/api/v1/auth/me", CLI, PCAP, CLI])))
+                ]
+                if mode == "redirect":
+                    expected = common + ["/containd/api/v1/auth/me"]
+                elif mode == "auth":
+                    expected = common
+                else:
+                    expected = common + [
+                        "/containd/api/v1/auth/me", CLI, CLI, CLI + "?token=lab-token",
+                        TICKET, CLI + "?ticket=fixture-ticket-1",
+                    ]
+                    if mode not in ("fallback", "bad-accept"):
+                        expected += [
+                            TICKET, CLI + "?ticket=fixture-ticket-2",
+                            CLI + "?ticket=fixture-ticket-2", PCAP,
+                        ]
+                self.assertEqual(seen, expected)
 
     def test_native_powershell_session_and_browser_origin_upgrade(self):
         self.check_twin("powershell")
@@ -175,8 +201,8 @@ catch { Write-Output "FAIL: $_"; exit 1 }
     def test_native_python_session_and_browser_origin_upgrade(self):
         self.check_twin("python")
 
-    def test_fixture_rejects_host_without_origins_port(self):
-        with portal("ok") as (origin, errors, seen, closed):
+    def test_upgrade_without_ticket_is_rejected_even_with_bearer(self):
+        with portal("ok") as (origin, errors, _seen, _closed):
             url = urlsplit(origin)
             connection = HTTPConnection(url.hostname, url.port, timeout=3)
             try:
@@ -186,7 +212,7 @@ catch { Write-Output "FAIL: $_"; exit 1 }
                     "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
                 })
                 with connection.getresponse() as response:
-                    self.assertEqual(response.status, 403)
+                    self.assertEqual(response.status, 401)
             finally:
                 connection.close()
             self.assertEqual(errors, [])

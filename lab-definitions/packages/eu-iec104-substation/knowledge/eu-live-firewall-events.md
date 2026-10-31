@@ -1,4 +1,4 @@
-The segmentation drawer's shared “Live Firewall Events” panel is useful as a narrow view of logged firewall-rule evidence in the EU range. Its title and generic category counters do not mean this package inspects IEC 104 or Modbus commands: the EU reference policy disables DPI and enforces its network boundary at L4. DPI being off is an intentional design choice, not a gap in the evidence.
+The segmentation drawer's shared “Live Firewall Events” panel is useful as a narrow view of logged firewall-rule evidence in the EU range. Improved also emits explicit-monitor IEC 104 command observations, not command denials. The L4 source pin enforces; DPI detects and logs. Modbus DPI remains planning-only.
 
 ### Where the events come from
 
@@ -20,9 +20,9 @@ For a firewall-rule event, the row shows a localized time, an `ALLOW` or `DENY` 
 12:34:56  DENY  10.10.10.50 → 10.30.30.20:2404  deny-unauthorized-iec104  [tcp]
 ```
 
-When events are present, the badge summarizes counts for `rule`, `dpi`, and `ids` event kinds plus `deny`; the list itself has no category or verdict filter. It displays up to five rows in compact mode or ten in the full drawer. In the EU reference setup, expect logged firewall-rule evidence rather than DPI-decoded IEC 104 or Modbus decisions. The shared UI can represent other event kinds, but their labels and counters are generic UI capability, not evidence that EU command inspection is enabled.
+When events are present, the badge summarizes counts for `rule`, `dpi`, and `ids` event kinds plus `deny`; the list itself has no category or verdict filter. It displays up to five rows in compact mode or ten in the full drawer. Keep logged L4 verdicts distinct from `ics.decision` monitor rows labeled **would allow** or **would deny (monitor)**. These rule-local hypothetical decisions do not count as denied commands or in the deny counter. Match `mode: monitor`, `ruleId`, `decision: would_allow` / `would_drop` and the UTC window; configured `action: DENY` alone does not establish a packet denial. Use the embedded containd **Firewall/ICS tables** for applied shadow counters; the RangerDanger event strip is not a counter API. See [counter lifetimes, missing evidence and forwarding dependency](#eu-ics-dpi).
 
-The row's `DENY` reports a firewall action for that logged rule hit. It does not show whether an already established connection stopped carrying traffic, whether the application command completed, or what the equipment did. An allowed TCP/2404 connection is not proof of read-only IEC 104 access, and TCP/502 is not function-code filtering. Keep reachability separate from command authority, as described in [the L4 boundary article](#eu-port-source-boundary).
+For an L4 rule-hit row, `DENY` reports the firewall action, unlike a monitor would-deny observation. It does not show whether an already established connection stopped carrying traffic, whether the application command completed, or what the equipment did. An allowed TCP/2404 connection is not proof of read-only IEC 104 access, and TCP/502 is not function-code filtering. Keep reachability separate from command authority, as described in [the L4 boundary article](#eu-port-source-boundary).
 
 ### Empty and unavailable states
 
@@ -31,7 +31,7 @@ does not display that metadata. Incomplete history or an engine read error
 can leave partial or empty results without an on-screen warning; preserve
 the API response when assessing completeness.
 
-If containd cannot be reached, the panel says `containd unreachable`. If the endpoint returns no recent events, the EU view shows a generic prompt to run a probe from a terminal. Neither state proves that no traffic occurred: the endpoint is bounded to recent events, only logged matches can appear, and the panel may not yet have refreshed after a probe. Check the selected policy and exact source, destination, service and test time; use a packet capture or other protocol evidence when the question requires more than a logged rule verdict.
+If containd cannot be reached, the panel says `containd unreachable`. If the endpoint returns no recent events, the EU view shows a generic prompt to run a probe from a terminal. Neither state proves that no traffic occurred: the endpoint is bounded to recent events, only retained events can appear, and the panel may not yet have refreshed after a probe. Check the selected policy and exact source, destination, service and test time; use a packet capture or other protocol evidence when the question requires more than a logged rule verdict.
 
 For an auditable comparison, record the active policy and probe tuple, run a controlled positive or negative test, and preserve the row with the corresponding policy and service result. A single deny row does not establish that legitimate operation continued; a missing row does not establish that a deny failed. Account for [established sessions](#eu-established-sessions) and preserve the surrounding state and time bounds using the [evidence lifecycle](#eu-evidence-lifecycle).
 

@@ -40,7 +40,7 @@ steps:
     :::
 
     :::hint Running, not candidate
-    In containd inspect running configuration and its identity. Six operational conduits must remain. No ICS keys or semantic enforcement are claimed in this phase.
+    In containd inspect running configuration and its identity. Six operational conduits must remain. Hardened includes three separate explicit-monitor IEC 104 rules; a plan includes them only when `iec104-dpi` is selected. Verify running rules, not candidate-only entries. No command enforcement is claimed.
     :::
   action:
     type: check
@@ -92,11 +92,23 @@ steps:
     [Historian uncertainty](/knowledge#eu-historian) explains link-loss stale samples and archive gaps. This sidebar is optional, not a mandatory outage exercise or report prerequisite.
     :::
 
+    ### Shadow evidence for the handover
+
+    Retain Lab 2.2's applied three-rule readback and embedded containd **Firewall/ICS tables** baseline/deltas, snapshotVersion, since, unit, rule IDs and UTC window. Pair `ics.decision` monitor events (`would_allow` / `would_drop`, configured action and reason) with independent command feedback/field outcomes and the restored operating state. Retain the OLTC lower→step-only and raise→both comparison. A fully decoded SBO action normally adds two matches per matching rule, not guaranteed; require ≥1, never exactly two. Counts are matching rule × decoded message, not object counts, operation totals or full-policy predictions. A would-deny match is not a denied command; monitoring never satisfies a BLOCK requirement.
+
+    Successful apply resets counters; engine restart loses them. `available:false`, missing rules, a changed snapshotVersion/since or retention gaps are evidence limitations, never zero. Export before another apply/reset; if monitoring was deferred, name that gap. The 37-row report remains TCP-only and cannot certify command authorization. Monitoring uses NFQUEUE 101 with no queue bypass and adds latency: if the engine is down, the CC conduit drops. Record this forwarding dependency, rollback owner and separate GI/PLC/historian continuity proof.
+
+    :::hint Optional instructor-led PCAP Analysis sidebar — not graded
+    The instructor demonstrates and does not grade anything in this optional sidebar. Use the embedded containd **PCAP Analysis** page to import a classic PCAP covering SYN through an already approved controlled command with **Analyze**. Inspect the sealed dataset, capture hash, gaps and expiry; explicitly **Generate suggestions**. Review certified evidence and withheld reasons: SBO sequences, setpoint values/QL and bitstrings remain withheld; monitoring ASDUs/startup do not become command ALLOWs. Certification is bounded evaluator evidence, not permission, delivery proof or universal protocol proof.
+
+    An authenticated administrator **Review** approves the exact IEC revision and acknowledges wire/NAT scope; then select revisions and **Stage selected** as explicit `mode: monitor` only. Inspect the candidate diff and verify running policy is unchanged. Stage is not apply: **Commit is a separate deliberate step and is not performed in this sidebar**. End by **discarding the candidate**, checking no uncommitted diff remains and the running policy/hash is unchanged. Start only with a clean candidate so discarding cannot lose another operator's work. Do not mix suggestions or certification with the TCP acceptance score. [Workflow and limits](/knowledge#eu-ics-dpi).
+    :::
+
     Save **Export plan record** beside **Export compiled config**, the report
     and PCAP. The record contains package ID, revision, label, action IDs and
     policy hash. Use `GET /api/firewall/active` to check what is running.
-    The L4 source pin enforces; DPI detects and logs. EU DPI is disabled;
-    neither TCP proof nor a logged deny proves command-aware filtering.
+    The L4 source pin enforces; DPI detects and logs. Neither TCP proof, a
+    logged L4 deny nor a would-deny monitor match proves command-aware prevention.
   action:
     type: check
     expect:
@@ -135,5 +147,5 @@ steps:
     In Notes answer: which findings did your plan close, which remain deferred and why, which role constrained it, and what would you fund next quarter? Map every residual to operational consequence, owner, acceptance authority and retest. What endpoint or station architecture control addresses same-subnet blind spots?
 
     :::hint Honest handover
-    DPI selections are planning-only and emit nothing. They promise no command restriction or later enforcement. Breaker control on an allowed CC session remains a residual risk. L4 is live but cannot distinguish commands on an allowed CC session. Keep this residual explicit alongside IEC 62443 design and NIS2/BDEW change accountability. Retain policy, report and PCAP before reset.
+    IEC 104 monitoring adds observation evidence, not command restriction or a promise of later enforcement. Modbus DPI remains planning-only. Breaker control on an allowed CC session remains a residual risk. L4 is live but cannot distinguish commands on an allowed CC session. Keep this residual explicit alongside IEC 62443 design and NIS2/BDEW change accountability. Retain policy, report and PCAP before reset.
     :::

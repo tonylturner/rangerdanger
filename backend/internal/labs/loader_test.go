@@ -421,7 +421,7 @@ func TestLoadRejectsInvalidPackages(t *testing.T) {
 		{"unknown operator view", "package.yml", func(s string) string {
 			return strings.Replace(s, "operator_view: us-dnp3-substation", "operator_view: hmi", 1)
 		}, `operator_view must be us-dnp3-substation or eu-iec104, got "hmi"`},
-		{"unknown ics rules", "package.yml", func(s string) string { return s + "ics_rules: maybe\n" }, `ics_rules must be allowed or forbidden, got "maybe"`},
+		{"unknown ics rules", "package.yml", func(s string) string { return s + "ics_rules: maybe\n" }, `ics_rules must be allowed, forbidden or monitor, got "maybe"`},
 		{"missing policies", "package.yml", func(s string) string {
 			return strings.Replace(s, "policies:\n  weak: firewall/weak.json\n", "", 1)
 		}, "policies must name at least one policy file"},

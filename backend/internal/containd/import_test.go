@@ -78,10 +78,8 @@ func TestImportConfigSuccess(t *testing.T) {
 
 // TestImportConfigSurfacesCommitWarnings asserts that warnings from
 // containd's X-Containd-Warnings response header propagate back to the
-// caller. Without this, partial commits (e.g. nft apply failed due to
-// missing NET_ADMIN) silently return success and the lab UI hides the
-// degradation. The header carries one warning per line per containd's
-// setWarningHeader convention (api/http/util.go).
+// caller. Auxiliary infrastructure warnings remain visible on success;
+// ruleset apply failures instead return an error with recovery outcomes.
 func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
@@ -98,7 +96,7 @@ func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
 			// with "\n" in a single header value; collectWarnings
 			// handles both. Test the multi-value form here since
 			// that's what current containd produces.
-			w.Header().Add("X-Containd-Warnings", "ruleset: nft apply failed: operation not permitted")
+			w.Header().Add("X-Containd-Warnings", "routing: auxiliary reconfigure incomplete")
 			w.Header().Add("X-Containd-Warnings", "interfaces: link eth9 not found")
 			w.WriteHeader(http.StatusOK)
 		}
@@ -113,8 +111,8 @@ func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
 	if len(warnings) != 2 {
 		t.Fatalf("expected 2 warnings, got %d: %v", len(warnings), warnings)
 	}
-	if !strings.Contains(warnings[0], "nft apply failed") {
-		t.Errorf("warning[0] missing nft hint: %q", warnings[0])
+	if !strings.Contains(warnings[0], "routing") {
+		t.Errorf("warning[0] missing routing hint: %q", warnings[0])
 	}
 	if !strings.Contains(warnings[1], "eth9 not found") {
 		t.Errorf("warning[1] missing iface hint: %q", warnings[1])
@@ -271,5 +269,32 @@ func TestImportRequiresCandidateAndCommit(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestImportCommitApplyFailurePreservesRecoveryOutcomes(t *testing.T) {
+	const body = `{"error":"configuration apply failed","detail":"ruleset apply failed","restored":true,"reapplied":false,"reapplyError":"recovery failed"}`
+	var requests []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/config":
+			io.WriteString(w, `{}`)
+		case "/api/v1/config/candidate":
+			w.WriteHeader(http.StatusOK)
+		case "/api/v1/config/commit":
+			w.WriteHeader(http.StatusInternalServerError)
+			io.WriteString(w, body)
+		default:
+			t.Errorf("unexpected request: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	warnings, err := newTestClient(srv.URL).ImportConfig(t.Context(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`))
+	if err == nil || !strings.Contains(err.Error(), "commit returned 500: "+body) || warnings != nil {
+		t.Fatalf("warnings=%v, error=%v; want complete recovery response", warnings, err)
+	}
+	if len(requests) != 3 {
+		t.Fatalf("unexpected retry/fallback: %v", requests)
 	}
 }

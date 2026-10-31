@@ -14,6 +14,10 @@ Prepare access to the portal, Kali terminal, engineering terminal where needed, 
 
 The shared range is a single operating environment. Coordinate disruptive steps; another person's reset, fault injection or session cut can invalidate the baseline. Do not restart services merely to make a difficult test pass.
 
+Keep the `iec104-dpi` estimate at 80h. Selecting all technical actions requires 149h of Firewall Admin work against the unchanged 140h capacity: a 9h overrun. Record the staffing/rescheduling decision or the partial-plan deferral; an apply warning is not evidence that capacity fits. Readiness exclusions still apply.
+
+Monitoring is an operating dependency too: CC traffic traverses NFQUEUE 101 with no queue bypass, so an unavailable engine drops the conduit. Reserve time for healthy-engine verification, post-apply reconnect/GI, shadow evidence and independent PLC/historian continuity checks. See [IEC 104 monitoring](#eu-ics-dpi).
+
 ### Establish a clean baseline
 
 Record active package and policy, CC cache identity and journal cursor, device generations/revisions, fault section, F2 state, RMU positions, OLTC tap/mode and PLC freshness. Confirm nominal operation before testing a disturbance.

@@ -143,7 +143,7 @@ eu_wait_for_regulation() {
 
 eu_gate_G15() {
   local section expected since grading
-  eu_apply_named improved || return
+  # Reset supplies Weak; these interlock assertions do not require Improved.
   eu_reset_all || return
   eu_management rmu-1 POST /api/sim/actions '{"action":"earth_close"}' || return
   if [ "$HTTP_STATUS" = 409 ] && printf '%s' "$API_BODY" | jq -e '.reason | type == "string" and length > 0' >/dev/null; then

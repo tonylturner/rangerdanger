@@ -29,36 +29,46 @@ function Get-ContaindScriptSources([string]$Html) {
 }
 
 function Get-ContaindOnDemandChunks($Chunks) {
-    # The served webpack runtime, black-box (current bundle):
-    #   r.p="/containd/_next/",r.u=e=>"static/chunks/"+(3888===e?"e868780c":e)+"."+({747:"5cee...",...})[e]+".js"
-    # Ids not named in the optional ===-chain use the id as the name. Any other
-    # shape fails rather than skipping chunks. Returns chunk URLs in map order.
-    $webpackChunks = '(?<![\w$])([A-Za-z_$][\w$]*)\.u=([A-Za-z_$][\w$]*)=>"static/chunks/"\+(\2|\((?:\d+===\2\?"[\w-]+":)+\2\))\+"\."\+\((\{(?:\d+:"[\w-]+"(?:,\d+:"[\w-]+")*)?\})\)\[\2\]\+"\.js"'
-    $chunkName = '(\d+)===[A-Za-z_$][\w$]*\?"([\w-]+)"'
-    $chunkHash = '(\d+):"([\w-]+)"'
-    $publicPath = '(?<![\w$])([A-Za-z_$][\w$]*)\.p="([^"]*)"'
+    # Served-artifact oracle: literal Turbopack imports only, never webpack maps.
+    $turbopackBase = 'let _=i.prototype,k="string"==typeof TURBOPACK_CHUNK_BASE_PATH\?TURBOPACK_CHUNK_BASE_PATH:"([^"]*)",P=new Map;'
+    $turbopackLoader = 'async function j(e,t,r){let n;if("string"==typeof r)return function(e,t,r){return M(e,t,r)}(e,t,x(r));'
+    $turbopackLoadMethod = '_.l=function(e){return j(o.Parent,this.m.id,e)};'
+    $turbopackUrl = 'function x(e,t=k){let r=T.test(e)?e.split("/").map(encodeURIComponent).join("/"):e;return`${t}${r}${n}`}'
+    $turbopackImport = 'Promise\.all\(\[(?<paths>"static/chunks/[\w-]+\.(?:js|css)"(?:,"static/chunks/[\w-]+\.(?:js|css)")*)\]\.map\((?<arg>[A-Za-z_$][\w$]*)=>[A-Za-z_$][\w$]*\.l\(\k<arg>\)\)\)'
+    $chunkLiteral = '"(static/chunks/[\w-]+\.(?:js|css))"'
     $runtimes = New-Object 'System.Collections.Generic.List[object]'
+    $baseReferences = 0
     foreach ($entry in $Chunks.GetEnumerator()) {
-        foreach ($match in [regex]::Matches([string]$entry.Value, $webpackChunks)) {
-            $runtimes.Add([pscustomobject]@{ Path = $entry.Key; Body = [string]$entry.Value; Match = $match })
+        $body = [string]$entry.Value
+        $baseReferences += [regex]::Matches($body, 'TURBOPACK_CHUNK_BASE_PATH').Count
+        foreach ($match in [regex]::Matches($body, $turbopackBase)) {
+            $runtimes.Add([pscustomobject]@{ Path = $entry.Key; Body = $body; Match = $match })
         }
     }
-    if ($runtimes.Count -ne 1) { throw "Chunks contain $($runtimes.Count) webpack runtime chunk maps, expected 1" }
+    if ($runtimes.Count -ne 1) {
+        throw "Cannot verify on-demand chunks: unsupported or ambiguous Turbopack runtime ($($runtimes.Count) base paths; expected exactly 1); inspect the live bundle"
+    }
     $runtime = $runtimes[0]
-    $public = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
-    foreach ($found in [regex]::Matches($runtime.Body, $publicPath)) {
-        if ($found.Groups[1].Value -ceq $runtime.Match.Groups[1].Value) { $null = $public.Add($found.Groups[2].Value) }
+    if (-not $runtime.Body.Contains($turbopackLoader) -or -not $runtime.Body.Contains($turbopackLoadMethod) -or
+        -not $runtime.Body.Contains($turbopackUrl) -or $baseReferences -ne 2) {
+        throw "$($runtime.Path): unsupported Turbopack loader shape; inspect the live bundle"
     }
-    if ($public.Count -ne 1) { throw "$($runtime.Path): webpack runtime does not set exactly one public path" }
-    $prefix = "$(@($public)[0])static/chunks/"
-    $names = @{}
-    foreach ($found in [regex]::Matches($runtime.Match.Groups[3].Value, $chunkName)) {
-        if (-not $names.ContainsKey($found.Groups[1].Value)) { $names[$found.Groups[1].Value] = $found.Groups[2].Value }
-    }
-    foreach ($found in [regex]::Matches($runtime.Match.Groups[4].Value, $chunkHash)) {
-        $chunk = $found.Groups[1].Value
-        $name = if ($names.ContainsKey($chunk)) { $names[$chunk] } else { $chunk }
-        "$prefix$name.$($found.Groups[2].Value).js"
+    $prefix = $runtime.Match.Groups[1].Value
+    $sources = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($entry in $Chunks.GetEnumerator()) {
+        $body = [string]$entry.Value
+        $imports = [regex]::Matches($body, $turbopackImport)
+        $remainder = [regex]::Replace($body, $turbopackImport, '')
+        # ...l(value) spreads an object; it is not a runtime .l loader call.
+        if ($remainder.Contains('static/chunks/') -or $remainder -cmatch '(?<!\.)\.l\s*\(') {
+            throw "$($entry.Key): unsupported Turbopack dependency shape; inspect the live bundle"
+        }
+        foreach ($dependency in $imports) {
+            foreach ($match in [regex]::Matches($dependency.Groups['paths'].Value, $chunkLiteral)) {
+                $source = $prefix + $match.Groups[1].Value
+                if ($sources.Add($source)) { $source }
+            }
+        }
     }
 }
 
@@ -87,7 +97,7 @@ function Confirm-ContaindLinksRewritten($Documents, [string]$Kind) {
 }
 
 function Get-ContaindRoutePages($Chunks) {
-    # App-router page chunks (app/<route>/page-*.js) load only from their own route's HTML.
+    # App-router page chunks load only from their own route's HTML (opaque Turbopack filenames).
     # Routes come from the bundle's path literals: proxy-prefixed ones ("/containd/alerts/",
     # "/containd/login?reason=") and root-relative link targets (href:"/identities/").
     # A root-relative link is also a proxy defect: the route list's sub_filter missed it.
@@ -109,12 +119,21 @@ function Get-ContaindRoutePages($Chunks) {
     $sorted
 }
 
-function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
+function Confirm-ContaindCliUpgrade(
+    [string]$Origin, [string]$Ticket = '', [string]$Token = '',
+    [string]$QueryName = '', [int]$ExpectedStatus = 101
+) {
     # A raw HTTP/1.1 handshake exposes refusal status on both PS 5.1 and 7.
     # Close immediately after headers: no CLI commands or websocket frame reads.
     $url = [uri]$Origin
     $authority = [regex]::Match($Origin, '^[^:]+://([^/]+)$').Groups[1].Value
     $path = '/containd/api/v1/cli/ws'
+    $target = $path
+    if ($Ticket) {
+        $target += '?ticket=' + [uri]::EscapeDataString($Ticket)
+    } elseif ($QueryName -and $Token) {
+        $target += '?' + $QueryName + '=' + [uri]::EscapeDataString($Token)
+    }
     if ($Token -match '[\r\n]') { throw "${path}: invalid token header" }
     $client = New-Object Net.Sockets.TcpClient
     $stream = $null
@@ -132,7 +151,8 @@ function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
             $null = $tls.GetAwaiter().GetResult()
         }
         $key = [Convert]::ToBase64String([Guid]::NewGuid().ToByteArray())
-        $request = "GET $path HTTP/1.1`r`nHost: $authority`r`nOrigin: $Origin`r`nAuthorization: Bearer $Token`r`n" +
+        $authHeader = if ($Token -and -not $QueryName) { "Authorization: Bearer $Token`r`n" } else { '' }
+        $request = "GET $target HTTP/1.1`r`nHost: $authority`r`nOrigin: $Origin`r`n$authHeader" +
             "Connection: Upgrade`r`nUpgrade: websocket`r`nSec-WebSocket-Version: 13`r`nSec-WebSocket-Key: $key`r`n`r`n"
         $bytes = [Text.Encoding]::ASCII.GetBytes($request)
         $stream.Write($bytes, 0, $bytes.Length)
@@ -148,8 +168,12 @@ function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
             if ($header.Length -gt 16384) { throw "${path}: oversized upgrade response" }
         }
         $lines = $header.ToString() -split "`r`n"
-        if ($lines[0] -notmatch '^HTTP/1\.1 101(?: |$)') {
-            throw "${path}: expected websocket 101, got $($lines[0])"
+        if ($lines[0] -notmatch "^HTTP/1\.1 $ExpectedStatus(?: |$)") {
+            throw "${path}: expected HTTP $ExpectedStatus, got $($lines[0])"
+        }
+        if ($ExpectedStatus -ne 101) {
+            Write-Host "PASS ${path}: rejected with HTTP $ExpectedStatus"
+            return
         }
         $headers = @{}
         foreach ($line in $lines[1..($lines.Length - 1)]) {
@@ -172,7 +196,7 @@ function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
         if ($stream) { $stream.Dispose() }
         $client.Close()
     }
-    Write-Host "PASS ${path}: websocket 101 with browser Origin $Origin"
+    Write-Host "PASS ${path}: websocket 101 with a fresh ticket and browser Origin $Origin"
 }
 
 function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
@@ -184,18 +208,27 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     }
     $authority = [regex]::Match($Origin, '^[^:]+://([^/]+)$').Groups[1].Value
     $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-    function Get-ProbeRequest([string]$Path, [string]$Data = '', [string]$Token = '') {
+    function Get-ProbeRequest(
+        [string]$Path, [string]$Data = '', [string]$Token = '',
+        [string]$Method = '', [object]$WebSession = $null
+    ) {
         $headers = @{ 'Accept-Encoding' = 'identity' }
         if ($Token) { $headers.Authorization = "Bearer $Token" }
+        $selectedSession = if ($WebSession) { $WebSession } else { $session }
         $request = @{
-            Uri = "$Origin$Path"; Headers = $headers; WebSession = $session
+            Uri = "$Origin$Path"; Headers = $headers; WebSession = $selectedSession
             TimeoutSec = 15; UseBasicParsing = $true; MaximumRedirection = 0; ErrorAction = 'Stop'
         }
-        if ($Data) { $request.Method = 'POST'; $request.Body = $Data; $request.ContentType = 'application/json' }
+        if ($Method) { $request.Method = $Method }
+        elseif ($Data) { $request.Method = 'POST' }
+        if ($Data) { $request.Body = $Data; $request.ContentType = 'application/json' }
         $request
     }
-    function Get-ProbeBody([string]$Path, [string[]]$Types, [string]$Data = '', [string]$Token = '') {
-        $request = Get-ProbeRequest $Path $Data $Token
+    function Get-ProbeBody(
+        [string]$Path, [string[]]$Types, [string]$Data = '', [string]$Token = '',
+        [string]$Method = '', [object]$WebSession = $null
+    ) {
+        $request = Get-ProbeRequest $Path $Data $Token $Method $WebSession
         $response = Invoke-WebRequest @request
         $type = ([string]$response.Headers['Content-Type'] -split ';', 2)[0].Trim().ToLowerInvariant()
         if ($response.StatusCode -ne 200 -or $type -notin $Types) {
@@ -206,14 +239,15 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         $utf8.GetString($response.RawContentStream.ToArray())
     }
 
-    function Get-ProbeChunkPath([string]$Source, [string]$Kind) {
+    function Get-ProbeChunkPath([string]$Source, [string]$Kind, [string[]]$Extensions = @('.js')) {
         $url = New-Object uri (New-Object uri "$Origin/containd/"), $Source
         # Uri.Authority canonicalizes case/default ports; urlsplit's netloc
         # comparison in the reference probe deliberately does not.
         $scriptAuthority = [regex]::Match($url.OriginalString, '^[^:]+://([^/?#]+)').Groups[1].Value
+        $extensionOk = @($Extensions | Where-Object { $url.AbsolutePath.EndsWith($_, [StringComparison]::Ordinal) }).Count -gt 0
         if ($url.Scheme -cne $base.Scheme -or $scriptAuthority -cne $authority -or
             -not $url.AbsolutePath.StartsWith('/containd/_next/static/', [StringComparison]::Ordinal) -or
-            -not $url.AbsolutePath.EndsWith('.js', [StringComparison]::Ordinal)) {
+            -not $extensionOk) {
             throw "Unexpected ${Kind}: $Source"
         }
         $url.PathAndQuery
@@ -233,6 +267,7 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
 
     $scripts = @('application/javascript', 'text/javascript')
     $maxRoutePages = 200
+    $maxChunks = 2000
     $pages = New-Object Collections.Specialized.OrderedDictionary ([StringComparer]::Ordinal)
     $paths = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($path in @(Get-ProbePageChunks '/containd/')) { $null = $paths.Add($path) }
@@ -240,22 +275,35 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     $chunks = New-Object Collections.Specialized.OrderedDictionary ([StringComparer]::Ordinal)
     foreach ($path in @(Get-OrdinalSorted $paths)) { $chunks[$path] = Get-ProbeBody $path $scripts }
     $onDemand = 0
-    foreach ($source in @(Get-ContaindOnDemandChunks $chunks)) {
-        $path = Get-ProbeChunkPath $source 'on-demand chunk'
-        if (-not $chunks.Contains($path)) { $chunks[$path] = Get-ProbeBody $path $scripts; $onDemand++ }
-    }
-    # Each round fetches the newly named route pages, then their new chunks, which may name more.
+    $styles = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     $visited = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    # Reach a fixed point across lazy imports AND route pages, checking lazy CSS too.
     while ($true) {
+        foreach ($source in @(Get-ContaindOnDemandChunks $chunks)) {
+            $path = Get-ProbeChunkPath $source 'on-demand chunk' @('.js', '.css')
+            if ($chunks.Contains($path) -or $styles.Contains($path)) { continue }
+            if ($chunks.Count + $styles.Count -ge $maxChunks) { throw "Bundle names more than $maxChunks chunks" }
+            if (([uri]"$Origin$path").AbsolutePath.EndsWith('.css', [StringComparison]::Ordinal)) {
+                $null = Get-ProbeBody $path @('text/css')
+                $null = $styles.Add($path)
+            } else {
+                $chunks[$path] = Get-ProbeBody $path $scripts
+                $onDemand++
+            }
+        }
         $pending = @(Get-ContaindRoutePages $chunks | Where-Object { -not $visited.Contains($_) })
-        if (-not $pending.Count) { break }
         if ($visited.Count + $pending.Count -gt $maxRoutePages) { throw "Chunks name more than $maxRoutePages route pages" }
         $found = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
         foreach ($page in $pending) {
             $null = $visited.Add($page)
             foreach ($path in @(Get-ProbePageChunks $page)) { if (-not $chunks.Contains($path)) { $null = $found.Add($path) } }
         }
-        foreach ($path in @(Get-OrdinalSorted $found)) { $chunks[$path] = Get-ProbeBody $path $scripts }
+        foreach ($path in @(Get-OrdinalSorted $found)) {
+            if ($chunks.Count + $styles.Count -ge $maxChunks) { throw "Bundle names more than $maxChunks chunks" }
+            $chunks[$path] = Get-ProbeBody $path $scripts
+        }
+        $remaining = @(Get-ContaindOnDemandChunks $chunks | Where-Object { -not $chunks.Contains($_) -and -not $styles.Contains($_) })
+        if (-not $pending.Count -and -not $remaining.Count) { break }
     }
     $autodetect = $false
     $authMe = $false
@@ -266,16 +314,15 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         # containd adds its API base at runtime, so no proxy-prefixed API literal is allowed.
         $match = [regex]::Match($body, '(["''])(/containd/api/[^"'']*)\1')
         if ($match.Success) { throw "${path}: runtime-based API literal was rewritten: $($match.Groups[2].Value)" }
-        # Direct pathname detection or the optional-path fallback in 0.1.33.
-        # The backreference requires the fallback to test and return the same identifier.
-        if ($body -cmatch '(?:window\.location\.pathname|\(\s*null\s*!=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\?\s*\1\s*:\s*window\.location\.pathname\s*\))\.startsWith\(\s*["'']/containd/["'']\s*\)\s*\?\s*["'']/containd["'']') { $autodetect = $true }
+        # The local-binding form must test the same pathname-derived identifier.
+        if ($body -cmatch '(?:window\.location\.pathname|\(\s*null\s*!=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\?\s*\1\s*:\s*window\.location\.pathname\s*\))\.startsWith\(\s*["'']/containd/["'']\s*\)\s*\?\s*["'']/containd["'']|function\s+[A-Za-z_$][\w$]*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\{\s*let\s+([A-Za-z_$][\w$]*)\s*=\s*\2\s*\?\?\s*window\.location\.pathname\s*;\s*return\s*["'']/containd["'']\s*===\s*\3\s*\|\|\s*\3\.startsWith\(\s*["'']/containd/["'']\s*\)\s*\?\s*["'']/containd["'']\s*:\s*["'']["'']\s*;?\s*\}') { $autodetect = $true }
         if ($body -cmatch '["'']/api/v1/auth/me["'']') { $authMe = $true }
     }
     Confirm-ContaindLinksRewritten $chunks 'chunk'
     if (-not $autodetect) { throw 'Chunks do not contain the /containd/ runtime API-base autodetect' }
     if (-not $authMe) { throw 'Chunks do not contain the unprefixed auth/me call' }
     Confirm-ContaindLinksRewritten $pages 'page'
-    Write-Host "PASS containd UI: $($chunks.Count) chunks ($onDemand on demand), $($visited.Count) route pages, runtime API base intact, no double prefix"
+    Write-Host "PASS containd UI: $($chunks.Count) chunks ($onDemand on demand), $($visited.Count) route pages, $($styles.Count) on-demand stylesheets, runtime API base intact, no double prefix"
 
     function Get-ProbeJsonProperty([string]$Json, [string]$Name) {
         # ConvertFrom-Json enumerates arrays and PS member lookup folds case;
@@ -300,10 +347,31 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     }
     Write-Host "PASS $loginPath -> ${mePath}: 200 application/json, username=containd"
 
-    # The paths the CLI console and PCAP download build from the runtime base. Without an
-    # Upgrade header, or for a capture that does not exist, the API refuses with a 400;
-    # a double-prefixed path instead gets the UI page (200 text/html).
-    $apiRoutes = @('/containd/api/v1/cli/ws', '/containd/api/v1/pcap/download/rangerdanger-probe-missing.pcap')
+    $ticketPath = '/containd/api/v1/cli/ws/ticket'
+    function Get-ProbeCliTicket {
+        $ticketSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+        $ticketJson = Get-ProbeBody $ticketPath @('application/json') '' $token 'POST' $ticketSession
+        $ticket = Get-ProbeJsonProperty $ticketJson 'ticket'
+        $expiresIn = Get-ProbeJsonProperty $ticketJson 'expiresIn'
+        if ($ticket -isnot [string] -or -not $ticket -or $expiresIn -ne 30) {
+            throw "${ticketPath}: expected an opaque ticket and expiresIn=30"
+        }
+        $ticket
+    }
+    Write-Host "PASS ${ticketPath}: authenticated ticket issuance contract (expiresIn=30)"
+
+    Confirm-ContaindCliUpgrade $Origin '' '' '' 401
+    Confirm-ContaindCliUpgrade $Origin '' $token '' 401
+    Confirm-ContaindCliUpgrade $Origin '' $token 'token' 401
+
+    $firstTicket = Get-ProbeCliTicket
+    Confirm-ContaindCliUpgrade $Origin $firstTicket
+    $reconnectTicket = Get-ProbeCliTicket
+    Confirm-ContaindCliUpgrade $Origin $reconnectTicket
+    Confirm-ContaindCliUpgrade $Origin $reconnectTicket '' '' 401
+
+    # A missing capture must remain an API response, not fall through to the UI page.
+    $apiRoutes = @('/containd/api/v1/pcap/download/rangerdanger-probe-missing.pcap')
     foreach ($route in $apiRoutes) {
         $request = Get-ProbeRequest $route '' $token
         try {
@@ -324,5 +392,4 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         }
     }
     Write-Host "PASS $($apiRoutes -join ', '): 400 from the containd API, not the UI page"
-    Confirm-ContaindCliUpgrade $Origin $token
 }

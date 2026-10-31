@@ -6,7 +6,7 @@ estimated_minutes: 10
 validator: eu-hardening-configurations
 description: Stress-test the EU telecontrol boundary with an unauthorized breaker command from Kali. Observe loss
   of supply, restore the feeder, harden and repeat the identical wire command. L4 source pinning is live; IEC 104
-  command inspection is a planned second layer, not enforced in this phase.
+  command observation is monitor-only, never command enforcement.
 nodes:
 - kali-1
 - eng-ws-1
@@ -87,9 +87,10 @@ steps:
 
     `block-enterprise-to-station` owns the Kali→RTU TCP/2404 path. If selected,
     expect denial. If deferred, the Weak exposure stays open and the breaker
-    command can still land. EU DPI and logging actions are planning-only.
-    They change no verdict and promise no later semantic enforcement.
-    The L4 source pin enforces; DPI detects and logs. EU DPI is disabled.
+    command can still land. `iec104-dpi` adds explicit monitor rules on the allowed
+    CC conduit, not foreign-source prevention; logging changes no rule.
+    The L4 source pin enforces; DPI detects and logs. A would-deny match is not
+    a denied command, and monitoring never satisfies a BLOCK requirement.
 
     :::plan-coverage title="Your plan vs the attack"
     :::
@@ -145,7 +146,7 @@ steps:
     consequence instead. Missing evidence is not a pass. A physically supplied feeder with stale CC points fails visibility, not supply.
 
     :::hint What this certifies
-    PASS checks the current sampled plan verdicts, restored breaker/supply and post-commit CC visibility. Bounded absence of foreign breaker operations is required only for a plan that denies that source. It does not certify that you performed the earlier attack/restoration sequence, command-aware filtering on an allowed session, all possible paths or regulatory compliance. DPI selections emit nothing. Keep the trusted-controller residual risk in your handover to [Lab 2.4](/exercises/eu-validation-evidence).
+    PASS checks the current sampled plan verdicts, restored breaker/supply and post-commit CC visibility. Bounded absence of foreign breaker operations is required only for a plan that denies that source. It does not certify that you performed the earlier attack/restoration sequence, command-aware filtering on an allowed session, all possible paths or regulatory compliance. IEC 104 monitor matches are separate observation evidence, not command denials; Modbus DPI remains planning-only. Keep the trusted-controller residual risk in your handover to [Lab 2.4](/exercises/eu-validation-evidence).
     :::
   action:
     type: check

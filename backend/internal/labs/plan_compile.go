@@ -8,9 +8,9 @@ import (
 )
 
 // CompilePlan builds a policy from authored slots, never legacy display or
-// policy fields. Catalog order canonicalizes selections; slot order alone
-// controls rule emission. The result owns its data and can be safely edited by
-// a caller without mutating the package or a later compilation.
+// policy fields. Slot order controls L4 rule emission; observations follow in
+// catalog order, which also canonicalizes selections. The result owns its data
+// and can be edited without mutating the package or a later compilation.
 func CompilePlan(pkg Package, curriculum *Curriculum, actionIDs []string) (CompiledPlan, error) {
 	kinds, err := validatePlan(pkg, curriculum)
 	if err != nil {
@@ -66,6 +66,9 @@ func CompilePlan(pkg Package, curriculum *Curriculum, actionIDs []string) (Compi
 			continue
 		}
 		detect := curriculum.Plan.Detect[action.ID]
+		for _, rule := range detect.Rules {
+			compiled.Rules = append(compiled.Rules, CompiledPlanRule{Rule: rule, Origin: PlanOrigin{Kind: "observe", Action: action.ID}})
+		}
 		for i := range compiled.Rules {
 			rule := &compiled.Rules[i].Rule
 			if slices.Contains(detect.Log, rule.ID) {

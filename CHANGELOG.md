@@ -9,6 +9,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Lab 1.3 readiness now adjusts Lab 1.4 role capacity, action effort and draft eligibility in both packages, with a default-budget comparison toggle and visible exclusion reasons.
+- EU Improved policy enables containd IEC 104 inspection with three
+  monitor-only rules on the control-centre conduit. The L4 source pin
+  enforces; DPI detects and logs. The segmentation view labels these
+  observations "would deny (monitor)" or "would allow (monitor)", and
+  remediation plans show them as monitor-only observations, not L4 rules.
+- EU labs and knowledge articles teach how to read the monitor evidence:
+  shadow counters and `ics.decision` events.
+
+### Changed
+
+- RangerDanger now requires containd 0.1.36. Source mode builds the
+  firewall from the containd `v0.1.36` tag, and containd migrates its stored
+  schema one way to 0.1.9.
+
+### Fixed
+
+- The embedded containd console checks in the smoke scripts (shell and
+  PowerShell) support containd 0.1.36's Turbopack UI bundle, including
+  on-demand chunks and stylesheets.
+- containd recovery and enforcement health details are kept in apply
+  results, and plans reject ICS vocabulary that containd does not support.
 
 ### Security
 

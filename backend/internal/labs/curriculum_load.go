@@ -24,8 +24,8 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 	}
 	// Resolve only scalar values. This avoids corrupting YAML quoting in prose.
 	// The merged document is strictly typed after topology resolution.
-	if pkg.ICSRules == ICSRulesForbidden {
-		if err := rejectForbiddenPlanICS(document); err != nil {
+	if pkg.ICSRules == ICSRulesForbidden || pkg.ICSRules == ICSRulesMonitor {
+		if err := checkPlanICSPlacement(document, pkg.ICSRules); err != nil {
 			return nil, err
 		}
 	}

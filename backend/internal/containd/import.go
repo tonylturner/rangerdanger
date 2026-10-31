@@ -26,13 +26,12 @@ import (
 // it's a containd implementation detail. Inject it here as a lab invariant.
 // ImportConfig returns any warnings surfaced by containd's commit handler
 // in the X-Containd-Warnings response header (one warning per line). These
-// cover infrastructure failures that don't abort the commit — e.g. an nft
-// apply that hit "operation not permitted" because the container lacks
-// NET_ADMIN, or a routing reconfigure that partially failed. Body is
-// always {"status":"committed"}; without parsing the header these failures
-// are invisible to the lab UI. Callers should propagate warnings up so a
-// student sees "config committed but X didn't apply" instead of a green
-// 200 hiding broken enforcement.
+// cover auxiliary infrastructure failures that don't abort the commit.
+// Ruleset/dataplane and management service-apply failures return HTTP 500
+// with recovery outcomes (restored/reapplied), not successful commits with
+// warnings. A non-2xx does not guarantee the live firewall is unchanged.
+// Callers must propagate errors and warnings, and recheck health after apply;
+// recovery success certifies the firewall snapshot, not every side effect.
 func (c *Client) ImportConfig(ctx context.Context, configJSON []byte) ([]string, error) {
 	if err := labs.CheckManagementSafety(configJSON); err != nil {
 		return nil, err
@@ -93,10 +92,9 @@ func ensureEnforcementOn(configJSON []byte) ([]byte, error) {
 // 2. POST /api/v1/config/commit — applies it (triggers nftables compilation)
 //
 // Returns warnings parsed from the commit response's X-Containd-Warnings
-// header. Empty slice means "fully clean apply"; non-empty means commit
-// returned 200 but at least one step in applyRunningConfig surfaced a
-// warning (typical: nft apply failed, interface reconcile partial). The
-// caller decides whether to treat warnings as soft failures.
+// header on success. Empty warnings do not certify continuing enforcement
+// health. A failed apply returns an error retaining the response's recovery
+// outcomes; it must never trigger an import fallback or automatic retry.
 func (c *Client) importViaCandidate(ctx context.Context, configJSON []byte) ([]string, error) {
 	// Stage the candidate config
 	resp, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/config/candidate", configJSON)

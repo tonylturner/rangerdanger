@@ -8,7 +8,10 @@ PACKAGE_ORIGINAL="$PACKAGE"
 PACKAGE="$TMP_DIR/package"
 mkdir -p "$PACKAGE/protocols" "$PACKAGE/firewall"
 cp "$PACKAGE_ORIGINAL/protocols/points.json" "$PACKAGE/protocols/points.json"
-cp "$PACKAGE_ORIGINAL/firewall/improved.json" "$PACKAGE/firewall/improved.json"
+jq --slurpfile monitors "$T_FIXTURES/monitor-rules.json" '
+  .dataplane.dpiEnabled = true
+  | .firewall.rules |= (map(select(.id | startswith("observe-cc-") | not)) + $monitors[0])
+' "$PACKAGE_ORIGINAL/firewall/improved.json" >"$PACKAGE/firewall/improved.json"
 t_run eu_cc_loss_deadline
 t_expect_eq "$T_OUT" 47 "G7 allows t1+t3, reconnect and ten seconds margin"
 jq '.timers.t1_s=40 | .timers.t3_s=60 | .reconnect_interval_ms=2500 | .points=.points[:2]' \
@@ -58,6 +61,11 @@ t_run jq -e '
     and .log == true and .protocols == [{"name":"tcp","port":"2404"}])
 ' "$TMP_DIR/bad.json"
 t_expect_eq "$T_STATUS" 0 "new rejected CC sessions hit an explicit logged deny"
+t_run jq -e --slurpfile monitors "$T_FIXTURES/monitor-rules.json" '
+  [.firewall.rules[] | select(.ics != null)] == $monitors[0]
+  and .dataplane.dpiEnabled == true
+' "$TMP_DIR/bad.json"
+t_expect_eq "$T_STATUS" 0 "removing CC L4 admission preserves all three monitor rules and DPI"
 
 CALLS=""
 FAIL_VALIDATION=0

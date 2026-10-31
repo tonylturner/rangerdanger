@@ -59,8 +59,8 @@ catalog:
   tags: []
 - id: iec104-dpi
   title: Iec104 dpi
-  why: Plan breaker IOA 3001 denial, even from CC; preserve monitoring, system reads and RMU/OLTC commands.
-    Planning-only protocol review; this range emits no protocol rule. The L4 source pin enforces; DPI detects and logs.
+  why: Observe CC breaker and OLTC commands with three explicit monitor rules; compare lower and raise matches.
+    Monitoring never blocks or satisfies a BLOCK requirement. The L4 source pin enforces; DPI detects and logs.
   effort_hours: 80
   roles: [Firewall Admin, OT Engineer, Security Analyst]
   tags: []

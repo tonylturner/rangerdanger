@@ -26,7 +26,7 @@ func TestICSConfigDecodesContaindShape(t *testing.T) {
 			// containd TestICSPredicateMarshalJSONUsesNumericArray output.
 			name: "full containd predicate",
 			body: `{"protocol":"modbus","functionCode":[3,16],"unitId":7,"addresses":["0-10"],"objectClasses":[2,4],"readOnly":true,"mode":"enforce"}`,
-			want: ICSConfig{Protocol: "modbus", FunctionCodes: []int{3, 16}, ReadOnly: true},
+			want: ICSConfig{Mode: "enforce", Protocol: "modbus", FunctionCodes: []int{3, 16}, ReadOnly: true},
 		},
 		{
 			// lab-definitions/firewall/substation-improved.json rtac-to-field-dnp3.
