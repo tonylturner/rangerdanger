@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
@@ -254,7 +255,8 @@ type fwConfigFile struct {
 				Name string `json:"name"`
 				Port string `json:"port"`
 			} `json:"protocols"`
-			Action string `json:"action"`
+			Action string              `json:"action"`
+			ICS    *containd.ICSConfig `json:"ics,omitempty"`
 		} `json:"rules"`
 	} `json:"firewall"`
 }
@@ -281,6 +283,9 @@ func compareRuleSets(spec *compareSpec, weak, improved *fwConfigFile) []PolicyRu
 
 	weakByPair := map[zonePair][]ruleInfo{}
 	for _, r := range weak.Firewall.Rules {
+		if r.ICS != nil && r.ICS.Mode == "monitor" {
+			continue
+		}
 		if len(r.SourceZones) == 0 || len(r.DestZones) == 0 {
 			continue // skip global rules
 		}
@@ -293,6 +298,9 @@ func compareRuleSets(spec *compareSpec, weak, improved *fwConfigFile) []PolicyRu
 
 	improvedByPair := map[zonePair][]ruleInfo{}
 	for _, r := range improved.Firewall.Rules {
+		if r.ICS != nil && r.ICS.Mode == "monitor" {
+			continue
+		}
 		if len(r.SourceZones) == 0 || len(r.DestZones) == 0 {
 			continue
 		}

@@ -82,7 +82,7 @@ type PackageYAML struct {
 	// ("weak", "improved") to policy files relative to package.yml.
 	Policies     map[string]string `yaml:"policies"`
 	OperatorView string            `yaml:"operator_view"`
-	// ICSRules is ICSRulesAllowed or ICSRulesForbidden; empty means allowed.
+	// ICSRules is ICSRulesAllowed, ICSRulesForbidden or ICSRulesMonitor; empty means allowed.
 	ICSRules string `yaml:"ics_rules"`
 }
 
@@ -108,7 +108,7 @@ type Package struct {
 	// definitions directory. FirewallConfigPath is one of the values.
 	Policies     map[string]string
 	OperatorView string
-	// ICSRules is ICSRulesAllowed or ICSRulesForbidden, never empty.
+	// ICSRules is ICSRulesAllowed, ICSRulesForbidden or ICSRulesMonitor, never empty.
 	ICSRules  string
 	Scenarios []ScenarioYAML
 	Knowledge []KnowledgeSection
@@ -344,8 +344,8 @@ func validateManifest(manifest PackageYAML, dirName string) error {
 	if !knownOperatorViews[manifest.OperatorView] {
 		problems = append(problems, fmt.Sprintf("operator_view must be %s or %s, got %q", OperatorViewUSDNP3, OperatorViewEUIEC104, manifest.OperatorView))
 	}
-	if manifest.ICSRules != "" && manifest.ICSRules != ICSRulesAllowed && manifest.ICSRules != ICSRulesForbidden {
-		problems = append(problems, fmt.Sprintf("ics_rules must be %s or %s, got %q", ICSRulesAllowed, ICSRulesForbidden, manifest.ICSRules))
+	if manifest.ICSRules != "" && manifest.ICSRules != ICSRulesAllowed && manifest.ICSRules != ICSRulesForbidden && manifest.ICSRules != ICSRulesMonitor {
+		problems = append(problems, fmt.Sprintf("ics_rules must be %s, %s or %s, got %q", ICSRulesAllowed, ICSRulesForbidden, ICSRulesMonitor, manifest.ICSRules))
 	}
 	seen := make(map[string]bool, len(manifest.Capabilities))
 	for _, capability := range manifest.Capabilities {

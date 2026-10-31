@@ -5,8 +5,43 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
+
+func TestZoneRuleSummariesIgnoreMonitorRules(t *testing.T) {
+	for _, l4 := range []string{"ALLOW", "DENY", ""} {
+		t.Run("l4="+l4, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				rules := []FirewallRule{
+					{ID: "observe-deny", Description: "Monitor only", SourceZones: []string{"lan4"}, DestZones: []string{"lan1"}, Action: "DENY", ICS: &ICSConfig{Protocol: "iec104", Mode: "monitor"}},
+					{ID: "observe-allow", Description: "Monitor only", SourceZones: []string{"lan4"}, DestZones: []string{"lan1"}, Action: "ALLOW", ICS: &ICSConfig{Protocol: "iec104", Mode: "monitor"}},
+				}
+				if l4 != "" {
+					rules = append(rules, FirewallRule{ID: "l4", Description: "L4 conduit", SourceZones: []string{"lan4"}, DestZones: []string{"lan1"}, Action: l4, Protocols: []Protocol{{Name: "tcp", Port: "2404"}}})
+				}
+				json.NewEncoder(w).Encode(map[string]any{"firewall": FirewallConfig{Rules: rules}})
+			}))
+			defer srv.Close()
+			client := newTestClient(srv.URL)
+			rules, err := client.GetFirewallRules(context.Background())
+			if err != nil || rules[0].ICS.Mode != "monitor" {
+				t.Fatalf("monitor metadata lost: %+v, %v", rules, err)
+			}
+			summaries, err := client.GetZoneRuleSummaries(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if l4 == "" {
+				if len(summaries) != 0 {
+					t.Fatalf("observation-only pair created admission summary: %+v", summaries)
+				}
+			} else if len(summaries) != 1 || summaries[0].Action != l4 || len(summaries[0].RuleDetails) != 1 || strings.Contains(summaries[0].Summary, "iec104") {
+				t.Fatalf("monitor changed L4 summary: %+v", summaries)
+			}
+		})
+	}
+}
 
 // TestGetFirewallRulesSuccess verifies config/rules parsing.
 func TestGetFirewallRulesSuccess(t *testing.T) {

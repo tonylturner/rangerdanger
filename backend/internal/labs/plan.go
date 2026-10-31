@@ -55,27 +55,45 @@ type PlanProtocol struct {
 	Port string `yaml:"port,omitempty" json:"port,omitempty"`
 }
 
-// PlanICS is the plan's limited containd predicate (Modbus and DNP3 only).
+// PlanICS is the plan's limited containd predicate (Modbus, DNP3 and IEC 104).
 // UnitID and Addresses are Modbus-only; DNP3 point groups are not modeled.
 // ObjectClasses cannot be used until plans support CIP.
 // Empty Mode inherits the policy envelope; overrides are monitor or enforce.
 // The L4 source pin enforces; DPI detects and logs.
 type PlanICS struct {
-	Protocol      string   `yaml:"protocol,omitempty" json:"protocol,omitempty"`
-	FunctionCode  []int    `yaml:"functionCode,omitempty" json:"functionCode,omitempty"`
-	UnitID        *uint8   `yaml:"unitId,omitempty" json:"unitId,omitempty"`
-	Addresses     []string `yaml:"addresses,omitempty" json:"addresses,omitempty"`
-	ObjectClasses []uint16 `yaml:"objectClasses,omitempty" json:"objectClasses,omitempty"`
-	ReadOnly      bool     `yaml:"readOnly,omitempty" json:"readOnly,omitempty"`
-	WriteOnly     bool     `yaml:"writeOnly,omitempty" json:"writeOnly,omitempty"`
-	Direction     string   `yaml:"direction,omitempty" json:"direction,omitempty"`
-	Mode          string   `yaml:"mode,omitempty" json:"mode,omitempty"`
+	Protocol          string         `yaml:"protocol,omitempty" json:"protocol,omitempty"`
+	FunctionCode      []int          `yaml:"functionCode,omitempty" json:"functionCode,omitempty"`
+	UnitID            *uint8         `yaml:"unitId,omitempty" json:"unitId,omitempty"`
+	Addresses         []string       `yaml:"addresses,omitempty" json:"addresses,omitempty"`
+	ObjectClasses     []uint16       `yaml:"objectClasses,omitempty" json:"objectClasses,omitempty"`
+	ReadOnly          bool           `yaml:"readOnly,omitempty" json:"readOnly,omitempty"`
+	WriteOnly         *bool          `yaml:"writeOnly,omitempty" json:"writeOnly,omitempty"`
+	Direction         string         `yaml:"direction,omitempty" json:"direction,omitempty"`
+	Mode              string         `yaml:"mode,omitempty" json:"mode,omitempty"`
+	TypeIDs           []int          `yaml:"typeIds,omitempty" json:"typeIds,omitempty"`
+	Classes           []string       `yaml:"classes,omitempty" json:"classes,omitempty"`
+	CA                []int          `yaml:"ca,omitempty" json:"ca,omitempty"`
+	IOA               []PlanIOARange `yaml:"ioa,omitempty" json:"ioa,omitempty"`
+	COT               []int          `yaml:"cot,omitempty" json:"cot,omitempty"`
+	Originators       []int          `yaml:"originators,omitempty" json:"originators,omitempty"`
+	Negative          *bool          `yaml:"negative,omitempty" json:"negative,omitempty"`
+	Test              *bool          `yaml:"test,omitempty" json:"test,omitempty"`
+	SelectExecute     string         `yaml:"selectExecute,omitempty" json:"selectExecute,omitempty"`
+	CommandStates     []int          `yaml:"commandStates,omitempty" json:"commandStates,omitempty"`
+	CommandQualifiers []int          `yaml:"commandQualifiers,omitempty" json:"commandQualifiers,omitempty"`
 }
 
-// PlanDetect overlays only metadata on rules that are actually emitted.
+// PlanIOARange is an inclusive IEC 104 information-object address range.
+type PlanIOARange struct {
+	Start int `yaml:"start" json:"start"`
+	End   int `yaml:"end" json:"end"`
+}
+
+// PlanDetect overlays metadata and appends standalone observation rules.
 type PlanDetect struct {
-	Log []string           `yaml:"log,omitempty" json:"log,omitempty"`
-	ICS map[string]PlanICS `yaml:"ics,omitempty" json:"ics,omitempty"`
+	Rules []PlanRule         `yaml:"rules,omitempty" json:"rules,omitempty"`
+	Log   []string           `yaml:"log,omitempty" json:"log,omitempty"`
+	ICS   map[string]PlanICS `yaml:"ics,omitempty" json:"ics,omitempty"`
 }
 
 // PlanProof identifies a TCP tuple by topology identities, not copied addresses.

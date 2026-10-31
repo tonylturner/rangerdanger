@@ -1,12 +1,59 @@
 package server
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestCompareRulesMonitorObservations(t *testing.T) {
+	// Monitor-only pairs fall through to the same default, and observations
+	// cannot turn an existing ALLOW into MIXED or a scope tightening.
+	for _, action := range []string{"ALLOW", "DENY", ""} {
+		t.Run("l4="+action, func(t *testing.T) {
+			decode := func(observe bool) *fwConfigFile {
+				t.Helper()
+				rules := []any{}
+				if action != "" {
+					rules = append(rules, map[string]any{"id": "l4", "description": "L4 conduit", "sourceZones": []string{"wan"}, "destZones": []string{"lan1"}, "action": action})
+				}
+				if observe {
+					for _, verdict := range []string{"ALLOW", "DENY"} {
+						rules = append(rules, map[string]any{"id": "observation", "description": "Monitor only; never admits or denies", "sourceZones": []string{"wan"}, "destZones": []string{"lan1"}, "action": verdict, "ics": map[string]any{"protocol": "iec104", "mode": "monitor"}})
+					}
+				}
+				data, err := json.Marshal(map[string]any{"firewall": map[string]any{"defaultAction": "DENY", "rules": rules}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				path := filepath.Join(t.TempDir(), "policy.json")
+				if err := os.WriteFile(path, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				cfg, err := loadFirewallRules(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return cfg
+			}
+			base, observed := decode(false), decode(true)
+			last := observed.Firewall.Rules[len(observed.Firewall.Rules)-1]
+			if last.ICS == nil || last.ICS.Mode != "monitor" || last.ICS.Protocol != "iec104" {
+				t.Fatalf("lost observation metadata: %+v", last)
+			}
+			want := compareRuleSets(usCompare, base, base)
+			for _, got := range [][]PolicyRuleDiff{compareRuleSets(usCompare, base, observed), compareRuleSets(usCompare, observed, base)} {
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("observations changed comparison: %+v, want %+v", got, want)
+				}
+			}
+		})
+	}
+}
 
 // firewall_compare.go drives the lab UI's "what changed between weak
 // and improved" panel. The pure-logic helpers (compareRuleSets,

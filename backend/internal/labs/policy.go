@@ -19,17 +19,18 @@ const (
 	// whatever its value, so a package cannot import ICS rules its range has
 	// no decoder for.
 	ICSRulesForbidden = "forbidden"
+	// ICSRulesMonitor requires explicit observation predicates on firewall rules.
+	ICSRulesMonitor = "monitor"
 )
 
 const icsKey = "ics"
 
 // LintPolicy checks one containd policy document: it must be a single JSON
-// object, and under ICSRulesForbidden no object anywhere in it may have an
-// `ics` key, even `{}` or null. file names the document in errors; each
-// forbidden key is reported by its JSON pointer. The catalog loader, the
-// package lint and the custom-policy apply share this one check.
+// object, and checks every ics key against the package mode, including null
+// and empty values. Invalid keys are reported by JSON pointer. Catalog load,
+// package lint and custom-policy apply share this check.
 func LintPolicy(file string, data []byte, icsRules string) error {
-	if icsRules != ICSRulesAllowed && icsRules != ICSRulesForbidden {
+	if icsRules != ICSRulesAllowed && icsRules != ICSRulesForbidden && icsRules != ICSRulesMonitor {
 		return fmt.Errorf("%s: unknown ics_rules %q", file, icsRules)
 	}
 	var document any
@@ -49,18 +50,36 @@ func LintPolicy(file string, data []byte, icsRules string) error {
 	// it sees every key in order, duplicates included.
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	var found []string
-	if err := walkKeys(decoder, "", &found); err != nil {
+	var problems []string
+	check := func(pointer string, raw json.RawMessage, ruleObject bool) {
+		if icsRules == ICSRulesMonitor && ruleObject && monitorPolicyICS(raw) {
+			return
+		}
+		problem := fmt.Sprintf("%s: key %q at %s is forbidden (ics_rules: %s)", file, icsKey, pointer, icsRules)
+		if icsRules == ICSRulesMonitor {
+			problem += "; requires firewall.rules[i].ics object with protocol and mode monitor"
+		}
+		problems = append(problems, problem)
+	}
+	if err := walkKeys(decoder, "", false, check); err != nil {
 		return fmt.Errorf("%s: invalid JSON: %w", file, err)
 	}
-	if len(found) == 0 {
+	if len(problems) == 0 {
 		return nil
 	}
-	problems := make([]string, len(found))
-	for index, pointer := range found {
-		problems[index] = fmt.Sprintf("%s: key %q at %s is forbidden (ics_rules: %s)", file, icsKey, pointer, ICSRulesForbidden)
-	}
 	return fmt.Errorf("%s", strings.Join(problems, "; "))
+}
+
+// monitorPolicyICS requires an explicit monitor predicate, not inherited enforce.
+func monitorPolicyICS(raw json.RawMessage) bool {
+	var predicate map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &predicate); err != nil {
+		return false
+	}
+	var protocol, mode string
+	return json.Unmarshal(predicate["protocol"], &protocol) == nil &&
+		json.Unmarshal(predicate["mode"], &mode) == nil &&
+		strings.TrimSpace(protocol) != "" && mode == "monitor"
 }
 
 // CheckManagementSafety protects the Docker-assigned control plane on every
@@ -215,9 +234,8 @@ func CheckManagementSafety(data []byte) error {
 	return nil
 }
 
-// walkKeys reads one JSON value and appends the pointer of every `ics`
-// object key inside it to found.
-func walkKeys(decoder *json.Decoder, pointer string, found *[]string) error {
+// walkKeys visits every ics key, including duplicates and nested values.
+func walkKeys(decoder *json.Decoder, pointer string, ruleObject bool, check func(string, json.RawMessage, bool)) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
@@ -236,15 +254,23 @@ func walkKeys(decoder *json.Decoder, pointer string, found *[]string) error {
 			key, _ := keyToken.(string)
 			child := pointer + "/" + escapePointer(key)
 			if key == icsKey {
-				*found = append(*found, child)
+				var raw json.RawMessage
+				if err := decoder.Decode(&raw); err != nil {
+					return err
+				}
+				check(child, raw, ruleObject)
+				if err := walkKeys(json.NewDecoder(bytes.NewReader(raw)), child, false, check); err != nil {
+					return err
+				}
+				continue
 			}
-			if err := walkKeys(decoder, child, found); err != nil {
+			if err := walkKeys(decoder, child, false, check); err != nil {
 				return err
 			}
 		}
 	case '[':
 		for index := 0; decoder.More(); index++ {
-			if err := walkKeys(decoder, pointer+"/"+strconv.Itoa(index), found); err != nil {
+			if err := walkKeys(decoder, pointer+"/"+strconv.Itoa(index), pointer == "/firewall/rules", check); err != nil {
 				return err
 			}
 		}

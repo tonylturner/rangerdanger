@@ -78,6 +78,43 @@ func TestLintPolicyAllowedICS(t *testing.T) {
 	}
 }
 
+func TestLintPolicyMonitorICS(t *testing.T) {
+	for _, tc := range []struct {
+		name, patch, pointer string
+	}{
+		{"explicit", `"firewall":{"rules":[{"ics":{"protocol":"iec104","mode":"monitor"}}]}`, ""},
+		{"no predicates", `"firewall":{"rules":[]}`, ""},
+		{"null", `"firewall":{"rules":[{"ics":null}]}`, "/firewall/rules/0/ics"},
+		{"empty", `"firewall":{"rules":[{"ics":{}}]}`, "/firewall/rules/0/ics"},
+		{"scalar", `"firewall":{"rules":[{"ics":"monitor"}]}`, "/firewall/rules/0/ics"},
+		{"array", `"firewall":{"rules":[{"ics":[]}]}`, "/firewall/rules/0/ics"},
+		{"inherit", `"firewall":{"rules":[{"ics":{"protocol":"iec104"}}]}`, "/firewall/rules/0/ics"},
+		{"enforce", `"firewall":{"rules":[{"ics":{"protocol":"iec104","mode":"enforce"}}]}`, "/firewall/rules/0/ics"},
+		{"case", `"firewall":{"rules":[{"ics":{"protocol":"iec104","mode":"Monitor"}}]}`, "/firewall/rules/0/ics"},
+		{"wrong key case", `"firewall":{"rules":[{"ics":{"protocol":"iec104","Mode":"monitor"}}]}`, "/firewall/rules/0/ics"},
+		{"empty protocol", `"firewall":{"rules":[{"ics":{"protocol":" ","mode":"monitor"}}]}`, "/firewall/rules/0/ics"},
+		{"null protocol", `"firewall":{"rules":[{"ics":{"protocol":null,"mode":"monitor"}}]}`, "/firewall/rules/0/ics"},
+		{"numeric protocol", `"firewall":{"rules":[{"ics":{"protocol":1,"mode":"monitor"}}]}`, "/firewall/rules/0/ics"},
+		{"top", `"ics":{"protocol":"iec104","mode":"monitor"}`, "/ics"},
+		{"nested", `"firewall":{"rules":[{"extra":{"ics":{"protocol":"iec104","mode":"monitor"}}}]}`, "/firewall/rules/0/extra/ics"},
+		{"object not array", `"firewall":{"rules":{"0":{"ics":{"protocol":"iec104","mode":"monitor"}}}}`, "/firewall/rules/0/ics"},
+		{"duplicate unsafe", `"firewall":{"rules":[{"ics":null,"ics":{"protocol":"iec104","mode":"monitor"}}]}`, "/firewall/rules/0/ics"},
+		{"nested predicate", `"firewall":{"rules":[{"ics":{"protocol":"iec104","mode":"monitor","ics":null}}]}`, "/firewall/rules/0/ics/ics"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}],` + tc.patch + `}`)
+			err := LintPolicy("monitor.json", data, ICSRulesMonitor)
+			if tc.pointer == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.pointer) {
+				t.Fatalf("error=%v, want pointer %s", err, tc.pointer)
+			}
+		})
+	}
+}
+
 func TestLintPolicyRejectsInvalidDocuments(t *testing.T) {
 	tests := []struct {
 		name, fixture, rules, problem string
