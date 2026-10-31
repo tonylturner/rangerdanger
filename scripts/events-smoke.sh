@@ -182,6 +182,52 @@ engine_events() {
     "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>/dev/null
 }
 
+count_dpi_requests() {
+  local proto="$1" function_code="$2" src_ip="$3" dst_ip="$4" dst_port="$5" boundary="$6"
+  engine_events | python3 -c '
+import calendar, datetime, json, re, sys
+def epoch_ns(value):
+    match = re.fullmatch(r"(.*T\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?(Z|[+-]\d\d:\d\d)", value or "")
+    if not match:
+        raise ValueError("event timestamp is not RFC3339Nano")
+    parsed = datetime.datetime.fromisoformat(match[1] + match[3].replace("Z", "+00:00"))
+    seconds = calendar.timegm(parsed.astimezone(datetime.timezone.utc).utctimetuple())
+    return seconds * 1_000_000_000 + int((match[2] or "").ljust(9, "0"))
+proto, function_code, src_ip, dst_ip, dst_port = sys.argv[1:6]
+boundary = int(sys.argv[6])
+events = json.load(sys.stdin) or []
+matches = [event for event in events
+           if event.get("proto") == proto
+           and event.get("kind") == "request"
+           and event.get("attributes", {}).get("ics") is True
+           and event.get("attributes", {}).get("function_code") == int(function_code)
+           and event.get("srcIp") == src_ip
+           and event.get("dstIp") == dst_ip
+           and event.get("srcPort", 0) > 0
+           and event.get("dstPort") == int(dst_port)
+           and event.get("transport") == "tcp"
+           and epoch_ns(event.get("timestamp")) > boundary]
+print(len(matches))
+' "$proto" "$function_code" "$src_ip" "$dst_ip" "$dst_port" "$boundary"
+}
+
+wait_for_dpi_request() {
+  local proto="$1" function_code="$2" src_ip="$3" dst_ip="$4" dst_port="$5" boundary="$6"
+  local elapsed=0 count=0
+  while [ "$elapsed" -le "$EVENT_POLL_BUDGET" ]; do
+    count=$(count_dpi_requests "$proto" "$function_code" "$src_ip" "$dst_ip" "$dst_port" "$boundary") || return 2
+    if [ "$count" -ge 1 ]; then
+      printf '%s\n' "$count"
+      return 0
+    fi
+    [ "$elapsed" -eq "$EVENT_POLL_BUDGET" ] && break
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  printf '0\n'
+  return 1
+}
+
 count_kali_denies() {
   engine_events | python3 -c '
 import calendar, datetime, json, re, sys
@@ -343,21 +389,24 @@ try:
 finally: s.close()
 PY
 
-    # Fire FC8 from RTAC and check the resulting DPI evidence record.
-    docker exec rangerdanger-rtac-sim python3 /tmp/_smoke_modbus.py 10.40.40.20 fc8 >/dev/null 2>&1 || true
-    sleep "$PROBE_WAIT"
-    block_lines=$(docker exec rangerdanger-firewall sh -c \
-      "nft list set inet containd block_flows 2>/dev/null" 2>/dev/null \
-      | grep -c '10.30.30.20.*10.40.40.20.*502' || echo 0)
-    if [ "$block_lines" -lt 1 ]; then
-      err "Modbus FC8 from RTAC did not produce DPI function-code evidence"
-    else
-      ok "Modbus FC8 produced function-code evidence for 10.30.30.20.10.40.40.20.502"
+    # Fire FC8 from RTAC and check fresh decoded DPI event evidence.
+    dpi_boundary=$(docker exec rangerdanger-firewall date -u +%s%N) || {
+      err "cannot capture range-clock Modbus event boundary"; exit 1;
+    }
+    if ! [[ "$dpi_boundary" =~ ^[0-9]{19}$ ]]; then
+      err "invalid range-clock Modbus event boundary: $dpi_boundary"; exit 1
     fi
-
-    # Clear the DPI evidence record so the next gate starts clean.
-    docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" >/dev/null 2>&1 || true
-    sleep 1
+    docker exec rangerdanger-rtac-sim python3 /tmp/_smoke_modbus.py 10.40.40.20 fc8 >/dev/null 2>&1 || true
+    if dpi_count=$(wait_for_dpi_request modbus 8 10.30.30.20 10.40.40.20 502 "$dpi_boundary"); then
+      ok "$dpi_count fresh Modbus FC8 request event(s) for 10.30.30.20 -> 10.40.40.20:502"
+    else
+      result=$?
+      if [ "$result" -eq 2 ]; then
+        err "cannot read or parse bounded Modbus DPI events"
+      else
+        err "no fresh Modbus FC8 request event for 10.30.30.20 -> 10.40.40.20:502 within ${EVENT_POLL_BUDGET}s"
+      fi
+    fi
   fi
 fi
 
@@ -380,23 +429,29 @@ else
   apply_policy improved || true
 
   # Fire a DNP3 Direct Operate (FC5) from the RTAC to the relay and check
-  # the resulting DPI evidence record. Restore the relay afterwards.
+  # the fresh decoded DPI event. Restore the relay afterwards.
+  dpi_boundary=$(docker exec rangerdanger-firewall date -u +%s%N) || {
+    err "cannot capture range-clock DNP3 event boundary"; exit 1;
+  }
+  if ! [[ "$dpi_boundary" =~ ^[0-9]{19}$ ]]; then
+    err "invalid range-clock DNP3 event boundary: $dpi_boundary"; exit 1
+  fi
   docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip >/dev/null 2>&1 || true
-  sleep "$PROBE_WAIT"
-  dnp3_block=$(docker exec rangerdanger-firewall sh -c \
-    "nft list set inet containd block_flows 2>/dev/null" 2>/dev/null \
-    | grep -c '10.30.30.20.*10.40.40.20.*20000' || echo 0)
-  if [ "$dnp3_block" -lt 1 ]; then
-    err "DNP3 FC5 from RTAC did not produce DPI function-code evidence"
+  if dnp3_count=$(wait_for_dpi_request dnp3 5 10.30.30.20 10.40.40.20 20000 "$dpi_boundary"); then
+    ok "$dnp3_count fresh DNP3 FC5 request event(s) for 10.30.30.20 -> 10.40.40.20:20000"
   else
-    ok "DNP3 FC5 produced function-code evidence for 10.30.30.20.10.40.40.20.20000"
+    result=$?
+    if [ "$result" -eq 2 ]; then
+      err "cannot read or parse bounded DNP3 DPI events"
+    else
+      err "no fresh DNP3 FC5 request event for 10.30.30.20 -> 10.40.40.20:20000 within ${EVENT_POLL_BUDGET}s"
+    fi
   fi
 
   # Restore the baseline before cleaning up the flow record, then close
   # the relay after the dataplane has returned to weak.
   # Ending on weak also matches the lab default that gate 1 moved away from.
   apply_policy weak || true
-  docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" >/dev/null 2>&1 || true
   docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close >/dev/null 2>&1 || true
   # Report cleanup only on failure so the summary does not count an
   # implicit pass. A breaker left open de-energizes the feeder for later gates.
