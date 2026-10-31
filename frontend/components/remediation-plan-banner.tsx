@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ClipboardList } from "lucide-react";
-import { loadRemediationPlan } from "../lib/remediation-plan";
+import { readRemediationPlanState } from "../lib/remediation-plan";
 import type { PlanProvenance } from "../lib/api";
 import { planLabel } from "../lib/policy-wording";
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import { useHydrated } from "../lib/use-hydrated";
+import { useCurriculumStorageRevision } from "../lib/use-curriculum-storage-revision";
+import { PlanReadinessExclusions } from "./plan-readiness-exclusions";
 
 type RemediationPlanBannerProps = {
   currentExerciseId: string;
@@ -25,11 +27,9 @@ type RemediationPlanBannerProps = {
 export function RemediationPlanBanner({ currentExerciseId, appliedPlan }: RemediationPlanBannerProps) {
   const scope = useCurriculumScope();
   const hydrated = useHydrated();
-  const plan = useMemo(
-    () => hydrated && !scope.curriculum?.activities[currentExerciseId]?.hideBanner
-      ? loadRemediationPlan(scope) : null,
-    [scope, currentExerciseId, hydrated],
-  );
+  useCurriculumStorageRevision(scope);
+  const state = hydrated ? readRemediationPlanState(scope) : null;
+  const plan = state?.effective;
   const [expanded, setExpanded] = useState(false);
 
   const binding = scope.curriculum;
@@ -90,13 +90,15 @@ export function RemediationPlanBanner({ currentExerciseId, appliedPlan }: Remedi
               }`}
             >
               {relevantSelected.length > 0
-                ? `${relevantSelected.length} actions ${appliedPlan ? "applied in your plan" : "planned"}`
+                ? `${relevantSelected.length} action${relevantSelected.length === 1 ? "" : "s"} ${appliedPlan ? "applied in your plan" : "planned"}`
                 : "no actions selected for this exercise"}
             </div>
           )}
         </div>
         <div className="text-[10px] text-slate-600">{expanded ? "hide" : "show"}</div>
       </button>
+
+      <PlanReadinessExclusions excluded={state?.excluded ?? []} applied={!!appliedPlan} />
 
       {expanded && hasRelevance && (
         <div className="mt-3 space-y-2 border-t border-slate-800 pt-3">

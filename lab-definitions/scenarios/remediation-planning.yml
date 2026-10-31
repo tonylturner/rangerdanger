@@ -50,7 +50,7 @@ steps:
     description: >
       You have 500 hours of total labor for this quarter's
       segmentation work. That total is split across four
-      roles, and each role has its own capacity cap:
+      roles, and each role has its own default capacity cap:
 
         - OT Engineer - 120 hours
           The person who understands substation operations and
@@ -72,6 +72,11 @@ steps:
       schedule more work than a role has hours for, that team
       is overloaded and the work is not realistic - even if the
       total 500-hour budget still has room.
+
+      Lab 1.3 readiness can reduce these caps, increase action effort and block
+      actions with unmet dependencies. Use default budget restores the unconstrained
+      model. Blocked saved choices stay recorded but are excluded from draft totals,
+      coverage and Apply Your Plan. Already-applied provenance is unchanged.
 
       Watch the role utilization bars as you select actions
       in the next step. A role in red is over capacity. This is a warning, not an apply limit.

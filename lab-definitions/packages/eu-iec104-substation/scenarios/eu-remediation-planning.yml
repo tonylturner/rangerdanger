@@ -53,7 +53,7 @@ steps:
 - id: understand-the-team-budget
   title: Understand the team budget
   description: |
-    You have **500 labor hours** this quarter. Role capacity is unchanged from the US workshop:
+    You have **500 labor hours** this quarter. Default role capacities match the US workshop; Lab 1.3 readiness can reduce them:
 
     | Role | Capacity h |
     |---|---:|
@@ -62,7 +62,7 @@ steps:
     | Network Engineer | 120 |
     | Security Analyst | 120 |
 
-    Effort splits across each action's roles, rounded per role. Total hours may fit while a specialist role is already over capacity. Readiness answers add warnings or blocked advisories; they do not shrink the budget or disable selection.
+    Effort splits across each action's roles, rounded per role. Total hours may fit while a specialist role is already over capacity. Readiness answers reduce role caps, add DPI overhead or vendor effort, and block actions with unmet dependencies. The total envelope remains 500h. Use default budget restores the unconstrained model. Blocked saved choices remain recorded but are excluded from totals, coverage and Apply Your Plan; already-applied provenance is unchanged.
 
     :::hint Binding role
     A 500-hour envelope is not 500 interchangeable hours. Record which role becomes the bottleneck and which operational review or vendor window you need before shipping.

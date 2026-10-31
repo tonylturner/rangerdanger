@@ -2,6 +2,7 @@
 // exercises read it to display or branch on the student's plan.
 
 import { REMEDIATION_PLAN, readCurriculum, writeCurriculum, type CurriculumScope } from "./curriculum-storage";
+import { readBudgetModel } from "./readiness-budget";
 
 export type RemediationPlan = {
   exerciseId: string;
@@ -14,7 +15,7 @@ export function saveRemediationPlan(scope: CurriculumScope, plan: RemediationPla
   writeCurriculum(scope, REMEDIATION_PLAN, JSON.stringify(plan));
 }
 
-export function loadRemediationPlan(scope: CurriculumScope): RemediationPlan | null {
+export function loadSavedRemediationPlan(scope: CurriculumScope): RemediationPlan | null {
   if (!scope.curriculum) return null;
   const raw = readCurriculum(scope, REMEDIATION_PLAN);
   if (!raw) return null;
@@ -23,4 +24,24 @@ export function loadRemediationPlan(scope: CurriculumScope): RemediationPlan | n
   } catch {
     return null;
   }
+}
+
+export type ExcludedAction = { id: string; reasons: string[] };
+
+export function readRemediationPlanState(scope: CurriculumScope) {
+  const saved = loadSavedRemediationPlan(scope);
+  const model = readBudgetModel(scope);
+  const excluded: ExcludedAction[] = [];
+  const selectedActionIds = (saved?.selectedActionIds ?? []).filter((id) => {
+    const reasons = model?.blockedReasons[id];
+    if (!reasons) return true;
+    excluded.push({ id, reasons });
+    return false;
+  });
+  return { saved, effective: saved ? { ...saved, selectedActionIds } : null, excluded };
+}
+
+// Never rewrite saved intent: a readiness reversal restores the draft selection.
+export function loadRemediationPlan(scope: CurriculumScope): RemediationPlan | null {
+  return readRemediationPlanState(scope).effective;
 }

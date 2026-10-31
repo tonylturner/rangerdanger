@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Check, AlertCircle, CircleCheck, CircleDashed, ChevronUp, ChevronDown } from "lucide-react";
-import type { DecisionAction, DecisionRole } from "../lib/api";
-import { saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
+import type { DecisionAction } from "../lib/api";
+import { saveRemediationPlan, loadSavedRemediationPlan } from "../lib/remediation-plan";
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import { useCurriculumStorageRevision } from "../lib/use-curriculum-storage-revision";
 import {
@@ -15,6 +15,9 @@ import {
   readReadiness,
   readinessFlagsForAction,
 } from "../lib/requirement-coverage";
+import { computeBudgetAdjustments, DEFAULT_BUDGET, usesDefaultBudget } from "../lib/readiness-budget";
+import { writeCurriculum } from "../lib/curriculum-storage";
+import { PlanReadinessExclusions } from "./plan-readiness-exclusions";
 
 type DecisionPanelProps = {
   exerciseId: string;
@@ -28,7 +31,7 @@ function hoursPerRole(action: DecisionAction): number {
 }
 
 function loadSelectedActions(scope: ReturnType<typeof useCurriculumScope>, exerciseId: string): Set<string> {
-  const plan = loadRemediationPlan(scope);
+  const plan = loadSavedRemediationPlan(scope);
   return plan?.exerciseId === exerciseId ? new Set(plan.selectedActionIds) : new Set();
 }
 
@@ -37,8 +40,6 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
   const storageRevision = useCurriculumStorageRevision(scope);
   const binding = scope.curriculum;
   const budgetHours = binding?.budgetHours ?? 0;
-  const roles: DecisionRole[] = useMemo(() => binding?.teams ?? [], [binding?.teams]);
-  const catalog: DecisionAction[] = useMemo(() => binding?.catalog ?? [], [binding?.catalog]);
 
   const selectionScope = `${scope.packageId}:${scope.revision}:${exerciseId}`;
   const [selectionState, setSelectionState] = useState(() => ({
@@ -53,9 +54,16 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
   // Shared Lab 1.3 answers stay current when another step or tab changes them.
   const requirements = readRequirements(scope);
   const readiness = readReadiness(scope);
+  const useDefaults = usesDefaultBudget(scope);
+  const model = binding ? computeBudgetAdjustments(readiness, binding, useDefaults) : null;
+  const roles = model?.teams ?? [];
+  const catalog = model?.catalog ?? [];
+  const effectiveSelected = new Set([...selected].filter((id) => !model?.blockedReasons[id]));
+  const excluded = [...selected].filter((id) => model?.blockedReasons[id]).map((id) => ({ id, reasons: model!.blockedReasons[id] }));
   const hasAnyReadiness = readiness.some((r) => r.verdict !== "");
 
   const toggle = (id: string) => {
+    if (!selected.has(id) && model?.blockedReasons[id]) return;
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -72,7 +80,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
   };
 
   // Computed totals
-  const totalHours = [...selected].reduce((sum, id) => {
+  const totalHours = [...effectiveSelected].reduce((sum, id) => {
     const a = catalog.find((c) => c.id === id);
     return sum + (a?.effort_hours ?? 0);
   }, 0);
@@ -83,7 +91,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
   // Per-role usage
   const roleUsage: Record<string, number> = {};
   for (const role of roles) roleUsage[role.name] = 0;
-  for (const id of selected) {
+  for (const id of effectiveSelected) {
     const a = catalog.find((c) => c.id === id);
     if (!a) continue;
     const perRole = hoursPerRole(a);
@@ -95,8 +103,8 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
   const overRoles = roles.filter((r) => roleUsage[r.name] > r.capacity_hours);
 
   // Per-requirement coverage (computed against current selection)
-  const coverage = useMemo(() => computeCoverage(requirements, selected, binding), [requirements, selected, binding]);
-  const coverageSummary = useMemo(() => summariseCoverage(coverage), [coverage]);
+  const coverage = computeCoverage(requirements, effectiveSelected, binding);
+  const coverageSummary = summariseCoverage(coverage);
   const hasAnyVerdict = requirements.some((r) => r.verdict !== "");
 
   // Coverage panel sticks to the bottom of the viewport so the
@@ -105,7 +113,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
   // detail rows.
   const [coverageOpen, setCoverageOpen] = useState(false);
 
-  if (!binding) return null;
+  if (!binding || !model) return null;
 
   return (
     <div className="mt-3 space-y-4">
@@ -141,7 +149,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
         </div>
       )}
 
-      {/* Resourcing readiness - observational overlays */}
+      {/* Resourcing readiness and budget constraints */}
       {hasAnyReadiness && (
         <div className="rounded-lg border border-purple-900/40 bg-purple-950/10 p-3">
           <div className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-2">
@@ -167,11 +175,21 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
             ))}
           </div>
           <div className="mt-2 text-[10px] text-slate-500 italic">
-            Affected actions below show the dependencies these answers create. Selections aren&apos;t blocked - this is reality-check context.
+            Readiness changes role caps, action effort and eligibility unless you use the default budget below.
           </div>
         </div>
       )}
 
+      <label className="flex items-center gap-2 text-xs text-slate-300">
+        <input type="checkbox" checked={useDefaults}
+          onChange={(event) => writeCurriculum(scope, DEFAULT_BUDGET, String(event.target.checked))} />
+        Use default budget
+      </label>
+      <p className="text-[11px] text-slate-400">
+        {useDefaults ? "Default caps and effort; readiness blocks are off." : "Lab 1.3 readiness constraints are on; unanswered questions keep defaults."}
+        {" "}The total budget stays {budgetHours}h. Overruns are warnings, not selection blocks.
+      </p>
+      <PlanReadinessExclusions excluded={excluded} />
       {/* Budget and role meters */}
       <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
         <div className="flex items-baseline justify-between mb-2">
@@ -198,7 +216,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
         <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
           {roles.map((role) => {
             const used = roleUsage[role.name];
-            const pct = Math.min(100, Math.round((used / role.capacity_hours) * 100));
+            const pct = Math.min(100, (role.capacity_hours === 0 ? (used > 0 ? 100 : 0) : Math.round((used / role.capacity_hours) * 100)));
             const over = used > role.capacity_hours;
             return (
               <div key={role.name} className="rounded-sm border border-slate-800 bg-slate-900/60 p-2">
@@ -209,6 +227,12 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                   {used}
                   <span className="text-slate-600"> / {role.capacity_hours}h</span>
                 </div>
+                {model.teamReasons[role.name].length > 0 && (
+                  <div className="mt-1 text-[10px] text-amber-300" title={model.teamReasons[role.name].join("; ")}>
+                    {binding.teams.find((r) => r.name === role.name)!.capacity_hours}h → {role.capacity_hours}h
+                    <div>{model.teamReasons[role.name].join("; ")}</div>
+                  </div>
+                )}
                 <div className="mt-1 h-1 rounded-full bg-slate-800 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${
@@ -238,19 +262,21 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
       {/* Action catalog */}
       <div className="space-y-2">
         <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-          Remediation Actions ({selected.size} selected of {catalog.length})
+          Remediation Actions ({effectiveSelected.size} eligible selected of {catalog.length})
         </div>
         {catalog.map((a) => {
           const isSelected = selected.has(a.id);
           const perRole = hoursPerRole(a);
           const implements_ = actionImplements(a.id, requirements, binding);
-          const readinessFlags = readinessFlagsForAction(a.id, readiness, binding);
-          const hasBlocked = readinessFlags.some((f) => f.severity === "blocked");
+          const readinessFlags = useDefaults ? [] : readinessFlagsForAction(a.id, readiness, binding);
+          const hasBlocked = !!model?.blockedReasons[a.id];
           return (
             <button
               key={a.id}
               onClick={() => toggle(a.id)}
-              className={`w-full text-left rounded-lg border p-3 transition-all ${
+              disabled={hasBlocked && !isSelected}
+              aria-pressed={isSelected}
+              className={`w-full text-left rounded-lg border p-3 transition-all disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-sky-400 ${
                 isSelected
                   ? "border-sky-600 bg-sky-950/40 ring-1 ring-sky-600/40"
                   : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
@@ -268,10 +294,13 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="text-xs font-bold text-slate-200">{a.title}</div>
                     <div className="text-[10px] font-mono text-amber-400 shrink-0">
+                      {model.actionReasons[a.id].length > 0 && <span className="text-slate-400">{binding.catalog.find((c) => c.id === a.id)!.effort_hours}h → </span>}
                       {a.effort_hours}h
                       <span className="text-slate-600"> ({perRole}h/role)</span>
                     </div>
                   </div>
+                  {model.actionReasons[a.id].length > 0 && <div className="mt-1 text-[10px] text-amber-300" title={model.actionReasons[a.id].join("; ")}>{model.actionReasons[a.id].join("; ")}</div>}
+                  {hasBlocked && isSelected && <div className="mt-1 text-[11px] text-red-300">Saved selection excluded from totals and coverage. Click to remove.</div>}
                   <div className="mt-1 text-[11px] leading-relaxed text-slate-400 whitespace-pre-line">
                     {a.why}
                     {" — planned until applied in your plan"}

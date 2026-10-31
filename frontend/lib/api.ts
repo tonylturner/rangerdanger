@@ -691,6 +691,11 @@ export type CurriculumBinding = {
   requirements: Record<string, { label: string; impl: Record<string, string[]> }>;
   readiness: { id: string; label: string; good: string }[];
   readinessFlags: { actions: string[]; severity: "warn" | "blocked"; source: string; sourceLabel: string; verdict: string; message: string }[];
+  budgetAdjustments: {
+    source: string; verdict: string;
+    teamCaps: Record<string, number>;
+    effort: { actions: string[]; multiplier: number; extraHours: number }[];
+  }[];
   budgetHours: number;
   teams: DecisionRole[];
   catalog: DecisionAction[];

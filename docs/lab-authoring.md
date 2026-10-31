@@ -62,7 +62,7 @@ once each, in these seven single-purpose section files (each under 1000 lines):
 | --- | --- |
 | `catalog.yml` | Schema, budget, team capacities and action catalog |
 | `requirements.yml` | Requirement mappings and display order |
-| `readiness.yml` | Readiness answers and flags |
+| `readiness.yml` | Readiness answers, flags and budget adjustments |
 | `coverage.yml` | Impacts, groups, planning-only IDs and display orders |
 | `implementation.yml` | Phase templates, test text and empty-plan guidance |
 | `nodes.yml` | Exercise node mappings and inference |
@@ -362,7 +362,43 @@ Supported `type` values:
 `DecisionPanel` automatically reads:
 
 - 1.3 design verdicts from `decision:segmentation-requirements:*` and renders a "Your design requirements" panel + per-action requirement badges + a coverage summary.
-- 1.3 readiness verdicts from `decision:segmentation-requirements:{ot-eng-availability,fw-admin-skills,vendor-change-window,risk-acceptance-authority}` and renders a "Your team readiness" panel + per-action readiness overlays.
+- 1.3 readiness verdicts from `decision:segmentation-requirements:{ot-eng-availability,fw-admin-skills,vendor-change-window,risk-acceptance-authority}` and renders a "Your team readiness" panel + per-action readiness constraints.
+
+`readiness.yml` also requires `budgetAdjustments` (an explicit list; `[]` is valid).
+Each entry has `source`, `verdict`, `teamCaps` (map of team names to whole-hour
+caps, including zero) and `effort` (list of `{actions, multiplier, extraHours}`).
+Source/verdict pairs are unique and must name a readiness decision option.
+Caps cannot exceed their team's default. Multipliers are finite and at least 1;
+extra hours are nonnegative integers. An entry must have an effect. Example:
+
+```yaml
+budgetAdjustments:
+  - source: fw-admin-skills
+    verdict: VENDOR_LED
+    teamCaps: {Firewall Admin: 80}
+    effort:
+      - actions: [modbus-dpi, dnp3-dpi]
+        multiplier: 1
+        extraHours: 20
+```
+
+Matching caps combine by **minimum**, including the base cap. Action effort is
+`round(base × product(multipliers) + sum(extraHours))`, nearest whole hour,
+half up, once after all adjustments. The adjusted effort then splits across
+roles using the existing nearest-integer-per-role model; rounded role hours
+need not sum to the action total. Overhead belongs to total action effort and
+is shared across its roles, not charged only to Firewall Admin. The total
+`budgetHours` envelope does not change. Matching `readinessFlags` with severity
+`blocked` decide eligibility; warnings (including signoff pending) do not.
+Missing answers keep defaults. `Use default budget` turns off adjustments and
+blocking, not the saved answers. Its storage name is `use-default-budget` with
+`true`/`false`, scoped to package and revision.
+
+All draft readers use the shared `readiness-budget.ts` eligibility model via
+`remediation-plan.ts`. They exclude blocked actions without rewriting saved
+intent and display reasons. The picker retains excluded selections for removal
+or later restoration. Applied-plan IDs, hashes and proof expectations remain
+historical facts and are never filtered by current readiness.
 
 If you wire a different kind of action picker, see
 [`frontend/components/decision-panel.tsx`](../frontend/components/decision-panel.tsx)

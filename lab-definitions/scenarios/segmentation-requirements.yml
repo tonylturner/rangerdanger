@@ -177,9 +177,9 @@ steps:
       :::
 
       :::hint Why this matters
-      Lab 1.4 will read these answers and overlay each remediation action with the resourcing dependencies that affect it. For example, if you mark OT engineering as `STRETCHED`, the action `pin-rtac-to-field` (which requires OT Engineer review of the source-pin) gets a warning that it's harder to land than the labor-budget number suggests. If you mark vendor change windows as `NOT_DISCUSSED`, vendor-touching actions get a "blocked by readiness" flag - the technical change can't ship until that conversation happens.
+      Lab 1.3 readiness reshapes the Lab 1.4 labor model. OT engineering `STRETCHED` reduces its cap from 120h to 60h; `UNAVAILABLE` reduces it to 0h and blocks OT-touching actions. Firewall skills `VENDOR_LED` sets an 80h cap and adds 20h per DPI action; `GAP` sets a 40h cap and blocks DPI actions. A `NEGOTIATING` vendor window multiplies the vendor restriction effort by 1.5; `NOT_DISCUSSED` blocks vendor-touching actions. `UNCLEAR` risk authority means signoff pending; `DISPUTED` blocks high-impact deny actions.
 
-      Right now these annotations are observational - they don't reduce the Lab 1.4 labor budget. A future workshop iteration may drive 1.4's role caps directly from these answers (tracked in [issue #27](https://github.com/tonylturner/rangerdanger/issues/27)).
+      The total envelope remains 500h. The planner shows original → adjusted values and the answer behind each change. **Use default budget** restores default caps, effort and eligibility for comparison; the setting is saved per package and revision. Readiness-blocked saved choices stay visible but are excluded from draft totals, coverage and Apply Your Plan, even if you change readiness without reopening Lab 1.4. Changing readiness back restores those saved choices. An already-applied plan keeps its recorded provenance and proof expectations. Budget or role overrun alone remains a warning, not an apply limit.
       :::
 
   - id: define-success-criteria-for-segmentation

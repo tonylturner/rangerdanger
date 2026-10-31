@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Lab 1.3 readiness now adjusts Lab 1.4 role capacity, action effort and draft eligibility in both packages, with a default-budget comparison toggle and visible exclusion reasons.
+
 ### Security
 
 - Refresh workstation and HMI bases, update bundled npm and Compose, apply

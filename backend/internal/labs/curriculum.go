@@ -28,6 +28,7 @@ type Curriculum struct {
 	Requirements      map[string]CurriculumRequirement `yaml:"requirements" json:"requirements"`
 	Readiness         []CurriculumReadiness            `yaml:"readiness" json:"readiness"`
 	ReadinessFlags    []CurriculumReadinessFlag        `yaml:"readinessFlags" json:"readinessFlags"`
+	BudgetAdjustments []CurriculumBudgetAdjustment     `yaml:"budgetAdjustments" json:"budgetAdjustments"`
 	BudgetHours       int                              `yaml:"budgetHours" json:"budgetHours"`
 	Teams             []DecisionRole                   `yaml:"teams" json:"teams"`
 	Catalog           []DecisionAction                 `yaml:"catalog" json:"catalog"`
@@ -80,4 +81,20 @@ type CurriculumNodeInference struct {
 	Node    string `yaml:"node" json:"node"`
 	IP      string `yaml:"ip" json:"ip"`
 	Pattern string `yaml:"pattern" json:"pattern"`
+}
+
+// CurriculumBudgetAdjustment constrains a source/verdict pair. Caps combine by
+// minimum; effort multiplies first, then adds overhead, rounding only once.
+type CurriculumBudgetAdjustment struct {
+	Source   string                       `yaml:"source" json:"source"`
+	Verdict  string                       `yaml:"verdict" json:"verdict"`
+	TeamCaps map[string]int               `yaml:"teamCaps" json:"teamCaps"`
+	Effort   []CurriculumEffortAdjustment `yaml:"effort" json:"effort"`
+}
+
+// CurriculumEffortAdjustment adds shared action effort after all multipliers.
+type CurriculumEffortAdjustment struct {
+	Actions    []string `yaml:"actions" json:"actions"`
+	Multiplier float64  `yaml:"multiplier" json:"multiplier"`
+	ExtraHours int      `yaml:"extraHours" json:"extraHours"`
 }

@@ -1,12 +1,13 @@
 """Contracts for the shared offline curriculum reader."""
 
 from pathlib import Path
+import copy
 import tempfile
 import unittest
 
 import yaml
 
-from scripts.tests.curriculum import read_curriculum
+from scripts.tests.curriculum import read_curriculum, validate_budget_adjustments
 
 
 class CurriculumReaderTests(unittest.TestCase):
@@ -40,3 +41,41 @@ class CurriculumReaderTests(unittest.TestCase):
     def test_rejects_non_sibling_directory(self):
         with self.assertRaisesRegex(ValueError, "Invalid"):
             self.read_fixture({}, "../curriculum")
+
+
+class BudgetAdjustmentTests(unittest.TestCase):
+    def model(self):
+        return {"teams": [{"name": "OT Engineer", "capacity_hours": 120}],
+                "catalog": [{"id": "dpi"}], "readiness": [{"id": "ot"}],
+                "budgetAdjustments": [{"source": "ot", "verdict": "STRETCHED",
+                    "teamCaps": {"OT Engineer": 60},
+                    "effort": [{"actions": ["dpi"], "multiplier": 1.5, "extraHours": 20}]}]}
+
+    def test_valid_and_invalid_adjustments(self):
+        model = self.model()
+        validate_budget_adjustments(model)
+        for field, value in (("source", "foreign"), ("verdict", ""),
+                             ("teamCaps", None), ("teamCaps", {"OT Engineer": -1}),
+                             ("teamCaps", {"OT Engineer": 121}), ("effort", None)):
+            changed = copy.deepcopy(model)
+            changed["budgetAdjustments"][0][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                validate_budget_adjustments(changed)
+        for field, value in (("actions", ["foreign"]), ("actions", ["dpi", "dpi"]),
+                             ("multiplier", float("nan")), ("multiplier", 0),
+                             ("extraHours", -1)):
+            changed = copy.deepcopy(model)
+            changed["budgetAdjustments"][0]["effort"][0][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                validate_budget_adjustments(changed)
+
+    def test_both_package_tables(self):
+        root = Path(__file__).resolve().parents[2] / "lab-definitions/packages"
+        for package in ("us-dnp3-substation", "eu-iec104-substation"):
+            with self.subTest(package=package):
+                model = read_curriculum(root / package)
+                self.assertEqual(len(model["budgetAdjustments"]), 5)
+                self.assertEqual(model["budgetAdjustments"][0]["teamCaps"], {"OT Engineer": 60})
+                self.assertEqual(model["budgetAdjustments"][1]["teamCaps"], {"OT Engineer": 0})
+                self.assertEqual(model["budgetAdjustments"][2]["teamCaps"], {"Firewall Admin": 80})
+                self.assertEqual(model["budgetAdjustments"][3]["teamCaps"], {"Firewall Admin": 40})
