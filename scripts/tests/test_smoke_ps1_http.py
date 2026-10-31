@@ -13,11 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .test_setup_ps1_root import powershell
 from .test_smoke_ps1_probe import CLI, GOOD_CHUNK, PCAP, RUNTIME_SCRIPT, TICKET
-from .test_containd_ui_prefix import ROOT
-
-# A webpack runtime with no on-demand chunks: this fixture covers the HTTP session.
-EMPTY_RUNTIME = 'r.u=e=>"static/chunks/"+e+"."+({})[e]+".js",r.p="/containd/_next/";'
-
+from .test_containd_ui_prefix import ROOT, TURBOPACK
 
 @contextmanager
 def portal(mode):
@@ -90,8 +86,8 @@ def portal(mode):
                            **{"Set-Cookie": "session=fixture; Path=/containd/; HttpOnly"})
             elif self.path == "/containd/_next/static/main.js":
                 self.reply(200, "application/javascript", GOOD_CHUNK)
-            elif self.path == "/containd/_next/static/webpack.js":
-                self.reply(200, "application/javascript", EMPTY_RUNTIME)
+            elif self.path == "/containd/_next/static/turbopack.js":
+                self.reply(200, "application/javascript", TURBOPACK)
             elif request.path == PCAP:
                 # A missing PCAP must remain an API refusal, not an HTML fallback.
                 if self.headers.get("Authorization") != "Bearer lab-token":
@@ -179,7 +175,7 @@ catch { Write-Output "FAIL: $_"; exit 1 }
                     self.assertIn("invalid websocket upgrade headers", result.stdout + result.stderr)
                 self.assertEqual(errors, [])
                 common = [
-                    "/containd/", "/containd/_next/static/main.js", "/containd/_next/static/webpack.js",
+                    "/containd/", "/containd/_next/static/main.js", "/containd/_next/static/turbopack.js",
                     "/containd/api/v1/auth/login",
                 ]
                 if mode == "redirect":

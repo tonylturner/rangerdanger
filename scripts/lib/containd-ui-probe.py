@@ -93,10 +93,11 @@ class Scripts(HTMLParser):
             self.sources.extend(value for key, value in attrs if key == "src" and value)
 
 
-# Match direct pathname detection or the optional-path fallback in 0.1.33.
-# The fallback must test and return the same identifier, not an unrelated value.
+# Prove the tested value is the pathname (or the function's optional path).
+# The 0.1.36 local binding must be used in BOTH equality and prefix checks.
 AUTODETECT = re.compile(
     r"""(?:window\.location\.pathname|\(\s*null\s*!=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\?\s*\1\s*:\s*window\.location\.pathname\s*\))\.startsWith\(\s*["']/containd/["']\s*\)\s*\?\s*["']/containd["']"""
+    r"""|function\s+[A-Za-z_$][\w$]*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\{\s*let\s+([A-Za-z_$][\w$]*)\s*=\s*\2\s*\?\?\s*window\.location\.pathname\s*;\s*return\s*["']/containd["']\s*===\s*\3\s*\|\|\s*\3\.startsWith\(\s*["']/containd/["']\s*\)\s*\?\s*["']/containd["']\s*:\s*["']["']\s*;?\s*\}"""
 )
 PREFIXED_API = re.compile(r"""(["'])(/containd/api/[^"']*)\1""")
 # The PCAP path must remain an API response, not fall through to the UI page.

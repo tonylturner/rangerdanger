@@ -35,20 +35,9 @@ class TurbopackTests(unittest.TestCase):
         self.assertIn("1 on-demand stylesheets", output)
 
     def test_unknown_runtime_and_dependency_shapes_fail_before_login(self):
-        for runtime, imports in (
-            ("", PAGE),
-            (prefix.WEBPACK, PAGE),
-            (prefix.TURBOPACK * 2, PAGE),
-            (prefix.TURBOPACK.replace("return M(e,t,r)", "return other(e,t,r)"), PAGE),
-            (prefix.TURBOPACK.replace("return`${t}${r}${n}`", "return r"), PAGE),
-            (prefix.TURBOPACK + 'TURBOPACK_CHUNK_BASE_PATH="/other/";', PAGE),
-            (prefix.TURBOPACK, PAGE.replace(".l(t)", ".l(x)")),
-            (prefix.TURBOPACK, PAGE.replace("Promise.all", "load")),
-            (prefix.TURBOPACK, PAGE + 'load("static/chunks/unknown.js")'),
-            (prefix.TURBOPACK, PAGE.replace("3lhospwwj0xgp.js", "../other.js")),
-            (prefix.TURBOPACK, 'e.l(dynamicPath);'),
-            (prefix.TURBOPACK, PAGE + 'e.l("static/"+name+".js");'),
-        ):
+        for runtime, imports, message in prefix.TURBOPACK_CASES:
+            if message is None:
+                continue
             with self.subTest(runtime=runtime, imports=imports):
                 self.responses["/containd/_next/static/chunks/turbopack.js"] = (
                     runtime, "text/javascript", 200,
@@ -56,7 +45,7 @@ class TurbopackTests(unittest.TestCase):
                 self.responses["/containd/_next/static/chunks/console.js"] = (
                     imports, "text/javascript", 200,
                 )
-                with self.assertRaisesRegex(probe.ProbeError, "unsupported"):
+                with self.assertRaisesRegex(probe.ProbeError, message):
                     self.harness.run_probe()
                 self.assert_no_login()
 

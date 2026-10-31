@@ -26,14 +26,24 @@ OLD_BYPASSES = (
     '\nsub_filter \'"/api/\' \'"/containd/api/\';\n',
 )
 RUNTIME = (
-    'function a(e){return(null!=e?e:window.location.pathname).startsWith("/containd/")?"/containd":""};'
+    'function r(e){let t=e??window.location.pathname;return"/containd"===t||t.startsWith("/containd/")?"/containd":""};'
     'U("/api/v1/auth/me");'
 )
-# Shared with the native PowerShell probe tests to pin both accepted shapes
+# Shared with the native PowerShell probe tests to pin the accepted shapes
 # and reject detections that do not derive the base from the pathname.
 AUTODETECT_CASES = (
     ('window.location.pathname.startsWith("/containd/")?"/containd":""', True),
     (RUNTIME, True),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===t||t.startsWith("/containd/")?"/containd":""}', True),
+    ("function base_$(path$) { let local_1 = path$ ?? window.location.pathname; return '/containd' === local_1 || local_1.startsWith( '/containd/' ) ? '/containd' : ''; }", True),
+    ('function r(e){let t=other??window.location.pathname;return"/containd"===t||t.startsWith("/containd/")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.search;return"/containd"===t||t.startsWith("/containd/")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===other||t.startsWith("/containd/")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===t||other.startsWith("/containd/")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===t||t.startsWith("/containd")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===t||t.includes("/containd/")?"/containd":""}', False),
+    ('function r(e){let t=e??window.location.pathname;return"/containd"===t||t.startsWith("/containd/")?"/other":""}', False),
+    ('function r(e){let t=e??window.location.pathname;t=other;return"/containd"===t||t.startsWith("/containd/")?"/containd":""}', False),
     ("( null != path_1$ ? path_1$ : window.location.pathname ).startsWith( '/containd/' ) ? '/containd' : ''", True),
     ('location.pathname.startsWith("/containd/")?"/containd":""', False),
     ('window.location.search.startsWith("/containd/")?"/containd":""', False),
@@ -56,38 +66,7 @@ DOUBLE_PREFIXED = (
     'function w(e){return(0,r.Sw)("/containd/api/v1/pcap/download/".concat(encodeURIComponent(e)))};',
     't=(0,i.Le)("/containd/api/v1/cli/ws",window.location.protocol,window.location.host);',
 )
-# Legacy fixtures still consumed by the out-of-scope native PowerShell probe tests.
-# Python intentionally no longer accepts webpack bundles.
-WEBPACK = (
-    'r.u=e=>"static/chunks/"+(3888===e?"e868780c":e)+"."'
-    '+({3888:"cd737c579891689c",6625:"caa6f620978d1981"})[e]+".js",'
-    'r.miniCssF=e=>"static/css/"+({3786:"659eccb5db697b76"})[e]+".css",r.p="/containd/_next/",'
-)
-ON_DEMAND = (
-    "/containd/_next/static/chunks/e868780c.cd737c579891689c.js",
-    "/containd/_next/static/chunks/6625.caa6f620978d1981.js",
-)
 CLI_CHUNK = DOUBLE_PREFIXED[1].replace('"/containd/api/', '"/api/')
-# Shared with the native PowerShell probe tests: runtime shapes and the failure they
-# must give (None passes). Unknown shapes fail with an explicit live-inspection warning.
-WEBPACK_CASES = (
-    (WEBPACK, None),
-    ('t.p="/elsewhere/",' + WEBPACK, None),
-    (WEBPACK + 'r.p="/containd/_next/";', None),
-    # The first ===-test for an id decides its name, as in the JavaScript conditional chain.
-    (WEBPACK.replace('(3888===e?"e868780c":e)', '(3888===e?"e868780c":3888===e?"later":e)'), None),
-    ("", "unsupported or ambiguous Next.js chunk-map shape"),
-    (WEBPACK + WEBPACK, "unsupported or ambiguous Next.js chunk-map shape"),
-    (WEBPACK.replace('r.p="/containd/_next/",', ""), "exactly one public path"),
-    (WEBPACK + 'r.p="/other/";', "exactly one public path"),
-    (WEBPACK.replace('"/containd/_next/"', '"/_next/"'), "on-demand chunk: /_next/static/chunks/"),
-    (WEBPACK.replace("r.u=e=>", "r.u=function(e){return ").replace('".js",r.miniCssF', '".js"},r.miniCssF'),
-     "unsupported or ambiguous Next.js chunk-map shape"),
-    (WEBPACK.replace('6625:"caa6f620978d1981"', '6625:"../../x"'),
-     "unsupported or ambiguous Next.js chunk-map shape"),
-    (WEBPACK.replace('"e868780c":e', '"e868780c":t'),
-     "unsupported or ambiguous Next.js chunk-map shape"),
-)
 
 FIXTURES = ROOT / "scripts/tests/fixtures/containd-ui-turbopack"
 TURBOPACK = (FIXTURES / "runtime.js").read_text()
@@ -95,6 +74,24 @@ IMPORTS = (FIXTURES / "console.js").read_text()
 TURBO_PATHS = (
     "/containd/_next/static/chunks/1ixu-i6j99dj0.js",
     "/containd/_next/static/chunks/3h4dmpbixi6eo.js",
+)
+
+# Runtime/import variants are shared by the Python and native PowerShell tests.
+TURBOPACK_CASES = (
+    (TURBOPACK, IMPORTS, None),
+    ("", IMPORTS, "unsupported or ambiguous Turbopack runtime"),
+    ('r.u=e=>"static/chunks/"+e+".js",r.p="/containd/_next/";', IMPORTS,
+     "unsupported or ambiguous Turbopack runtime"),
+    (TURBOPACK * 2, IMPORTS, "unsupported or ambiguous Turbopack runtime"),
+    (TURBOPACK.replace("return M(e,t,r)", "return other(e,t,r)"), IMPORTS, "unsupported Turbopack loader"),
+    (TURBOPACK.replace("return`${t}${r}${n}`", "return r"), IMPORTS, "unsupported Turbopack loader"),
+    (TURBOPACK + 'TURBOPACK_CHUNK_BASE_PATH="/other/";', IMPORTS, "unsupported Turbopack loader"),
+    (TURBOPACK, IMPORTS.replace(".l(t)", ".l(x)"), "unsupported Turbopack dependency"),
+    (TURBOPACK, IMPORTS.replace("Promise.all", "load"), "unsupported Turbopack dependency"),
+    (TURBOPACK, IMPORTS + 'load("static/chunks/unknown.js")', "unsupported Turbopack dependency"),
+    (TURBOPACK, IMPORTS.replace("1ixu-i6j99dj0.js", "../other.js"), "unsupported Turbopack dependency"),
+    (TURBOPACK, 'e.l(dynamicPath);', "unsupported Turbopack dependency"),
+    (TURBOPACK, IMPORTS + 'e.l("static/"+name+".js");', "unsupported Turbopack dependency"),
 )
 
 # Route-page literals and the pages they name (shared with the PowerShell probe tests).
