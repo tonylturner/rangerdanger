@@ -19,6 +19,24 @@ spec.loader.exec_module(extract)
 
 
 class SmokeLoopTests(unittest.TestCase):
+    def test_exit_cleanup_restores_weak_only_after_verified_range_preflight(self):
+        source = (ROOT / "scripts/lab-commands-smoke.sh").read_text()
+        cleanup = source.split("cleanup() {", 1)[1].split("\n}", 1)[0]
+        for live, restore_rc, status, expected in ((0, 0, 1, 1), (1, 0, 1, 1),
+                                                    (1, 1, 1, 1), (1, 1, 0, 1), (1, 0, 0, 0)):
+            with self.subTest(live=live, restore_rc=restore_rc), tempfile.TemporaryDirectory() as directory:
+                matrix = Path(directory) / "matrix"
+                matrix.touch()
+                script = (
+                    f"matrix={shlex.quote(str(matrix))}\nlive_started={live}\n"
+                    f'apply_policy() {{ echo "restore:$1"; return {restore_rc}; }}\n'
+                    "cleanup() {" + cleanup + f"\n}}\ntrap cleanup EXIT\nexit {status}\n")
+                result = subprocess.run(["bash", "-c", script],
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertEqual(result.stdout, "restore:weak\n" if live else "")
+                self.assertFalse(matrix.exists())
+
     def test_matrix_loop_survives_children_that_read_stdin(self):
         # docker exec children inherited the matrix on stdin and swallowed it:
         # the live gate ran 2 of 77 rows. Run the real loop with stdin-eating stubs.

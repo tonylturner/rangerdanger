@@ -16,7 +16,18 @@ helper="scripts/lib/lab-commands-extract.py"
 logs="${LAB_CMD_LOG_DIR:-build/lab-commands}"
 mkdir -p "$logs"
 matrix=$(mktemp)
-trap 'rm -f "$matrix"' EXIT
+live_started=0
+cleanup() {
+  local result=$?
+  trap - EXIT
+  rm -f "$matrix"
+  if [ "$live_started" -eq 1 ]; then
+    # Also restore after a policy/API/tool error exits before the loop's end.
+    apply_policy weak || result=1
+  fi
+  exit "$result"
+}
+trap cleanup EXIT
 # A process substitution would hide extractor failure from the parent shell.
 python3 "$helper" "$target" --matrix >"$matrix"
 minimum=$(awk -F'|' '$5 == "RUN" { n++ } END { print n+0 }' "$matrix")
@@ -106,6 +117,7 @@ if ! range_is_ready us-dnp3-substation; then
   err "range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)"
   exit 1
 fi
+live_started=1
 # fd 3: docker exec children must never read the matrix from stdin.
 while IFS='|' read -r idx scenario step cfg action intent <&3; do
   if [ "$action" = SKIP ]; then
@@ -134,6 +146,7 @@ while IFS='|' read -r idx scenario step cfg action intent <&3; do
 done 3<"$matrix"
 # Restore the disposable range even after semantic failures.
 policy weak
+live_started=0
 if [ "$executed" -lt "$minimum" ]; then
   err "executed $executed < pinned minimum $minimum"
 fi
