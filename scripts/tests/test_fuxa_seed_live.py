@@ -69,16 +69,17 @@ class FuxaSeedLiveTests(unittest.TestCase):
         try:
             project = json.loads(client.request(client.base + "/api/project"))
         except urllib.error.HTTPError as error:
-            if error.code in (404, 502, 503):
-                # An unavailable upstream in an active US range is a failure,
-                # not an absent-range skip. Ask the platform's authority.
-                state = json.loads(client.request(client.base + "/api/range"))
-                if state["phase"] == "none" or (
-                    state["phase"] == "ready"
-                    and state["package"] != "us-dnp3-substation"
-                ):
-                    self.skipTest(f"No US range at {client.base}: {state}")
-            raise
+            with error:
+                if error.code in (404, 502, 503):
+                    # An unavailable upstream in an active US range is a failure,
+                    # not an absent-range skip. Ask the platform's authority.
+                    state = json.loads(client.request(client.base + "/api/range"))
+                    if state["phase"] == "none" or (
+                        state["phase"] == "ready"
+                        and state["package"] != "us-dnp3-substation"
+                    ):
+                        self.skipTest(f"No US range at {client.base}: {state}")
+                raise
         except urllib.error.URLError as error:
             if isinstance(error.reason, ConnectionRefusedError):
                 self.skipTest(f"No range at {client.base}")
