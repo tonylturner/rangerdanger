@@ -114,6 +114,7 @@ cp "$POLICY" "$PACKAGE/firewall/improved.json"
 cp "$ORIGINAL_PACKAGE/firewall/weak.json" "$PACKAGE/firewall/weak.json"
 cp "$ORIGINAL_PACKAGE/process/reference-cases.json" "$PACKAGE/process/reference-cases.json"
 CALLS=""
+COMMANDS=""
 APPLIED_POLICY=weak
 COUNTS=$(cat "$BASE")
 FAIL_AT=""
@@ -134,7 +135,6 @@ eu_reset_all() {
   TAP=$(jq -er '.initial_tap' "$PACKAGE/process/reference-cases.json")
 }
 eu_lab_reconnect_cc() { CALLS="$CALLS reconnect"; }
-eu_reference_tap() { CALLS="$CALLS reference:$1"; TAP="$1"; AUTO=false; }
 eu_firewall_config() { jq "$CONFIG_MUTATION" "$PACKAGE/firewall/$APPLIED_POLICY.json"; }
 eu_get_field() {
   API_BODY=$(jq -n --argjson tap "$TAP" --arg position "$POSITION" --argjson auto "$AUTO" \
@@ -146,7 +146,20 @@ eu_wait_for_field() {
   printf '%s' "$API_BODY" | jq -e "$1" >/dev/null
 }
 eu_lab_cc() {
-  CALLS="$CALLS command:$1:$2"
+  CALLS="$CALLS lab-cc:$1:$2"
+  if [ "$POSITION" = open ]; then
+    fail "student command fresh feedback: feeder-pf measurement_invalid"
+    return 1
+  fi
+  t_field_command "$@"
+}
+eu_command() {
+  CALLS="$CALLS command:$1:$2:$3"
+  COMMANDS="$COMMANDS $1:$2:$3"
+  [ "$3" = completed ] || return 99
+  t_field_command "$@"
+}
+t_field_command() {
   case "$1:$2" in
     feeder-breaker-command:*)
       if [ "$2:$POSITION" = close:closed ]; then
@@ -162,6 +175,7 @@ eu_lab_cc() {
       TAP=$((TAP + 1))
       COUNTS=$(printf '%s' "$COUNTS" | jq '.rules[1,2] |= (.shadowMatches+=1 | .wouldAllow+=1)') ;;
     oltc-1-mode:auto) AUTO=true ;;
+    oltc-1-mode:manual) AUTO=false ;;
     *) return 99 ;;
   esac
 }
@@ -175,7 +189,8 @@ eu_shadow_get() {
     /firewall/shadow-counters)
       printf '%s' "$COUNTS" | jq \
         --arg fail "$FAIL_AT" --arg file "$2" '
-        if $fail != "" and ($file | contains($fail)) then .available=false else . end' >"$2" ;;
+        if $fail != "" and ($file | endswith("G29-" + $fail + ".json"))
+        then .available=false else . end' >"$2" ;;
     /events*)
       jq -n --slurpfile rules "$T_FIXTURES/monitor-rules.json" '{
         historyTruncated:false,events:[$rules[0][] | {kind:"ics.decision",
@@ -185,21 +200,45 @@ eu_shadow_get() {
     *) return 99 ;;
   esac
 }
+POSITION=open
+t_run eu_lab_cc feeder-breaker-command close
+t_expect_eq "$T_STATUS" 1 "student CC all-points-good precondition rejects de-energized feeder"
+t_expect_eq "$POSITION" open "student CC cannot restore CB1 with invalid feeder-pf"
+POSITION=closed
+CALLS=""
 t_run eu_gate_G29
 t_expect_eq "$T_STATUS" 0 "G29 proves field results, monitor counters and all command-window events"
 t_expect_fails 0 "complete synthetic G29 has no gate failures"
 t_expect_out "G29 lower monitor deltas" "lower selector comparison is an explicit gate result"
 t_expect_eq "${CALLS%% get:/health*}" \
-  " profile:false reset apply:improved reconnect reference:0" \
+  " profile:false reset apply:improved reconnect command:oltc-1-mode:manual:completed" \
   "reset precedes Improved apply and fresh CC session before health and counter baseline"
+t_expect_eq "$COMMANDS" \
+  " oltc-1-mode:manual:completed feeder-breaker-command:open:completed feeder-breaker-command:close:completed oltc-1-step:lower:completed oltc-1-step:raise:completed oltc-1-mode:manual:completed oltc-1-mode:auto:completed" \
+  "G29 uses audited eu_command for every phase and mode restore in order"
+t_expect_eq "${CALLS#* lab-cc:}" "$CALLS" "G29 never uses the all-points-good student helper"
 t_expect_eq "$TAP:$AUTO:$POSITION" "0:true:closed" "cleanup restores reference tap, auto and CB1 command"
 for FAIL_AT in baseline breaker lower raise final; do
   CALLS=""
+  COMMANDS=""
   COUNTS=$(cat "$BASE")
   t_run eu_gate_G29
   t_expect_eq "$T_STATUS" 1 "G29 rejects unavailable $FAIL_AT counters"
   t_expect_eq "$TAP:$AUTO:$POSITION" "0:true:closed" "failed $FAIL_AT proof still restores field state"
   t_expect_eq "${CALLS##* profile:true}" " apply:weak" "failed $FAIL_AT proof restores profile and weak"
+  case "$FAIL_AT" in
+    baseline) expected_commands="" ;;
+    breaker) expected_commands=" feeder-breaker-command:open:completed feeder-breaker-command:close:completed" ;;
+    lower) expected_commands=" feeder-breaker-command:open:completed feeder-breaker-command:close:completed oltc-1-step:lower:completed" ;;
+    raise|final) expected_commands=" feeder-breaker-command:open:completed feeder-breaker-command:close:completed oltc-1-step:lower:completed oltc-1-step:raise:completed" ;;
+  esac
+  expected_commands=" oltc-1-mode:manual:completed$expected_commands oltc-1-mode:manual:completed"
+  if [ "$FAIL_AT" = lower ]; then
+    expected_commands="$expected_commands oltc-1-step:raise:completed"
+  fi
+  t_expect_eq "$COMMANDS" "$expected_commands oltc-1-mode:auto:completed" \
+    "failed $FAIL_AT proof uses audited commands for cleanup in order"
+  t_expect_eq "${CALLS#* lab-cc:}" "$CALLS" "failed $FAIL_AT proof never uses student helper"
 done
 FAIL_AT=""
 for HEALTH_MUTATION in '.iec104Enforcement.healthy=false' \

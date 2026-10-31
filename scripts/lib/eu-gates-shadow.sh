@@ -68,7 +68,9 @@ eu_shadow_events() {
 eu_shadow_phase() {
   local phase="$1" previous="$2" point="$3" operation="$4" feedback="$5" start end
   start=$(eu_utc) || return
-  eu_lab_cc "$point" "$operation" || return
+  # The operator route uses the same CC IEC104 session as the student route.
+  # Device-scoped readiness permits restoration while feeder-pf is invalid.
+  eu_command "$point" "$operation" completed || return
   eu_wait_for_field "$feedback" 15 "G29 $phase independent field result" || return
   # Let the completed request's asynchronous telemetry publish before querying.
   sleep 1
@@ -91,7 +93,7 @@ eu_shadow_commands() {
   local initial="$1"
   eu_shadow_phase breaker "$TMP_DIR/G29-baseline.json" feeder-breaker-command open \
     '.devices["breaker-1"].position == "open" and .process.buses.s1.live == false' || return
-  eu_lab_cc feeder-breaker-command close || return
+  eu_command feeder-breaker-command close completed || return
   eu_wait_for_field '.devices["breaker-1"].position == "closed" and .process.buses.s1.live == true' \
     15 "G29 restore CB1" || return
   eu_shadow_get /firewall/shadow-counters "$TMP_DIR/G29-before-lower.json" || return
@@ -125,7 +127,7 @@ eu_gate_G29() {
   if [ "$prepared" -eq 1 ]; then
     if eu_get_field; then
       if printf '%s' "$API_BODY" | jq -e '.devices["breaker-1"].position == "open"' >/dev/null; then
-        eu_lab_cc feeder-breaker-command close || result=1
+        eu_command feeder-breaker-command close completed || result=1
       fi
     else
       result=1
@@ -133,7 +135,7 @@ eu_gate_G29() {
     eu_reference_tap "$initial" || result=1
     eu_wait_for_field ".devices[\"oltc-1\"].tap == $initial and .devices[\"oltc-1\"].moving == false" \
       15 "G29 restored reference tap" || result=1
-    eu_lab_cc oltc-1-mode auto || result=1
+    eu_command oltc-1-mode auto completed || result=1
     eu_wait_for_field '.devices["breaker-1"].position == "closed" and .devices["oltc-1"].auto == true' \
       15 "G29 restored breaker and mode" || result=1
   fi
