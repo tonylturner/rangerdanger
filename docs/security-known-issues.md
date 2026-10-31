@@ -54,15 +54,12 @@ occurrences in the global npm tree: pacote's CVE-2026-9496 in a new nested
 copy, and picomatch's CVE-2026-33671. Both fall under the CLI exception
 above; the net count falls from 111 to 62, not to zero.
 
-### Fixable, not accepted
+### Resolved image groups
 
-OpenDSS's pinned Starlette 0.41.3 has CVE-2025-62727,
-CVE-2026-48818 and CVE-2026-54283 (minimum fixes 0.49.1, 1.1.0 and
-1.3.1 respectively). Update `services/opendss-sim/requirements.txt`
-with a compatible FastAPI/Starlette pair and validate both simulation
-profiles. Changing only the Docker base cannot override that requirements
-pin. This remains outstanding rather than being accepted as training-image
-risk.
+OpenDSS's Starlette findings CVE-2025-62727, CVE-2026-48818 and
+CVE-2026-54283 are fixed by upgrading to FastAPI 0.133.0 and Starlette
+1.3.1 in `services/opendss-sim/requirements.txt` and validating both
+simulation profiles.
 
 ## Open
 

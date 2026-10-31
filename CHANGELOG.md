@@ -8,8 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
-- Refresh workstation and HMI bases, update bundled npm and Compose, and
-  apply available OpenPLC OS fixes. Document remaining image findings.
+- Refresh workstation and HMI bases, update bundled npm and Compose, apply
+  available OpenPLC OS fixes, and upgrade OpenDSS FastAPI/Starlette to fix
+  three CVEs. Document remaining image findings.
 
 ## [v0.2.0-rc.5] - 2026-10-30
 
