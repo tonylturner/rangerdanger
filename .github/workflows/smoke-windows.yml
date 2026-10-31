@@ -114,42 +114,30 @@ jobs:
           }
           if ($fail) { exit 1 }
 
-      - name: setup.ps1 -CheckOnly (no Docker required)
-        # -CheckOnly exits before any Docker engine call, so it works
-        # on a hosted Windows runner without a Linux Docker daemon.
-        # This catches runtime regressions in the pre-flight checks
-        # themselves (the WMI/cgroup fallback path, the port-listener
-        # probe, the Get-Item drive math).
-        # Docker IS installed on windows-latest but in Windows-container
-        # mode by default; setup.ps1 will report "Docker is not running"
-        # because the engine cannot serve Linux info. We tolerate that
-        # by inspecting the exit code -- non-zero from the Docker check
-        # is expected on a hosted Windows runner. The earlier preflight
-        # rows (compose syntax not run; port-listener probe) must still
-        # produce sensible output, and the file must parse.
+      - name: setup.ps1 -CheckOnly end-state check
+        # CheckOnly queries Docker info, version floors and held ports, but
+        # never acquires images, starts a container, writes .env or probes
+        # the kernel. Hosted runners may lack a Linux WSL2 daemon: accept
+        # only that explicit early refusal, or a completed preflight.
+        # This is not Windows installation or Linux-range acceptance.
         shell: powershell
         run: |
-          # Just confirm setup.ps1 reaches the Docker-engine probe
-          # without a parser-level failure. Exit code is not the gate;
-          # the parse step above is.
-          $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -CheckOnly 2>&1
-          Write-Host ($output | Out-String)
-          # Look for either a successful banner OR an expected
-          # "Docker is not running" message. A parser error here would
-          # have already failed the earlier step, but we re-check that
-          # the script at least produced one of the expected banners.
-          $joined = ($output | Out-String)
-          if ($joined -notmatch 'Pre-flight checks' -and $joined -notmatch 'Docker is not running') {
-            Write-Host "::error::setup.ps1 -CheckOnly produced unexpected output (no banner, no Docker check)"
-            exit 1
+          function Assert-CheckOnlyOutcome([string]$Text, [int]$Code) {
+            if ($Code -eq 0 -and
+                $Text -match '(?m)^Pre-flight passed -- laptop is ready\r?$' -and
+                $Text -match 'Root mapping and WSL2 kernel features will be verified after image acquisition during install\.') {
+              return 'Preflight completed (root/kernel checks still deferred).'
+            }
+            $daemonFailure = '(?m)^\[x\] (Docker failed \(-?\d+\): info --format \{\{json \.\}\}|Docker did not answer within 30s: info --format \{\{json \.\}\}|Windows setup supports only Docker Desktop with the WSL2 backend and a repo on a local drive letter\.)'
+            if ($Code -eq 1 -and $Text -match $daemonFailure) {
+              return 'Explicit unavailable/unsupported daemon refusal; preflight did not pass.'
+            }
+            throw "Unexpected CheckOnly end state (exit $Code): $Text"
           }
-          Write-Host "setup.ps1 -CheckOnly reached its Docker engine probe (parses + runs end-to-end)."
-          # Hosted runner state is flaky: sometimes Docker Desktop is
-          # ready and setup.ps1 -CheckOnly exits 0, sometimes it isn't
-          # and setup.ps1 exits 1 from the "Docker is not running" row.
-          # The comment above already says "Exit code is not the gate;
-          # the parse step above is" but $LASTEXITCODE leaked through
-          # to the step's exit, so a runner-state flake failed this PR
-          # check. Resetting + explicit exit 0 makes that promise real.
-          $global:LASTEXITCODE = 0
+          $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -CheckOnly 2>&1
+          $code = $LASTEXITCODE
+          $joined = $output | Out-String
+          Write-Host $joined
+          Write-Host (Assert-CheckOnlyOutcome $joined $code)
+          # The child exit was asserted above; do not leak an accepted refusal.
           exit 0

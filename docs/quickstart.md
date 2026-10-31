@@ -39,9 +39,9 @@ space - not `docker-compose`). The range pins each firewall NIC to its
 zone name with Compose `interface_name` (`lan2` is the field zone on
 every host); older Compose rejects the range file and older Engines
 cannot create the pinned interfaces. Docker Desktop 4.42 is the first
-Desktop release that meets both. `setup.ps1` does not check these
-versions yet; on an older Docker Desktop the range fails to start with
-a Compose error.
+Desktop release that meets both. Both `setup.sh` and `setup.ps1` check
+these floors before installation (including `-CheckOnly` on Windows) and
+refuse older versions with an upgrade message.
 
 ### Windows: Docker Desktop WSL2 only
 
@@ -57,7 +57,10 @@ the platform. `-CheckOnly` does not run that container probe or change the
 WSL2 kernel. During installation, setup checks the kernel's
 `CONFIG_NFT_QUEUE` support for DPI logging and can install the lab kernel;
 offline installation requires the bundled kernel and checksum when the fix
-is needed. The L4 source pin enforces; DPI detects and logs.
+is needed. The published custom kernel is x86_64 only: ARM64 Windows
+hosts proceed only when their existing kernel supports the queue probe;
+required kernel remediation on ARM64 is refused. The L4 source pin enforces;
+DPI detects and logs.
 
 These are the supported configuration and installer checks, not a claim
 of completed v0.2.0 acceptance testing on Windows hardware.

@@ -17,13 +17,10 @@ error `Could not process rule: No such file or directory` -- even
 though the userspace half of NFQUEUE (the netlink side) is fully
 working.
 
-RangerDanger's containd dataplane uses NFQUEUE to route Modbus and
-DNP3 packets to a userspace ICS-DPI engine that enforces a
-function-code allowlist (Lab 2.3 / 2.3-bonus / events-smoke gate 3).
-Without the kernel-side `queue` verdict, those rules silently fail to
-apply, and the "improved" policy ends up enforcing only its L4
-subset. Workshop students get a broken Lab 2.3 with no diagnosable
-error.
+RangerDanger's containd dataplane uses NFQUEUE for userspace ICS-DPI
+inspection. Without the kernel-side `queue` verdict, the DPI rules cannot
+load, so the labs cannot demonstrate detection and logging. The L4 source
+pin enforces; DPI detects and logs.
 
 Rather than redesign the lab around what one specific Linux kernel
 flavor happens to omit, we ship a build of the same Microsoft kernel
@@ -124,8 +121,17 @@ if ($expected -eq $actual) { "ok" } else { "MISMATCH" }
 `setup.ps1 -SkipKernelFix` skips the kernel-install probe entirely,
 and `scripts/install-wsl-kernel.ps1 -Restore` removes our `kernel=`
 line from `~/.wslconfig` (restoring the `.bak` we wrote when we
-installed). The lab still runs without the kernel; you just lose ICS
-DPI enforcement for Labs 2.3 and 2.3-bonus.
+installed). Skipping remediation can leave DPI detection and logging
+unavailable for the protocol labs. The L4 source pin enforces; DPI detects
+and logs. The queue-rule probe alone does not establish end-to-end NFQUEUE,
+NFLOG or conntrack operation.
+
+The published kernel is **x86_64 only**. ARM64 Windows hosts can use setup
+when their existing kernel passes the probe, but kernel remediation is
+refused rather than installing an incompatible binary. `-DryRun` plans an
+install or restore without downloads, probes, file changes or WSL shutdown.
+Installer downloads and WSL shutdown have explicit time limits; a failed
+shutdown requires manual WSL/Docker Desktop recovery before retrying.
 
 ## Tradeoffs we accepted
 
@@ -147,8 +153,8 @@ DPI enforcement for Labs 2.3 and 2.3-bonus.
 - **Not portable to Hyper-V backend.** This kernel is for the WSL2
   backend only. Docker Desktop's Hyper-V backend uses a different
   (LinuxKit) VM image we cannot replace from the host. If `setup.ps1`
-  detects the Hyper-V backend it skips this step and warns; either
-  switch backends or run the lab without ICS DPI on that host.
+  detects the Hyper-V backend it refuses setup. Switch Docker Desktop
+  to WSL2; Hyper-V is not a supported RangerDanger Windows host.
 
 - **Not relevant on macOS / Linux.** Docker on macOS already uses a
   LinuxKit VM kernel that ships with `CONFIG_NFT_QUEUE=y`; Docker on
