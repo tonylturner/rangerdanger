@@ -36,7 +36,7 @@ export function computeBudgetAdjustments(
       }
     }
     const blocked = useDefaults ? [] : readinessFlagsForAction(action.id, readiness, binding).filter((f) => f.severity === "blocked");
-    if (blocked.length) blockedReasons[action.id] = blocked.map((f) => `${reason(f.source, f.verdict)} — ${f.message}`);
+    if (blocked.length) blockedReasons[action.id] = blocked.map((f) => f.message);
     return { ...action, effort_hours: Math.round(action.effort_hours * multiplier + extraHours) };
   });
   return { teams, catalog, teamReasons, actionReasons, blockedReasons };
