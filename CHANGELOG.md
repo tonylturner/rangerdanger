@@ -6,6 +6,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- Refresh workstation and HMI bases, update bundled npm and Compose, and
+  apply available OpenPLC OS fixes. Document remaining image findings.
+
 ## [v0.2.0-rc.5] - 2026-10-30
 
 Fifth release candidate for v0.2.0 and the first built on Ubuntu 26.04
