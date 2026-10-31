@@ -119,7 +119,7 @@ function CmdButton({ label, onClick, variant, disabled, title }: { label: string
     ? "border-slate-800 bg-slate-900/30 text-slate-600 cursor-not-allowed"
     : variant ? colors[variant] : "border-slate-700 bg-slate-800/40 text-slate-300 hover:bg-slate-700/40";
   return (
-    <button onClick={onClick} disabled={disabled} title={title} className={`rounded border px-2 py-1 text-[10px] font-medium transition-colors ${cls}`}>
+    <button onClick={onClick} disabled={disabled} title={title} className={`rounded-sm border px-2 py-1 text-[10px] font-medium transition-colors ${cls}`}>
       {label}
     </button>
   );

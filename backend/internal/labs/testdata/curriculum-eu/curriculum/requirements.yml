@@ -1,0 +1,55 @@
+requirements:
+  enterprise-to-field:
+    label: Enterprise/vendor → field devices on Modbus/502
+    impl:
+      BLOCK:
+        - block-enterprise-to-field
+        - block-vendor-to-field
+      BLOCK and LOG:
+        - block-enterprise-to-field
+        - block-vendor-to-field
+        - improve-logging
+  enterprise-to-station:
+    label: Enterprise → station RTU on IEC 104/2404
+    impl:
+      BLOCK:
+        - block-enterprise-to-station
+      BLOCK and LOG:
+        - block-enterprise-to-station
+        - improve-logging
+  vendor-to-station:
+    label: Vendor DMZ → station (engineering access)
+    impl:
+      BLOCK:
+        - restrict-vendor-to-station
+      BLOCK and LOG:
+        - restrict-vendor-to-station
+        - improve-logging
+      RESTRICT:
+        - restrict-vendor-to-station
+  non-rtu-to-field:
+    label: Hosts other than RTU (and PLC→OLTC) → field devices
+    impl:
+      BLOCK:
+        - pin-rtu-to-field
+      BLOCK and LOG:
+        - pin-rtu-to-field
+        - improve-logging
+  unauth-control:
+    label: Unauthorized IEC 104 commands / Modbus writes
+    impl:
+      BLOCK:
+        - modbus-dpi
+        - iec104-dpi
+      BLOCK and LOG:
+        - modbus-dpi
+        - iec104-dpi
+        - improve-logging
+      LOG:
+        - improve-logging
+requirementOrder:
+  - enterprise-to-field
+  - enterprise-to-station
+  - vendor-to-station
+  - non-rtu-to-field
+  - unauth-control

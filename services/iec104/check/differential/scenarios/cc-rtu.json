@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "id": "cc-rtu",
+  "kind": "cc-rtu",
+  "timeout_s": 30,
+  "capture_modbus": true,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {"op": "gi", "args": {}, "timeout_s": 20}
+  ]
+}

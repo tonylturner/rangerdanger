@@ -8,32 +8,61 @@ at https://github.com/tonylturner/rangerdanger.
 
 You will need:
 
-- **Docker Desktop** ≥ 4.30 (or equivalent) with **≥ 8 GB RAM** and
-  **≥ 30 GB free disk** allocated. The compose stack pulls roughly
+- **Docker Desktop** ≥ 4.42 (or Docker Engine ≥ 28.1 with Compose ≥
+  2.36.0; the range Compose files pin firewall NIC names with
+  `interface_name`) with **≥ 8 GB RAM** and **≥ 30 GB free disk**
+  allocated. The compose stack pulls roughly
   6–8 GB on a first run.
 - **Go 1.26+** for the backend (`backend/go.mod` declares `go 1.26.0`
-  and pins `toolchain go1.26.7`, which `go` downloads automatically);
+  and pins `toolchain go1.26.10`, which `go` downloads automatically);
   the `services/` and `dnp3go/` modules declare `go 1.24.0` as their
-  minimum but pin the same `go1.26.7` toolchain.
+  minimum but pin the same `go1.26.10` toolchain. `iec104go/` also pins
+  `go1.26.10`.
 - **Node.js 20+** and **npm** for the frontend.
 
-Bring up the stack - either invocation works:
+The lab runs as two Compose projects. The **platform**
+(`rangerdanger-platform`: backend, frontend, proxy) comes from the root
+`docker-compose.yml` (source) or `docker-compose.release.yml` (release)
+and stays up. The **range** (`rangerdanger`: containd, the zones, the
+devices, the webtops) comes from
+`lab-definitions/packages/<id>/compose.{source,release}.yml`; only the
+backend starts and stops it, through `POST /api/range`, which is also
+what the UI's package toggle sends. One range runs at a time.
+
+Packages are `us-dnp3-substation` (US DNP3, the fresh-install default) and
+`eu-iec104-substation` (EU IEC 104). Each owns its manifest, Compose twins,
+proxy routes and curriculum. Select EU with
+`./setup.sh --from-source --package eu-iec104-substation`, or
+`.\setup.ps1 -FromSource -Package eu-iec104-substation` on Windows.
+Windows setup requires Docker Desktop WSL2 and a physical local-drive
+checkout; UNC/`\\wsl$`, mapped drives, junctions and Hyper-V are rejected.
+See [Windows checks](docs/quickstart.md#windows-docker-desktop-wsl2-only);
+support is not a claim of completed real-hardware acceptance.
+
+Bring it up from source:
 
 ```sh
-./scripts/dev-up.sh           # build-from-source path; passes extra args through
-docker compose up -d --build  # equivalent if you prefer the raw command
+./scripts/dev-up.sh           # = ./setup.sh --from-source --skip-firewall-gate
 ```
 
-`dev-up.sh` is a thin wrapper around `docker compose up --build -d`
-that resolves the compose file relative to the script (so it works
-from any cwd) and forwards extra args. To stop:
+It builds the platform and every package's images, starts the
+platform, then asks the backend for the range and waits until
+`GET /api/range` reports `ready`. Re-run it after a change: it rebuilds
+and restarts the range. Extra arguments go to `setup.sh` (for example
+`--package <id>` for the first-start package). To stop:
 
 ```sh
-./scripts/dev-down.sh         # → docker compose down
+./scripts/dev-down.sh         # the range, then the platform
 ```
 
-Both scripts target `docker-compose.yml` (the source-build file).
-For the release-image path see [`docs/quickstart.md`](docs/quickstart.md).
+`dev-down.sh` tears each project down by its Compose label only, run
+from an empty directory: the range with
+`docker compose -p rangerdanger down -v --remove-orphans` (range models
+have no named volumes, so `-v` removes only the webtops' anonymous
+`/config` volumes), the platform without `-v`. It fails unless no
+container or network of either project, and no volume a range
+container mounted, is left. For the release-image path see
+[`docs/quickstart.md`](docs/quickstart.md).
 
 Open http://localhost:8088 - the UI is the entry point.
 
@@ -43,10 +72,12 @@ Open http://localhost:8088 - the UI is the entry point.
 |------|---------|
 | `backend/` | Go HTTP API (Gin, GORM, SQLite) |
 | `frontend/` | Next.js + TypeScript UI |
-| `services/` | Field device simulators (relay, recloser, regulator, rtac, opendss, capbank, historian, gps) |
+| `services/` | US and EU device simulators, IEC 104 service, and OpenDSS physics |
 | `dnp3go/` | Standalone Go DNP3 library, vendored as its own module |
+| `iec104go/` | Standalone Go IEC 104 library |
 | `lab-definitions/` | YAML lab topologies, exercises, firewall configs |
 | `docs/` | Architecture, API spec, workshop guides, lab-authoring guide |
+| `lab-definitions/packages/` | Range packages: `package.yml`, `curriculum/`, `manifest.json`, Compose twins, proxy routes and package-specific content |
 | `scripts/` | Dev helpers (`dev-up.sh`, `dev-down.sh`, `seed-labs.sh`) |
 | `.github/workflows/` | CI |
 
@@ -59,7 +90,9 @@ The same commands CI runs (`.github/workflows/ci.yml`):
 test -z "$(git ls-files '*.go' | xargs gofmt -l)"
 
 # Backend. -count=1 matters: firewall_config_test reads the policy JSONs
-# at runtime and Go's test cache does not see them.
+# at runtime and Go's test cache does not see them. The backend builds
+# only on unix: it ships as a Linux container and has no native Windows
+# build (on Windows, run these in WSL).
 (cd backend && go vet ./... && go test -race -count=1 ./... && go build ./cmd/server)
 
 # Services (simulators)
@@ -71,9 +104,15 @@ test -z "$(git ls-files '*.go' | xargs gofmt -l)"
 # Frontend
 (cd frontend && npm ci && npm run lint && npm test && npm run build)
 
-# Compose validation (dev and release)
-docker compose config -q
-docker compose -f docker-compose.release.yml config -q
+# Compose validation: platform files, then every package's range files,
+# with the checkout as project directory and RANGERDANGER_ROOT
+export RANGERDANGER_ROOT="$PWD"
+for f in docker-compose.yml docker-compose.release.yml; do
+  docker compose -p rangerdanger-platform --project-directory "$PWD" -f "$f" config -q
+done
+for f in lab-definitions/packages/*/compose.source.yml lab-definitions/packages/*/compose.release.yml; do
+  docker compose -p rangerdanger --project-directory "$PWD" -f "$f" config -q
+done
 
 # Vulnerability scan (go install golang.org/x/vuln/cmd/govulncheck@latest first)
 ./scripts/assert-unreachable-vulns.sh
@@ -91,14 +130,15 @@ is a faster type-check than waiting for `next build`.
 Four layered smoke gates protect the lab against regressions. Run
 them after any change that touches lab content, the firewall
 dataplane, the policy YAMLs, or the simulator images. Each requires
-the compose stack to be up:
+the lab to be up with the US range (`us-dnp3-substation`) ready, and
+each checks `GET /api/range` for that before it asserts anything:
 
 ```sh
-docker compose up -d --build
+./scripts/dev-up.sh
 
 # 1. Inventory + boot. Lab YAML count, scenario IDs, sim health.
-#    --keep leaves the stack up for the gates below; without it this
-#    script tears the stack down when it finishes.
+#    It runs dev-up itself; --keep leaves the lab up for the gates
+#    below, without it this script runs dev-down when it finishes.
 ./scripts/smoke-test.sh --keep
 
 # 2. Firewall traffic enforcement matrix. Applies weak then improved
@@ -133,12 +173,25 @@ The lab's teaching value depends on the topology being exactly as
 documented. Treat the following as frozen; a PR that changes any of
 them needs to say so explicitly and must pass `scripts/firewall-smoke.sh`.
 
-- Six Docker networks with fixed subnets and static IPs:
+- The US teaching/control topology has six networks with fixed IPAM:
   `mgmt_net` 10.99.99.0/24, `enterprise_net` 10.10.10.0/24,
   `vendor_net` 10.20.20.0/24, `ot_ops_net` 10.30.30.0/24,
   `field_net` 10.40.40.0/24, `physics_net` 10.50.50.0/24. Node IPs are
   listed in [`docs/architecture.md`](docs/architecture.md) and
-  referenced by absolute IP inside lab YAML commands.
+  referenced by absolute IP inside lab YAML commands. EU adds Control Centre
+  (10.60.60.0/24) and Operations DMZ (10.70.70.0/24) and uses station/process
+  in place of OT-Ops/physics; the package manifests are authoritative.
+- The platform also owns three internal desktop delivery bridges:
+  `desk_corp_net` 10.98.1.0/28, `desk_vendor_net` 10.98.2.0/28,
+  `desk_eng_net` 10.98.3.0/28 (Engine names `rangerdanger_desk_corp`,
+  `rangerdanger_desk_vendor`, `rangerdanger_desk_eng`). Each has gateway `.1`,
+  proxy `.2` and at most one desktop `.3`. Desktops have no management leg;
+  the proxy keeps management plus all three delivery legs. Range models
+  reference delivery networks externally; no runtime network connect.
+  They have no containd zone, host egress or backend endpoint. nginx denies
+  delivery peers (`10.98.0.0/16`) before all locations, including redirects.
+  Verify portal HTTP/WebSocket delivery and management isolation under weak
+  and improved policies in both packages after any network change.
 - The `firewall` container (containd) is multi-homed as `.2` on every
   zone and is the only path between zones. The Go sims (via their
   `services/Dockerfile` CMD), `kali`, `corp_ws`, `vendor_jump`,
@@ -157,11 +210,23 @@ them needs to say so explicitly and must pass `scripts/firewall-smoke.sh`.
   use baked-in lab credentials
   ([`docs/lab-credentials.md`](docs/lab-credentials.md)).
   [`SECURITY.md`](SECURITY.md) explains why.
-- containd zone names `wan` / `dmz` / `lan1` / `lan2` / `lan3` and the
-  canned policies in `lab-definitions/firewall/` are what the
+- containd interface names `wan` / `dmz` / `lan1` / `lan2` / `lan3` (the EU
+  package adds `lan4` / `lan5`), pinned per network with compose
+  `interface_name`, and the canned policies in `lab-definitions/firewall/` are what the
   validators and firewall smoke gate assert against.
+- `scripts/tests/test_network_invariants.py` (CI's Python job) freezes every
+  network value of the platform and package compose files in
+  `scripts/tests/fixtures/network-invariants.json`: networks and subnets,
+  static IPs and interface names, `GATEWAY`, host ports, sysctls and
+  containd's management and auto-bind env. It also rejects `gw_priority` and
+  `priority` on any attachment, any host port off 127.0.0.1, and any
+  difference between a stack's source and release files. Each portal-proxy
+  upstream must share exactly one network with the proxy, at its pinned IP,
+  because nginx resolves it by service name through Docker DNS. Update the fixture
+  only as part of a requested network change, after `scripts/firewall-smoke.sh both`.
 
-This covers the compose files, network settings, port bindings,
+This covers the compose files (the platform files and every package's
+range files), network settings, port bindings,
 sysctls, gateway and hardening scripts, and the policy JSONs.
 
 ## Code style
@@ -189,7 +254,7 @@ sysctls, gateway and hardening scripts, and the policy JSONs.
 If you're writing a new lab or reshaping an existing one, see
 [`docs/lab-authoring.md`](docs/lab-authoring.md) - covers the YAML
 shape the runner expects, the description-body fences (`:::hint`,
-`:::decision`, `:::findings-panel`), the localStorage model that
+`:::decision`, `:::findings-panel`), the browser storage model that
 lets a lab read what the student did in earlier labs, and the
 authoring checklist (run the smoke tests before opening a PR).
 

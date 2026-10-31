@@ -12,6 +12,10 @@ import {
   ShieldAlert,
   Satellite,
   Clock,
+  MonitorCog,
+  Cpu,
+  ToggleRight,
+  SlidersHorizontal,
 } from "lucide-react";
 import { zoneColors } from "../lib/zone-colors";
 
@@ -86,6 +90,9 @@ const LucideDatabase: IconComponent = ({ size, color }) => <Database size={size}
 const LucideShieldAlert: IconComponent = ({ size, color }) => <ShieldAlert size={size} color={color} />;
 const LucideSatellite: IconComponent = ({ size, color }) => <Satellite size={size} color={color} />;
 const LucideClock: IconComponent = ({ size, color }) => <Clock size={size} color={color} />;
+const LucideMonitorCog: IconComponent = ({ size, color }) => <MonitorCog size={size} color={color} />;
+const LucideCpu: IconComponent = ({ size, color }) => <Cpu size={size} color={color} />;
+const LucideToggleRight: IconComponent = ({ size, color }) => <ToggleRight size={size} color={color} />;
 
 // Icon mapping for node types
 const nodeTypeIcons: Record<string, IconComponent> = {
@@ -134,6 +141,14 @@ const nodeTypeIcons: Record<string, IconComponent> = {
 
   // GPS / time server
   gps_clock: LucideClock,
+
+  // EU IEC 104 package: control centre (operator station), RTU and
+  // its field switches and transformer tap changer
+  control_centre: LucideMonitorCog,
+  iec104_rtu: LucideCpu,
+  feeder_breaker: LucideToggleRight,
+  rmu: LucideToggleRight,
+  oltc: ({ size, color }) => <SlidersHorizontal size={size} color={color} />,
 
   // Default
   default: LucideServer,
@@ -243,7 +258,7 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
             interfaces in more than one zone. */}
         {multiHomed && (
           <div
-            className="absolute -top-2 -left-2 z-10 rounded-full border border-slate-900 bg-amber-500 px-1.5 py-[1px] text-[8px] font-bold uppercase tracking-wider text-slate-900 shadow"
+            className="absolute -top-2 -left-2 z-10 rounded-full border border-slate-900 bg-amber-500 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-slate-900 shadow-sm"
             title={`Multi-homed: also has an interface in ${data.multiHomedZones!.join(", ")}. Cross-zone traffic still traverses the firewall - see inspector.`}
           >
             MULTI
@@ -466,8 +481,9 @@ export const ZoneBoundaryNode = memo(({ data }: NodeProps<ZoneBoundaryData>) => 
           left: 14,
           right: 14,
           display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
+          flexDirection: "column",
+          alignItems: "flex-start",
+          gap: 4,
           pointerEvents: "none",
         }}
       >
@@ -477,6 +493,8 @@ export const ZoneBoundaryNode = memo(({ data }: NodeProps<ZoneBoundaryData>) => 
             fontWeight: 800,
             letterSpacing: "0.22em",
             textTransform: "uppercase",
+            maxWidth: "100%",
+            overflowWrap: "anywhere",
             color: colors.text,
             opacity: 1,
             textShadow: `0 0 10px ${colors.border}99`,
@@ -490,6 +508,8 @@ export const ZoneBoundaryNode = memo(({ data }: NodeProps<ZoneBoundaryData>) => 
               fontSize: 11,
               fontWeight: 600,
               fontFamily: "monospace",
+              maxWidth: "100%",
+              overflowWrap: "anywhere",
               color: colors.text,
               opacity: 0.95,
               textShadow: `0 0 8px ${colors.border}88`,
@@ -516,7 +536,7 @@ export const SwitchNode = memo(({ data, selected }: NodeProps<{ label: string; z
       <Handle type="source" position={Position.Right} style={HIDDEN_HANDLE} />
 
       <div
-        className="flex h-8 w-16 items-center justify-center rounded border"
+        className="flex h-8 w-16 items-center justify-center rounded-sm border"
         style={{
           borderColor: colors.border,
           backgroundColor: colors.bg,

@@ -1,7 +1,7 @@
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
 
 # iproute2 for set-gateway.sh
-RUN apt-get update && apt-get install -y --no-install-recommends iproute2 \
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -13,7 +13,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY services/opendss-sim/main.py services/opendss-sim/circuit.py \
     services/opendss-sim/models.py services/opendss-sim/runtime_state.py \
-    services/opendss-sim/time_utils.py ./
+    services/opendss-sim/time_utils.py services/opendss-sim/eu_profile.py \
+    services/opendss-sim/eu_circuit.py services/opendss-sim/eu_truth_loop.py \
+    services/opendss-sim/eu_app.py services/opendss-sim/eu_wire.py \
+    services/opendss-sim/eu_controls.py services/opendss-sim/eu_state.py \
+    services/opendss-sim/eu_models.py \
+    services/opendss-sim/eu_dynamics.py ./
 COPY services/opendss-sim/dss/ ./dss/
 
 # Copy gateway script

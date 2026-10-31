@@ -1,15 +1,49 @@
-import type { Edge, Node } from "reactflow";
-import type { GraphNode as ApiGraphNode, LabGraph, TrafficStatus, ZoneRuleSummary } from "./api";
-import { OBSERVED_FLOWS, isCrossZone, nodeZone, resolveLiveness, type ObservedFlow } from "./observed-flows";
+import { getBezierPath, Position, type Edge, type Node } from "reactflow";
+import type { GraphNode as ApiGraphNode, LabGraph, ZoneRuleSummary } from "./api";
+import { aggregateFlows, nodeZone, type FlowContext, type FlowFilter } from "./observed-flows";
 import {
   ViewMode,
   deriveNodeHealth,
-  getFlowBlockReason,
+  getFlowAuthorization,
   getZonePolicyInfo,
   zones,
-  ZONE_INTERFACE_META,
 } from "./network-console-data";
 import { zoneColors } from "./zone-colors";
+import { CONNECTION_DIRECTION, flowPurpose, PORT_RULE_BOUNDARY } from "./network-flow-meaning";
+
+// Reserve the entire host envelope, including a three-line name and IP.
+const HOST_ENVELOPE = { width: 120, height: 130 };
+export const TRAFFIC_LABEL_HEIGHT = 20;
+const LABEL_GAP = 8;
+
+export function trafficLabelWidth(label: string): number {
+  return Math.max(56, label.length * 6 + 18);
+}
+
+function flowLabel(protocols: { protocol: string }[]): string {
+  const names = [...new Set(protocols.map((f) => f.protocol))];
+  return names.length <= 3 ? names.join(" + ") : `${names.slice(0, 2).join(" + ")} +${names.length - 2}`;
+}
+
+function sameZoneGaps(graph: LabGraph) {
+  const gaps = new Map<string, { key: string; slot: number }>();
+  const counts = new Map<string, number>();
+  let maxWidth = 0;
+  // Inventory order, not liveness or the current filter, owns label lanes.
+  for (const pair of aggregateFlows({ graph, observations: {} }).sort((a, b) =>
+    `${a.source}->${a.target}`.localeCompare(`${b.source}->${b.target}`))) {
+    const zone = nodeZone(pair.source, graph);
+    if (zone === "unknown" || zone !== nodeZone(pair.target, graph)) continue;
+    const hosts = graph.nodes.filter((n) => n.data.zone === zone && n.type !== "containd_ngfw" && n.type !== "opnsense_external" && n.type !== "zone");
+    const first = Math.min(hosts.findIndex((n) => n.id === pair.source), hosts.findIndex((n) => n.id === pair.target));
+    const key = hosts[first].id;
+    const slot = counts.get(key) ?? 0;
+    gaps.set(`${pair.source}->${pair.target}`, { key, slot });
+    counts.set(key, slot + 1);
+    maxWidth = Math.max(maxWidth, trafficLabelWidth(flowLabel(pair.protocols)));
+  }
+  return { gaps, count: Math.max(0, ...counts.values()), maxWidth };
+}
 
 export function buildStyledGraph(
   graph?: LabGraph,
@@ -17,7 +51,7 @@ export function buildStyledGraph(
   viewMode: ViewMode = { policyDim: true, traffic: false, iec62443: false },
   deviceComms?: Record<string, boolean>,
   rtacOnline?: boolean,
-  trafficStatus?: TrafficStatus,
+  flowContext?: FlowContext,
   firewallOnline?: boolean,
   trafficFilter?: { zone: string; crossZoneOnly: boolean },
   highlightedTrafficPair?: string | null,
@@ -32,7 +66,10 @@ export function buildStyledGraph(
 
     // Layout configuration
     const ZONE_SPACING_X = 240;
-    const NODE_SPACING_Y = 130;
+    const sameZone = sameZoneGaps(graph);
+    const NODE_SPACING_Y = sameZone.count
+      ? HOST_ENVELOPE.height + LABEL_GAP + sameZone.count * (TRAFFIC_LABEL_HEIGHT + LABEL_GAP)
+      : 130;
     const FIREWALL_Y = 50;
     // Pushed down from 220 to give the firewall icon, its label,
     // and the zone boundary headers room to breathe vertically.
@@ -58,11 +95,12 @@ export function buildStyledGraph(
     const zoneOrder = [
       "enterprise_net", "wan", "it_net",
       "vendor_net", "dmz", "dmz_net",
-      "ot_ops_net", "lan1", "ot_control", "ot_control_net",
+      "ops_dmz_net", "lan5",
+      "control_centre_net", "lan4",
+      "ot_ops_net", "station_net", "lan1", "ot_control", "ot_control_net",
       "field_net", "lan2", "ot_safety", "ot_safety_net",
     ];
     const activeZones = Object.keys(nodesByZone)
-      .filter(z => zones.includes(z as typeof zones[number]))
       .sort((a, b) => {
         const aIdx = zoneOrder.indexOf(a);
         const bIdx = zoneOrder.indexOf(b);
@@ -89,12 +127,13 @@ export function buildStyledGraph(
       // which fails the SL 3 target set by OT Operations. In the
       // hardened config it's SL 3 (deny-default, DPI, source-pin).
 
-      const BAND_WIDTH = 700;
-      const BAND_HEIGHT = 180;
+      const NODE_SPACING_X = Math.max(130, HOST_ENVELOPE.width + LABEL_GAP + sameZone.count * (sameZone.maxWidth + LABEL_GAP));
+      const BAND_WIDTH = Math.max(700, 60 + HOST_ENVELOPE.width +
+        (Math.max(...Object.values(nodesByZone).map((hosts) => hosts.length)) - 1) * NODE_SPACING_X);
+      const BAND_HEIGHT = 200;
       const BAND_GAP = 30;
       const BAND_START_X = -400;
       const NODE_START_X_OFFSET = 30;
-      const NODE_SPACING_X = 130;
       const FW_X = BAND_START_X + BAND_WIDTH + 120; // firewall to the right of bands
 
       // IEC 62443 Security Level assignments for each zone.
@@ -114,14 +153,10 @@ export function buildStyledGraph(
         { zone: "ot_ops_net", label: "Level 3 \u00B7 Supervisory" },
         { zone: "field_net", label: "Level 1 \u00B7 Field Devices" },
       ];
-      const activeLevels = purdueOrder.filter((p) => activeZones.includes(p.zone));
-
-      const zoneSubnets62443: Record<string, string> = {
-        enterprise_net: "10.10.10.0/24",
-        vendor_net: "10.20.20.0/24",
-        ot_ops_net: "10.30.30.0/24",
-        field_net: "10.40.40.0/24",
-      };
+      const architecturalOnly = activeZones.includes("station_net") || activeZones.includes("control_centre_net");
+      const activeLevels = architecturalOnly
+        ? activeZones.map((zone) => ({ zone, label: graph.networks.find((n) => n.id === zone)?.name ?? zone }))
+        : purdueOrder.filter((p) => activeZones.includes(p.zone));
 
       const styledNodes: Node[] = [];
       let curY = 0;
@@ -136,11 +171,11 @@ export function buildStyledGraph(
           position: { x: BAND_START_X, y: curY },
           data: {
             zone: level.zone,
-            label: `${level.label}  \u00B7  SL-${sl}`,
-            subnet: zoneSubnets62443[level.zone],
+            label: architecturalOnly ? level.label : `${level.label}  \u00B7  SL-${sl}`,
+            subnet: graph.networks.find((n) => n.id === level.zone)?.subnet ?? graph.networks.find((n) => n.id === level.zone)?.cidr,
             width: BAND_WIDTH,
             height: BAND_HEIGHT,
-            securityLevel: sl,
+            securityLevel: architecturalOnly ? undefined : sl,
           },
           selectable: false,
           draggable: false,
@@ -225,7 +260,7 @@ export function buildStyledGraph(
           type: "firewall",
           position: { x: FW_X, y: fwCenterY },
           data: {
-            label: `Conduit \u00B7 SL-${conduitSL}`,
+            label: architecturalOnly ? "Segmentation conduit" : `Conduit \u00B7 SL-${conduitSL}`,
             nodeType: firewallNode.type,
             zone: "enterprise_net",
             status: firewallNode.data.status || "running",
@@ -237,9 +272,9 @@ export function buildStyledGraph(
             health: fwHealth.health,
             healthSource: fwHealth.healthSource,
             // Extra 62443 fields for the label area
-            conduitSL,
-            targetSL,
-            conduitMet,
+            conduitSL: architecturalOnly ? undefined : conduitSL,
+            targetSL: architecturalOnly ? undefined : targetSL,
+            conduitMet: architecturalOnly ? undefined : conduitMet,
           },
           draggable: true,
         });
@@ -256,7 +291,7 @@ export function buildStyledGraph(
       if (firewallNode) {
         activeZones.forEach((zone) => {
           const zoneStroke = zoneColors[zone]?.border || "#64748b";
-          const policyInfo = getZonePolicyInfo(zone, ruleSummaries);
+          const policyInfo = getZonePolicyInfo(zone, ruleSummaries, graph.networks);
 
           styledEdges.push({
             id: `fw-to-${zone}`,
@@ -280,94 +315,14 @@ export function buildStyledGraph(
               color: zoneStroke,
               dimmed: false,
               pulse: false,
-              zoneMeta: ZONE_INTERFACE_META[zone],
+              zoneMeta: zoneInterfaceMeta(graph, zone),
             },
           });
         });
       }
 
-      // Traffic edges - same logic as default layout
-      if (viewMode.traffic) {
-        const presentNodeIds = new Set(styledNodes.map((n) => n.id));
-        const nodeIndex = new Map(styledNodes.map((n) => [n.id, n]));
-
-        const groups = new Map<string, ObservedFlow[]>();
-        for (const flow of OBSERVED_FLOWS) {
-          if (!presentNodeIds.has(flow.source) || !presentNodeIds.has(flow.target)) continue;
-          const key = `${flow.source}->${flow.target}`;
-          if (!groups.has(key)) groups.set(key, []);
-          groups.get(key)!.push(flow);
-        }
-
-        const fZone = trafficFilter?.zone ?? "all";
-        const fCrossOnly = trafficFilter?.crossZoneOnly ?? false;
-        const anyHighlight = !!highlightedTrafficPair;
-
-        Array.from(groups.entries()).forEach(([key, flows]) => {
-          const first = flows[0];
-          const sZone = nodeZone(first.source);
-          const tZone = nodeZone(first.target);
-          const crossZone = isCrossZone(first.source, first.target);
-
-          if (fCrossOnly && !crossZone) return;
-          if (fZone !== "all" && sZone !== fZone && tZone !== fZone) return;
-
-          const statuses = flows.map((f) =>
-            resolveLiveness(f, deviceComms, rtacOnline ?? false, trafficStatus),
-          );
-          const status: "active" | "idle" | "down" = statuses.includes("active")
-            ? "active"
-            : statuses.every((s) => s === "down")
-            ? "down"
-            : "idle";
-
-          const protocols: string[] = [];
-          for (const f of flows) {
-            if (!protocols.includes(f.protocol)) protocols.push(f.protocol);
-          }
-          const label =
-            protocols.length <= 3
-              ? protocols.join(" + ")
-              : `${protocols.slice(0, 2).join(" + ")} +${protocols.length - 2}`;
-
-          // No sourceHandle/targetHandle - HostNodes have exactly one
-          // source (right) and one target (left) so React Flow picks
-          // them automatically.
-
-          const tooltipLines = [
-            `${first.source} \u2192 ${first.target}`,
-            ...flows.map((f) => `${f.protocol} on tcp/${f.port} \u00B7 ${f.cadence}`),
-            `category: ${first.category}`,
-          ];
-
-          const isHighlighted = highlightedTrafficPair === key;
-          const isDimmedByHighlight = anyHighlight && !isHighlighted;
-          // Only check firewall blocking when Policy view is active -
-          // the red ✕ is a policy concept and shouldn't show in pure
-          // topology mode.
-          const blockReason = viewMode.policyDim
-            ? getFlowBlockReason(first.source, first.target, ruleSummaries)
-            : null;
-          const blockedByFw = blockReason !== null;
-
-          styledEdges.push({
-            id: `traffic-${key}`,
-            source: first.source,
-            target: first.target,
-            type: "trafficEdge",
-            animated: status === "active" && !isDimmedByHighlight && !blockedByFw,
-            data: {
-              label,
-              status,
-              category: first.category,
-              highlighted: isHighlighted,
-              dimmedByHighlight: isDimmedByHighlight,
-              blockedByFirewall: blockedByFw,
-              blockReason: blockReason,
-              tooltipLines,
-            },
-          });
-        });
+      if (viewMode.traffic && flowContext) {
+        styledEdges.push(...trafficEdges(flowContext, styledNodes, styledEdges, ruleSummaries, viewMode.policyDim, trafficFilter, highlightedTrafficPair));
       }
 
       return { nodes: styledNodes, edges: styledEdges };
@@ -415,6 +370,8 @@ export function buildStyledGraph(
       vendor_net: "Vendor / Engineering",
       ot_ops_net: "OT Operations",
       field_net: "Field Devices",
+      station_net: "Station LAN",
+      control_centre_net: "Control Centre",
       wan: "Enterprise Zone",
       dmz: "Vendor / Engineering",
       ot_control: "OT Operations",
@@ -424,21 +381,6 @@ export function buildStyledGraph(
       dmz_net: "Vendor / Engineering",
       ot_control_net: "OT Operations",
       ot_safety_net: "Field Devices",
-    };
-
-    const zoneSubnets: Record<string, string> = {
-      enterprise_net: "10.10.10.0/24",
-      vendor_net: "10.20.20.0/24",
-      ot_ops_net: "10.30.30.0/24",
-      field_net: "10.40.40.0/24",
-      wan: "10.10.10.0/24",
-      dmz: "10.20.20.0/24",
-      ot_control: "10.30.30.0/24",
-      ot_safety: "10.40.40.0/24",
-      it_net: "10.10.10.0/24",
-      dmz_net: "10.20.20.0/24",
-      ot_control_net: "10.30.30.0/24",
-      ot_safety_net: "10.40.40.0/24",
     };
 
     // Boundary box geometry shared across all zones. The boundary
@@ -471,8 +413,8 @@ export function buildStyledGraph(
         },
         data: {
           zone,
-          label: zoneLabels[zone] || zone.toUpperCase(),
-          subnet: zoneSubnets[zone],
+          label: zoneLabels[zone] || graph.networks.find((n) => n.id === zone)?.name || zone.toUpperCase(),
+          subnet: graph.networks.find((n) => n.id === zone)?.subnet ?? graph.networks.find((n) => n.id === zone)?.cidr,
           width: BOUNDARY_HALF_WIDTH * 2,
           height: boundaryHeight,
         },
@@ -566,7 +508,7 @@ export function buildStyledGraph(
     if (firewallNode) {
       activeZones.forEach((zone) => {
         const zoneStroke = zoneColors[zone]?.border || "#64748b";
-        const policyInfo = getZonePolicyInfo(zone, ruleSummaries);
+        const policyInfo = getZonePolicyInfo(zone, ruleSummaries, graph.networks);
         const policyOn = viewMode.policyDim;
 
         // State encoding driven by `permissiveness`:
@@ -612,7 +554,7 @@ export function buildStyledGraph(
             color: cfg.stroke,
             dimmed: state === "blocked",
             pulse: state === "over",
-            zoneMeta: ZONE_INTERFACE_META[zone],
+            zoneMeta: zoneInterfaceMeta(graph, zone),
           },
         });
       });
@@ -625,105 +567,113 @@ export function buildStyledGraph(
     // the chain ran straight down from the zone anchor through the
     // hosts at low opacity.)
 
-    // Traffic view: render observed host-to-host flows when the toggle
-    // is on. We aggregate by source-target pair so a single line
-    // represents one logical conversation between two nodes - even if
-    // the flow uses multiple protocols (RTAC↔relay carries both
-    // Modbus and DNP3, for example). Aggregation is the difference
-    // between 14 sprawling lines and ~9 readable ones.
-    if (viewMode.traffic) {
-      const presentNodeIds = new Set(styledNodes.map((n) => n.id));
-      const nodeIndex = new Map(styledNodes.map((n) => [n.id, n]));
-
-      // Group flows by `${source}→${target}` so each pair gets one
-      // edge with a combined protocol label.
-      const groups = new Map<string, ObservedFlow[]>();
-      for (const flow of OBSERVED_FLOWS) {
-        if (!presentNodeIds.has(flow.source) || !presentNodeIds.has(flow.target)) continue;
-        const key = `${flow.source}->${flow.target}`;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key)!.push(flow);
-      }
-
-      const fZone = trafficFilter?.zone ?? "all";
-      const fCrossOnly = trafficFilter?.crossZoneOnly ?? false;
-      const anyHighlight = !!highlightedTrafficPair;
-
-      Array.from(groups.entries()).forEach(([key, flows]) => {
-        const first = flows[0];
-        const sZone = nodeZone(first.source);
-        const tZone = nodeZone(first.target);
-        const crossZone = isCrossZone(first.source, first.target);
-
-        // Apply the same filter the drawer uses so the canvas and
-        // the matrix show the same subset. Filtered-out edges are
-        // simply not emitted (no dim, just gone).
-        if (fCrossOnly && !crossZone) return;
-        if (fZone !== "all" && sZone !== fZone && tZone !== fZone) return;
-        // A pair is "active" if any of its constituent flows is active.
-        const statuses = flows.map((f) =>
-          resolveLiveness(f, deviceComms, rtacOnline ?? false, trafficStatus),
-        );
-        const status: "active" | "idle" | "down" = statuses.includes("active")
-          ? "active"
-          : statuses.every((s) => s === "down")
-          ? "down"
-          : "idle";
-
-        // Combined protocol label: dedup, preserve order, max 3.
-        const protocols: string[] = [];
-        for (const f of flows) {
-          if (!protocols.includes(f.protocol)) protocols.push(f.protocol);
-        }
-        const label =
-          protocols.length <= 3
-            ? protocols.join(" + ")
-            : `${protocols.slice(0, 2).join(" + ")} +${protocols.length - 2}`;
-
-        // In the 62443 view, bands are stacked vertically, so traffic
-        // flows top→bottom. Use default handles (no named handle) so
-        // React Flow routes the bezier vertically from the source
-        // node's bottom to the target node's top. Each node's unique
-        // horizontal position within its band naturally spreads the
-        // bezier midpoints horizontally - avoiding the overlap that
-        // occurs when all edges share side handles.
-        const sourceHandle = undefined;
-        const targetHandle = undefined;
-
-        const tooltipLines = [
-          `${first.source} → ${first.target}`,
-          ...flows.map((f) => `${f.protocol} on tcp/${f.port} · ${f.cadence}`),
-          `category: ${first.category}`,
-        ];
-
-        const isHighlighted = highlightedTrafficPair === key;
-        const isDimmedByHighlight = anyHighlight && !isHighlighted;
-        const blockReason = viewMode.policyDim
-          ? getFlowBlockReason(first.source, first.target, ruleSummaries)
-          : null;
-        const blockedByFw = blockReason !== null;
-
-        styledEdges.push({
-          id: `traffic-${key}`,
-          source: first.source,
-          target: first.target,
-          sourceHandle,
-          targetHandle,
-          type: "trafficEdge",
-          animated: status === "active" && !isDimmedByHighlight && !blockedByFw,
-          data: {
-            label,
-            status,
-            category: first.category,
-            highlighted: isHighlighted,
-            dimmedByHighlight: isDimmedByHighlight,
-            blockedByFirewall: blockedByFw,
-            blockReason: blockReason,
-            tooltipLines,
-          },
-        });
-      });
+    if (viewMode.traffic && flowContext) {
+      styledEdges.push(...trafficEdges(flowContext, styledNodes, styledEdges, ruleSummaries, viewMode.policyDim, trafficFilter, highlightedTrafficPair));
     }
 
     return { nodes: styledNodes, edges: styledEdges };
+}
+
+type Box = { x: number; y: number; width: number; height: number };
+
+function intersects(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width + LABEL_GAP && a.x + a.width + LABEL_GAP > b.x &&
+    a.y < b.y + b.height + LABEL_GAP && a.y + a.height + LABEL_GAP > b.y;
+}
+
+function handles(source: Node, target: Node) {
+  const band = source.data.verticalOnly === true;
+  return {
+    sourceX: source.position.x + (band ? 60 : 88),
+    sourceY: source.position.y + (band ? 56 : 28),
+    targetX: target.position.x + (band ? 60 : 32),
+    targetY: target.position.y + (band ? 0 : 28),
+    sourcePosition: band ? Position.Bottom : Position.Right,
+    targetPosition: band ? Position.Top : Position.Left,
+  };
+}
+
+function trafficEdges(context: FlowContext, nodes: Node[], policyEdges: Edge[], rules: ZoneRuleSummary[] | undefined,
+  policyOn: boolean, filter?: FlowFilter, highlight?: string | null): Edge[] {
+  const present = new Set(nodes.map((n) => n.id));
+  const inventory = sameZoneGaps(context.graph);
+  const occupied: Box[] = nodes.filter((n) => n.type === "host").map((n) => ({
+    ...n.position, ...HOST_ENVELOPE,
+  }));
+  // Policy pills are in the SVG layer but occupy the same canvas.
+  for (const edge of policyEdges) {
+    if (!edge.data.label) continue;
+    const source = nodes.find((n) => n.id === edge.source)!;
+    const target = nodes.find((n) => n.id === edge.target)!;
+    const band = source.type === "zone";
+    const sx = source.position.x + (band ? 0 : 80);
+    const sy = source.position.y + (band ? 0 : 88);
+    const tx = target.position.x + (band ? 36 : 0);
+    const ty = target.position.y + (band ? 44 : 0);
+    const width = Math.max(78, edge.data.label.length * 6 + 28);
+    occupied.push({ x: sx + (tx - sx) * 0.6 - width / 2, y: sy + (ty - sy) * 0.6 - 11, width, height: 22 });
+  }
+  const edges = aggregateFlows(context).filter((r) => present.has(r.source) && present.has(r.target)).map((r): Edge => {
+    const key = `${r.source}->${r.target}`;
+    const label = flowLabel(r.protocols);
+    const authorization = getFlowAuthorization(r.source, r.target, rules, context.graph);
+    const blockReason = policyOn && authorization.state === "denied" ? authorization.text : null;
+    const dimmed = !!highlight && highlight !== key;
+    const sourceZone = nodeZone(r.source, context.graph);
+    const sameZone = sourceZone !== "unknown" && sourceZone === nodeZone(r.target, context.graph);
+    return {
+      id: `traffic-${key}`, source: r.source, target: r.target, type: "trafficEdge",
+      animated: r.status === "active" && !dimmed && !blockReason,
+      data: { label, status: r.status, category: r.category, sameZone, highlighted: highlight === key,
+        dimmedByHighlight: dimmed, blockedByFirewall: blockReason !== null, blockReason,
+        tooltipLines: [`${r.source} → ${r.target}`, "Topology: declared by package, not proof of authorization.",
+          ...r.protocols.map((f) => `${f.protocol} on tcp/${f.port} · ${f.cadence}`),
+          ...r.protocols.map(flowPurpose), CONNECTION_DIRECTION, PORT_RULE_BOUNDARY,
+          authorization.text, `Observed liveness: ${r.status}`,
+          ...r.protocols.map((f) => `${context.observations[f.id]?.evidence}: ${context.observations[f.id]?.reason}`)],
+      },
+    };
+  });
+
+  // Place same-zone labels first in their reserved inter-host lanes.
+  // Cross-zone labels then take the nearest free vertical interval to
+  // their Bezier midpoint, clearing ALL hosts and previously placed pills.
+  for (const edge of [...edges].sort((a, b) =>
+    Number(b.data.sameZone) - Number(a.data.sameZone) || a.id.localeCompare(b.id))) {
+    const source = nodes.find((n) => n.id === edge.source)!;
+    const target = nodes.find((n) => n.id === edge.target)!;
+    const [, cx, cy] = getBezierPath({ ...handles(source, target), curvature: 0.4 });
+    const width = trafficLabelWidth(edge.data.label);
+    let x = cx - width / 2;
+    let y = cy - TRAFFIC_LABEL_HEIGHT / 2;
+    const lane = inventory.gaps.get(`${edge.source}->${edge.target}`);
+    if (lane) {
+      const upper = nodes.find((n) => n.id === lane.key)!;
+      if (source.data.verticalOnly) {
+        x = upper.position.x + HOST_ENVELOPE.width + LABEL_GAP + lane.slot * (inventory.maxWidth + LABEL_GAP);
+        y = upper.position.y + 28 - TRAFFIC_LABEL_HEIGHT / 2;
+      } else {
+        x = upper.position.x + HOST_ENVELOPE.width / 2 - width / 2;
+        y = upper.position.y + HOST_ENVELOPE.height + LABEL_GAP + lane.slot * (TRAFFIC_LABEL_HEIGHT + LABEL_GAP);
+      }
+    } else {
+      const candidates = [y, ...occupied.flatMap((box) => [
+        box.y - LABEL_GAP - TRAFFIC_LABEL_HEIGHT, box.y + box.height + LABEL_GAP,
+      ])].sort((a, b) => Math.abs(a - y) - Math.abs(b - y) || a - b);
+      y = candidates.find((candidate) => !occupied.some((box) =>
+        intersects({ x, y: candidate, width, height: TRAFFIC_LABEL_HEIGHT }, box)))!;
+    }
+    occupied.push({ x, y, width, height: TRAFFIC_LABEL_HEIGHT });
+    edge.data.labelOffset = { x: x + width / 2 - cx, y: y + TRAFFIC_LABEL_HEIGHT / 2 - cy };
+  }
+  const visible = new Set(aggregateFlows(context, filter).map((r) => `${r.source}->${r.target}`));
+  return edges.filter((edge) => visible.has(`${edge.source}->${edge.target}`));
+}
+
+function zoneInterfaceMeta(graph: LabGraph, zone: string) {
+  const network = graph.networks.find((n) => n.id === zone);
+  if (!network) return undefined;
+  const firewall = graph.nodes.find((n) => n.type === "containd_ngfw" || n.type === "opnsense_external");
+  return { label: network.name, role: network.zone ?? "—", subnet: network.subnet ?? network.cidr ?? "—",
+    fwIp: firewall?.data.interface_ips?.[zone] ?? "—", description: network.description ?? "" };
 }

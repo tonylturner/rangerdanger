@@ -49,7 +49,7 @@ const (
 
 	// Analog Output Command (float32)
 	GroupAnalogOutputCmd = 41
-	VarAOCmdFloat        = 3 // 5 bytes: status(1) + float32_LE(4)
+	VarAOCmdFloat        = 3 // 5 bytes: float32_LE(4) + status(1)
 
 	// Class data objects
 	GroupClassData = 60
@@ -92,7 +92,7 @@ const (
 // IIN (Internal Indications) bit masks.
 const (
 	IIN1DeviceRestart = 0x80
-	IIN1NoFuncCode    = 0x01
+	IIN2NoFuncCode    = 0x01
 	IIN2ObjectUnknown = 0x02
 	IIN2ParamError    = 0x04
 )
@@ -139,7 +139,7 @@ func ParseAPDU(data []byte) (*APDU, error) {
 	// If this is a response, next 2 bytes are IIN
 	if apdu.FuncCode >= 0x81 {
 		if len(data) < 4 {
-			return apdu, nil
+			return nil, ErrFrameTooShort
 		}
 		apdu.IIN = uint16(data[2])<<8 | uint16(data[3])
 		offset = 4
@@ -148,7 +148,7 @@ func ParseAPDU(data []byte) (*APDU, error) {
 	// Parse object headers
 	for offset < len(data) {
 		if offset+3 > len(data) {
-			break
+			return nil, ErrFrameTooShort
 		}
 
 		oh := ObjectHeader{
@@ -161,47 +161,49 @@ func ParseAPDU(data []byte) (*APDU, error) {
 		switch oh.Qualifier {
 		case QualAllPoints:
 			// No range bytes — request for all points
-		case QualStartStop8:
-			if offset+2 > len(data) {
-				break
+		case QualStartStop8, QualStartStop16:
+			width := 1
+			if oh.Qualifier == QualStartStop16 {
+				width = 2
 			}
-			oh.Start = uint16(data[offset])
-			oh.Stop = uint16(data[offset+1])
-			offset += 2
-			// Consume inline object data for response messages
-			count := int(oh.Stop-oh.Start) + 1
-			objSize := objectDataSize(oh.Group, oh.Variation)
-			totalBytes := count * objSize
-			if objSize > 0 && offset+totalBytes <= len(data) {
-				oh.Data = make([]byte, totalBytes)
-				copy(oh.Data, data[offset:offset+totalBytes])
-				offset += totalBytes
+			if offset+2*width > len(data) {
+				return nil, ErrFrameTooShort
 			}
-		case QualStartStop16:
-			if offset+4 > len(data) {
-				break
+			if width == 1 {
+				oh.Start, oh.Stop = uint16(data[offset]), uint16(data[offset+1])
+			} else {
+				oh.Start = binary.LittleEndian.Uint16(data[offset:])
+				oh.Stop = binary.LittleEndian.Uint16(data[offset+2:])
 			}
-			oh.Start = binary.LittleEndian.Uint16(data[offset:])
-			oh.Stop = binary.LittleEndian.Uint16(data[offset+2:])
-			offset += 4
-			// Consume inline object data for response messages
-			count16 := int(oh.Stop-oh.Start) + 1
-			objSize16 := objectDataSize(oh.Group, oh.Variation)
-			totalBytes16 := count16 * objSize16
-			if objSize16 > 0 && offset+totalBytes16 <= len(data) {
-				oh.Data = make([]byte, totalBytes16)
-				copy(oh.Data, data[offset:offset+totalBytes16])
-				offset += totalBytes16
+			offset += 2 * width
+			if oh.Stop < oh.Start {
+				return nil, ErrFrameTooShort
+			}
+			// READ ranges describe requested indices, not inline values.
+			if apdu.FuncCode != FCRead {
+				count := int(oh.Stop) - int(oh.Start) + 1
+				total := count * objectDataSize(oh.Group, oh.Variation)
+				if oh.Group == 80 && oh.Variation == 1 {
+					total = (count + 7) / 8 // packed IIN bits, starting at Start
+				}
+				if offset+total > len(data) {
+					return nil, ErrFrameTooShort
+				}
+				oh.Data = append([]byte(nil), data[offset:offset+total]...)
+				offset += total
 			}
 		case QualCount8Pfx8:
 			if offset+1 > len(data) {
-				break
+				return nil, ErrFrameTooShort
 			}
 			count := int(data[offset])
 			offset++
 			oh.Count = uint16(count)
 			objSize := objectDataSize(oh.Group, oh.Variation)
-			for i := 0; i < count && offset+1+objSize <= len(data); i++ {
+			for i := 0; i < count; i++ {
+				if offset+1+objSize > len(data) {
+					return nil, ErrFrameTooShort
+				}
 				idx := uint16(data[offset])
 				offset++
 				objData := make([]byte, objSize)
@@ -211,13 +213,16 @@ func ParseAPDU(data []byte) (*APDU, error) {
 			}
 		case QualCount16Pfx16:
 			if offset+2 > len(data) {
-				break
+				return nil, ErrFrameTooShort
 			}
 			count := int(binary.LittleEndian.Uint16(data[offset:]))
 			offset += 2
 			oh.Count = uint16(count)
 			objSize := objectDataSize(oh.Group, oh.Variation)
-			for i := 0; i < count && offset+2+objSize <= len(data); i++ {
+			for i := 0; i < count; i++ {
+				if offset+2+objSize > len(data) {
+					return nil, ErrFrameTooShort
+				}
 				idx := binary.LittleEndian.Uint16(data[offset:])
 				offset += 2
 				objData := make([]byte, objSize)
@@ -247,7 +252,7 @@ func objectDataSize(group, variation uint8) int {
 	case group == GroupAnalogOutput && variation == VarAOFloat:
 		return 5
 	case group == GroupAnalogOutputCmd && variation == VarAOCmdFloat:
-		return 5 // status(1) + float32(4)
+		return 5 // float32(4) + status(1)
 	default:
 		return 0
 	}
@@ -364,38 +369,28 @@ func EncodeAnalogOutputStatus(startIdx uint16, values []float32) []byte {
 	return buf
 }
 
-// EncodeCROBResponse encodes a CROB response for Group 12 Var 1.
-func EncodeCROBResponse(index uint16, controlCode uint8, status uint8) []byte {
-	buf := []byte{
-		GroupCROB,
-		VarCROB,
-		QualCount8Pfx8,
-		1,           // count
-		byte(index), // prefix index
+// EncodeCROBResponse echoes a Group 12 Var 1 request with the result status.
+func EncodeCROBResponse(index uint16, request []byte, status uint8) []byte {
+	if len(request) != 11 {
+		return nil
 	}
-	// CROB data: control(1) + count(1) + onTime(4) + offTime(4) + status(1) = 11
-	obj := make([]byte, 11)
-	obj[0] = controlCode
-	obj[1] = 1 // count
-	// onTime and offTime = 0
-	obj[10] = status
-	buf = append(buf, obj...)
-	return buf
+	return encodeCommandResponse(GroupCROB, VarCROB, index, request, status)
 }
 
-// EncodeAnalogOutputResponse encodes an analog output command response for Group 41 Var 3.
+// EncodeAnalogOutputResponse encodes a Group 41 Var 3 command response.
 func EncodeAnalogOutputResponse(index uint16, value float32, status uint8) []byte {
-	buf := []byte{
-		GroupAnalogOutputCmd,
-		VarAOCmdFloat,
-		QualCount8Pfx8,
-		1,           // count
-		byte(index), // prefix index
-	}
 	obj := make([]byte, 5)
-	obj[0] = status
-	binary.LittleEndian.PutUint32(obj[1:], math.Float32bits(value))
-	buf = append(buf, obj...)
+	binary.LittleEndian.PutUint32(obj, math.Float32bits(value))
+	return encodeCommandResponse(GroupAnalogOutputCmd, VarAOCmdFloat, index, obj, status)
+}
+
+func encodeCommandResponse(group, variation uint8, index uint16, object []byte, status uint8) []byte {
+	buf := []byte{group, variation, QualCount8Pfx8, 1, byte(index)}
+	if index > 255 {
+		buf = []byte{group, variation, QualCount16Pfx16, 1, 0, byte(index), byte(index >> 8)}
+	}
+	buf = append(buf, object...)
+	buf[len(buf)-1] = status
 	return buf
 }
 
@@ -412,6 +407,6 @@ func ParseAnalogOutputCmd(data []byte) (float32, bool) {
 	if len(data) < 5 {
 		return 0, false
 	}
-	bits := binary.LittleEndian.Uint32(data[1:5])
+	bits := binary.LittleEndian.Uint32(data[:4])
 	return math.Float32frombits(bits), true
 }

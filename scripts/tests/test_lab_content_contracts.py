@@ -10,6 +10,8 @@ import unittest
 
 import yaml
 
+from scripts.tests.curriculum import read_curriculum
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIOS = ROOT / "lab-definitions/scenarios"
@@ -74,24 +76,48 @@ RELEASE_HEADERS = {
     ),
 }
 
-# Reviewed false claims: plan-driven attacks (reference-only enforcement retires them)
-# and "DPI or the pin" (on the frozen images only the L4 source pin stops the write).
+# Reviewed applied-plan headers replace reference-only promises. Keep exact snapshots.
 HEADER_EXCEPTIONS = {
+    "firewall-implementation": (
+        'You have identified the required flows, designed your requirements, and planned '
+        'which remediations to execute. Now you implement. You will replace the permissive '
+        'weak baseline on the containd NGFW with a least-privilege policy - applying it with '
+        'one click on the Guided track, or authoring the rules yourself on the Advanced '
+        'track. The applied plan defines which unauthorized cross-zone paths close or remain '
+        'open, while critical substation operations continue without interruption.\n'
+    ),
     "hardening-configurations": (
-        "Stress-test the policy you built in Lab 2.2 against the canonical "
-        "distribution-substation attack: a DNP3 Direct Operate (FC05) injection from Kali "
-        "that disables the recloser's auto-reclose and trips it, turning a brief flicker "
-        "into a sustained downstream outage. You'll run the attack under the weak baseline "
-        "(it succeeds), then under the hardened policy (it's blocked by the L4 source pin, "
-        "the control that enforces on this build; the ICS DPI layer records the attempt). "
-        "The lesson: verify enforcement by device state, not by policy labels. Optional "
-        "Modbus FC5/FC6 bonus attacks in the same step are closed by the same source pin.\n"
+        'Stress-test the policy you built in Lab 2.2 against the canonical '
+        'distribution-substation attack: a DNP3 Direct Operate (FC05) injection from Kali '
+        "that disables the recloser's auto-reclose and trips it, turning a brief flicker into "
+        "a sustained downstream outage. You'll run the attack under the weak baseline (it "
+        'succeeds), then under the applied plan. A selected enterprise-to-field closure '
+        'denies it; a deferred closure leaves the Weak exposure open. The lesson: verify '
+        'enforcement by device state, not by policy labels. Optional Modbus FC5/FC6 cases '
+        'follow the same owning action.\n'
     ),
     "remediation-planning": (
-        "You have findings from the baseline assessment but not unlimited time, people, "
-        "or political capital. Pick which remediations to execute this quarter - knowing "
-        "some attack paths stay open because you can't fix everything at once. "
-        "Your plan guides design review; workshop enforcement uses the reference policy.\n"
+        'You have findings from the baseline assessment but not unlimited time, people, or '
+        'political capital. Pick which remediations to execute this quarter - knowing some '
+        "attack paths stay open because you can't fix everything at once. Apply Your Plan "
+        'compiles your selections. Deferred controls leave their Weak exposures open.\n'
+    ),
+    "validation-evidence": (
+        'After applying your plan or the Hardened reference in Lab 2.2 and stress-testing it '
+        'in Lab 2.3, this exercise builds the formal evidence package: positive tests '
+        'confirming authorized flows still work, tests comparing unauthorized flows with the '
+        'applied plan and Hardened, and PCAP evidence from the firewall. You generate it in '
+        'one click against the policy you have active - then read it like a reviewer would. '
+        'This is the validation step required before any segmentation change goes to '
+        'production.\n'
+    ),
+    "vendor-rdp-compromise": (
+        'Optional companion to Lab 2.3. Phished vendor credentials let an attacker RDP/VNC '
+        'into the vendor jump box from an enterprise foothold, then pivot east-west to OT '
+        "field devices. You'll walk the kill chain under the weak baseline, then apply "
+        'containd rules that block remote-access protocols (RDP/3389, VNC/5900) from '
+        'enterprise into the vendor DMZ. In an applied plan, each link follows its owning '
+        'action.\n'
     ),
 }
 
@@ -171,49 +197,48 @@ class ErrataContracts(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertNotRegex(path.read_text(), r"(?i)\bv\d+\.\d+(?:\.\d+)?|\brc\.\d+")
 
-    def test_lab22_titles_cannot_trigger_frozen_body_replacement(self):
-        # Frozen frontend/lib/scenario-runner-logic.ts:9-11; copy, do not import.
-        fragments = ("create minimal", "phase 3", "validate allowed", "phase 5",
-                     "validate blocked", "phase 6")
+    def test_lab22_generation_is_bound_by_stable_ids_not_frozen_title_workarounds(self):
+        package = yaml.safe_load((ROOT / "lab-definitions/packages/us-dnp3-substation/package.yml").read_text())
+        binding = package["curriculum"]["dynamicSteps"]
         steps = scenario("firewall-implementation")["steps"]
-        for step in steps:
-            with self.subTest(title=step["title"]):
-                self.assertFalse(any(f in step["title"].lower() for f in fragments))
-        for number, step in enumerate(steps[2:8], 1):
-            self.assertTrue(step["title"].startswith(f"Stage {number} - "))
-        self.assertNotRegex(" ".join(s["description"] for s in steps), r"[Pp]hases? [1-6]")
+        self.assertEqual({s["id"] for s in steps} & set(binding), set(binding))
+        curriculum = read_curriculum(ROOT / "lab-definitions/packages/us-dnp3-substation")
+        for step_id, phase in binding.items():
+            self.assertIn(phase, curriculum["phases"])
+            self.assertTrue(next(s for s in steps if s["id"] == step_id)["title"].startswith("Phase "))
+        rules = curriculum["phases"]["rules"]
+        for phrase in ("**Apply Your Plan**", "Deferred rules retain", "export config", "**Commit**",
+                       "**Export plan record**", "{{ruleTable}}"):
+            self.assertIn(phrase, rules)
+        self.assertNotIn("export config >", rules)
+        self.assertIn("config.commit", curriculum["phases"]["negative"])
 
     def test_workshop_notes_are_short_and_at_the_action(self):
         expected = {
-            "remediation-planning": {2: ("Selections save automatically.", "click Mark Complete")},
+            "remediation-planning": {2: ("Selections save automatically.", "Budget overrun is a warning only", "empty", "partial")},
             "firewall-implementation": {
-                4: ("not **Apply Your Plan**", "without replacing it"),
-                7: ("authorized 8/8", "unauthorized blocked 11/11", "0 skipped"),
-                8: ("does not support shell redirection", "CLI JSON-file edit/import exercise is deferred")},
+                4: ("**Apply Your Plan**", "without replacing it", "Deferred rules retain"),
+                7: ("13 unauthorized TCP rows", "Connection refused means", "prevention gap", "running hash"),
+                8: ("does not support shell redirection", "CLI JSON-file edit/import exercise is deferred", "action IDs", "policy hash")},
             "hardening-configurations": {
-                3: ("not **Apply Your Plan**", "without replacing it"),
-                4: ("not a packet verdict", "does not prove FC5/6 rejection"),
-                5: ("PARTIAL may include", "Record current retest timestamps")},
+                3: ("Apply Your Plan", "without replacing it", "block-enterprise-to-field"),
+                4: ("With it deferred, the command still lands", "Detection selections do not close it", "device evidence"),
+                5: ("re-test timestamps", "do not clear history", "Restoration is common to every plan")},
             "vendor-rdp-compromise": {
-                4: ("not **Apply Your Plan**", "without replacing it"),
-                5: ("not a packet verdict", "then Mark Complete")},
+                4: ("Apply Your Plan", "without replacing it", "restrict-enterprise-to-vendor"),
+                5: ("Deferred means reachable", "Restore auto-reclose", "A refused connection counts as reached")},
             "validation-evidence": {
-                0: ("not **Apply Your Plan**",),
-                1: ("authorized 8/8", "unauthorized blocked 11/11", "0 skipped",
-                    "Trust the report, not the banner.")},
+                0: ("Do not replace a partial plan", "A saved browser plan is not an applied plan"),
+                1: ("authorized **8/8**", "**13/13**", "0 skipped", "Validate Exercise does not replace report evidence")},
         }
         for name, locations in expected.items():
-            steps = scenario(name)["steps"]
             for index, phrases in locations.items():
-                text = steps[index]["description"]
+                text = " ".join(scenario(name)["steps"][index]["description"].split())
                 with self.subTest(scenario=name, step=index + 1):
-                    self.assertEqual(text.count("**Workshop note:**"), 1)
-                    note = text.split("**Workshop note:**\n", 1)[1].split("\n\n", 1)[0]
-                    self.assertGreaterEqual(len(re.findall(r"^- ", note, re.M)), 1)
-                    self.assertLessEqual(len(re.findall(r"^- ", note, re.M)), 3)
                     for phrase in phrases:
-                        self.assertIn(phrase, note)
-                        self.assertEqual(sum(s["description"].count(phrase) for s in steps), 1)
+                        self.assertIn(phrase, text)
+                    self.assertNotIn("not **Apply Your Plan**", text)
+                    self.assertNotIn("fixed blocked outcome", text)
         for path in SCENARIOS.glob("*.yml"):
             self.assertNotIn("Workshop errata", path.read_text())
             for step in scenario(path.stem)["steps"]:
@@ -222,23 +247,20 @@ class ErrataContracts(unittest.TestCase):
                     self.assertTrue(1 <= len(bullets) <= 3, path.name)
 
     def test_dnp3_and_self_check_details_are_in_rendered_steps(self):
-        for name in ("hardening-configurations", "validation-evidence"):
-            # Neither of these labs has Lab 2.2's generated-step replacement.
-            step_index = 4 if name == "hardening-configurations" else 1
-            text = scenario(name)["steps"][step_index]["description"]
-            self.assertIn("does not prove FC5/6 rejection", text)
-            self.assertIn("Enforcement proof is device state" if step_index == 4
-                          else "Protocol-level enforcement evidence is Lab 2.3's re-test", text)
-        text = scenario("validation-evidence")["steps"][1]["description"]
-        self.assertIn("may PASS and auto-complete with no report or a FAIL report", text)
-        self.assertIn("Trust the report, not the banner.", text)
-        self.assertIn("The report is your proof:", text)
-        self.assertIn("Save the report, PCAP and notes.", text)
-        self.assertIn("check Hardened reference is active, fix the ✗ rows, and re-run", text)
-        text = " ".join(scenario("hardening-configurations")["steps"][3]["description"].split())
-        self.assertIn("the reference DNP3 rule permits reads only (FC1), even from RTAC", text)
-        self.assertIn("records a Direct Operate sent from the RTAC as a firewall event, "
-                      "but it does not stop that write", text)
+        hardening = " ".join(scenario("hardening-configurations")["steps"][4]["description"].split())
+        for phrase in ("auto-reclose still enabled", "auto-reclose becomes disabled", "device evidence",
+                       "Detection selections do not close it", "This command alone does not trip the recloser"):
+            self.assertIn(phrase, hardening)
+        report = " ".join(scenario("validation-evidence")["steps"][1]["description"].split())
+        for phrase in ("21-row TCP matrix", "not DNP3 function-code rejection", "Plan proof",
+                       "Hardened acceptance", "Validate Exercise does not replace report evidence",
+                       "recorded plan hash before and after probing", "partial plan can pass plan proof",
+                       "Keep the report, UTC window, policy hash and PCAP", "healthy HMI separately",
+                       "These two management ports stay allowed for every plan"):
+            self.assertIn(phrase, report)
+        apply = " ".join(scenario("hardening-configurations")["steps"][3]["description"].split())
+        self.assertIn("`pin-rtac-to-field` owns non-RTAC OT→field attempts, not Kali's enterprise path", apply)
+        self.assertIn("Neither `dnp3-dpi` nor `modbus-dpi` changes these verdicts", apply)
 
     def test_export_recipes_print_and_copy_without_fictitious_files(self):
         for name in ("firewall-implementation", "validation-evidence"):
@@ -253,15 +275,16 @@ class ErrataContracts(unittest.TestCase):
         self.assertIn("Browser export is optional; the copied CLI JSON is your evidence.", text)
 
     def test_rejection_and_historical_audit_details_are_in_rendered_steps(self):
-        for name in ("hardening-configurations", "vendor-rdp-compromise"):
-            step_index = 4 if name == "hardening-configurations" else 5
-            text = scenario(name)["steps"][step_index]["description"]
-            self.assertIn("That label is not a packet verdict", text)
-            self.assertIn("then Mark Complete", text)
-        text = scenario("hardening-configurations")["steps"][5]["description"]
-        self.assertIn("Record current retest timestamps", text)
-        self.assertIn("compare those events with earlier weak-policy writes", text)
-        self.assertIn("Current successful unauthorized writes still fail", " ".join(text.split()))
+        hardening = " ".join(scenario("hardening-configurations")["steps"][4]["description"].split())
+        for phrase in ("Do not treat an Execute Step label as a packet verdict", "wire result and device evidence"):
+            self.assertIn(phrase, hardening)
+        vendor = " ".join(scenario("vendor-rdp-compromise")["steps"][5]["description"].split())
+        self.assertIn("Record the result, not an assumed successful login", vendor)
+        self.assertIn("Restore auto-reclose and normal feeder state before Validate for every plan", vendor)
+        text = " ".join(scenario("hardening-configurations")["steps"][5]["description"].split())
+        for phrase in ("Audit history can include earlier Weak-policy writes", "re-test timestamps",
+                       "do not clear history", "A state check is not TCP proof", "expected verdict"):
+            self.assertIn(phrase, text)
 
     def test_workshop_guidance_has_no_instructor_grading_framing(self):
         paths = [
@@ -269,7 +292,6 @@ class ErrataContracts(unittest.TestCase):
             ROOT / "docs/v0.1.36-hotfix.md",
             ROOT / "docs/quickstart.md",
             ROOT / "docs/workshop-ssd.md",
-            ROOT / "stage-ssd-repo-update.sh",
         ]
         grading = re.compile(
             r"\binstructor\s+(?:review\w*|verif\w*|sign[- ]off)"
@@ -292,13 +314,19 @@ class ErrataContracts(unittest.TestCase):
         self.assertIn("terminal-only Kali use the existing SSH fallback", text)
         self.assertNotIn("no auth required", text)
 
-    def test_instructor_reference_matches_new_lab22_navigation(self):
+    def test_historical_errata_identifies_current_package_generation(self):
         text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
-        for step in scenario("firewall-implementation")["steps"][2:8]:
-            self.assertIn(step["title"], text)
-        self.assertIn("no longer see the plan-driven rule table", text)
+        for title in ("Stage 1 - Check weak-baseline access",
+                      "Stage 2 - Remove broad trust and establish default-deny",
+                      "Stage 3 - Apply the reference rules",
+                      "Stage 4 - Enable logging and visibility",
+                      "Stage 5 - Check authorized flows", "Stage 6 - Check denied flows"):
+            self.assertIn(title, text)
+        self.assertIn("Historical release guidance", text)
+        self.assertIn("stable IDs, not Stage titles", text)
+        self.assertIn("both source YAML and generated steps", text)
+        self.assertIn("not the applied policy", text)
         self.assertIn("not in labs", text)
-        self.assertNotRegex(text, r"[Pp]hases? [1-6]")
 
     def test_errata_has_full_release_paths_and_every_mitigation(self):
         path = ROOT / "docs/v0.1.36-hotfix.md"
@@ -306,7 +334,7 @@ class ErrataContracts(unittest.TestCase):
         text = path.read_text()
         for phrase in ("How to update", "PowerShell", "full image release",
                        "All 16 first-party images", "`latest` moves", "SSD",
-                       "quickstart.md#updating-to-v0136", "workshop-ssd.md#delta-staging"):
+                       "quickstart.md#upgrading-to-v020", "workshop-ssd.md#delta-staging"):
             self.assertIn(phrase, text)
         for stale in ("existing v0.1.35 images", "no pull, no rebuild",
                       "Do not run `./setup.sh --version v0.1.36`", "./scripts/apply-repo-update.sh"):
@@ -328,15 +356,15 @@ class ErrataContracts(unittest.TestCase):
 
     def test_release_update_uses_standard_setup_and_delta_paths(self):
         quickstart = (ROOT / "docs/quickstart.md").read_text()
-        for phrase in ("git fetch origin tag v0.1.36", "git checkout --detach v0.1.36",
-                       "docker compose -f docker-compose.release.yml down &&",
-                       "./setup.sh --version v0.1.36", ".\\setup.ps1 -Version v0.1.36",
+        for phrase in ("git fetch origin tag v0.2.0", "git checkout --detach v0.2.0",
+                       "./setup.sh --version v0.2.0 --package us-dnp3-substation",
+                       "eu-iec104-substation", "PowerShell", "parity",
                        "workshop reset", "DELTA-README.md", "close to a full set"):
             self.assertIn(phrase, quickstart)
         ssd = (ROOT / "docs/workshop-ssd.md").read_text()
-        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.36",
-                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.36 v0.1.35 v0.1.36",
-                       "stage-ssd-repo-update.sh <out-dir> <tag>", "scripts/apply-repo-update.sh",
+        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0",
+                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1",
+                       "v0.1.x SSD baseline lacks it", "package Compose metadata",
                        "close to a full set", "[rebuild-all]"):
             self.assertIn(phrase, ssd)
         readme = (ROOT / "README.md").read_text()
@@ -345,12 +373,48 @@ class ErrataContracts(unittest.TestCase):
         for stale in ("Selections in earlier labs rewrite", "plan rewrites the steps",
                       "lab adapts to which actions"):
             self.assertNotIn(stale, readme)
-        self.assertIn("Lab 1.4 plan is a design artifact", readme)
-        self.assertIn("Lab 2.2 applies the hardened reference", readme)
+        self.assertIn("Lab 1.4 remediation plan is compiled and applied in Lab 2.2", readme)
+        self.assertIn("verify the running policy against your plan", readme)
+        self.assertNotIn("#updating-to-v0136", readme)
+        self.assertNotIn("docker compose -f docker-compose.release.yml down &&", quickstart)
+        self.assertNotIn("stage-ssd-repo-update.sh", ssd)
+        self.assertNotIn("scripts/apply-repo-update.sh", ssd)
 
 
 class EnforcementContracts(unittest.TestCase):
     """Lab 2.3 states what the frozen images do: the L4 source pin blocks, DPI records."""
+
+    def test_eu_protocol_catalog_promises_no_future_enforcement(self):
+        curriculum = read_curriculum(ROOT / "lab-definitions/packages/eu-iec104-substation")
+        suffix = ("Planning-only protocol review; this range emits no protocol rule. "
+                  "The L4 source pin enforces; DPI detects and logs.")
+        actions = {action["id"]: action for action in curriculum["catalog"]}
+        for action_id in ("modbus-dpi", "iec104-dpi"):
+            self.assertTrue(actions[action_id]["why"].endswith(suffix))
+            self.assertNotRegex(actions[action_id]["why"], r"(?i)\b(yet|future|soon)\b")
+
+    def test_us_curriculum_dpi_does_not_claim_to_block_or_filter_writes(self):
+        curriculum = read_curriculum(ROOT / "lab-definitions/packages/us-dnp3-substation")
+
+        def string_values(value):
+            if isinstance(value, dict):
+                for child in value.values():
+                    yield from string_values(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from string_values(child)
+            elif isinstance(value, str):
+                yield value
+
+        overclaim = re.compile(
+            r"(?i)\bDPI\b.{0,100}\b(?:blocks?|filters?|prevents?)\b"
+            r".{0,100}\b(?:writes?|Direct Operate)\b"
+            r"|\b(?:writes?|Direct Operate)\b.{0,100}"
+            r"\b(?:blocked|filtered|prevented)\b.{0,100}\bDPI\b"
+        )
+        for text in string_values(curriculum):
+            with self.subTest(text=text):
+                self.assertNotRegex(text, overclaim)
 
     OVERCLAIMS = (
         "blocks Direct Operate even from the RTAC",
@@ -371,33 +435,30 @@ class EnforcementContracts(unittest.TestCase):
                      for m in re.finditer(r":::decision id=([\w-]+) [^\n]*", text)}
         self.assertIn("correct=L4_SOURCE_PIN", decisions["retest-defense-in-depth"])
         self.assertNotIn("correct=EITHER_LAYER", decisions["retest-defense-in-depth"])
-        self.assertIn("correct=NORMAL_OPS", decisions["retest-hmi-state"])
-        # The keyed HMI answer is asked about the Kali re-test, which is NORMAL_OPS for
-        # every student; the optional RTAC write comes after it with its own restore.
-        self.assertLess(text.index("id=retest-hmi-state"), text.index("RTAC-origin write"))
-        self.assertIn("after the Kali re-test", text)
+        self.assertNotIn("correct=", decisions["retest-hmi-state"])
+        self.assertIn("AUTO_RECLOSE_DISABLED", decisions["retest-hmi-state"])
+        self.assertIn("With it deferred, the command still lands", text)
+        self.assertIn("When the enterprise path is denied", text)
+        self.assertNotIn("RTAC-origin write", text)
 
-    def test_rtac_write_hint_states_outcome_and_restore(self):
+    def test_retest_states_both_outcomes_and_common_restore(self):
         steps = scenario("hardening-configurations")["steps"]
-        hint = steps[4]["description"].split(":::hint Optional: see what the DPI layer", 1)[1]
-        hint = self.flat(hint.split("\n:::\n", 1)[0])
-        self.assertIn("recorded, not stopped", hint)
-        self.assertIn("Expected result: `Result: SUCCESS`", hint)
-        self.assertIn("**Supervisory Control** → **Enable Reclose**", hint)
-        self.assertIn("re-apply **Hardened reference**", hint)
-        # The inline command keeps the Run button (which targets Kali) away from it.
-        self.assertNotIn("\n    dnp3cmd", steps[4]["description"].split(":::hint Optional: see", 1)[1]
-                         .split("\n:::\n", 1)[0])
-        self.assertIn("Enable Reclose", steps[5]["description"])
+        text = self.flat(steps[4]["description"])
+        for phrase in ("`block-enterprise-to-field` selected", "connection timeout",
+                       "auto-reclose still enabled", "With it deferred", "auto-reclose becomes disabled",
+                       "This command alone does not trip the recloser", "`[2]` is recloser closed",
+                       "`[3]` is auto-reclose enabled", "source, time and policy hash",
+                       "Restore every changed device before Validate, for every plan",
+                       "enable auto-reclose", "close the recloser and breaker", "clear fault/lockout",
+                       "return the regulator to auto and tap zero", "reapply the intended plan"):
+            self.assertIn(phrase, text)
+        self.assertNotIn("RTAC-origin write", text)
         self.assertEqual(steps[5]["action"]["expect"]["reclose_enabled"], True)
-        # Live check: the audit row counts the RTAC-origin and weak-baseline
-        # writes after restore, so Validate returns PARTIAL with all state rows ok.
-        self.assertIn("Expect **PARTIAL** from Validate afterwards, even once restored", hint)
         validate = self.flat(steps[5]["description"])
-        self.assertIn("**Expect PARTIAL, not PASS.**", validate)
-        self.assertIn("unauthorized command(s) reached field devices", validate)
-        self.assertIn("PARTIAL with every device-state row ✓", validate)
-        self.assertIn("do not clear audit or repeatedly reset/re-attack", validate)
+        for phrase in ("Restoration is common to every plan", "voltage normal and loads energized",
+                       "Audit history can include earlier Weak-policy writes", "do not clear history",
+                       "21-row matrix, capture and stable-hash evidence"):
+            self.assertIn(phrase, validate)
 
     def test_no_independent_dpi_overclaim_remains(self):
         texts = {
@@ -417,8 +478,8 @@ class EnforcementContracts(unittest.TestCase):
                     self.assertNotIn(claim, body)
         doc = texts["hardening-configurations"]
         self.assertIn("source pin is what enforces", doc["summary"])
-        self.assertIn("the control that enforces", doc["description"])
-        self.assertIn("the control that enforces", self.flat(doc["steps"][3]["description"]))
+        self.assertIn("selected enterprise-to-field closure denies it", self.flat(doc["description"]))
+        self.assertIn("The L4 source pin enforces; DPI detects and logs", self.flat(doc["steps"][3]["description"]))
 
     def test_recloser_attribution_uses_containd_sessions(self):
         # Frozen images: recloser-sim records every Modbus write as "modbus-tcp"
@@ -453,12 +514,12 @@ class EnforcementContracts(unittest.TestCase):
 
     def test_validation_report_is_described_as_tcp_matrix(self):
         text = self.flat(scenario("validation-evidence")["steps"][1]["description"])
-        self.assertIn("The report is a TCP reachability matrix", text)
-        self.assertIn("no row sends a control write", text)
-        self.assertIn("blocked at the TCP level; it says nothing about function codes", text)
+        self.assertIn("21-row TCP matrix", text)
+        self.assertIn("not DNP3 function-code rejection", text)
+        self.assertIn("Acceptance does not prove command-level filtering", text)
         overview = (ROOT / "docs/workshop-overview.md").read_text()
         self.assertIn("The report is a TCP reachability matrix", overview)
-        self.assertIn("the L4 source pin is the control that enforces", overview)
+        self.assertIn("The L4 source pin enforces; DPI detects and logs.", overview)
         errata = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
         self.assertIn("**RD-24:**", errata)
         self.assertIn("L4 source pin is the control that enforces", errata)
@@ -551,7 +612,7 @@ class ActionContracts(unittest.TestCase):
                      "vendor-rdp-compromise"):
             doc = scenario(name)
             steps = [s for s in doc["steps"] if
-                     s["title"].startswith(("Stage 3", "Apply hardened", "Apply the hardened"))]
+                     s["id"] in ("phase-3-create-minimal-required-rules", "apply-hardened-policy", "apply-the-hardened-policy")]
             self.assertEqual(len(steps), 1)
             with self.subTest(scenario=name):
                 self.assertEqual(steps[0]["action"],
@@ -566,7 +627,8 @@ class ActionContracts(unittest.TestCase):
         self.assertIn("Selections save automatically.", step["description"])
         self.assertIn("click Mark Complete", step["description"])
         self.assertIn("Do not use Execute Step", step["description"])
-        self.assertIn("design artifact", step["description"])
+        self.assertIn("Selecting an action alone does not apply it", step["description"])
+        self.assertIn("Budget overrun is a warning only", step["description"])
 
     def test_frozen_runner_action_accounting(self):
         # evaluateTestStep auto-passes missing actions and decisions only.
@@ -590,10 +652,7 @@ class ActionContracts(unittest.TestCase):
 
 
 class AdvancedTrackContracts(unittest.TestCase):
-    def test_custom_policy_authoring_checks_remote_access_before_commit(self):
-        # The weak enterprise-to-vendor rule carries 3389/5900 and is not among
-        # the five broad allows Stage 2 deletes, so a verbatim Advanced walk
-        # leaves RDP/VNC open; the reference policy denies both.
+    def test_custom_policy_authoring_checks_remote_access_after_commit(self):
         weak = json.loads((ROOT / "lab-definitions/firewall/substation-weak.json").read_text())
         rule = next(r for r in weak["firewall"]["rules"] if r["id"] == "enterprise-to-vendor")
         self.assertTrue({"3389", "5900"} <= {p["port"] for p in rule["protocols"]})
@@ -602,24 +661,17 @@ class AdvancedTrackContracts(unittest.TestCase):
         text = scenario("firewall-implementation")["steps"][4]["description"]
         technical = text.split(":::technical\n", 1)[1].split("\n:::\n", 1)[0]
         flat = " ".join(technical.split())
-        self.assertIn("**Close the remote-access hole, commit, then prove it.**", flat)
-        self.assertIn("`enterprise-to-vendor` rule also allows RDP 3389 and VNC 5900", flat)
-        # The probe describes the committed policy: the rule change, the commit
-        # and the nmap appear in that order, and a failure loops back to commit.
-        self.assertLess(flat.index("Replace it with rule 6"), flat.index("and **commit**"))
-        self.assertLess(flat.index("and **commit**"),
-                        flat.index("`nmap -Pn -p 3389,5900 10.20.20.10` in the Kali terminal"))
-        self.assertIn("Both ports must be `filtered`", flat)
-        self.assertIn("fix the rule and commit again", flat)
-        self.assertNotIn("before you commit", flat.lower())
-        # containd (api/http/firewall_rule_handlers.go) saves per-rule web-UI
-        # edits without reloading the dataplane; only a commit applies them.
-        self.assertIn("**Create rule** and **Delete** save the running config but do "
-                      "not reload the firewall either", flat)
+        for phrase in ("`restrict-enterprise-to-vendor` selected", "TCP 22, 80 and 443",
+                       "With it deferred, RDP/3389 and VNC/5900 remain reachable",
+                       "**Create rule** and **Delete** do not reload the firewall",
+                       "both ports must be `filtered`", "fix the rule and commit again",
+                       "A plan uses its compiled verdict instead"):
+            self.assertIn(phrase, flat)
+        self.assertLess(flat.index("TCP 22, 80 and 443"), flat.index("Run `commit`"))
+        self.assertLess(flat.index("Run `commit`"), flat.index("`nmap -Pn -p 3389,5900 10.20.20.10`"))
         for index in (3, 4):
             text = " ".join(scenario("firewall-implementation")["steps"][index]["description"].split())
             self.assertNotIn("immediately", text)
-        # Inline code keeps the pinned command inventory (and its Run count) unchanged.
         self.assertNotRegex(text, r"(?m)^\s+nmap ")
 
 
@@ -717,6 +769,26 @@ class CommandContracts(unittest.TestCase):
         self.assertIn("mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20", text)
         self.assertNotIn("`[6]` (`recloser_shot_count`) is `1`", text)
         self.assertIn("Re-run with `-c 6` to also see `[6]` (`recloser_shot_count`) at `1`", text)
+
+
+class ChangeManagementContracts(unittest.TestCase):
+    def test_configuration_rollback_requires_candidate_review_commit_and_verification(self):
+        text = (ROOT / "lab-definitions/packages/us-dnp3-substation/knowledge/"
+                       "change-management-firewall-rules.md").read_text()
+        rollback = text.split("4. **Rollback plan.**", 1)[1].split("5. **Maintenance window.**", 1)[0]
+        sequence = ("import the old config", "review the candidate diff",
+                    "commit", "verify the running hash and operations")
+        positions = [rollback.index(step) for step in sequence]
+        self.assertEqual(positions, sorted(positions))
+        for phrase in ("only stages the shared candidate", "/api/v1/config/diff",
+                       "/api/v1/config/commit", "management reservation",
+                       "interface device bindings", "required connectivity and device operations"):
+            self.assertIn(phrase, rollback)
+        for phrase in ("reads running, not the candidate", "committed, tested policy",
+                       "not an uncommitted proposal", "not a binary or stored-schema rollback",
+                       "pre-upgrade firewall `/data`"):
+            self.assertIn(phrase, text)
+        self.assertNotIn("is the proposed policy", text)
 
 
 if __name__ == "__main__":

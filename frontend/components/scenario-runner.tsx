@@ -1,16 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
+import { refreshPolicyQueries } from "../lib/policy-apply";
 import {
   validateScenario,
-  getSubstationState,
-  getActiveFirewallConfig,
   applyFirewallConfig,
-  applyCustomFirewallConfig,
   sendSubstationCommand,
   executeScenarioStep,
-  getSubstationAudit,
   execOnNode,
   resetWorkshop,
   startTrafficGeneration,
@@ -20,40 +18,38 @@ import {
   getPcapDownloadUrl,
   type Scenario,
   type ValidationResult,
-  type SubstationState,
   type StepExecutionResult,
-  type AuditEntry,
-  type PolicySource,
 } from "../lib/api";
 import { PolicyStatusBanner } from "./policy-status-banner";
-import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
+import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS } from "../lib/exercise-nodes";
 import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { useFirewallTrack } from "../lib/use-firewall-track";
+import { useCompiledPlan } from "../lib/use-compiled-plan";
+import { ValidationReportPanel } from "./validation-report-panel";
+import { ApplyPlanButton } from "./apply-plan-button";
+import { CompiledPlanSummary } from "./compiled-plan-summary";
 import {
-  loadDynamicPlan,
-  buildContaindConfig,
-  type DynamicExercisePlan,
-} from "../lib/remediation-to-rules";
-import {
-  loadSaved,
-  saveToDisk,
-  storageKey,
+  clearProgress,
+  loadProgress,
+  saveProgress,
 } from "../lib/scenario-runner-storage";
+import { useCurriculumScope } from "../lib/curriculum-scope";
+import { isRangeNotReady, logLineFor } from "../lib/range";
+import { useActiveFirewall, useRefreshLive, useSubstationAudit, useSubstationState } from "../lib/live-queries";
+import { useOperatorView, usePackagePolicies } from "../lib/operator-queries";
+import { usFeederPolling } from "../lib/operator-view";
+import { RunnerOperatorStatus } from "./runner-operator-status";
 import {
-  POLICY_ACTION_SCENARIOS,
-  VALIDATE_BUTTON_SCENARIOS,
-  PHASE3_TITLES,
-  titleMatches,
+  showsValidateButton,
   deviceLabel,
   isSegmentationStep,
   isBaselineStep,
 } from "../lib/scenario-runner-logic";
 import {
   DescriptionSegments,
-  RemediationPlanSummary,
 } from "./scenario-description-blocks";
 import {
   ExerciseSummary,
@@ -69,15 +65,29 @@ type RunnerProps = {
 
 
 export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
-  const saved = loadSaved(scenario.id);
+  const scope = useCurriculumScope();
+  const queryClient = useQueryClient();
+  const [saved] = useState(() => loadProgress(scope, scenario));
   const [currentStep, setCurrentStep] = useState(0);
-  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(saved.completedSteps));
+  const [completedStepIds, setCompletedStepIds] = useState<Set<string>>(() => new Set(saved.completedStepIds));
   const [notes, setNotes] = useState<string>(saved.notes);
   const [showSummary, setShowSummary] = useState(false);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
-  const [state, setState] = useState<SubstationState | null>(null);
-  const [activeConfig, setActiveConfig] = useState<string | null>(null);
+  // US RTAC reads only for the US operator view; other packages show
+  // their own operator status (RunnerOperatorStatus).
+  const operatorView = useOperatorView();
+  const usFeeder = usFeederPolling(operatorView);
+  // Planning surfaces are opt-in package curriculum metadata.
+  const binding = scope.curriculum;
+  const hasPolicyActions = !!binding?.activities[scenario.id]?.policyActions;
+  const stateQuery = useSubstationState(3000, usFeeder);
+  const state = stateQuery.data ?? null;
+  // No feeder while the range is being replaced; the status cards wait
+  // instead of reading the missing state as an outage.
+  const feederWaiting = !state && isRangeNotReady(stateQuery.error);
+  const activeFirewall = useActiveFirewall(3000).data;
+  const activeConfig = activeFirewall?.active_config ?? null;
   // Firewall-track choice (guided | technical | null). Read here so
   // both the description renderer (for trackOnly segments) and the
   // side panel (for chip + button de-emphasis) share one source.
@@ -86,34 +96,28 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // PolicyStatusBanner to distinguish "Your custom policy (Lab 1.4
   // plan)" from "(your containd commit)". Survives page reloads
   // because it's a backend field.
-  const [policySource, setPolicySource] = useState<PolicySource>("");
-  const [cmdLog, setCmdLog] = useState<string[]>(saved.cmdLog || []);
+  const policySource = activeFirewall?.policy_source ?? "";
+  const packagePolicies = usePackagePolicies();
+  const [cmdLog, setCmdLog] = useState<string[]>(saved.cmdLog);
   const [executing, setExecuting] = useState(false);
   // String IDs (e.g. "body-0", "hint-0-1") so body + hint commands can
   // each have copy/run buttons without index collisions.
   const [autoRunning, setAutoRunning] = useState<string | null>(null);
   const [resettingLab, setResettingLab] = useState(false);
   const [stepResult, setStepResult] = useState<StepExecutionResult | null>(null);
-  const [recentAudit, setRecentAudit] = useState<AuditEntry[]>([]);
-  const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
-  // Load the saved Lab 1.4 remediation plan on every firewall lab,
-  // not just firewall-implementation. The plan drives the side-
-  // panel Apply Your Plan button on Lab 2.3 / 2.3-bonus / 2.4 too,
-  // so leaving it null on those labs left the button stuck in the
-  // disabled-with-tooltip state even when a plan existed (Codex
-  // review on #74). The injectDynamicContent path stays scoped to
-  // firewall-implementation - only that lab actually uses the
-  // plan to rewrite step descriptions.
-  const [dynamicPlan, setDynamicPlan] = useState<DynamicExercisePlan | null>(() =>
-    POLICY_ACTION_SCENARIOS.includes(scenario.id) ? loadDynamicPlan() : null
-  );
-  useEffect(() => {
-    if (!POLICY_ACTION_SCENARIOS.includes(scenario.id)) return;
-    setDynamicPlan(loadDynamicPlan());
-    const onFocus = () => setDynamicPlan(loadDynamicPlan());
-    document.addEventListener("visibilitychange", onFocus);
-    return () => document.removeEventListener("visibilitychange", onFocus);
-  }, [scenario.id]);
+  const auditEntries = useSubstationAudit(3000, usFeeder).data?.entries;
+  const recentAudit = useMemo(() => (auditEntries ?? []).slice(-5), [auditEntries]);
+  const refreshLive = useRefreshLive();
+  const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes, binding);
+  // Every activity opting into policy actions loads the saved package plan.
+  // Dynamic step text is narrower: only the binding's dynamicSteps are rewritten.
+  const appliedPlan = policySource === "plan" ? activeFirewall?.plan : undefined;
+  const appliedOnly = scenario.id !== binding?.roles.implementation;
+  const compiled = useCompiledPlan(scope, hasPolicyActions, appliedPlan, appliedOnly);
+  // A failed refresh must never leave an obsolete export or apply button enabled.
+  const dynamicPlan = hasPolicyActions && !compiled.isError && (!appliedOnly || appliedPlan) ? compiled.data ?? null : null;
+  const draft = useCompiledPlan(scope, hasPolicyActions);
+  const draftPlan = hasPolicyActions && !draft.isError ? draft.data ?? null : null;
   const [showTerminalPanel, setShowTerminalPanel] = useState(false);
   const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
   const [panelMode, setPanelMode] = useState<"terminal" | "ui">("terminal");
@@ -143,27 +147,28 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     document.addEventListener("mouseup", onUp);
   }, [panelHeight]);
 
-  // Persist to localStorage on change
+  // Persist to curriculum storage on change
   useEffect(() => {
-    saveToDisk(scenario.id, { completedSteps: [...completedSteps], notes, cmdLog });
-  }, [completedSteps, notes, cmdLog, scenario.id]);
+    saveProgress(scope, scenario.id, { completedStepIds: [...completedStepIds], notes, cmdLog });
+  }, [scope, completedStepIds, notes, cmdLog, scenario.id]);
 
   const resetProgress = () => {
     if (!window.confirm("Reset all exercise progress? This clears completed steps, notes, and command log.")) return;
-    setCompletedSteps(new Set());
+    setCompletedStepIds(new Set());
     setNotes("");
     setCurrentStep(0);
+    setShowSummary(false);
     setCmdLog([]);
     setValidation(null);
     setStepResult(null);
-    try { localStorage.removeItem(storageKey(scenario.id)); } catch { /* ignore */ }
+    clearProgress(scope, scenario.id);
   };
 
   const handleAutoRun = async (cmd: string, runId: string, stepDesc: string) => {
     const step = scenario.steps[currentStep];
     const nodeId = step?.node
-      || inferNodeFromDescription(stepDesc)
-      || (EXERCISE_NODE_MAP[scenario.id]?.primary)
+      || inferNodeFromDescription(stepDesc, binding)
+      || (binding?.nodeMap[scenario.id]?.primary)
       || exerciseNodes[0];
 
     if (!nodeId) {
@@ -187,9 +192,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         ...output.map((l) => "  " + l),
         ...prev,
       ].slice(0, 100));
-      setTimeout(pollState, 500);
+      setTimeout(refreshLive, 500);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] ${e}`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 100));
     } finally {
       setAutoRunning(null);
     }
@@ -209,9 +214,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         ...actionLines,
         ...prev,
       ].slice(0, 100));
-      setTimeout(pollState, 500);
+      setTimeout(refreshLive, 500);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] Reset failed: ${e}`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [logLineFor(e, "Reset failed: "), ...prev].slice(0, 100));
     } finally {
       setResettingLab(false);
     }
@@ -235,7 +240,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         } catch { clearInterval(pollId); setGeneratingTraffic(false); }
       }, 3000);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] Traffic generation failed: ${e}`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [logLineFor(e, "Traffic generation failed: "), ...prev].slice(0, 100));
       setGeneratingTraffic(false);
     }
   };
@@ -258,32 +263,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         } catch { clearInterval(pollId); setCapturing(false); }
       }, 3000);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] Capture failed: ${e}`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [logLineFor(e, "Capture failed: "), ...prev].slice(0, 100));
       setCapturing(false);
     }
   };
-
-  const pollState = useCallback(async () => {
-    try {
-      const [s, fw, a] = await Promise.all([
-        getSubstationState(),
-        getActiveFirewallConfig(),
-        getSubstationAudit(),
-      ]);
-      setState(s);
-      setActiveConfig(fw.active_config);
-      setPolicySource(fw.policy_source ?? "");
-      setRecentAudit((a.entries ?? []).slice(-5));
-    } catch {
-      // offline
-    }
-  }, []);
-
-  useEffect(() => {
-    pollState();
-    const id = setInterval(pollState, 3000);
-    return () => clearInterval(id);
-  }, [pollState]);
 
   const handleValidate = async () => {
     setValidating(true);
@@ -291,7 +274,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       const result = await validateScenario(scenario.id);
       setValidation(result);
       if (result.outcome === "PASS") {
-        setCompletedSteps(new Set(scenario.steps.map((_, i) => i)));
+        setCompletedStepIds(new Set(scenario.steps.map((s) => s.id)));
       }
     } catch {
       setValidation(null);
@@ -318,9 +301,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         markStepDone(idx);
       }
 
-      setTimeout(pollState, 500);
+      setTimeout(refreshLive, 500);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] ${e}`, ...prev].slice(0, 20));
+      setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 20));
     } finally {
       setExecuting(false);
     }
@@ -334,14 +317,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       const label = succeeded ? "SUCCEEDED" : "BLOCKED";
       const msg = `[${label}] ${deviceLabel(device)} - ${command}: ${impact}`;
       setCmdLog((prev) => [msg, ...prev].slice(0, 20));
-      setTimeout(pollState, 500);
+      setTimeout(refreshLive, 500);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] ${e}`, ...prev].slice(0, 20));
+      setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 20));
     }
   };
 
   const markStepDone = (idx: number) => {
-    setCompletedSteps((prev) => new Set([...prev, idx]));
+    const stepId = scenario.steps[idx]?.id;
+    if (stepId !== undefined) setCompletedStepIds((prev) => new Set([...prev, stepId]));
     if (idx < scenario.steps.length - 1) {
       setCurrentStep(idx + 1);
     }
@@ -349,8 +333,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
   const step = scenario.steps[currentStep];
   const elec = state?.electrical;
-  const progress = completedSteps.size / scenario.steps.length;
-  const hasAction = !!step?.action;
+  const progress = completedStepIds.size / scenario.steps.length;
+  const hasAction = !!step?.action && step.action.type !== "decision" && step.action.type !== "manual";
+  const stepDone = step !== undefined && completedStepIds.has(step.id);
+  const showValidate = showsValidateButton(scenario, binding);
 
   // Operational assessments
   const bkrClosed = elec?.breaker_closed ?? false;
@@ -362,22 +348,22 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">
-            Lab {scenario.order ?? ""}
+            Lab {scenario.order}
           </p>
           <h2 className="text-lg font-bold text-white">{scenario.name}</h2>
           <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
         </div>
-        <div className="flex items-center gap-2">
-          {completedSteps.size > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {completedStepIds.size > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   onClick={() => setShowSummary(!showSummary)}
                   aria-label={showSummary ? "Back to Exercise" : "View Summary"}
-                  className="inline-flex items-center justify-center rounded border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-400 hover:bg-sky-900/50"
+                  className="inline-flex items-center justify-center rounded-sm border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-400 hover:bg-sky-900/50"
                 >
                   {showSummary ? <ArrowLeft className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
                 </button>
@@ -409,7 +395,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 onClick={handleLabReset}
                 disabled={resettingLab}
                 aria-label="Reset Lab"
-                className="inline-flex items-center justify-center rounded border border-amber-800/50 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-500 hover:bg-amber-900/40 disabled:opacity-50"
+                className="inline-flex items-center justify-center rounded-sm border border-amber-800/50 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-500 hover:bg-amber-900/40 disabled:opacity-50"
               >
                 <RotateCcw className={`h-4 w-4 ${resettingLab ? "animate-spin" : ""}`} />
               </button>
@@ -421,7 +407,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               <button
                 onClick={resetProgress}
                 aria-label="Reset Progress"
-                className="inline-flex items-center justify-center rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-500 hover:text-red-400"
+                className="inline-flex items-center justify-center rounded-sm border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-500 hover:text-red-400"
               >
                 <Eraser className="h-4 w-4" />
               </button>
@@ -433,7 +419,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               <button
                 onClick={onExit}
                 aria-label="Exit Exercise"
-                className="inline-flex items-center justify-center rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+                className="inline-flex items-center justify-center rounded-sm border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -452,56 +438,59 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           />
         </div>
         <span className="text-[10px] text-slate-500 shrink-0">
-          {completedSteps.size}/{scenario.steps.length} steps
+          {completedStepIds.size}/{scenario.steps.length} steps marked complete
         </span>
       </div>
+      <p className="text-[10px] text-slate-600">
+        Mark Complete is self-attested; it does not run a system check.
+      </p>
 
       {/* ── Remediation Plan Banner (shown on later exercises) ── */}
-      {!showSummary && <RemediationPlanBanner currentExerciseId={scenario.id} />}
+      {!showSummary && binding && <RemediationPlanBanner currentExerciseId={scenario.id} appliedPlan={appliedPlan} />}
 
       {/* ── Summary View ──────────────────────────────────────── */}
       {showSummary && (
         <ExerciseSummary
           scenario={scenario}
-          completedSteps={completedSteps}
+          completedStepIds={completedStepIds}
           notes={notes}
           activeConfig={activeConfig}
         />
       )}
 
       {/* ── Exercise View ─────────────────────────────────────── */}
-      {!showSummary && <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+      {!showSummary && <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
         <StepNavigator
           scenario={scenario}
-          completedSteps={completedSteps}
+          completedStepIds={completedStepIds}
           currentStep={currentStep}
           setCurrentStep={setCurrentStep}
           setStepResult={setStepResult}
         />
 
         {/* Right: Step detail + controls */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* Step instructions */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-            <div className="flex items-center justify-between mb-2">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-white">
                 Step {currentStep + 1}: {step?.title}
               </h3>
               <div className="flex items-center gap-2">
-                {hasAction && !completedSteps.has(currentStep) && (
+                {hasAction && !stepDone && (
                   <button
                     onClick={() => handleExecuteStep(currentStep)}
                     disabled={executing}
-                    className="rounded border border-amber-700 bg-amber-950/40 px-3 py-1 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
+                    className="rounded-sm border border-amber-700 bg-amber-950/40 px-3 py-1 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
                   >
                     {executing ? "Executing..." : "Execute Step"}
                   </button>
                 )}
-                {!completedSteps.has(currentStep) && (() => {
+                {!stepDone && (() => {
                   // No force-pick: Lab 2.2 defaults to the Guided track
                   // (see useFirewallTrack), so step 1 advances freely.
                   // Students switch to Advanced from the picker / side
-                  // panel anytime; the choice persists to localStorage
+                  // panel anytime; the choice persists to curriculum storage
                   // so later firewall labs inherit it.
                   const trackGate = false;
                   return (
@@ -511,8 +500,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                       title={trackGate ? "Pick a track above to continue." : undefined}
                       className={
                         trackGate
-                          ? "cursor-not-allowed rounded border border-slate-700 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
-                          : "rounded border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/50"
+                          ? "cursor-not-allowed rounded-sm border border-slate-700 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
+                          : "rounded-sm border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/50"
                       }
                     >
                       Mark Complete
@@ -532,14 +521,16 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             <PolicyStatusBanner
               activeConfig={activeConfig}
               policySource={policySource}
+              plan={appliedPlan}
               expectedConfig={step?.expected_config}
+              policies={packagePolicies}
             />
             {/* Per-step track chip: on the firewall labs (after the
                 picker on 2.2 step 1), show which path the student is on
                 and let them switch inline without hunting for the side
                 panel. */}
-            {POLICY_ACTION_SCENARIOS.includes(scenario.id) &&
-              !(scenario.id === "firewall-implementation" && currentStep === 0) && (
+            {hasPolicyActions &&
+              !(scenario.id === binding?.roles.implementation && currentStep === 0) && (
               <div className="mb-3 flex items-center gap-2 text-[10px]">
                 <span className="font-medium uppercase tracking-wider text-slate-500">
                   Track
@@ -566,19 +557,22 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               </div>
             )}
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
-            {scenario.id === "firewall-implementation" && dynamicPlan?.hasRemediationPlan &&
-              step && titleMatches(step.title, PHASE3_TITLES) && (
+            {scenario.id === binding?.roles.implementation && dynamicPlan &&
+              step && binding?.dynamicSteps[step.id] === "rules" && (
               <div className="mb-3">
-                <RemediationPlanSummary plan={dynamicPlan} />
+                <CompiledPlanSummary plan={dynamicPlan} binding={binding!} appliedPlan={appliedPlan} />
               </div>
             )}
+            {compiled.error && <p role="alert" className="text-xs text-red-400">{compiled.error.message}</p>}
             {step?.description && (
               <DescriptionSegments
                 scenarioId={scenario.id}
                 currentStep={currentStep}
                 stepTitle={step.title}
+                stepId={step.id}
                 stepDescription={step.description}
                 dynamicPlan={dynamicPlan}
+                expectations={draftPlan?.expectations}
                 exerciseNodes={exerciseNodes}
                 firewallTrack={firewallTrack}
                 autoRunning={autoRunning}
@@ -588,13 +582,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               />
             )}
 
+            {scenario.id === binding?.roles.hardening && <ValidationReportPanel expectations={draftPlan?.expectations} />}
+
             {/* Quick action buttons for traffic/capture steps */}
             {step?.description && (step.description.includes("traffic/generate") || step.description.includes("representative traffic")) && (
               <div className="mt-2">
                 <button
                   onClick={() => handleGenerateTraffic(45)}
                   disabled={generatingTraffic}
-                  className="rounded border border-sky-800/60 bg-sky-950/40 px-3 py-1.5 text-[10px] font-medium text-sky-400 hover:bg-sky-900/50 disabled:opacity-50"
+                  className="rounded-sm border border-sky-800/60 bg-sky-950/40 px-3 py-1.5 text-[10px] font-medium text-sky-400 hover:bg-sky-900/50 disabled:opacity-50"
                 >
                   {generatingTraffic ? "Generating Traffic..." : "Generate Traffic (45s)"}
                 </button>
@@ -605,7 +601,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 <button
                   onClick={() => handleStartCapture(60, "baseline")}
                   disabled={capturing}
-                  className="rounded border border-amber-800/60 bg-amber-950/40 px-3 py-1.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
+                  className="rounded-sm border border-amber-800/60 bg-amber-950/40 px-3 py-1.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
                 >
                   {capturing ? "Capturing..." : "Start 60s Capture"}
                 </button>
@@ -623,7 +619,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
             {/* Decision panel - only for steps with action.type === "decision" */}
             {step?.action?.type === "decision" && (
-              <DecisionPanel exerciseId={scenario.id} action={step.action} />
+              <DecisionPanel exerciseId={scenario.id} />
             )}
 
             {/* Shared notes - persists across all steps */}
@@ -635,7 +631,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Document your findings, observations, or answers here. Notes persist across all steps."
-                className="w-full rounded border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300 placeholder-slate-700 focus:border-sky-700 focus:outline-none resize-y min-h-[60px]"
+                className="w-full rounded-sm border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300 placeholder-slate-700 focus:border-sky-700 focus:outline-hidden resize-y min-h-[60px]"
                 rows={3}
               />
             </div>
@@ -675,7 +671,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   exercising scenarios (2.2 / 2.3 / 2.3-bonus / 2.4),
                   hidden in the planning labs (1.2 / 1.3 / 1.4) since
                   their steps don't actually drive policy state. */}
-              {POLICY_ACTION_SCENARIOS.includes(scenario.id) && (
+              {hasPolicyActions && (
                 <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="text-[9px] font-medium uppercase tracking-wider text-slate-500">
@@ -715,65 +711,29 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     {/* Apply Hardened: load the canned reference. */}
                     {activeConfig !== "improved" && (
                       <button
-                        onClick={async () => { await applyFirewallConfig("improved"); pollState(); }}
+                        onClick={async () => { await applyFirewallConfig("improved"); void refreshLive(); }}
                         className={
                           firewallTrack === "technical"
-                            ? "rounded border border-emerald-900/40 bg-emerald-950/20 px-1.5 py-0.5 text-[9px] text-emerald-400/70 hover:bg-emerald-900/40"
-                            : "rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50"
+                            ? "rounded-sm border border-emerald-900/40 bg-emerald-950/20 px-1.5 py-0.5 text-[9px] text-emerald-400/70 hover:bg-emerald-900/40"
+                            : "rounded-sm border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50"
                         }
                       >
                         Apply Hardened
                       </button>
                     )}
-                    {/* Apply Your Plan: push the policy built from the
-                        student's Lab 1.4 picks. Disabled-with-tooltip
-                        when no plan exists, rather than silently
-                        hidden - students should see it as an option
-                        and learn what unlocks it. */}
-                    {dynamicPlan?.hasRemediationPlan ? (
-                      <button
-                        onClick={async () => {
-                          const config = buildContaindConfig(dynamicPlan);
-                          await applyCustomFirewallConfig(config);
-                          pollState();
-                          setCmdLog((prev) => [`[APPLIED] Your remediation plan config pushed to containd`, ...prev].slice(0, 100));
-                        }}
-                        className={
-                          firewallTrack === "technical"
-                            ? "rounded border border-sky-900/40 bg-sky-950/20 px-1.5 py-0.5 text-[9px] text-sky-400/70 hover:bg-sky-900/40"
-                            : "rounded border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-900/50"
-                        }
-                      >
-                        Apply Your Plan
-                      </button>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            disabled
-                            className="cursor-not-allowed rounded border border-slate-700/60 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
-                          >
-                            Apply Your Plan
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Complete Lab 1.4 (Remediation Planning) first.
-                          The system builds this policy from your plan
-                          picks.
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
+                    <ApplyPlanButton key={`${scope.packageId}:${scope.revision}`} plan={draftPlan} onApplied={() => { void refreshPolicyQueries(queryClient); }} />
+                    {draft.error && <p role="alert" className="text-xs text-red-400">{draft.error.message}</p>}
                     {/* Reset to Weak: available from any non-weak
                         state so students can re-attempt an exercise
                         from the baseline regardless of how they
                         landed on the current policy. */}
                     {activeConfig !== "weak" && activeConfig && (
                       <button
-                        onClick={async () => { await applyFirewallConfig("weak"); pollState(); }}
+                        onClick={async () => { await applyFirewallConfig("weak"); void refreshLive(); }}
                         className={
                           firewallTrack === "technical"
-                            ? "rounded border border-rose-900/40 bg-rose-950/20 px-1.5 py-0.5 text-[9px] text-rose-400/70 hover:bg-rose-900/40"
-                            : "rounded border border-rose-800 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-900/50"
+                            ? "rounded-sm border border-rose-900/40 bg-rose-950/20 px-1.5 py-0.5 text-[9px] text-rose-400/70 hover:bg-rose-900/40"
+                            : "rounded-sm border border-rose-800 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-900/50"
                         }
                       >
                         Reset to Weak
@@ -783,52 +743,69 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 </div>
               )}
 
-              {/* Operational status */}
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Feeder Status</div>
-              <div className="grid grid-cols-2 gap-2">
-                <MiniStatus
-                  label="Customer Service"
-                  value={customersServed ? "Serving" : "OUTAGE"}
-                  ok={customersServed}
-                />
-                <MiniStatus
-                  label="Protection"
-                  value={bkrClosed && rclClosed ? "Normal" : "DEGRADED"}
-                  ok={bkrClosed && rclClosed}
-                />
-                <MiniStatus
-                  label="Voltage"
-                  value={critV === 0 ? "DEAD" : critV >= 114 && critV <= 126 ? `${critV.toFixed(0)}V OK` : `${critV.toFixed(0)}V BAD`}
-                  ok={critV > 0 && critV >= 114 && critV <= 126}
-                />
-                <MiniStatus
-                  label="Critical Load"
-                  value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
-                  ok={elec?.critical_load_energized}
-                />
-              </div>
+              {/* Operational status: the US feeder from the RTAC, or the
+                  operator status of another package. */}
+              {usFeeder ? (
+                <>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Feeder Status</div>
+                  {feederWaiting ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {["Customer Service", "Protection", "Voltage", "Critical Load"].map((label) => (
+                        <MiniStatus key={label} label={label} value="WAITING" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <MiniStatus
+                        label="Customer Service"
+                        value={customersServed ? "Serving" : "OUTAGE"}
+                        ok={customersServed}
+                      />
+                      <MiniStatus
+                        label="Protection"
+                        value={bkrClosed && rclClosed ? "Normal" : "DEGRADED"}
+                        ok={bkrClosed && rclClosed}
+                      />
+                      <MiniStatus
+                        label="Voltage"
+                        value={critV === 0 ? "DEAD" : critV >= 114 && critV <= 126 ? `${critV.toFixed(0)}V OK` : `${critV.toFixed(0)}V BAD`}
+                        ok={critV > 0 && critV >= 114 && critV <= 126}
+                      />
+                      <MiniStatus
+                        label="Critical Load"
+                        value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
+                        ok={elec?.critical_load_energized}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <RunnerOperatorStatus resolution={operatorView} />
+              )}
             </div>
 
-            {/* Quick commands panel */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
-                Supervisory Commands
+            {/* Quick commands panel (US RTAC commands) */}
+            {usFeeder && (
+              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  Supervisory Commands
+                </div>
+                <QuickCommands execCmd={execCmd} stepTitle={step?.title} />
               </div>
-              <QuickCommands execCmd={execCmd} stepTitle={step?.title} />
-            </div>
+            )}
           </div>
 
           <CommandAuditPanels cmdLog={cmdLog} setCmdLog={setCmdLog} recentAudit={recentAudit} />
 
           {/* Validation - only on labs whose validator checks meaningful live
-              state (see VALIDATE_BUTTON_SCENARIOS). Hidden on planning/analysis
+              state (see showsValidateButton). Hidden on planning/analysis
               labs where the validator can only report "lab is healthy". */}
-          {VALIDATE_BUTTON_SCENARIOS.includes(scenario.id) && (
+          {showValidate && (
           <div className="flex items-center gap-3">
             <button
               onClick={handleValidate}
               disabled={validating}
-              className="rounded border border-sky-700 bg-sky-950/40 px-4 py-2 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-900/50 disabled:opacity-50"
+              className="rounded-sm border border-sky-700 bg-sky-950/40 px-4 py-2 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-900/50 disabled:opacity-50"
             >
               {validating ? "Validating..." : "Validate Exercise"}
             </button>
@@ -842,7 +819,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           </div>
           )}
 
-          {VALIDATE_BUTTON_SCENARIOS.includes(scenario.id) && validation && (
+          {showValidate && validation && (
             <div className={`rounded-lg border p-3 ${
               validation.outcome === "PASS"
                 ? "border-green-700 bg-green-950/40"

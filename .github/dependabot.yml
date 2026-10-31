@@ -59,7 +59,13 @@ updates:
 
   # Dockerfiles (base image bumps)
   - package-ecosystem: docker
-    directory: /
+    directories:
+      - /
+      - /services
+      - /services/opendss-sim
+      - /services/iec104
+      - /services/iec104/check
+      - /services/iec104/check/differential
     schedule:
       interval: weekly
     open-pull-requests-limit: 3

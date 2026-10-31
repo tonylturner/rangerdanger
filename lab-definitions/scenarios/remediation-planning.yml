@@ -3,11 +3,12 @@ order: "1.4"
 name: "Remediation Planning Under Constraint"
 summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
 estimated_minutes: 12
+validator: us-remediation-planning
 description: >
   You have findings from the baseline assessment but not unlimited time, people,
   or political capital. Pick which remediations to execute this quarter - knowing
   some attack paths stay open because you can't fix everything at once.
-  Your plan guides design review; workshop enforcement uses the reference policy.
+  Apply Your Plan compiles your selections. Deferred controls leave their Weak exposures open.
 nodes: []
 tags:
   - planning
@@ -15,7 +16,8 @@ tags:
   - defense
   - tradeoffs
 steps:
-  - title: "Review the findings you captured"
+  - id: review-the-findings-you-captured
+    title: "Review the findings you captured"
     expected_config: weak
     description: |
       Below are the findings you documented in [Lab 1.2 (Baseline Traffic Analysis)](/exercises/baseline-assessment) - both your passive capture analysis and the active probe result. Each of the actions in the next step maps to one or more of these findings. As you read the action catalog, mentally connect each one back to which finding it addresses.
@@ -36,14 +38,15 @@ steps:
 
       Things a thorough reviewer would also note from Lab 1.2, even though they're not in the formal findings list:
 
-      - **No protocol-aware constraints on ICS ports.** The capture shows traffic on TCP/502 and TCP/20000, but the firewall has no visibility into Modbus function codes or DNP3 object groups. Reads and writes look identical at L4. This is the gap the *modbus-dpi* and *dnp3-dpi* actions close.
+      - **No protocol-aware constraints on ICS ports.** The capture shows traffic on TCP/502 and TCP/20000, but the firewall has no visibility into Modbus function codes or DNP3 object groups. Reads and writes look identical at L4. The *modbus-dpi* and *dnp3-dpi* actions add detection, not prevention. The L4 source pin enforces; DPI detects and logs.
       - **Firewall visibility has a blind spot at the RTAC.** The RTAC is multi-homed across OT Ops and Field for realism, but its application traffic to field devices is forced through containd by host-level hardening. The hardening is in place - but it's a compensating control, not a network-layer enforcement, and it can drift if not periodically validated. This is the gap the *rtac-architecture-review* action closes.
 
       Whether you consider these as additional findings depends on how deep your assessment scope ran. They map to remediation actions just like the formal findings.
 
       **Time budget:** ~12 minutes (Guided path).
 
-  - title: "Understand the team budget"
+  - id: understand-the-team-budget
+    title: "Understand the team budget"
     description: >
       You have 500 hours of total labor for this quarter's
       segmentation work. That total is split across four
@@ -71,14 +74,15 @@ steps:
       total 500-hour budget still has room.
 
       Watch the role utilization bars as you select actions
-      in the next step. A role in red cannot absorb more work.
+      in the next step. A role in red is over capacity. This is a warning, not an apply limit.
 
-  - title: "Choose your remediation plan"
+  - id: choose-your-remediation-plan
+    title: "Choose your remediation plan"
     description: |
       Select the actions you will execute this quarter. The
-      total effort must fit inside 500 hours AND each role's
-      individual capacity. You will not be able to select
-      every action - that is the point.
+      500-hour budget and each role capacity guide your tradeoff.
+      Budget overrun is a warning only. You can apply an empty, partial
+      or over-budget plan.
 
       Cost model: each action lists a total effort in hours
       and the roles that must collaborate on it. The effort
@@ -90,196 +94,26 @@ steps:
       which finding it addresses.
 
       When you are done, review the Remaining hours and
-      per-role utilization. If any role is red, remove an
-      action or choose a lighter one.
+      per-role utilization. If any role is red, record the
+      capacity gap and who must approve the work.
 
       **Workshop note:**
-      - Selections save automatically. Do not use Execute Step for this decision; click Mark Complete when your plan is feasible, then record your reflection.
-      - Keep your plan as a design artifact; the later enforcement labs use the reference policy.
+      - Selections save automatically. Do not use Execute Step for this decision; click Mark Complete when you have recorded the tradeoff, then record your reflection.
+      - Apply Your Plan in Lab 2.2 to test your choices. Selecting an action alone does not apply it.
+
+      | Kind | Actions | Effect when applied |
+      |---|---|---|
+      | Enforceable | `restrict-enterprise-to-vendor`, `block-enterprise-to-ot`, `block-enterprise-to-field`, `restrict-vendor-to-ot`, `block-vendor-to-field`, `pin-rtac-to-field` | Change L4 reachability |
+      | Detection-only | `modbus-dpi`, `dnp3-dpi`, `improve-logging` | Add visibility; change no allow/block verdict |
+      | Planning-only | `tighten-firewall-objects`, `rtac-architecture-review`, `positive-validation`, `ids-deployment`, `ot-asset-inventory`, `vendor-zta-broker` | Emit no firewall change |
+
+      An empty or planning-only plan is valid and compiles to Weak exposures.
+      Required RTAC, HMI and NTP operations remain in every plan.
     action:
       type: decision
-      budget_hours: 500
-      roles:
-        - name: OT Engineer
-          capacity_hours: 120
-        - name: Firewall Admin
-          capacity_hours: 140
-        - name: Network Engineer
-          capacity_hours: 120
-        - name: Security Analyst
-          capacity_hours: 120
-      actions:
-        - id: block-enterprise-to-field
-          title: "Block enterprise → field direct access"
-          why: >
-            Removes the Modbus 502, DNP3 20000, and HTTP 8080
-            paths from the corporate IT zone straight to relays
-            and reclosers. Closes the DNP3 command injection
-            attack surface stress-tested in the Protocol-Hardened
-            Configurations exercise.
-          effort_hours: 40
-          roles: ["Firewall Admin", "Security Analyst"]
-          tags: ["enterprise-field"]
-        - id: block-enterprise-to-ot
-          title: "Block enterprise → OT Operations ICS ports"
-          why: >
-            Removes enterprise access to HMI, RTAC, and OpenPLC
-            on Modbus, DNP3, HMI web, and management HTTP.
-            Blocks the Modbus override staging path that
-            assumes an enterprise foothold.
-          effort_hours: 30
-          roles: ["Firewall Admin", "Security Analyst"]
-          tags: ["enterprise-ot"]
-        - id: restrict-vendor-to-ot
-          title: "Restrict vendor → OT to SSH/HTTPS only"
-          why: >
-            Vendor remote access should be monitoring and
-            administration via encrypted management protocols,
-            not direct Modbus or HMI web. Reduces the blast
-            radius of a compromised vendor credential and
-            closes the Vendor Remote Access Compromise pivot path.
-          effort_hours: 50
-          roles: ["Firewall Admin", "Network Engineer", "OT Engineer"]
-          tags: ["vendor"]
-        - id: block-vendor-to-field
-          title: "Block vendor → field devices entirely"
-          why: >
-            There is no legitimate reason for the vendor DMZ
-            to reach field devices directly. The engineering
-            workstation should drive field work through the
-            RTAC or via OT Ops, not via bare Modbus or DNP3
-            from the vendor zone.
-          effort_hours: 30
-          roles: ["Firewall Admin", "OT Engineer"]
-          tags: ["vendor", "vendor-field"]
-        - id: pin-rtac-to-field
-          title: "Pin field-device access to RTAC source IP"
-          why: >
-            Restricts OT Ops → field rules to source 10.30.30.20
-            only (the RTAC's OT Ops interface, which is the
-            wire-visible source after RTAC host-level hardening),
-            so a compromised OpenPLC or historian cannot reach
-            relays directly even from inside OT Ops. Closes the
-            Modbus-override lateral path, hardened in the
-            Protocol-Hardened Configurations exercise.
-          effort_hours: 40
-          roles: ["Firewall Admin", "OT Engineer"]
-          tags: ["ot-lateral"]
-        - id: modbus-dpi
-          title: "Apply Modbus ICS DPI - limit function codes"
-          why: >
-            Configure containd to filter Modbus by function
-            code. Allow reads (FC1–4) broadly; restrict writes
-            (FC5/6) to the RTAC only. Turns the firewall from
-            an L4 port filter into a protocol-aware control.
-            Blocks unauthorized writes even from otherwise-
-            allowed sources.
-          effort_hours: 70
-          roles: ["Firewall Admin", "OT Engineer", "Security Analyst"]
-          tags: ["dpi", "modbus"]
-        - id: dnp3-dpi
-          title: "Apply DNP3 ICS DPI - restrict Direct Operate"
-          why: >
-            Configure containd to recognize DNP3 and block Direct
-            Operate (FC05 and the No-Ack variant FC06) at the protocol
-            layer - the RTAC's master only ever sends read/integrity
-            polls (FC01), so a DNP3 control write is illegitimate from
-            any source. Reads stay available for monitoring. Closes the
-            DNP3 command injection attack path.
-          effort_hours: 80
-          roles: ["Firewall Admin", "OT Engineer", "Security Analyst"]
-          tags: ["dpi", "dnp3"]
-        - id: improve-logging
-          title: "Improve firewall logging and PCAP retention"
-          why: >
-            Enable per-rule logging, keep rolling PCAPs on
-            cross-zone interfaces, and forward events to
-            syslog. Without this, post-incident review of
-            attempted attacks is blind.
-          effort_hours: 50
-          roles: ["Firewall Admin", "Security Analyst"]
-          tags: ["visibility"]
-        - id: rtac-architecture-review
-          title: "Validate and document RTAC hardening"
-          why: >
-            The RTAC is multi-homed across OT Ops and Field for
-            realism but is hardened at the host level so its
-            application traffic to field devices is forced through
-            the firewall. Validate that the hardening is in place
-            (ip_forward=0, FORWARD DROP, policy routing for field
-            subnet via OT Ops firewall), document it as a compensating
-            control for auditors, and add a periodic check to detect
-            drift. Defense in depth for the intra-zone flows the
-            firewall still cannot see.
-          effort_hours: 30
-          roles: ["OT Engineer", "Security Analyst"]
-          tags: ["architecture", "defense-in-depth"]
-        - id: tighten-firewall-objects
-          title: "Tighten firewall object hygiene"
-          why: >
-            Replace broad /24 matches with host objects for
-            RTAC, HMI, historian, GPS. Name and document
-            each rule. Reduces drift and makes the next audit
-            defensible.
-          effort_hours: 40
-          roles: ["Firewall Admin", "Network Engineer"]
-          tags: ["hygiene"]
-        - id: positive-validation
-          title: "Post-change positive/negative validation"
-          why: >
-            Build a test plan that verifies legitimate flows
-            still work and illegitimate flows are blocked,
-            with captured PCAP evidence. Required for
-            acceptance of the change and for the Testing & Validation exercise.
-          effort_hours: 60
-          roles: ["Security Analyst", "OT Engineer"]
-          tags: ["validation"]
-        - id: ids-deployment
-          title: "Deploy IDS sensors with ICS rule packs on OT zones"
-          why: >
-            Add Snort/Suricata or Zeek sensors on the OT Ops and
-            Field interfaces with industrial protocol rule packs.
-            The firewall blocks; the IDS detects anomalies the
-            firewall doesn't deny - unusual scan patterns, malformed
-            Modbus frames, DNP3 sequence anomalies. Pairs with the
-            Testing & Validation exercise: an IDS alert chain is a
-            stronger evidence package than firewall logs alone.
-            Different team and timeline than the firewall work itself.
-          effort_hours: 80
-          roles: ["Security Analyst", "Network Engineer"]
-          tags: ["detection", "ids"]
-        - id: ot-asset-inventory
-          title: "Build OT asset inventory + change baseline"
-          why: >
-            Enumerate every device on OT Ops and Field - MAC, software
-            version, exposed services, ownership, last-patched date.
-            Without an inventory, change management is by hope: you
-            cannot detect when an unknown device appears, when
-            firmware drifts, or when a vendor swaps a relay during
-            a maintenance window. Foundation work that pays off
-            across every later defense, but its cost-to-attribute
-            is hard to defend in a tight quarter.
-          effort_hours: 100
-          roles: ["Security Analyst", "OT Engineer", "Network Engineer"]
-          tags: ["foundation", "inventory"]
-        - id: vendor-zta-broker
-          title: "Replace vendor VPN with ZTNA / PAM broker"
-          why: >
-            Stand up a Privileged Access Management broker
-            (BeyondTrust, CyberArk, Cyolo) or a Zero-Trust Network
-            Access path (Zscaler, Tailscale) for vendor support
-            sessions. Just-in-time access, MFA, full session
-            recording, per-action audit trail. Closes more of the
-            Vendor Remote Access Compromise kill chain than
-            restrict-vendor-to-ot alone, because the vendor's path
-            is closed by default and opens only for scheduled
-            windows under identity. Heaviest organizational change
-            in this list - requires vendor contract amendments.
-          effort_hours: 150
-          roles: ["Network Engineer", "Firewall Admin", "Security Analyst"]
-          tags: ["vendor", "modernization", "identity"]
 
-  - title: "Reflect - what are you accepting?"
+  - id: reflect-what-are-you-accepting
+    title: "Reflect - what are you accepting?"
     description: |
       Below is your plan, mapped against the Lab 1.3 design verdicts
       and the Lab 1.2 findings they address. Use it to anchor the
@@ -308,6 +142,6 @@ steps:
       plan next quarter?
 
       The selections you made in the previous step are saved to your
-      exercise state. Later exercises will read them to reflect the
-      consequences of your plan - if you did not block a path, that
-      attack will remain easier to execute.
+      exercise state. Labs 2.3 and 2.4 judge the applied plan against
+      its expected results, with Hardened as the comparison. A saved selection
+      is not running-state evidence. Test after applying it.

@@ -1,14 +1,19 @@
 package labs
 
-// LabYAML mirrors the YAML schema for lab templates.
+// LabYAML mirrors the YAML schema for a package's topology template.
 type LabYAML struct {
-	ID             string         `yaml:"id"`
-	Name           string         `yaml:"name"`
-	Description    string         `yaml:"description"`
-	FirewallConfig string         `yaml:"firewall_config"` // path relative to lab-definitions dir
-	Networks       []NetworkYAML  `yaml:"networks"`
-	Nodes          []NodeYAML     `yaml:"nodes"`
-	Scenarios      []ScenarioYAML `yaml:"scenarios"`
+	ID             string                     `yaml:"id"`
+	Name           string                     `yaml:"name"`
+	Description    string                     `yaml:"description"`
+	FirewallConfig string                     `yaml:"firewall_config"` // path relative to the topology file's directory
+	Networks       []NetworkYAML              `yaml:"networks"`
+	Nodes          []NodeYAML                 `yaml:"nodes"`
+	Flows          []TopologyFlow             `yaml:"flows"`
+	Liveness       map[string]LivenessBinding `yaml:"liveness"`
+	// Scenarios is accepted only as an empty list. A package's scenarios
+	// directory is its only curriculum source; inline scenarios are a load
+	// error so a topology cannot smuggle exercises past package ownership.
+	Scenarios []any `yaml:"scenarios"`
 }
 
 // NetworkYAML defines a virtual network.
@@ -45,15 +50,17 @@ type ScenarioYAML struct {
 	// track, skipping Advanced hints and optional drill-downs). Surfaced as a
 	// chip on the exercise card. Optional; 0/absent renders no chip.
 	EstimatedMinutes int `yaml:"estimated_minutes,omitempty"`
-	// BaselineGridState names the Load Simulator grid state a scenario starts
-	// in (e.g. "peak", "overnight"). Optional; absent/empty is treated as
-	// "steady_state" (the default feeder load). The Load Simulator is a bonus
-	// free-play tool, so this only matters when a scenario pre-loads a state.
-	BaselineGridState string `yaml:"baseline_grid_state" json:"baseline_grid_state,omitempty"`
+	// Validator names the registered Go validator behind
+	// GET /api/scenarios/:id/validate. Empty means the scenario has no
+	// validation result.
+	Validator string `yaml:"validator,omitempty"`
 }
 
 // ScenarioStep describes a single scenario instruction.
 type ScenarioStep struct {
+	// ID is the authored, stable step identifier (unique in its scenario).
+	// Progress and references use it; step execution stays index-based.
+	ID             string      `yaml:"id" json:"id"`
 	Title          string      `yaml:"title" json:"title"`
 	Description    string      `yaml:"description" json:"description"`
 	ExpectedConfig string      `yaml:"expected_config,omitempty" json:"expected_config,omitempty"`
@@ -63,22 +70,16 @@ type ScenarioStep struct {
 
 // StepAction defines an executable action for a scenario step.
 type StepAction struct {
-	Type     string          `yaml:"type" json:"type"`                             // "command", "check", "firewall", "sequence", "decision", "probe"
+	Type     string          `yaml:"type" json:"type"`                             // "command", "check", "firewall", "sequence", "decision", "probe", "session-cut"
 	Device   string          `yaml:"device,omitempty" json:"device,omitempty"`     // for type=command
 	Command  string          `yaml:"command,omitempty" json:"command,omitempty"`   // for type=command
 	Source   string          `yaml:"source,omitempty" json:"source,omitempty"`     // for type=command
 	Value    *float64        `yaml:"value,omitempty" json:"value,omitempty"`       // for type=command (e.g. set_tap)
+	Flow     string          `yaml:"flow,omitempty" json:"flow,omitempty"`         // for type=session-cut
 	Config   string          `yaml:"config,omitempty" json:"config,omitempty"`     // for type=firewall
 	Expect   map[string]any  `yaml:"expect,omitempty" json:"expect,omitempty"`     // for type=check
-	Outcome  string          `yaml:"outcome,omitempty" json:"outcome,omitempty"`   // for type=probe
 	Targets  []ProbeTarget   `yaml:"targets,omitempty" json:"targets,omitempty"`   // for type=probe
 	Commands []StepActionCmd `yaml:"commands,omitempty" json:"commands,omitempty"` // for type=sequence
-
-	// Decision-action fields (for type=decision). Describes a constrained
-	// remediation selection exercise with a labor budget and per-role capacity.
-	BudgetHours int              `yaml:"budget_hours,omitempty" json:"budget_hours,omitempty"`
-	Roles       []DecisionRole   `yaml:"roles,omitempty" json:"roles,omitempty"`
-	Actions     []DecisionAction `yaml:"actions,omitempty" json:"actions,omitempty"`
 }
 
 // ProbeTarget identifies a TCP destination and optional source override.

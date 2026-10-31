@@ -1,0 +1,41 @@
+# The US workshop package. Its topology and scenarios stay where they have
+# always lived; this file only declares that the package owns them.
+schema: 1
+id: us-dnp3-substation
+title: "US distribution substation (DNP3)"
+# Curriculum revision: bump when step IDs or validator meaning change.
+# Browser progress is keyed by it.
+revision: 3
+topology: ../../substation-segmentation.yml
+knowledge: knowledge/index.yml
+scenarios: ../../scenarios
+capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
+# Named policies the firewall buttons and lab actions apply, relative to
+# this file. The topology's firewall_config is the default and must be one
+# of them.
+policies:
+  weak: ../../firewall/substation-weak.json
+  improved: ../../firewall/substation-improved.json
+operator_view: us-dnp3-substation
+curriculum:
+  dir: curriculum
+  roles:
+    baseline: baseline-assessment
+    requirements: segmentation-requirements
+    planning: remediation-planning
+    implementation: firewall-implementation
+    hardening: hardening-configurations
+    vendor: vendor-rdp-compromise
+    validation: validation-evidence
+  activities:
+    baseline-assessment: {hideBanner: true, validate: false}
+    segmentation-requirements: {hideBanner: true, validate: false}
+    remediation-planning: {hideBanner: true, validate: false}
+    firewall-implementation: {policyActions: true, hideBanner: true}
+    hardening-configurations: {policyActions: true}
+    vendor-rdp-compromise: {policyActions: true}
+    validation-evidence: {policyActions: true}
+  dynamicSteps:
+    phase-3-create-minimal-required-rules: rules
+    phase-5-validate-allowed-traffic: positive
+    phase-6-validate-blocked-traffic: negative

@@ -1,12 +1,20 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { applyFirewallConfig, ZoneRuleSummary } from "../lib/api";
+import type { LabGraph, ZoneRuleSummary, PlanProvenance, PolicySource } from "../lib/api";
+import { nodeZone as flowNodeZone, type FlowContext } from "../lib/observed-flows";
+import { useActiveFirewall } from "../lib/live-queries";
+import { usePackagePolicies } from "../lib/operator-queries";
+import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
 import {
-  INTRA_ZONE_FLOWS,
+  activePolicyWording,
+  isHardened,
+  policyWording,
+  type PackagePolicies,
+  type PolicyWording,
+} from "../lib/policy-wording";
+import {
   ViewMode,
-  containdZoneToNetwork,
   humanizeSummary,
   humanZoneName,
 } from "../lib/network-console-data";
@@ -65,46 +73,60 @@ export function StatusDot({
   );
 }
 
+// The US package's menu wording; any other package's policies show by
+// their declared names (lib/policy-wording.ts).
+const US_MENU_WORDING: Record<string, PolicyWording> = {
+  weak: { label: "Weak Baseline", description: "All zones allowed - over-permissive" },
+  improved: { label: "Hardened", description: "Deny-default, RTAC-only field access" },
+};
+
+// The badge's short US words; other packages show the active name.
+const US_BADGE_WORDING: Record<string, PolicyWording> = {
+  weak: { label: "Weak baseline", description: "" },
+  improved: { label: "Hardened", description: "" },
+};
+
+function policyBadgeText(activeConfig: string | undefined, policies: PackagePolicies, source?: PolicySource, plan?: PlanProvenance): string {
+  if (!activeConfig) return "—";
+  return activePolicyWording(activeConfig, policies, US_BADGE_WORDING, source, plan).label;
+}
+
 // Policy badge + quick-switch dropdown in the header. Styled as a
 // rounded rectangle (matching the drawer button shapes) that doubles
-// as a dropdown trigger. Clicking reveals a small menu of available
-// policies so the student can switch without opening the drawer.
+// as a dropdown trigger. Clicking reveals a small menu of the active
+// package's policies so the student can switch without opening the
+// drawer. It waits for the package, whose policies it lists.
 export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
   const [open, setOpen] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const queryClient = useQueryClient();
+  const apply = useApplyPolicy();
+  const applying = apply.isPending;
+  const packagePolicies = usePackagePolicies();
+  const active = useActiveFirewall(5000).data;
 
-  const hardened = activeConfig === "improved";
+  if (!packagePolicies) return null;
 
-  const policies = [
-    { id: "weak", label: "Weak Baseline", desc: "All zones allowed - over-permissive" },
-    { id: "improved", label: "Hardened", desc: "Deny-default, RTAC-only field access" },
-  ];
+  const hardened = isHardened(activeConfig);
 
-  const handleApply = async (config: string) => {
+  const policies = packagePolicies.names.map((id) => ({ id, ...policyWording(id, packagePolicies, US_MENU_WORDING) }));
+
+  const handleApply = (config: string) => {
     if (config === activeConfig || applying) return;
-    setApplying(true);
     setOpen(false);
-    try {
-      await applyFirewallConfig(config as "weak" | "improved");
-      queryClient.invalidateQueries({ queryKey: ["firewall-rules"] });
-      queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
-      // SegmentationView (the left drawer) subscribes to this; without
-      // invalidating it here, flipping policy from the badge left
-      // the drawer's Active Policy banner stuck on the prior value
-      // until its own 5s refetch caught up.
-      queryClient.invalidateQueries({ queryKey: ["firewall-active"] });
-    } catch {
-      // swallow
-    } finally {
-      setApplying(false);
-    }
+    apply.mutate(config);
   };
+
+  // The menu closes on apply, so a failure shows under the badge until
+  // the menu opens again.
+  const failedLabel = policies.find((p) => p.id === apply.variables)?.label ?? apply.variables ?? "";
+  const failure = apply.error && !open ? policyApplyErrorText(failedLabel, apply.error) : null;
 
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!open) apply.reset();
+          setOpen(!open);
+        }}
         className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors ${
           hardened
             ? "border-green-600/60 bg-green-950/40 text-green-300 hover:bg-green-950/60"
@@ -121,9 +143,18 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
             className="h-4 w-4"
           />
         )}
-        <span>Firewall · {hardened ? "Hardened" : "Weak baseline"}</span>
+        <span>Firewall · {policyBadgeText(active?.active_config ?? activeConfig, packagePolicies, active?.policy_source, active?.plan)}</span>
         <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
+
+      {failure && (
+        <div
+          role="alert"
+          className="absolute right-0 top-full z-50 mt-1 w-72 rounded-lg border border-red-800/70 bg-red-950/90 px-3 py-2 text-[11px] leading-snug text-red-200 shadow-2xl"
+        >
+          {failure}
+        </div>
+      )}
 
       {open && (
         <>
@@ -132,7 +163,7 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-slate-700 bg-slate-900/95 py-1 shadow-2xl backdrop-blur">
+          <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-slate-700 bg-slate-900/95 py-1 shadow-2xl backdrop-blur-sm">
             <div className="px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
               Select Policy
             </div>
@@ -152,7 +183,7 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
                   <span
                     className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
                       isActive
-                        ? p.id === "improved" ? "bg-green-400" : "bg-red-400"
+                        ? isHardened(p.id) ? "bg-green-400" : "bg-red-400"
                         : "bg-slate-600"
                     }`}
                   />
@@ -165,9 +196,11 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] leading-snug text-slate-500">
-                      {p.desc}
-                    </div>
+                    {p.description && (
+                      <div className="text-[10px] leading-snug text-slate-500">
+                        {p.description}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -208,6 +241,8 @@ const DRAWER_META: Record<
 const DRAWER_ORDER: DrawerKey[] = ["segmentation", "traffic"];
 
 export function LeftDrawerMenu({
+  flowContext,
+  ruleSummaries,
   active,
   onChange,
   trafficEdgesOn,
@@ -217,6 +252,8 @@ export function LeftDrawerMenu({
   highlightedTrafficPair,
   onHighlightTrafficPair,
 }: {
+  flowContext?: FlowContext;
+  ruleSummaries?: ZoneRuleSummary[];
   active: DrawerKey | null;
   onChange: (id: DrawerKey | null) => void;
   trafficEdgesOn: boolean;
@@ -233,6 +270,8 @@ export function LeftDrawerMenu({
     if (active === "traffic") {
       return (
         <TrafficMatrixView
+          context={flowContext}
+          ruleSummaries={ruleSummaries}
           canvasEdgesOn={trafficEdgesOn}
           onToggleCanvasEdges={onToggleTrafficEdges}
           filter={trafficFilter}
@@ -248,7 +287,7 @@ export function LeftDrawerMenu({
   return (
     <>
       {/* Always-visible icon strip on the left edge */}
-      <div className="absolute left-0 top-0 z-30 flex h-full w-9 flex-col items-center gap-1 border-r border-slate-700 bg-slate-900/95 py-3 backdrop-blur">
+      <div className="absolute left-0 top-0 z-30 flex h-full w-9 flex-col items-center gap-1 border-r border-slate-700 bg-slate-900/95 py-3 backdrop-blur-sm">
         {DRAWER_ORDER.map((id) => {
           const { label, Icon, iconColor } = DRAWER_META[id];
           const isActive = active === id;
@@ -277,7 +316,7 @@ export function LeftDrawerMenu({
           the strip. Same dimensions and chrome regardless of which
           drawer is active. */}
       {activeMeta && (
-        <aside className="absolute left-9 top-0 z-30 flex h-full w-[420px] flex-col border-r border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur">
+        <aside className="absolute left-9 top-0 z-30 flex h-full w-[calc(100%-2.25rem)] max-w-[420px] flex-col border-r border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur-sm">
           <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2.5">
             <div className="flex items-center gap-2">
               <activeMeta.Icon className={`h-4 w-4 ${activeMeta.iconColor}`} />
@@ -288,7 +327,7 @@ export function LeftDrawerMenu({
             <button
               onClick={() => onChange(null)}
               title="Minimize"
-              className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+              className="rounded-sm p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -300,35 +339,24 @@ export function LeftDrawerMenu({
   );
 }
 
-// Floating toolbar above the React Flow canvas. Each toggle is an
-// icon-only button (matching the exercise page header style) so the
-// strip stays compact even when the segmentation drawer is open.
-// Position is shifted past the drawer's collapsed strip so the "VIEW"
-// label is never covered.
-export function ViewModeToolbar({
-  viewMode,
-  onChange,
+function IconToggle({
+  on,
+  onClick,
+  label,
+  Icon,
+  activeBorder,
+  activeBg,
+  activeText,
 }: {
-  viewMode: ViewMode;
-  onChange: (m: ViewMode) => void;
+  on: boolean;
+  onClick: () => void;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  activeBorder: string;
+  activeBg: string;
+  activeText: string;
 }) {
-  const IconToggle = ({
-    on,
-    onClick,
-    label,
-    Icon,
-    activeBorder,
-    activeBg,
-    activeText,
-  }: {
-    on: boolean;
-    onClick: () => void;
-    label: string;
-    Icon: React.ComponentType<{ className?: string }>;
-    activeBorder: string;
-    activeBg: string;
-    activeText: string;
-  }) => (
+  return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
@@ -346,9 +374,22 @@ export function ViewModeToolbar({
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   );
+}
 
+// Floating toolbar above the React Flow canvas. Each toggle is an
+// icon-only button (matching the exercise page header style) so the
+// strip stays compact even when the segmentation drawer is open.
+// Position is shifted past the drawer's collapsed strip so the "VIEW"
+// label is never covered.
+export function ViewModeToolbar({
+  viewMode,
+  onChange,
+}: {
+  viewMode: ViewMode;
+  onChange: (m: ViewMode) => void;
+}) {
   return (
-    <div className="absolute left-14 top-3 z-20 flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/85 px-2.5 py-1.5 backdrop-blur">
+    <div className="absolute left-14 top-3 z-20 flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/85 px-2.5 py-1.5 backdrop-blur-sm">
       <span className="pl-0.5 pr-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-500">
         View
       </span>
@@ -378,22 +419,22 @@ export function ViewModeToolbar({
 // in. Two distinct sections so the student can see the teaching point
 // at a glance:
 //
-//   • Intra-zone (firewall-blind): hard-coded peer flows like HMI→RTAC.
+//   • Intra-zone (firewall-blind): peer flows declared by the active package.
 //     Important context that the firewall view is incomplete.
 //
 //   • Cross-zone (firewall-governed): rules from containd, framed as
 //     "outbound from this zone" or "inbound to this zone" so the
 //     student can correlate the rule list to the selected node.
 //
-// Note: containd policy is enforced at the zone level, not per host
-// IP. We say so explicitly so students don't think a per-node ACL is
-// being shown.
+// These are zone-pair summaries, not an endpoint/port policy evaluation.
 export function ActiveFlowsPanel({
+  graph,
   nodeId,
   nodeZone,
   ruleSummaries,
   multiHomedZones,
 }: {
+  graph?: LabGraph;
   nodeId: string;
   nodeZone?: string;
   ruleSummaries?: ZoneRuleSummary[];
@@ -405,9 +446,7 @@ export function ActiveFlowsPanel({
   // selected node's perspective.
   const { outbound, inbound } = useMemo(() => {
     if (!ruleSummaries || !nodeZone) return { outbound: [], inbound: [] };
-    const containdZones = Object.entries(containdZoneToNetwork)
-      .filter(([_, networks]) => networks.includes(nodeZone))
-      .map(([cz]) => cz);
+    const containdZones = graph?.networks.filter((n) => n.id === nodeZone).map((n) => n.zone) ?? [];
     const out: ZoneRuleSummary[] = [];
     const inb: ZoneRuleSummary[] = [];
     ruleSummaries.forEach((r) => {
@@ -418,12 +457,13 @@ export function ActiveFlowsPanel({
       else if (isDst && !isSrc) inb.push(r);
     });
     return { outbound: out, inbound: inb };
-  }, [ruleSummaries, nodeZone]);
+  }, [ruleSummaries, nodeZone, graph]);
 
-  // Intra-zone flows that name this node as source or target.
+  // Use the same declared inventory as the map, including EU station peers.
   const intraFlows = useMemo(() => {
-    return INTRA_ZONE_FLOWS.filter((f) => f.source === nodeId || f.target === nodeId);
-  }, [nodeId]);
+    return graph?.flows.filter((f) => (f.source === nodeId || f.target === nodeId) &&
+      flowNodeZone(f.source, graph) !== "unknown" && flowNodeZone(f.source, graph) === flowNodeZone(f.target, graph)) ?? [];
+  }, [graph, nodeId]);
 
   const hasContent =
     outbound.length > 0 ||
@@ -463,6 +503,7 @@ export function ActiveFlowsPanel({
           <span className="text-slate-500">·</span>
           <span className="text-slate-300">{protoLabel}</span>
         </div>
+        {r.action === "MIXED" && <p className="text-xs text-amber-300">MIXED · authorization unknown</p>}
       </li>
     );
   };
@@ -474,7 +515,7 @@ export function ActiveFlowsPanel({
       </div>
 
       {multiHomedZones.length > 0 && (
-        <div className="mb-2 rounded border border-amber-700/40 bg-amber-950/20 px-2 py-1.5">
+        <div className="mb-2 rounded-sm border border-amber-700/40 bg-amber-950/20 px-2 py-1.5">
           <div className="text-[9px] font-bold uppercase tracking-wider text-amber-400">
             Multi-homed
           </div>
@@ -512,7 +553,7 @@ export function ActiveFlowsPanel({
                     {isSource ? "→" : "←"}
                   </span>{" "}
                   <span className="text-slate-200">{peer}</span>{" "}
-                  <span className="text-slate-500">· {f.protocol}</span>
+                  <span className="text-slate-300">· {f.protocol} :{f.port}</span>
                 </li>
               );
             })}
@@ -551,8 +592,9 @@ export function ActiveFlowsPanel({
             </div>
           )}
           <div className="mt-1.5 text-[10px] text-slate-500 italic">
-            Policy is enforced per zone, not per host. This list shows
-            the rules that govern any flow between {nodeZone ? humanZoneName(nodeZone) : "this zone"} and another zone.
+            Zone-pair summaries only, not host authorization. Rules can restrict
+            source, destination and port. MIXED or missing summaries leave authorization
+            unknown; an ALLOW summary alone does not establish this host&apos;s permission.
           </div>
         </div>
       )}

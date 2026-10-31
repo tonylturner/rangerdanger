@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, hotfix/v0.1.36-rc.1]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -10,9 +10,144 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Workflow and shell lint
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    env:
+      # Also applies to ShellCheck subprocesses launched by actionlint.
+      SHELLCHECK_OPTS: -x
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - name: Install actionlint and ShellCheck
+        run: |
+          # Match local lint instead of inheriting Ubuntu's older ShellCheck.
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          curl --fail --location --retry 3 \
+            https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz \
+            --output "$tmp/shellcheck.tar.xz"
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  $tmp/shellcheck.tar.xz" | sha256sum --check --strict
+          tar -xJf "$tmp/shellcheck.tar.xz" -C "$tmp"
+          sudo install -m 0755 "$tmp/shellcheck-v0.11.0/shellcheck" /usr/local/bin/shellcheck
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Lint workflows (including embedded shell)
+        # v1.7.12's runner-label catalog predates ubuntu-26.04 GA.
+        run: actionlint .github/workflows/*.yml
+      - name: Lint tracked shell scripts
+        run: git ls-files -z -- '*.sh' | xargs -0 shellcheck -x -S warning
+      - name: Check base image pins
+        run: |
+          bash scripts/check-image-pins.sh
+          python3 -m unittest scripts.tests.test_check_image_pins
+
+  eu-gates:
+    name: EU gates (offline)
+    runs-on: ubuntu-26.04
+    # The tshark install alone has taken ten minutes on a slow apt mirror.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install capture decoder and JSON tools
+        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tshark jq
+      - name: Test EU gates without a range
+        run: bash scripts/tests/eu-gate/run.sh
+
+  iec104:
+    name: IEC 104 reference and differential conformance
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # The sealed baseline is an older first-party revision.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install TShark 4.6 decoder
+        run: |
+          # Ubuntu 26.04 ships TShark 4.6.
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tshark
+          # Its AppArmor profile lets tshark read only system and /tmp files;
+          # the comparator reads committed and generated captures in the checkout.
+          echo "file r $GITHUB_WORKSPACE/**," | sudo tee /etc/apparmor.d/local/tshark
+          sudo apparmor_parser -r /etc/apparmor.d/tshark
+          # Comparator tests use the same explicit decoder path as macOS.
+          sudo mkdir -p /opt/homebrew/bin
+          sudo ln -s "$(command -v tshark)" /opt/homebrew/bin/tshark
+          python3 - <<'PY'
+          import re, subprocess
+          banner = subprocess.run(["tshark", "--version"], check=True, capture_output=True, text=True, timeout=10).stdout
+          assert re.search(r"TShark .*4\.6\.", banner), banner
+          print(banner.splitlines()[0])
+          PY
+      - name: Test comparator and runner on Python 3.12
+        working-directory: services/iec104/check/differential
+        run: python3 -m unittest -v
+      - name: Build sealed C reference
+        run: python3 services/iec104/check/reference/build.py --out build/iec104-reference
+      - name: Build production Go candidate and role sets
+        run: |
+          docker build -f services/iec104/Dockerfile -t "rdci-iec104-go:$GITHUB_SHA" .
+          python3 - <<'PYROLES'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path("build/iec104-differential")
+          root.mkdir(parents=True, exist_ok=True)
+          baseline = json.loads(pathlib.Path("build/iec104-reference/roles.json").read_text())
+          image = subprocess.run(["docker", "image", "inspect", "--format", "{{.Id}}",
+                                  "rdci-iec104-go:" + os.environ["GITHUB_SHA"]],
+                                 check=True, capture_output=True, text=True, timeout=15).stdout.strip()
+          for name, roles in (("all-go", ("rtu", "cc", "cmd")),
+                              ("go-rtu", ("rtu",)), ("go-clients", ("cc", "cmd"))):
+              candidate = dict(baseline)
+              candidate.update({role: image for role in roles})
+              (root / (name + "-roles.json")).write_text(json.dumps(candidate, indent=2) + "\n")
+          PYROLES
+      - name: Compare reference against all Go role sets
+        run: |
+          for roles in all-go go-rtu go-clients; do
+            python3 services/iec104/check/differential/run.py --catalog \
+              --baseline build/iec104-reference/roles.json \
+              --candidate "build/iec104-differential/$roles-roles.json" \
+              --reference build/iec104-reference/baseline.json \
+              --role-set "$roles" --out "build/iec104-differential/$roles" || exit $?
+          done
+      - name: Check Go IEC 104 protocols
+        run: RD_CHECK_PREFIX=rdci-g-iec104 services/iec104/check/run.sh "$GITHUB_WORKSPACE/build/iec104-check"
+      - name: Remove local reference and Go tags
+        if: always()
+        run: |
+          status=0
+          if test -f build/iec104-reference/baseline.json; then
+            image="$(python3 -c 'import json; print(json.load(open("build/iec104-reference/baseline.json"))["image"])')"
+            docker image rm "$image" || status=1
+          fi
+          if docker image inspect "rdci-iec104-go:$GITHUB_SHA" >/dev/null 2>&1; then
+            docker image rm "rdci-iec104-go:$GITHUB_SHA" || status=1
+          fi
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iec104-conformance-evidence
+          path: |
+            build/iec104-reference
+            build/iec104-differential
+            build/iec104-check
+            !build/iec104-check/*build.log
+          retention-days: 7
+
   release-tooling:
     name: Release image planner and input guard
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -27,7 +162,7 @@ jobs:
 
   backend:
     name: Backend (Go)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -42,6 +177,9 @@ jobs:
       - name: go vet
         working-directory: backend
         run: go vet ./...
+      - name: Unused Go code (U1000)
+        working-directory: backend
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks U1000 ./...
       - name: go test
         working-directory: backend
         # -count=1 defeats Go's test cache for this module. The
@@ -53,16 +191,20 @@ jobs:
       - name: go build
         working-directory: backend
         run: go build ./cmd/server
+      - name: Package lint
+        working-directory: backend
+        run: go run ./cmd/packagelint
 
   services:
     name: Services (Go)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version-file: services/go.mod
-          cache-dependency-path: services/go.sum
+          # No external modules: there is no go.sum to key the cache.
+          cache: false
       - name: gofmt
         working-directory: services
         run: |
@@ -71,6 +213,9 @@ jobs:
       - name: go vet
         working-directory: services
         run: go vet ./...
+      - name: Unused Go code (U1000)
+        working-directory: services
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks U1000 ./...
       - name: go test
         working-directory: services
         run: go test -race ./...
@@ -80,7 +225,7 @@ jobs:
 
   opendss-sim:
     name: opendss-sim (Python)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -95,13 +240,14 @@ jobs:
 
   dnp3go:
     name: dnp3go library (Go)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version-file: dnp3go/go.mod
-          cache-dependency-path: dnp3go/go.sum
+          # Stdlib-only module: there is no go.sum to key the cache.
+          cache: false
       - name: gofmt
         working-directory: dnp3go
         run: |
@@ -110,6 +256,9 @@ jobs:
       - name: go vet
         working-directory: dnp3go
         run: go vet ./...
+      - name: Unused Go code (U1000)
+        working-directory: dnp3go
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks U1000 ./...
       - name: go test
         working-directory: dnp3go
         run: go test -race ./...
@@ -117,14 +266,42 @@ jobs:
         working-directory: dnp3go
         run: go build ./...
 
+  iec104go:
+    name: iec104go library (Go)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: iec104go/go.mod
+          cache: false
+      - name: gofmt
+        working-directory: iec104go
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
+      - name: go vet
+        working-directory: iec104go
+        run: go vet ./...
+      - name: Unused Go code (U1000)
+        working-directory: iec104go
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 -checks U1000 ./...
+      - name: go test
+        working-directory: iec104go
+        run: go test -race -count=1 -timeout 300s ./...
+      - name: go build
+        working-directory: iec104go
+        run: go build ./...
+
   frontend:
     name: Frontend (Next.js)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: "24.22.1"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: npm ci
@@ -133,6 +310,9 @@ jobs:
       - name: lint
         working-directory: frontend
         run: npm run lint
+      - name: typecheck
+        working-directory: frontend
+        run: npm run typecheck
       - name: test
         working-directory: frontend
         run: npm test
@@ -142,11 +322,11 @@ jobs:
 
   compose-validate:
     name: Compose validate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - name: docker compose config
-        run: docker compose config -q
+        run: RANGERDANGER_ROOT="$PWD" docker compose config -q
 
   govulncheck:
     # Hard gate. Findings other than the documented exceptions in
@@ -154,7 +334,7 @@ jobs:
     # new finding: add a triage entry to security-known-issues.md and
     # add its GOID to ALLOWED in scripts/govulncheck-gate.sh.
     name: Go vulnerability scan
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -162,11 +342,10 @@ jobs:
           go-version-file: backend/go.mod
       - name: install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      # Some ALLOWED entries in scripts/govulncheck-gate.sh are accepted
-      # only because the vulnerable package is absent from the build graph.
-      # The filter in the next step matches on GOID alone, so it cannot notice
-      # that rationale going stale. This asserts the precondition
-      # those exceptions actually rest on.
+      # Exceptions based on an unreachable package must register a package
+      # guard in assert-unreachable-vulns.sh as well as a GOID allowlist entry.
+      # The current allowlist has no such exceptions; keep the check so future
+      # unreachable-package rationales are enforced.
       - name: assert unreachable exceptions still hold
         run: ./scripts/assert-unreachable-vulns.sh
       - name: scan + allowlist filter

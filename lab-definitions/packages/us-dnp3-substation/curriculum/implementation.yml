@@ -1,0 +1,137 @@
+phases:
+  rules: |-
+    Review the compiled rules for this plan. Required rules stay in every plan.
+    Selected enforceable actions narrow their paths. Deferred rules retain the
+    same Weak exposures. Detection-only actions change no TCP verdict.
+    The L4 source pin enforces; DPI detects and logs.
+
+    :::guided
+    Click **Apply Your Plan**, or **Apply Hardened** for the reference.
+    An empty or planning-only plan is valid. It leaves Weak exposures open.
+    Inspect the running rules, not just the policy banner. Execute Step checks
+    the active policy without replacing it.
+    :::
+
+    :::technical
+    For a plan, use the compiled rule order without adding broad allows.
+    For manual work, use Hardened as the judging target. With
+    `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
+    access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
+    remain reachable. **Create rule** and **Delete** do not reload the firewall.
+    Run `commit` at `containd#` or **Commit** on the **Configuration** page.
+    After commit, run `nmap -Pn -p 3389,5900 10.20.20.10` from Kali.
+    For the manual Hardened target, both ports must be `filtered`; if not,
+    fix the rule and commit again. A plan uses its compiled verdict instead.
+    :::
+
+    Keep the RTAC source `10.30.30.20/32` on its required field rules:
+    TCP/502, TCP/20000 and TCP/8080. Preserve GPS `10.30.30.50/32` NTP/123
+    and HMI operations. These operational paths cannot be deferred.
+
+    :::hint Policy evidence at the containd CLI
+    At `containd#`, `export config` prints JSON; it does not create a file:
+
+        export config
+
+    Copy the output into your evidence. Do not use shell redirection.
+    This reference example includes detection; it is not the whole policy:
+
+        {
+          "id": "rtac-to-field-modbus",
+          "sourceZones": ["lan1"],
+          "destZones": ["lan2"],
+          "sources": ["10.30.30.20/32"],
+          "protocols": [{"name": "tcp", "port": "502"}],
+          "ics": {"protocol": "modbus", "functionCode": [1, 2, 3, 4, 5, 6]},
+          "action": "ALLOW",
+          "log": true
+        }
+    :::
+
+    Export the compiled config and the companion **Export plan record**.
+    The record contains the package ID, revision, label, action IDs and policy
+    hash. Use `GET /api/firewall/active` to check what is running.
+
+    ### Compiled rules
+
+    {{noPlan}}
+    {{ruleTable}}
+  positive: |-
+    Verify operations for every plan. From the RTAC terminal, run:
+
+        mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
+        dnp3poll -a 1 -t 3s 10.40.40.20:20000
+
+    Both should return data. Check field `device_comms` with:
+
+        curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
+
+    Open the HMI. Confirm no alarms, closed breaker and recloser, auto-reclose
+    on and energized loads. Check GPS NTP separately; the proof matrix is TCP.
+    All eight authorized TCP rows must remain reachable for every plan.
+    Bridged rows do not cross the firewall and do not prove a firewall rule.
+    Lab 2.4 separates plan proof from Hardened acceptance: 8/8 authorized and
+    13/13 unauthorized denied, 0 skipped, stable hash, capture and healthy HMI.
+
+    From an OT Ops terminal, check the intra-zone HMI service:
+
+        curl -sf http://10.30.30.10:1881 --connect-timeout 3
+
+    This check must work for every plan. It is not routed firewall proof.
+
+    ### Compiled expectations
+
+    {{tests}}
+  negative: |-
+    Test the expected outcomes for the applied plan, not its label.
+    Run all 13 unauthorized TCP rows from their named sources in Lab 2.4.
+    A deny verdict requires a connection timeout. Connection refused means
+    reached (allow). Tool or container errors are skipped evidence and fail proof.
+
+    | Path | Owning action | Selected / deferred |
+    |---|---|---|
+    | Kali→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
+    | Enterprise→OT ICS and web | `block-enterprise-to-ot` | deny / allow |
+    | Enterprise→field | `block-enterprise-to-field` | deny / allow |
+    | Vendor→OT Modbus and web | `restrict-vendor-to-ot` | deny / allow |
+    | Vendor and eng-ws→field | `block-vendor-to-field` | deny / allow |
+    | Non-RTAC OT hosts→field | `pin-rtac-to-field` | deny / allow |
+
+    A deferred exposure is a prevention gap against Hardened, not a failed
+    plan proof if it matches this plan. Do not change policy just to hide the gap.
+    Preserve timestamps and the running hash. `show audit` lists `config.commit` evidence,
+    not a per-flow verdict. Keep capture and HMI evidence with both results.
+
+    :::hint Run the sampled protocol checks from their real sources
+    From Kali, test the enterprise-to-field action:
+
+        mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
+        dnp3poll -a 1 -t 3s 10.40.40.20:20000
+
+    From eng-ws, test the vendor-to-field action:
+
+        mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.23
+
+    From vendor-jump, test that same action independently:
+
+        dnp3poll -a 1 -t 3s 10.40.40.20:20000
+        mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
+
+    Selected means timeout; deferred means reachable. These sampled commands
+    do not replace the full report matrix. Execute Step checks the running
+    policy. Preserve the observation and the report verdict.
+    :::
+
+    ### Compiled expectations
+
+    {{tests}}
+noPlan: |+
+  You have not completed a remediation plan yet. The rules below are the minimum baseline - RTAC and GPS access to field devices. Consider going back to the [Remediation Planning](/exercises/{{planRole}}) exercise to build a plan that drives additional rules.
+
+tests:
+  - kind: positive
+    text: |-
+      Verify current RTAC application/device state (TCP reachability alone is not operational proof):
+
+          curl -s http://${ip:rtac-1}:8080/api/state | python3 -m json.tool
+negativeEmpty: Deferred controls leave their Weak exposures open. Run the full compiled proof matrix and retain the Hardened comparison.

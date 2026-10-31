@@ -99,53 +99,9 @@ function Invoke-TcpProbe($src, $dst, $port) {
     [pscustomobject]@{ Verdict=$verdict; DurationMs=$dur }
 }
 
-# probe-udp uses the firewall's nft drop counter snapshot. Same logic
-# as the .sh version: snapshot before, fire, snapshot after, compare.
-function Invoke-UdpProbe($src, $dst, $port) {
-    $extractCount = {
-        param($table)
-        $line = ($table -split "`n" | Where-Object { $_ -match 'policy drop' } | Select-Object -First 1)
-        if (-not $line) { return 0 }
-        # awk '/policy drop/{getline; print}' -- the line AFTER the match
-        # is the counters line. PS equivalent: index of match + 1.
-        $lines = $table -split "`n"
-        for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i] -match 'policy drop' -and ($i + 1) -lt $lines.Count) {
-                if ($lines[$i+1] -match 'packets\s+(\d+)') { return [int64]$Matches[1] }
-            }
-        }
-        return 0
-    }
-
-    $before = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        (docker exec rangerdanger-firewall nft list table inet containd 2>$null) -join "`n"
-    }
-    $beforeCount = & $extractCount $before
-
-    & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        docker exec $src sh -c "echo probe | timeout $ProbeTimeoutSec nc -u -w1 $dst $port" *>$null
-    }
-    Start-Sleep -Milliseconds 500
-
-    $after = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        (docker exec rangerdanger-firewall nft list table inet containd 2>$null) -join "`n"
-    }
-    $afterCount = & $extractCount $after
-
-    if ($afterCount -gt $beforeCount) {
-        [pscustomobject]@{ Verdict='deny';  DurationMs=0 }
-    } else {
-        [pscustomobject]@{ Verdict='allow'; DurationMs=0 }
-    }
-}
-
 function Invoke-Probe($proto, $src, $dst, $port) {
     switch ($proto) {
         'tcp' { Invoke-TcpProbe $src $dst $port }
-        'udp' { Invoke-UdpProbe $src $dst $port }
         default { [pscustomobject]@{ Verdict='deny:bad-proto'; DurationMs=0 } }
     }
 }
@@ -264,6 +220,17 @@ try {
     exit 1
 }
 
+# These checks assert the US range. Refuse another package or a range
+# mid-switch: GET /api/range must report us-dnp3-substation ready.
+. (Join-Path $PSScriptRoot 'lib\range.ps1')
+$range = Get-RangeStatus $Api
+if (Test-RangeReady $range us-dnp3-substation) {
+    OK "range us-dnp3-substation ready"
+} else {
+    Err "range is not us-dnp3-substation ready -- GET $Api/api/range: $(Format-RangeStatus $range)"
+    exit 1
+}
+
 $Required = @(
     'rangerdanger-firewall','rangerdanger-kali','rangerdanger-eng-ws',
     'rangerdanger-rtac-sim','rangerdanger-fuxa-hmi','rangerdanger-historian-sim',
@@ -345,7 +312,7 @@ $Listeners = @(
     @{ hp='10.30.30.30:502';   label='openplc Modbus' },
     @{ hp='10.30.30.30:8080';  label='openplc HTTP' },
     @{ hp='10.40.40.20:502';   label='relay Modbus' },
-    @{ hp='10.20.20.10:8082';  label='vendor-jump kasm' },
+    @{ hp='10.20.20.10:3000';  label='vendor-jump desktop' },
     @{ hp='10.20.20.10:22';    label='vendor-jump SSH' }
 )
 # Apply weak briefly so listener probes can traverse zones.

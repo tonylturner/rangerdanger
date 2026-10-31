@@ -156,7 +156,9 @@ nodes:
       - field_net
     ip: 10.40.40.23
 
-# Scenarios are loaded from lab-definitions/scenarios/*.yml.
+# Scenarios are not listed here. The package that owns this topology
+# (packages/us-dnp3-substation/package.yml) names its scenarios directory,
+# lab-definitions/scenarios/; a non-empty list below is a load error.
 # Workshop labs (aligned to the DefendICS slide deck):
 #   1.2 baseline-assessment
 #   1.3 segmentation-requirements
@@ -166,3 +168,242 @@ nodes:
 #   2.3-bonus vendor-rdp-compromise (optional)
 #   2.4 validation-evidence
 scenarios: []
+
+# Package-owned teaching flows; liveness keys are opaque to consumers.
+flows:
+  - id: rtac-1-relay-1-modbus
+    source: rtac-1
+    target: relay-1
+    protocol: Modbus
+    port: 502
+    cadence: ~3s
+    category: baseline
+    liveness_key: rtac-relay
+  - id: rtac-1-recloser-1-modbus
+    source: rtac-1
+    target: recloser-1
+    protocol: Modbus
+    port: 502
+    cadence: ~3s
+    category: baseline
+    liveness_key: rtac-recloser
+  - id: rtac-1-regulator-1-modbus
+    source: rtac-1
+    target: regulator-1
+    protocol: Modbus
+    port: 502
+    cadence: ~3s
+    category: baseline
+    liveness_key: rtac-regulator
+  - id: rtac-1-relay-1-dnp3
+    source: rtac-1
+    target: relay-1
+    protocol: DNP3
+    port: 20000
+    cadence: ~5s
+    category: baseline
+    liveness_key: rtac-relay
+  - id: rtac-1-recloser-1-dnp3
+    source: rtac-1
+    target: recloser-1
+    protocol: DNP3
+    port: 20000
+    cadence: ~5s
+    category: baseline
+    liveness_key: rtac-recloser
+  - id: rtac-1-regulator-1-dnp3
+    source: rtac-1
+    target: regulator-1
+    protocol: DNP3
+    port: 20000
+    cadence: ~5s
+    category: baseline
+    liveness_key: rtac-regulator
+  - id: gps-1-relay-1-ntp
+    source: gps-1
+    target: relay-1
+    protocol: NTP
+    port: 123
+    cadence: ~30s
+    category: baseline
+    liveness_key: gps
+  - id: gps-1-recloser-1-ntp
+    source: gps-1
+    target: recloser-1
+    protocol: NTP
+    port: 123
+    cadence: ~30s
+    category: baseline
+    liveness_key: gps
+  - id: gps-1-regulator-1-ntp
+    source: gps-1
+    target: regulator-1
+    protocol: NTP
+    port: 123
+    cadence: ~30s
+    category: baseline
+    liveness_key: gps
+  - id: rtac-1-capbank-1-modbus
+    source: rtac-1
+    target: capbank-1
+    protocol: Modbus
+    port: 502
+    cadence: ~3s
+    category: baseline
+    liveness_key: rtac-capbank
+  - id: rtac-1-capbank-1-dnp3
+    source: rtac-1
+    target: capbank-1
+    protocol: DNP3
+    port: 20000
+    cadence: ~5s
+    category: baseline
+    liveness_key: rtac-capbank
+  - id: gps-1-capbank-1-ntp
+    source: gps-1
+    target: capbank-1
+    protocol: NTP
+    port: 123
+    cadence: ~30s
+    category: baseline
+    liveness_key: gps
+  - id: hmi-1-rtac-1-modbus
+    source: hmi-1
+    target: rtac-1
+    protocol: Modbus
+    port: 502
+    cadence: ~2s
+    category: baseline
+    liveness_key: rtac
+  - id: historian-1-rtac-1-http
+    source: historian-1
+    target: rtac-1
+    protocol: HTTP
+    port: 8080
+    cadence: ~5s
+    category: baseline
+    liveness_key: rtac
+  - id: eng-ws-1-rtac-1-http
+    source: eng-ws-1
+    target: rtac-1
+    protocol: HTTP
+    port: 8080
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: eng-ws-1-openplc-1-http
+    source: eng-ws-1
+    target: openplc-1
+    protocol: HTTP
+    port: 8080
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: eng-ws-1-hmi-1-fuxa
+    source: eng-ws-1
+    target: hmi-1
+    protocol: FUXA
+    port: 1881
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: eng-ws-1-relay-1-modbus
+    source: eng-ws-1
+    target: relay-1
+    protocol: Modbus
+    port: 502
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: eng-ws-1-recloser-1-modbus
+    source: eng-ws-1
+    target: recloser-1
+    protocol: Modbus
+    port: 502
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: eng-ws-1-regulator-1-modbus
+    source: eng-ws-1
+    target: regulator-1
+    protocol: Modbus
+    port: 502
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: eng-ws-1-capbank-1-modbus
+    source: eng-ws-1
+    target: capbank-1
+    protocol: Modbus
+    port: 502
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: eng-ws-1-relay-1-dnp3
+    source: eng-ws-1
+    target: relay-1
+    protocol: DNP3
+    port: 20000
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: eng-ws-1-recloser-1-dnp3
+    source: eng-ws-1
+    target: recloser-1
+    protocol: DNP3
+    port: 20000
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: eng-ws-1-regulator-1-dnp3
+    source: eng-ws-1
+    target: regulator-1
+    protocol: DNP3
+    port: 20000
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: eng-ws-1-capbank-1-dnp3
+    source: eng-ws-1
+    target: capbank-1
+    protocol: DNP3
+    port: 20000
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: vendor-jump-1-hmi-1-fuxa
+    source: vendor-jump-1
+    target: hmi-1
+    protocol: FUXA
+    port: 1881
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+  - id: vendor-jump-1-rtac-1-http
+    source: vendor-jump-1
+    target: rtac-1
+    protocol: HTTP
+    port: 8080
+    cadence: burst
+    category: scenario
+    liveness_key: scenario
+
+liveness:
+  rtac-relay:
+    provider: workshop-device
+    device: relay
+  rtac-recloser:
+    provider: workshop-device
+    device: recloser
+  rtac-regulator:
+    provider: workshop-device
+    device: regulator
+  rtac-capbank:
+    provider: workshop-device
+    device: capbank
+  rtac:
+    provider: workshop-supervisor
+  gps:
+    provider: workshop-supervisor
+  scenario:
+    provider: traffic-generator

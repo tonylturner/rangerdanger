@@ -1,8 +1,9 @@
 # Lab authoring guide
 
-How to write a workshop lab in `lab-definitions/scenarios/`. Covers
+How to write a workshop lab in a package's scenarios directory
+(`lab-definitions/scenarios/` for the US package). Covers
 the YAML shape the runner expects, the description-body fences for
-hints / decisions / findings panels, and the localStorage model
+hints / decisions / findings panels, and the browser storage model
 that lets a lab read what the student did in earlier labs.
 
 The runner that consumes these YAMLs lives in
@@ -12,19 +13,115 @@ file an issue or PR.
 
 ## File location and naming
 
-Each lab is one YAML file under `lab-definitions/scenarios/`. The
-filename matches the scenario `id` (e.g. `baseline-assessment.yml`
-contains `id: baseline-assessment`).
+Each lab is one YAML file in the scenarios directory its package
+names (`lab-definitions/packages/<package>/package.yml`, key
+`scenarios:`). For the US package that is `lab-definitions/scenarios/`.
+By convention the filename matches the scenario `id` (e.g.
+`baseline-assessment.yml` contains `id: baseline-assessment`).
+Scenario IDs must be unique across every package. The package layout
+is described in [`lab-definitions/README.md`](../lab-definitions/README.md#packages).
 
-Backend loads them at startup - restart `backend` after changes.
+Backend loads them at startup - restart `backend` after changes. Any
+error in any package (an unknown field, a bad step, an unknown
+validator) stops the backend from starting, so check the backend log.
+
+## Package-owned decision catalog
+
+Inline decision prompts belong in a step's description as
+`:::decision` fences. A labor-planning step does not carry its own
+catalog, team capacities or budget. Mark that step with
+`action: {type: decision}`; the panel reads the budget, teams and action
+catalog from the active package's `curriculum/`.
+
+The EU package binds that directory and its exercise roles in
+`lab-definitions/packages/eu-iec104-substation/package.yml`; its
+`curriculum/` owns the 500-hour budget, four teams and shared action
+catalog for the requirements and planning exercises. The requirements
+exercise supplies the design/readiness decision prompts, and the
+planning exercise has one decision step. This keeps options and
+catalog mappings package-scoped instead of duplicating catalogs in
+individual scenario files. The binding is declared by
+[`backend/internal/labs/package.go`](../backend/internal/labs/package.go#L68-L78),
+loaded and validated against requirement prompts by
+[`backend/internal/labs/curriculum_load.go`](../backend/internal/labs/curriculum_load.go#L17-L24)
+and [`curriculum_load.go`](../backend/internal/labs/curriculum_load.go#L101-L110),
+served on `GET /api/packages` by
+[`backend/internal/server/packages.go`](../backend/internal/server/packages.go#L14-L26),
+and consumed by the frontend
+[`DecisionPanel`](../frontend/components/decision-panel.tsx#L31-L36).
+
+### Curriculum sections
+
+Both packages use `curriculum: {dir: curriculum}` in `package.yml`.
+The directory must be an immediate sibling with a lowercase hyphenated name;
+the former `file:` binding is not accepted. Keep exercise `roles`, `activities`
+and `dynamicSteps` in the package binding. Author the remaining top-level keys
+once each, in these seven single-purpose section files (each under 1000 lines):
+
+| File | Content |
+| --- | --- |
+| `catalog.yml` | Schema, budget, team capacities and action catalog |
+| `requirements.yml` | Requirement mappings and display order |
+| `readiness.yml` | Readiness answers and flags |
+| `coverage.yml` | Impacts, groups, planning-only IDs and display orders |
+| `implementation.yml` | Phase templates, test text and empty-plan guidance |
+| `nodes.yml` | Exercise node mappings and inference |
+| `plan.yml` | Policy compiler and proof model |
+
+The loader merges disjoint top-level keys, then resolves topology references in
+scalar values and strictly validates the complete model. Directory order does
+not change list order or prose. Duplicate keys (including across files), unknown
+fields, unknown filenames, symlinks, nested directories, empty directories or
+sections, and extra YAML documents are errors. Each section is one nonempty YAML
+mapping. Validate authoring changes with `go -C backend test -race -count=1
+-timeout 300s ./internal/labs/...` and `go -C backend run ./cmd/packagelint -root ..`.
+
+## Package knowledge
+
+Every `package.yml` requires `knowledge: knowledge/index.yml`. The index is
+strict YAML (JSON syntax is also valid YAML) with ordered `sections`:
+
+```yaml
+sections:
+  - id: telecontrol
+    heading: IEC104 Telecontrol
+    description: Background for this package
+    icon: radio
+    accent: violet
+    articles:
+      - id: iec104-wire-model
+        title: IEC104 frames and addresses
+        file: iec104-wire-model.md
+```
+
+The Markdown file contains the body only, preserved byte-for-byte. Its path is
+relative to the package's `knowledge/` directory. Files must be nonempty regular
+files; absolute paths, `..`, backslashes and symlinks escaping the knowledge
+subtree or package are rejected, including index escapes. No shared or platform
+fallback corpus exists. Unknown YAML fields and duplicate section/article IDs
+are errors. IDs are lowercase hyphenated slugs, unique within their own package.
+Headings, article titles and article lists must not be empty. Optional icons are
+`zap`, `shield`, `radio`, `wrench`, `layers`, `target`, `book`; optional accents are
+`sky`, `emerald`, `violet`, `amber`, `slate`, `rose`.
+
+Use inline `[article](#article-id)` links within bodies and
+`[reading](/knowledge#article-id)` in scenario descriptions. Both forms are
+validated against the owning package, not the union of every package's articles.
+Keep stable article IDs for deep links. Knowledge bodies support `:::tip`,
+`:::note`, `:::warning` and `:::caution` fences, with an optional title and
+a closing `:::`. Scenario-only interactive fences are not knowledge widgets. Bump the package revision when publishing curriculum
+changes, including knowledge, so reader state and cache identity stay scoped.
+Restart or reseed the backend after editing: requests serve the validated catalog
+snapshot, not arbitrary files. A failed load or reseed publishes no new content.
 
 ## Top-level shape
 
 ```yaml
-id: my-new-lab               # required, kebab-case, must match filename stem
+id: my-new-lab               # required slug, unique across packages; by convention the filename stem
 order: "1.5"                 # required, string. Sorts in the inventory; matches workshop deck numbering.
 name: "Human-readable name"  # required
 summary: "One-line summary." # shown in the lab list
+validator: us-my-new-lab     # optional. Registered validator key; see lab-definitions/README.md
 description: |               # multi-paragraph. Shown above the steps.
   Plain prose that introduces the lab. Rendered as one plain-text
   paragraph: no Markdown, no line breaks. Use step bodies for Markdown.
@@ -35,27 +132,40 @@ tags:                        # optional. Free-form labels.
   - segmentation
   - defense
 steps:
-  - title: "Step 1 - Do the thing"
-    expected_config: weak    # optional. weak | improved | hardened
+  - id: step-1-do-the-thing  # required slug, unique in this scenario
+    title: "Step 1 - Do the thing"
+    expected_config: weak    # optional. weak | hardened
     node: fw-1               # optional. Pins which container the Run button targets.
     description: |
       ...
-  - title: "Step 2 - ..."
+  - id: step-2
+    title: "Step 2 - ..."
     description: |
       ...
 ```
 
-Required fields: `id`, `order`, `name`, `description`, `steps`.
-Each step requires `title` and `description`.
+The loader requires `id`, `order` and `name` on the scenario, and `id`
+and `title` on each step; write a `description` for both anyway.
+Unknown fields are rejected.
+
+### Step `id`
+
+Each step's `id` is a slug (lowercase letters and digits separated by
+single hyphens) unique within its scenario. Derive it once from the
+title and then leave it alone: browser progress is stored by step ID,
+so renaming one resets that step for students. Retitling a step does
+not require a new ID. If a change alters what a step ID means, bump
+the package `revision`.
 
 ### `expected_config`
 
-Sets the policy state the step assumes. Values:
+Sets the policy state the step assumes. The loader accepts only
+these values (`improved` is rejected):
 
 | Value | Meaning |
 |---|---|
 | `weak` | The weak-baseline `lab-definitions/firewall/substation-weak.json` is applied. Used during assessment / before-state phases. |
-| `improved` (alias `hardened`) | The hardened policy `substation-improved.json` is applied. Used after-state and validation phases. |
+| `hardened` | A hardened policy is active: the canned `substation-improved.json` (backend config `improved`) or the student's own (`custom`). Used in after-state and validation phases. |
 
 If a student's running policy doesn't match `expected_config`, the
 runner shows a config-mismatch banner with a one-click reset.
@@ -155,7 +265,7 @@ Attributes:
 
 | Attribute | Required | Purpose |
 |---|---|---|
-| `id` | yes | Unique within the scenario. Forms the storage key as `decision:<scenario-id>:<id>`. |
+| `id` | yes | Unique within the scenario. Forms the storage name `decision:<scenario-id>:<id>` (see [Browser storage model](#browser-storage-model)). |
 | `options` | no | Comma-separated list of dropdown choices. Default: `BLOCK,BLOCK and LOG,RESTRICT,ALLOW`. Quote values that contain spaces (e.g. `options="BLOCK,BLOCK and LOG,RESTRICT,ALLOW"`). |
 | `default-from` | no | `<source-scenario-id>:<source-decision-id>`. On first render with no local value, copies the upstream value so a downstream lab can pre-fill from an earlier one. The student can still adjust. |
 | `correct` | no | The "right" answer. When set, the dropdown renders a green ✓ chip when the student's pick matches, red ✗ otherwise. Use this **only on observation / factual prompts** (e.g. "what did you see in the capture?"), not on judgment-call design decisions. |
@@ -185,7 +295,7 @@ Attributes:
 
 | Attribute | Required | Purpose |
 |---|---|---|
-| `from` | yes | Upstream scenario id. The panel reads each item from `decision:<from>:<line-id>`. |
+| `from` | yes | Upstream scenario id. The panel reads each item from the storage name `decision:<from>:<line-id>`. |
 | `title` | no | Header text. Defaults to `"Inherited findings"`. |
 
 Body lines: one per item, format `<decision-id>: <human label>`.
@@ -229,28 +339,22 @@ Some steps have a structured action that renders a custom UI
 component instead of (or in addition to) the description prose.
 
 ```yaml
-- title: "Choose your remediation plan"
+- id: choose-your-remediation-plan
+  title: "Choose your remediation plan"
   description: ...
   action:
     type: decision
-    budget_hours: 500
-    roles:
-      - { name: OT Engineer, capacity_hours: 120 }
-      - { name: Firewall Admin, capacity_hours: 140 }
-    actions:
-      - id: block-enterprise-to-field
-        title: "Block enterprise → field direct access"
-        why: |
-          Closes the DNP3 command injection attack surface.
-        effort_hours: 40
-        roles: [Firewall Admin, Security Analyst]
-        tags: [enterprise-field]
-      ...
 ```
 
 Supported `type` values:
 
-- `decision` - labor-budgeted action picker (Lab 1.4 pattern). Renders the [`DecisionPanel`](../frontend/components/decision-panel.tsx) component with budget meters, per-role utilization, and per-action requirement / readiness overlays.
+- `decision` - labor-budgeted action picker. This is only a marker on
+  the planning step; it has no inline fields. The
+  [`scenario-runner`](../frontend/components/scenario-runner.tsx#L614-L617)
+  renders [`DecisionPanel`](../frontend/components/decision-panel.tsx#L31-L36),
+  which reads `budgetHours`, `teams` and `catalog` from the active
+  package curriculum. The catalog actions, effort, roles, requirements
+  and readiness mappings belong in that package's `curriculum/`.
 - `check` - a state-check action with `expect: {key: value}` against the substation API. Used to confirm "the lab is in known-good state" between phases.
 - `probe` - TCP reachability check from `step.node` (or a per-target `from` topology node). Set `outcome: reachable|blocked` and one or more `targets` with IPv4 `host`, TCP `port` (1–65535), and optional `note`. Every target must match the outcome. Fast connection refusal counts as reachable; a timeout counts as blocked; any other exit status is a probe error and fails the target. UDP is not supported.
 - `command`, `firewall`, `sequence` - older patterns for auto-running specific commands. Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks. A manual step has no `action`; `type: manual` is invalid.
@@ -264,14 +368,26 @@ If you wire a different kind of action picker, see
 [`frontend/components/decision-panel.tsx`](../frontend/components/decision-panel.tsx)
 for the integration pattern.
 
-## localStorage model
+## Browser storage model
 
-Decisions and the remediation plan persist client-side. Keys:
+Curriculum state persists client-side in `localStorage`. Every key is
+`rd:<package>:<revision>:<name>`, where `<package>` and `<revision>` are
+the active package's `id` and curriculum `revision` from
+`GET /api/packages`. Names:
 
 ```
-decision:<scenario-id>:<decision-id>     decision dropdown selections
-rd-remediation-plan                      JSON {exerciseId, selectedActionIds, savedAt}
+exercise:<scenario-id>                   JSON {completedStepIds, notes, cmdLog}
+decision:<scenario-id>:<decision-id>     decision dropdown selection
+remediation-plan                         JSON {exerciseId, selectedActionIds, savedAt}
+firewall-track                           guided | technical
 ```
+
+Progress records step `id`s, never array positions, so reordering
+steps keeps it; IDs a scenario no longer has are ignored. Bumping the
+package `revision` starts every student fresh under new keys. All keys
+are built in
+[`frontend/lib/curriculum-storage.ts`](../frontend/lib/curriculum-storage.ts);
+keys written before this scheme are not read.
 
 The runner exposes saved data via `:::findings-panel`, `default-from`
 on `:::decision`, and `:::plan-coverage`. If you need a brand-new way

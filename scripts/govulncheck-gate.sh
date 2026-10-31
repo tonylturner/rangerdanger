@@ -7,19 +7,21 @@
 # are additionally guarded by scripts/assert-unreachable-vulns.sh.
 #
 # Like govulncheck's default text mode, the gate counts called findings
-# only: JSON findings with a non-empty trace (length > 0).
+# only: at least one trace frame must name a function. Module- and
+# package-level findings have no function and are not counted.
 #
 # Usage: scripts/govulncheck-gate.sh [module-dir ...]
-#        defaults to: backend services dnp3go
+#        defaults to: backend services dnp3go iec104go
 #        ALLOWED may be overridden via the environment for negative testing.
 
 set -uo pipefail
 
-ALLOWED="${ALLOWED-GO-2026-4887 GO-2026-4883 GO-2026-5617 GO-2026-5668 GO-2026-5746 GO-2026-5932}"
+ALLOWED="${ALLOWED-GO-2026-4887 GO-2026-4883}"
 
-modules=("$@")
-if [ ${#modules[@]} -eq 0 ]; then
-  modules=(backend services dnp3go)
+if [ "$#" -eq 0 ]; then
+  modules=(backend services dnp3go iec104go)
+else
+  modules=("$@")
 fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -61,8 +63,8 @@ for index in "${!modules[@]}"; do
     continue
   fi
 
-  # Match the CI filter: count only findings with a nonempty trace.
-  if ! found="$(jq -r '.finding | select(has("osv") and (.trace // [] | length) > 0) | .osv' "$output" 2>/dev/null | sort -u)"; then
+  # Match text mode: count only findings with a symbol-level trace frame.
+  if ! found="$(jq -r '.finding | select(has("osv") and ((.trace // []) | any(.[]; (.function // "") != ""))) | .osv' "$output" 2>/dev/null | sort -u)"; then
     report_error "govulncheck produced invalid JSON for $dir"
     fail=1
     continue

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # End-to-end lab smoke test.
 #
-# Brings the RangerDanger stack up, hits the API endpoints, validates
-# that the right lab inventory is loaded with the expected IDs and
-# order strings, and confirms sims report healthy.
+# Brings RangerDanger up from source (./scripts/dev-up.sh: platform, then
+# the range through the backend), checks that the US range is ready, hits
+# the API endpoints, validates that the right lab inventory is loaded
+# with the expected IDs and order strings, and confirms sims report
+# healthy.
 #
 # Usage:
 #   ./scripts/smoke-test.sh           # full: build, up, test, tear down
@@ -24,6 +26,10 @@ for arg in "$@"; do
   esac
 done
 
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+cd "$ROOT_DIR" || exit 1
+API="http://localhost:8088"
+
 # Expected lab inventory after the workshop-deck-aligned restructure.
 # Format: order|id (sorted lexicographically — same order containd
 # returns from /api/scenarios).
@@ -43,93 +49,93 @@ note() { printf '\n=== %s ===\n' "$1"; }
 ok()   { printf '  ✓ %s\n' "$1"; }
 err()  { printf '  ✗ %s\n' "$1"; fail=1; }
 
+# Label-only Compose calls (ps) run from an empty directory: from the repo
+# root Compose would load docker-compose.yml as the model.
+WORKDIR=$(mktemp -d)
+
 cleanup() {
   if [ "$EXISTING_STACK" = "1" ]; then
     note "existing stack left running; database preserved"
   elif [ "$KEEP" = "0" ]; then
     note "tearing down"
-    docker compose down -v >/dev/null 2>&1 || true
+    ./scripts/dev-down.sh >/dev/null 2>&1 || err "teardown left resources behind (run ./scripts/dev-down.sh)"
   else
-    note "stack left running (--keep)"
+    note "lab left running (--keep)"
   fi
+  rmdir "$WORKDIR"
   exit "$fail"
 }
 trap cleanup EXIT
 
 # --- preflight --------------------------------------------------------------
+# Platform files under the platform project, every package's range files
+# under the range project; H is the project directory, as setup runs them.
 note "validate compose syntax"
-if docker compose config -q; then
-  ok "docker-compose.yml"
-else
-  err "docker-compose.yml"
-fi
-if docker compose -f docker-compose.release.yml config -q; then
-  ok "docker-compose.release.yml"
-else
-  err "docker-compose.release.yml"
-fi
+compose_config() { # <project> <file>
+  RANGERDANGER_ROOT="$ROOT_DIR" docker compose -p "$1" --project-directory "$ROOT_DIR" \
+    -f "$ROOT_DIR/$2" config -q
+}
+for f in docker-compose.yml docker-compose.release.yml; do
+  if compose_config rangerdanger-platform "$f"; then ok "$f"; else err "$f"; fi
+done
+for f in lab-definitions/packages/*/compose.source.yml lab-definitions/packages/*/compose.release.yml; do
+  if compose_config rangerdanger "$f"; then ok "$f"; else err "$f"; fi
+done
 
-# Only a fresh-stack run owns lifecycle and database preparation.
 prepare_stack() {
   [ "$EXISTING_STACK" = "1" ] && return 0
+# The backend bind-mounts this database. Stop it before unlinking the file so
+# it cannot keep using a stale SQLite handle; the bring-up below starts it on
+# the clean database and runs migrations.
+backend=$(docker ps -q --filter label=com.docker.compose.project=rangerdanger-platform \
+    --filter label=com.docker.compose.service=backend)
+if [ -n "$backend" ] && ! docker stop "$backend" >/dev/null; then
+  err "backend could not be stopped; stale database not cleared"
+  exit 1
+fi
+rm -f backend/data/rangerdanger.db
+ok "stale database cleared"
 
-  # The backend bind-mounts this database. Stop it before unlinking the file so
-  # it cannot keep using a stale SQLite handle; compose up below starts it on the
-  # clean database and runs migrations.
-  if ! docker compose stop backend >/dev/null; then
-    err "backend could not be stopped; stale database not cleared"
-    exit 1
-  fi
-  rm -f backend/data/rangerdanger.db
-  ok "stale database cleared"
-
-  # --- bring up ---------------------------------------------------------------
-  note "build + up"
-  if docker compose build --parallel >/tmp/smoke-build.log 2>&1; then
-    ok "build complete"
-  else
-    err "build failed; see /tmp/smoke-build.log"
-    exit 1
-  fi
-  if docker compose up -d >/tmp/smoke-up.log 2>&1; then
-    ok "compose up"
-  else
-    err "compose up failed; see /tmp/smoke-up.log"
-    exit 1
-  fi
+# --- bring up ---------------------------------------------------------------
+# dev-up builds every image, starts the platform, waits for the backend and
+# for POST /api/range to bring the range to ready. Name the US package:
+# without it the backend restarts the package it ran last.
+note "build + up"
+if ./scripts/dev-up.sh --package us-dnp3-substation >/tmp/smoke-up.log 2>&1; then
+  ok "build, platform up, range ready"
+else
+  err "dev-up failed; see /tmp/smoke-up.log"
+  exit 1
+fi
 }
 prepare_stack
 
-# --- wait for backend healthy ----------------------------------------------
-note "wait for backend health (5min budget)"
-for i in $(seq 1 30); do
-  if curl -fsS http://localhost:8088/api/health >/dev/null 2>&1; then
-    ok "backend healthy after ${i}0s"
-    break
-  fi
-  sleep 10
-  if [ "$i" = "30" ]; then
-    err "backend never healthy"
-    docker compose ps --format '{{.Service}} {{.Status}}'
-    exit 1
-  fi
-done
+# --- range -----------------------------------------------------------------
+# Every assertion below is about the US range.
+note "range"
+range=$(curl -fsS "$API/api/range") || { err "GET /api/range failed"; exit 1; }
+if [ "$(echo "$range" | jq -r '.package + " " + .phase')" = "us-dnp3-substation ready" ]; then
+  ok "range us-dnp3-substation ready"
+else
+  err "range is not us-dnp3-substation ready: $(echo "$range" | jq -c '{package, phase, error}')"
+  exit 1
+fi
 
 # --- probe endpoints --------------------------------------------------------
 note "probe /api/health and /api/build"
-if curl -fsS http://localhost:8088/api/health | jq -e . >/dev/null; then
+if curl -fsS "$API/api/health" | jq -e . >/dev/null; then
   ok "/api/health JSON"
 else
   err "/api/health"
 fi
-if curl -fsS http://localhost:8088/api/build | jq -e . >/dev/null; then
+if curl -fsS "$API/api/build" | jq -e . >/dev/null; then
   ok "/api/build JSON"
 else
   err "/api/build"
 fi
 
 note "probe embedded containd UI and session"
-if python3 scripts/lib/containd-ui-probe.py http://localhost:8088; then
+if python3 "$ROOT_DIR/scripts/lib/containd-ui-probe.py" "$API"; then
   ok "/containd/ bundle and authenticated API session"
 else
   err "/containd/ bundle or authenticated API session"
@@ -137,7 +143,7 @@ fi
 
 # --- lab inventory ----------------------------------------------------------
 note "validate lab inventory"
-inv_json=$(curl -fsS http://localhost:8088/api/scenarios) \
+inv_json=$(curl -fsS "$API/api/scenarios") \
     || { err "/api/scenarios fetch failed"; exit 1; }
 
 actual_count=$(echo "$inv_json" | jq '.scenarios | length')
@@ -187,10 +193,14 @@ if ./scripts/substation-smoke.sh; then ok "substation physics (capbank -> OpenDS
 
 # --- service health ---------------------------------------------------------
 note "compose services health"
-docker compose ps --format '{{.Service}}\t{{.Status}}' | while read -r line; do
+# Platform + range: the same services the single project used to list.
+compose_ps() {
+  (cd "$WORKDIR" && docker compose -p rangerdanger-platform ps "$@" && docker compose -p rangerdanger ps "$@")
+}
+compose_ps --format '{{.Service}}\t{{.Status}}' | while read -r line; do
   echo "  $line"
 done
-healthy=$(docker compose ps --format '{{.Status}}' | grep -c '(healthy)')
+healthy=$(compose_ps --format '{{.Status}}' | grep -c '(healthy)')
 if [ "$healthy" -ge 8 ]; then
   ok "$healthy services report (healthy)"
 else

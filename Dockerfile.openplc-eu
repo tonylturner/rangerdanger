@@ -1,0 +1,27 @@
+# The upstream runtime is amd64-only; SSD staging must include this architecture.
+FROM tuttas/openplc_v3:latest@sha256:94fb9e8387340af716211454664980dc0e97924067712cf573a1e467c3a37722
+
+# Upstream has no newer snapshot. Apply public Bionic fixes without removing
+# packages or enabling ESM; the runtime/compiler remain the pinned upstream's.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+        curl iproute2 python3 sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY lab-definitions/packages/eu-iec104-substation/seeds/openplc/ /opt/openplc-eu/
+COPY scripts/openplc-eu-entrypoint.sh /openplc-eu-entrypoint.sh
+COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
+RUN chmod +x /openplc-eu-entrypoint.sh /usr/local/bin/set-gateway.sh \
+    && cd /opt/openplc-eu \
+    && sha256sum tap-control.st oltc.json install.py > seed.sha256
+
+# Compile at image build time too: a malformed seed must fail before startup.
+RUN cd /root/OpenPLC_v3/webserver \
+    && cp /opt/openplc-eu/tap-control.st st_files/tap-control.st \
+    && rm -f core/openplc \
+    && ./scripts/compile_program.sh tap-control.st \
+    && test -x core/openplc
+
+WORKDIR /root/OpenPLC_v3/webserver
+ENTRYPOINT ["/openplc-eu-entrypoint.sh"]

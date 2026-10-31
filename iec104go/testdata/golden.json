@@ -1,0 +1,153 @@
+[
+  {
+    "capture": "edge-addressing.pcap",
+    "frame": 11,
+    "sha256": "ded8efc24842159fca63244f78f01b72108c7fff7d5705ca745f27ac9354fa91",
+    "hex": "6832040002000d0514010100d107000080364300d207003333a34100ffff00ec118342000000016f12834200ffffffacc5274300",
+    "type": 13,
+    "cause": 20,
+    "originator": 1,
+    "common_address": 1,
+    "addresses": [
+      2001,
+      2002,
+      65535,
+      65536,
+      16777215
+    ]
+  },
+  {
+    "capture": "edge-addressing.pcap",
+    "frame": 43,
+    "sha256": "ded8efc24842159fca63244f78f01b72108c7fff7d5705ca745f27ac9354fa91",
+    "hex": "680e000000002e010601010000000002",
+    "type": 46,
+    "cause": 6,
+    "originator": 1,
+    "common_address": 1,
+    "addresses": [
+      0
+    ]
+  },
+  {
+    "capture": "edge-addressing.pcap",
+    "frame": 44,
+    "sha256": "ded8efc24842159fca63244f78f01b72108c7fff7d5705ca745f27ac9354fa91",
+    "hex": "680e000002002e016f01010000000002",
+    "type": 46,
+    "cause": 47,
+    "originator": 1,
+    "common_address": 1,
+    "addresses": [
+      0
+    ]
+  },
+  {
+    "capture": "sbo-double-command.pcap",
+    "frame": 8,
+    "sha256": "9dc5206f1e395453369118c687cc970e82c4027e3fa2e0c45fe79644c287e4c7",
+    "hex": "680e000000002e0106010100b90b0081",
+    "type": 46,
+    "cause": 6,
+    "originator": 1,
+    "common_address": 1,
+    "addresses": [
+      3001
+    ]
+  },
+  {
+    "capture": "sbo-double-command.pcap",
+    "frame": 9,
+    "sha256": "9dc5206f1e395453369118c687cc970e82c4027e3fa2e0c45fe79644c287e4c7",
+    "hex": "680e000002002e0107010100b90b0081",
+    "type": 46,
+    "cause": 7,
+    "originator": 1,
+    "common_address": 1,
+    "addresses": [
+      3001
+    ]
+  },
+  {
+    "capture": "sbo-double-command.pcap",
+    "frame": 10,
+    "sha256": "9dc5206f1e395453369118c687cc970e82c4027e3fa2e0c45fe79644c287e4c7",
+    "hex": "680e020002002e0106010100b90b0001",
+    "type": 46,
+    "cause": 6,
+    "originator": 1,
+    "common_address": 1,
+    "addresses": [
+      3001
+    ]
+  },
+  {
+    "capture": "sbo-double-command.pcap",
+    "frame": 11,
+    "sha256": "9dc5206f1e395453369118c687cc970e82c4027e3fa2e0c45fe79644c287e4c7",
+    "hex": "680e020004002e0107010100b90b0001",
+    "type": 46,
+    "cause": 7,
+    "originator": 1,
+    "common_address": 1,
+    "addresses": [
+      3001
+    ]
+  },
+  {
+    "capture": "sbo-double-command.pcap",
+    "frame": 13,
+    "sha256": "9dc5206f1e395453369118c687cc970e82c4027e3fa2e0c45fe79644c287e4c7",
+    "hex": "6815040004001f010b000100e903000187d9370e090a1a",
+    "type": 31,
+    "cause": 11,
+    "originator": 0,
+    "common_address": 1,
+    "addresses": [
+      1001
+    ]
+  },
+  {
+    "capture": "startup-gi-monitor.pcap",
+    "frame": 33,
+    "sha256": "b71b0f9c9b838d5037af73c65496d61bb6407b37cbc40310413a39303bf578e1",
+    "hex": "6815080002001f010b000100e903000187d9370e090a1a",
+    "type": 31,
+    "cause": 11,
+    "originator": 0,
+    "common_address": 1,
+    "addresses": [
+      1001
+    ]
+  },
+  {
+    "capture": "session-management.pcap",
+    "frame": 4,
+    "sha256": "88246b0994b67cc7a630e0510aaf71be6469d57fefe9af6a7a69e6bd43871087",
+    "hex": "680407000000"
+  },
+  {
+    "capture": "session-management.pcap",
+    "frame": 6,
+    "sha256": "88246b0994b67cc7a630e0510aaf71be6469d57fefe9af6a7a69e6bd43871087",
+    "hex": "68040b000000"
+  },
+  {
+    "capture": "session-management.pcap",
+    "frame": 23,
+    "sha256": "88246b0994b67cc7a630e0510aaf71be6469d57fefe9af6a7a69e6bd43871087",
+    "hex": "680401000c00"
+  },
+  {
+    "capture": "session-management.pcap",
+    "frame": 53,
+    "sha256": "88246b0994b67cc7a630e0510aaf71be6469d57fefe9af6a7a69e6bd43871087",
+    "hex": "680413000000"
+  },
+  {
+    "capture": "session-management.pcap",
+    "frame": 54,
+    "sha256": "88246b0994b67cc7a630e0510aaf71be6469d57fefe9af6a7a69e6bd43871087",
+    "hex": "680423000000"
+  }
+]

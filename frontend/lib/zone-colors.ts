@@ -5,11 +5,18 @@ export const zoneColors: Record<string, { border: string; bg: string; text: stri
   vendor_net:     { border: "#a855f7", bg: "rgba(168, 85, 247, 0.1)", text: "#a855f7" },  // purple
   ot_ops_net:     { border: "#f97316", bg: "rgba(249, 115, 22, 0.1)", text: "#f97316" },  // orange
   field_net:      { border: "#22c55e", bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e" },   // green
+  // EU IEC 104 package: the station LAN plays the OT-operations role,
+  // the control centre has its own zone (containd lan4).
+  station_net:        { border: "#f97316", bg: "rgba(249, 115, 22, 0.1)", text: "#f97316" },  // orange
+  control_centre_net: { border: "#2dd4bf", bg: "rgba(45, 212, 191, 0.1)", text: "#2dd4bf" },  // teal
+  ops_dmz_net: { border: "#facc15", bg: "rgba(250, 204, 21, 0.1)", text: "#facc15" },
+  lan5: { border: "#facc15", bg: "rgba(250, 204, 21, 0.1)", text: "#facc15" },
   // Containd zone names (from firewall config)
   wan:        { border: "#38bdf8", bg: "rgba(56, 189, 248, 0.1)", text: "#38bdf8" },
   dmz:        { border: "#a855f7", bg: "rgba(168, 85, 247, 0.1)", text: "#a855f7" },
   lan1:       { border: "#f97316", bg: "rgba(249, 115, 22, 0.1)", text: "#f97316" },
   lan2:       { border: "#22c55e", bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e" },
+  lan4:       { border: "#2dd4bf", bg: "rgba(45, 212, 191, 0.1)", text: "#2dd4bf" },
   ot_control: { border: "#f97316", bg: "rgba(249, 115, 22, 0.1)", text: "#f97316" },
   ot_safety:  { border: "#22c55e", bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e" },
 };

@@ -15,6 +15,9 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 _DEFAULT_RECORD = object()
+# Images the inventory marks always_build: they build on every plan, so they
+# are never promoted and every decision matrix includes them.
+ALWAYS_BUILD = {"rangerdanger-backend", "rangerdanger-iec104"}
 
 import release_image_plan
 
@@ -35,9 +38,17 @@ class PlannerFixture(unittest.TestCase):
         self._write(".dockerignore", "ignore\n")
         self._write(".gitattributes", "*.txt text\n")
         self._write(".github/workflows/release.yml", "release policy\n")
+        self._write(".github/workflows/release-record.yml", "release record policy\n")
         self._write("scripts/release_image_plan.py", "planner\n")
         self._write("scripts/check_release_inputs.py", "checker\n")
         self._write("docker-compose.release.yml", "services: {}\n")
+        # The baked-in EU seed creates a package directory in this fixture.
+        # Keep its release model present, as required for every package.
+        eu_release = "lab-definitions/packages/eu-iec104-substation/compose.release.yml"
+        self._write(eu_release, (ROOT / eu_release).read_text(encoding="utf-8"))
+        # The baked-in US seed also creates a package directory in this fixture.
+        us_release = "lab-definitions/packages/us-dnp3-substation/compose.release.yml"
+        self._write(us_release, (ROOT / us_release).read_text(encoding="utf-8"))
         for image in self.inventory["images"]:
             self._write(image["dockerfile"], "FROM scratch\n")
             for entry in image["inputs"]:
@@ -232,13 +243,22 @@ class ReleaseImagePlanTests(PlannerFixture):
             for line in output_path.read_text(encoding="utf-8").splitlines()
         )
 
-    def test_docs_change_promotes_15_and_always_builds_backend(self) -> None:
+    def test_docs_change_promotes_except_always_build_images(self) -> None:
+        self.assertEqual(
+            {image["image"] for image in self.inventory["images"]
+             if image["always_build"]},
+            ALWAYS_BUILD,
+        )
         commit = self._change_commit("README.md", "documentation only\n")
         plan = self._plan(commit=commit)
         decisions = self._decisions(plan)
-        self.assertEqual(decisions["rangerdanger-backend"], "build")
-        self.assertEqual(sum(value == "promote" for value in decisions.values()), 15)
-        self.assertEqual(sum(value == "build" for value in decisions.values()), 1)
+        self.assertEqual(
+            {name for name, decision in decisions.items() if decision == "build"},
+            ALWAYS_BUILD,
+        )
+        self.assertEqual(sum(value == "promote" for value in decisions.values()),
+                         len(self.inventory["images"]) - len(ALWAYS_BUILD))
+        self.assertEqual(sum(value == "build" for value in decisions.values()), 2)
 
     def test_simulator_input_decision_matrix(self) -> None:
         cases = [
@@ -257,7 +277,9 @@ class ReleaseImagePlanTests(PlannerFixture):
                     "rangerdanger-capbank-sim",
                     "rangerdanger-rtac-sim",
                     "rangerdanger-historian-sim",
+                    "rangerdanger-historian-eu",
                     "rangerdanger-gps-sim",
+                    "rangerdanger-field-device-sim",
                 },
             ),
             (
@@ -275,6 +297,56 @@ class ReleaseImagePlanTests(PlannerFixture):
                     "rangerdanger-openplc",
                 },
             ),
+            (
+                "services/devices/cmd/field-device-sim/main.go",
+                "changed field device source\n",
+                {"rangerdanger-field-device-sim"},
+            ),
+            (
+                "services/historian-eu/main.go",
+                "changed EU historian\n",
+                {"rangerdanger-historian-eu"},
+            ),
+            (
+                "lab-definitions/packages/eu-iec104-substation/seeds/openplc/controller.st",
+                "changed EU PLC seed\n",
+                {"rangerdanger-openplc-eu"},
+            ),
+            (
+                "scripts/openplc-eu-entrypoint.sh",
+                "changed EU PLC startup\n",
+                {"rangerdanger-openplc-eu"},
+            ),
+            # CLI and root library changes invalidate both shared tool images.
+            ("iec104go/application.go", "changed Go library\n",
+             {"rangerdanger-kali", "rangerdanger-eng-ws"}),
+            ("iec104go/cmd/iec104cmd/main.go", "changed Go CLI\n",
+             {"rangerdanger-kali", "rangerdanger-eng-ws"}),
+            ("iec104go/LICENSE", "changed Go licence\n",
+             {"rangerdanger-kali", "rangerdanger-eng-ws"}),
+            ("iec104go/go.mod", "changed Go module\n", {
+                "rangerdanger-kali", "rangerdanger-eng-ws", "rangerdanger-rtac-sim",
+                "rangerdanger-relay-sim", "rangerdanger-recloser-sim",
+                "rangerdanger-regulator-sim", "rangerdanger-capbank-sim",
+                "rangerdanger-historian-sim", "rangerdanger-gps-sim",
+                "rangerdanger-field-device-sim", "rangerdanger-historian-eu",
+            }),
+            ("services/iec104/internal/rtu/model.go", "changed Go RTU\n", set()),
+            ("services/iec104/cmd/iec104-cc/main.go", "changed Go CC\n", set()),
+            ("services/iec104/cmd/iec104-rtu/main.go", "changed Go RTU main\n", set()),
+            # Historical/deleted inputs no longer invalidate production images.
+            # The conservative ALWAYS_BUILD images still build independently.
+            ("services/iec104/src/common.c", "retired C source\n", set()),
+            ("services/iec104/build-iec104cmd.sh", "retired C helper\n", set()),
+            ("services/iec104/LICENSE", "historical licence\n", set()),
+            ("services/iec104/README.md", "component documentation\n", set()),
+            ("services/iec104/check/reference/baseline.json", "reference only\n", set()),
+            ("services/iec104/check/reference/build.py", "reference builder only\n", set()),
+            (
+                "services/opendss-sim/eu_app.py",
+                "changed EU solver\n",
+                {"rangerdanger-opendss-sim"},
+            ),
         ]
         for path, content, affected in cases:
             with self.subTest(path=path):
@@ -285,7 +357,7 @@ class ReleaseImagePlanTests(PlannerFixture):
                 build_names = {
                     name for name, decision in decisions.items() if decision == "build"
                 }
-                self.assertEqual(build_names, affected | {"rangerdanger-backend"})
+                self.assertEqual(build_names, affected | ALWAYS_BUILD)
 
     def test_each_global_control_invalidates_every_image(self) -> None:
         count = len(self.inventory["images"])
@@ -311,6 +383,26 @@ class ReleaseImagePlanTests(PlannerFixture):
         decisions = self._decisions(self._plan())
         self.assertEqual(len(decisions), count)
         self.assertEqual(set(decisions.values()), {"build"})
+
+    def test_release_workflow_changes_invalidate_the_same_image_decisions(self) -> None:
+        decisions_by_path = {}
+        for path in (
+            ".github/workflows/release.yml",
+            ".github/workflows/release-record.yml",
+        ):
+            with self.subTest(path=path):
+                self.tearDown()
+                self.setUp()
+                commit = self._change_commit(path, "changed release workflow\n")
+                decisions = self._decisions(self._plan(commit=commit))
+                self.assertEqual(len(decisions), len(self.inventory["images"]))
+                self.assertEqual(set(decisions.values()), {"build"})
+                decisions_by_path[path] = decisions
+
+        self.assertEqual(
+            decisions_by_path[".github/workflows/release-record.yml"],
+            decisions_by_path[".github/workflows/release.yml"],
+        )
 
     def test_missing_record_stale_policy_and_dispatch_never_inspect_registry(self) -> None:
         no_record_inspect = Mock(side_effect=AssertionError("registry must not be inspected"))
@@ -366,7 +458,8 @@ class ReleaseImagePlanTests(PlannerFixture):
         self.assertEqual(results["rangerdanger-frontend"]["decision"], "build")
         self.assertIn("object identity unavailable",
                       results["rangerdanger-frontend"]["reason"])
-        self.assertEqual(inspect.call_count, 14)
+        self.assertEqual(inspect.call_count,
+                         len(self.inventory["images"]) - len(ALWAYS_BUILD) - 1)
 
     def test_rebuild_all_override_builds_every_image_without_registry_access(self) -> None:
         inspect = Mock(side_effect=AssertionError("override must not inspect registry"))
@@ -394,8 +487,12 @@ class ReleaseImagePlanTests(PlannerFixture):
     def test_attestation_descriptors_do_not_change_platform_set(self) -> None:
         plan = self._plan(inspect=self._inspect())
         decisions = self._decisions(plan)
-        self.assertEqual(decisions["rangerdanger-backend"], "build")
-        self.assertEqual(sum(value == "promote" for value in decisions.values()), 15)
+        self.assertEqual(
+            {name for name, decision in decisions.items() if decision == "build"},
+            ALWAYS_BUILD,
+        )
+        self.assertEqual(sum(value == "promote" for value in decisions.values()),
+                         len(self.inventory["images"]) - len(ALWAYS_BUILD))
 
     def test_real_buildx_registry_shape_and_single_manifest_shape(self) -> None:
         payload = self._inspect()(
@@ -504,28 +601,27 @@ class ReleaseImagePlanTests(PlannerFixture):
                 release_image_plan.check_release_inputs,
                 "validate",
                 return_value=[],
-            ):
-                with redirect_stderr(io.StringIO()):
-                    self.assertEqual(
-                        release_image_plan.main([
-                            "--tag", "not a tag",
-                            *base_args[2:],
-                        ]),
-                        1,
-                    )
-                    self.assertEqual(
-                        release_image_plan.main([
-                            *base_args[:2],
-                            "--commit", "not-a-commit",
-                            *base_args[4:],
-                        ]),
-                        1,
-                    )
-                    with self.assertRaises(SystemExit) as bad_event:
-                        release_image_plan.main([
-                            *base_args[:4],
-                            "--event", "not-an-event",
-                        ])
+            ), redirect_stderr(io.StringIO()):
+                self.assertEqual(
+                    release_image_plan.main([
+                        "--tag", "not a tag",
+                        *base_args[2:],
+                    ]),
+                    1,
+                )
+                self.assertEqual(
+                    release_image_plan.main([
+                        *base_args[:2],
+                        "--commit", "not-a-commit",
+                        *base_args[4:],
+                    ]),
+                    1,
+                )
+                with self.assertRaises(SystemExit) as bad_event:
+                    release_image_plan.main([
+                        *base_args[:4],
+                        "--event", "not-an-event",
+                    ])
             self.assertEqual(bad_event.exception.code, 2)
         finally:
             os.chdir(original_cwd)
@@ -577,15 +673,147 @@ class ReleaseImagePlanTests(PlannerFixture):
             set(matrix["include"][0]),
             {"image", "dockerfile", "target", "platforms", "decision", "source_digest"},
         )
-        self.assertEqual(values["build_count"], "16")
+        self.assertEqual(values["build_count"], str(len(self.inventory["images"])))
         self.assertEqual(values["promote_count"], "0")
         self.assertEqual(values["frontend_decision"], "build")
 
         promoted = self._plan(tag="v0.1.34-rc.1")
         self.assertEqual(
-            sum(value == "promote" for value in self._decisions(promoted).values()), 15)
+            sum(value == "promote" for value in self._decisions(promoted).values()),
+            len(self.inventory["images"]) - len(ALWAYS_BUILD))
         self.assertEqual(release_image_plan.planned_tags("v0.1.34-rc.1"),
                          ["v0.1.34-rc.1"])
+
+    def test_plan_records_split_model_membership_and_file_hashes(self) -> None:
+        self._write(
+            "docker-compose.release.yml",
+            "services:\n  portal:\n"
+            "    image: ghcr.io/tonylturner/rangerdanger-frontend:${VERSION:-latest}\n",
+        )
+        package_file = (
+            "lab-definitions/packages/us-dnp3-substation/compose.release.yml")
+        self._write(
+            package_file,
+            "services:\n  relay_sim:\n"
+            "    image: ghcr.io/tonylturner/rangerdanger-relay-sim:${VERSION:-latest}\n",
+        )
+        self._commit("add package release model")
+
+        plan = self._plan(record_path=None)
+        models = plan["compose_files"]
+        self.assertEqual(
+            models["platform"]["services"],
+            {"portal": "ghcr.io/tonylturner/rangerdanger-frontend:v0.1.34"},
+        )
+        package = models["packages"]["us-dnp3-substation"]
+        self.assertEqual(
+            package["services"],
+            {"relay_sim": "ghcr.io/tonylturner/rangerdanger-relay-sim:v0.1.34"},
+        )
+        self.assertEqual(
+            package["sha256"],
+            hashlib.sha256((self.root / package_file).read_bytes()).hexdigest(),
+        )
+
+    def test_delta_candidates_use_old_and_new_package_membership(self) -> None:
+        fixture = Path(__file__).parent / "fixtures/split-release"
+        new_models = release_image_plan.check_release_inputs.release_compose_metadata(
+            fixture, "v2.0.0")
+        old_models = json.loads(json.dumps(new_models))
+        old_models["packages"].pop("package-b")
+        for model in [old_models["platform"], *old_models["packages"].values()]:
+            model["services"] = {
+                service: image.replace(":v2.0.0", ":v1.9.0")
+                for service, image in model["services"].items()
+            }
+
+        def record(release: str, models: dict[str, object]) -> dict[str, object]:
+            references = [
+                reference
+                for model in [models["platform"], *models["packages"].values()]
+                for reference in model["services"].values()
+            ]
+            first_party = {
+                release_image_plan._image_repository(reference)
+                for reference in references
+                if release_image_plan._image_repository(reference).startswith(
+                    "ghcr.io/tonylturner/rangerdanger-")
+            }
+            return {
+                "schema": 1,
+                "release": release,
+                "images": [
+                    {"image": repository.rsplit("/", 1)[-1]}
+                    for repository in sorted(first_party)
+                ],
+                "compose_files": models,
+            }
+
+        old_record = record("v1.9.0", old_models)
+        new_record = record("v2.0.0", new_models)
+        compose_images = [
+            reference
+            for model in [new_models["platform"], *new_models["packages"].values()]
+            for reference in model["services"].values()
+        ]
+
+        candidates = release_image_plan.delta_image_candidates(
+            previous_record=old_record,
+            new_record=new_record,
+            compose_images=compose_images,
+            since_tag="v1.9.0",
+            new_tag="v2.0.0",
+        )
+
+        by_repository = {item["repository"]: item for item in candidates}
+        vendor_jump = by_repository[
+            "ghcr.io/tonylturner/rangerdanger-vendor-jump"]
+        self.assertFalse(vendor_jump["old_member"])
+        self.assertEqual(vendor_jump["owners"], ["package-b/firewall"])
+        alpine = by_repository["alpine"]
+        self.assertFalse(alpine["old_member"])
+        self.assertTrue(by_repository[
+            "ghcr.io/tonylturner/rangerdanger-relay-sim"]["old_member"])
+        self.assertEqual(len(candidates), 6)
+        all_candidates = release_image_plan.delta_image_candidates(
+            previous_record=old_record,
+            new_record=new_record,
+            compose_images=compose_images,
+            since_tag="v1.9.0",
+            new_tag="v2.0.0",
+            include_upstream=True,
+        )
+        self.assertEqual(len(all_candidates), len(compose_images))
+
+        old_path = Path(self.temp.name) / "old-membership.json"
+        new_path = Path(self.temp.name) / "new-membership.json"
+        images_path = Path(self.temp.name) / "compose-images.txt"
+        old_path.write_text(json.dumps(old_record), encoding="utf-8")
+        new_path.write_text(json.dumps(new_record), encoding="utf-8")
+        images_path.write_text("\n".join(compose_images) + "\n", encoding="utf-8")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = release_image_plan.main([
+                "delta-candidates",
+                "--since-record", str(old_path),
+                "--new-record", str(new_path),
+                "--since", "v1.9.0",
+                "--new", "v2.0.0",
+                "--compose-images", str(images_path),
+                "--format", "json",
+            ])
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(output.getvalue()), candidates)
+
+        with self.assertRaisesRegex(
+            release_image_plan.PlanError, "Compose image union differs"):
+            release_image_plan.delta_image_candidates(
+                previous_record=old_record,
+                new_record=new_record,
+                compose_images=compose_images[:-1],
+                since_tag="v1.9.0",
+                new_tag="v2.0.0",
+            )
 
     def test_git_identity_captures_mode_changes_in_globs_and_directory_trees(self) -> None:
         before = self.baseline

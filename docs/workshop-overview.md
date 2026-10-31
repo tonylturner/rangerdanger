@@ -1,5 +1,11 @@
 # Workshop overview
 
+The portal selects one active package: `us-dnp3-substation` (DNP3) or
+`eu-iec104-substation` (IEC 104). Each has seven package-bound exercises.
+The platform stays up during range switches; switching resets range state
+and firewall policy. The L4 source pin enforces; DPI detects and logs.
+The timings and examples below describe the US workshop.
+
 A high-level walkthrough of the **Substation Segmentation Validation
 Lab** - what students do, what the system simulates, and how the
 exercises chain together. Useful for evaluators reading the repo
@@ -51,11 +57,11 @@ Times below are the **Guided-path golden-path** estimates (the in-app card chip 
 |---|---|---|---|---|
 | 1.2 | `baseline-assessment` | Baseline Traffic Analysis | ~20 min | Capture cross-zone traffic + identify the critical conduits operations depend on. Step 6 commits five passive-observation findings; step 7 runs active probes that reveal latent exposure passive monitoring missed. |
 | 1.3 | `segmentation-requirements` | Segmentation Requirements & Policy Design | ~10 min | Translate Lab 1.2 findings into design verdicts (BLOCK / RESTRICT / ALLOW / BLOCK and LOG) per risk category, then commit a resourcing-readiness reality check (OT engineering capacity, firewall admin skills, vendor change windows, risk-acceptance authority). Closes with concrete success criteria for the hardened state. |
-| 1.4 | `remediation-planning` | Remediation Planning Under Constraint | ~12 min | A finite labor budget with per-role capacity caps forces tradeoffs between firewall changes, protocol controls, and architecture work. The design verdicts and readiness flags from 1.3 drive per-action requirement badges and a sticky coverage summary. Selections drive Lab 2.2's content via the dynamic-content pipeline. |
-| 2.2 | `firewall-implementation` | Firewall Policy Implementation | ~22 min | Apply a least-privilege containd policy from your plan - Guided track (one click) by default, or author the rules yourself on the Advanced track. |
-| 2.3 | `hardening-configurations` | Protocol-Hardened Configurations | ~12 min | Stress-test the policy against a DNP3 Direct Operate injection against the recloser (the canonical distribution-substation attack vector). On the workshop images the L4 source pin is the control that enforces; the ICS DPI layer records a Direct Operate from the RTAC source but does not stop it, so students verify enforcement by device state (auto-reclose still enabled), not by policy labels. Optional Modbus FC5/FC6 sidebar attacks are closed by the same source pin. |
+| 1.4 | `remediation-planning` | Remediation Planning Under Constraint | ~12 min | A finite labor budget with per-role capacity caps forces tradeoffs between firewall changes, protocol controls, and architecture work. The design verdicts and readiness flags from 1.3 drive per-action requirement badges and a sticky coverage summary. Selections remain a design artifact; generated guidance preserves the reference-policy checks. |
+| 2.2 | `firewall-implementation` | Firewall Policy Implementation | ~22 min | Apply the hardened reference policy - Guided track (one click) by default, or author the rules yourself on the Advanced track. |
+| 2.3 | `hardening-configurations` | Protocol-Hardened Configurations | ~12 min | Stress-test the policy against a DNP3 Direct Operate injection against the recloser (the canonical distribution-substation attack vector). The L4 source pin enforces; DPI detects and logs. Students verify enforcement by device state (auto-reclose still enabled), not by policy labels. Optional Modbus FC5/FC6 sidebar attacks are closed by the same source pin. |
 | 2.3-bonus | `vendor-rdp-compromise` | Vendor Remote Access Compromise *(optional)* | ~12 min | RDP/VNC pivot from enterprise → vendor → field. Hardening blocks both links of the kill chain (perimeter + second hop). Optional, time permitting. |
-| 2.4 | `validation-evidence` | Testing & Validation | ~7 min | Generate a change-board validation report in one click (positive/negative test matrix + PCAP evidence, the in-app equivalent of `scripts/validation-report.sh`), read it like a reviewer, and reflect on residual risk. The report is a TCP reachability matrix - no row sends a control write - so it complements Lab 2.3's device-state check rather than replacing it. The `:::plan-coverage` panel surfaces, in real time, which Lab 1.3 requirements your Lab 1.4 plan addressed vs deferred. The by-hand evidence-assembly steps remain available as optional Advanced hints. |
+| 2.4 | `validation-evidence` | Testing & Validation | ~7 min | Generate a change-board validation report in one click (positive/negative test matrix + PCAP evidence, the same backend report exposed by `scripts/validation-report.sh`), read it like a reviewer, and reflect on residual risk. The report is a TCP reachability matrix - no row sends a control write - so it complements Lab 2.3's device-state check rather than replacing it. The `:::plan-coverage` panel surfaces, in real time, which Lab 1.3 requirements your Lab 1.4 plan addressed vs deferred. The by-hand evidence-assembly steps remain available as optional Advanced hints. |
 
 Total ≈ 83 min for the 6 core labs (Guided path), +12 min for the bonus.
 
@@ -127,9 +133,7 @@ Two reference configurations ship with the lab:
   the RTAC reaches field devices; its Modbus rule permits FC1-6 and
   its DNP3 rule permits reads only (FC1) - the RTAC's master only
   ever polls, so a DNP3 control write is illegitimate from anyone.
-  On the workshop images the source pin is what blocks unauthorized
-  sources; a DNP3 Direct Operate sent from the RTAC itself is recorded
-  by DPI but not stopped (Lab 2.3 shows this as an optional check).
+  The L4 source pin enforces; DPI detects and logs.
   Students compare their own designs against this and validate
   remediation work against it in Lab 2.4.
 

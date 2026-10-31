@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Terminal as TerminalIcon,
@@ -30,13 +30,21 @@ import {
   type Segment,
   type FindingsPanelItem,
 } from "../lib/scenario-description";
-import { decisionStorageKey } from "../lib/decision-storage";
+import {
+  decisionName,
+  curriculumKey,
+  readCurriculum,
+  removeCurriculum,
+  writeCurriculum,
+  type CurriculumScope,
+} from "../lib/curriculum-storage";
+import { useCurriculumScope } from "../lib/curriculum-scope";
+import { useCurriculumStorageRevision } from "../lib/use-curriculum-storage-revision";
+import { useHydrated } from "../lib/use-hydrated";
 import {
   injectDynamicContent,
-  PHASE3_TITLES,
-  titleMatches,
 } from "../lib/scenario-runner-logic";
-import { type ActionSummary, type DynamicExercisePlan } from "../lib/remediation-to-rules";
+import type { CompiledPlan, PlanExpectation } from "../lib/api";
 import { ValidationReportPanel } from "./validation-report-panel";
 
 // CommandBlock renders a single command line with copy + (optional)
@@ -59,14 +67,14 @@ type CommandBlockProps = {
 export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: CommandBlockProps) {
   const runnable = cli || copyOnly ? null : onRun;
   return (
-    <div className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
-      <span className="pr-28 whitespace-pre-wrap">
+    <div className="group relative rounded-sm border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
+      <span className="block whitespace-pre-wrap break-all pb-7 sm:pb-0 sm:pr-28">
         {cli && <span className="select-none text-sky-700">containd# </span>}
         {cmd}
       </span>
-      <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
+      <div className="absolute bottom-1.5 right-2 flex items-center gap-1.5 sm:bottom-auto sm:top-1.5">
         {cli && (
-          <span className="select-none rounded border border-sky-800/60 bg-sky-950/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-sky-400">
+          <span className="select-none rounded-sm border border-sky-800/60 bg-sky-950/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-sky-400">
             containd cli
           </span>
         )}
@@ -74,7 +82,7 @@ export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: Co
           <button
             onClick={() => runnable(cmd, runId)}
             disabled={runningId !== null}
-            className="rounded border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
+            className="rounded-sm border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
           >
             {runningId === runId ? "Running..." : "Run"}
           </button>
@@ -92,14 +100,13 @@ export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: Co
 
 // DecisionBlock renders a question + dropdown for student-facing
 // "what would you do here?" prompts. The selected value is persisted
-// to localStorage so refreshes don't lose progress AND so later labs
-// (1.3 / 1.4) can read the student's earlier decisions and tailor
+// to curriculum storage so refreshes don't lose progress AND so later
+// labs (1.3 / 1.4) can read the student's earlier decisions and tailor
 // their content accordingly.
 //
-// Storage key: `decision:<scenario.id>:<decisionId>`. The step title
-// is intentionally NOT in the key so a renamed step doesn't orphan
-// the answer; uniqueness comes from the decision id chosen by the
-// YAML author (e.g. "enterprise-to-field").
+// Storage name: decisionName(scenario.id, decisionId); uniqueness comes
+// from the decision id chosen by the YAML author (e.g.
+// "enterprise-to-field").
 type DecisionBlockProps = {
   scenarioId: string;
   decisionId: string;
@@ -118,49 +125,49 @@ type DecisionBlockProps = {
   correct?: string;
 };
 
-export function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom, correct }: DecisionBlockProps) {
-  const storageKey = decisionStorageKey(scenarioId, decisionId);
-  const [value, setValue] = useState<string>("");
-  const [inheritedFrom, setInheritedFrom] = useState<string>("");
+export function DecisionBlock(props: DecisionBlockProps) {
+  const scope = useCurriculumScope();
+  const hydrated = useHydrated();
+  // A different decision/scope starts with its own persisted value. Keep the
+  // server snapshot empty, then initialize browser state after hydration.
+  const key = JSON.stringify([
+    curriculumKey(scope, decisionName(props.scenarioId, props.decisionId)),
+    props.options, props.defaultFrom, hydrated,
+  ]);
+  return <DecisionInput key={key} {...props} scope={scope} hydrated={hydrated} />;
+}
 
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(storageKey);
-      if (saved && options.includes(saved)) {
-        setValue(saved);
-        return;
+function DecisionInput({ scenarioId, decisionId, options, body, defaultFrom, correct, scope, hydrated }: DecisionBlockProps & {
+  scope: CurriculumScope; hydrated: boolean;
+}) {
+  const storageName = decisionName(scenarioId, decisionId);
+  const [answer, setAnswer] = useState(() => {
+    if (!hydrated) return { value: "", inheritedFrom: "" };
+    const saved = readCurriculum(scope, storageName);
+    if (saved && options.includes(saved)) return { value: saved, inheritedFrom: "" };
+    // No saved value - try to inherit from the upstream decision.
+    if (defaultFrom && defaultFrom.includes(":")) {
+      const [srcScenario, srcId] = defaultFrom.split(":", 2);
+      const srcVal = readCurriculum(scope, decisionName(srcScenario, srcId));
+      if (srcVal && options.includes(srcVal)) {
+        return { value: srcVal, inheritedFrom: defaultFrom };
       }
-      // No saved value - try to inherit from the upstream decision.
-      if (defaultFrom && defaultFrom.includes(":")) {
-        const [srcScenario, srcId] = defaultFrom.split(":", 2);
-        const srcKey = decisionStorageKey(srcScenario, srcId);
-        const srcVal = window.localStorage.getItem(srcKey);
-        if (srcVal && options.includes(srcVal)) {
-          setValue(srcVal);
-          setInheritedFrom(defaultFrom);
-          // Persist the inherited value so subsequent changes are
-          // tracked against THIS decision's storage key, not the
-          // upstream one. The student is now committing this verdict
-          // for this lab specifically.
-          window.localStorage.setItem(storageKey, srcVal);
-        }
-      }
-    } catch {
-      /* localStorage unavailable - fall back to in-memory state */
     }
-  }, [storageKey, options, defaultFrom]);
+    return { value: "", inheritedFrom: "" };
+  });
+  const { value, inheritedFrom } = answer;
+
+  // Persistence is external synchronization, not component-state mirroring.
+  useEffect(() => {
+    if (inheritedFrom) writeCurriculum(scope, storageName, value);
+  }, [scope, storageName, value, inheritedFrom]);
 
   const onChange = (next: string) => {
-    setValue(next);
-    setInheritedFrom("");   // student touched the dropdown - no longer "inherited"
-    try {
-      if (next) {
-        window.localStorage.setItem(storageKey, next);
-      } else {
-        window.localStorage.removeItem(storageKey);
-      }
-    } catch {
-      /* swallow - UI still works without persistence */
+    setAnswer({ value: next, inheritedFrom: "" });
+    if (next) {
+      writeCurriculum(scope, storageName, next);
+    } else {
+      removeCurriculum(scope, storageName);
     }
   };
 
@@ -194,7 +201,7 @@ export function DecisionBlock({ scenarioId, decisionId, options, body, defaultFr
                 id={`decision-${decisionId}`}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
-                className={`appearance-none rounded border bg-slate-950 px-2 py-1 pr-7 text-[11px] font-mono cursor-pointer focus:outline-none focus:ring-1 focus:ring-cyan-700 ${
+                className={`appearance-none rounded border bg-slate-950 px-2 py-1 pr-7 text-[11px] font-mono cursor-pointer focus:outline-hidden focus:ring-1 focus:ring-cyan-700 ${
                   answered
                     ? "border-sky-700 text-sky-300"
                     : "border-slate-700 text-slate-400 hover:border-slate-600"
@@ -217,14 +224,14 @@ export function DecisionBlock({ scenarioId, decisionId, options, body, defaultFr
             {answered && correct && (
               value === correct ? (
                 <span
-                  className="rounded border border-emerald-700/60 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300"
+                  className="rounded-sm border border-emerald-700/60 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300"
                   title="Your finding matches what the baseline traffic actually shows."
                 >
                   ✓ correct
                 </span>
               ) : (
                 <span
-                  className="rounded border border-red-800/60 bg-red-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300"
+                  className="rounded-sm border border-red-800/60 bg-red-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300"
                   title={`The baseline capture shows this category as ${correct}. Re-check your analysis.`}
                 >
                   ✗ doesn&apos;t match capture
@@ -253,8 +260,8 @@ export function DecisionBlock({ scenarioId, decisionId, options, body, defaultFr
 
 // FindingsPanel renders read-only cards for a set of upstream
 // decisions (e.g. Lab 1.3 showing the student's Lab 1.2 findings).
-// Reads each id's localStorage value via the same key shape
-// DecisionBlock writes. Quiet on the empty case - if the upstream
+// Reads each id's value via the same storage name DecisionBlock
+// writes. Quiet on the empty case - if the upstream
 // lab wasn't done, the panel says so and links back.
 type FindingsPanelProps = {
   sourceScenario: string;
@@ -263,18 +270,15 @@ type FindingsPanelProps = {
 };
 
 export function FindingsPanel({ sourceScenario, title, items }: FindingsPanelProps) {
-  const [values, setValues] = useState<Record<string, string>>({});
-  useEffect(() => {
-    try {
-      const out: Record<string, string> = {};
-      for (const it of items) {
-        out[it.id] = window.localStorage.getItem(decisionStorageKey(sourceScenario, it.id)) ?? "";
-      }
-      setValues(out);
-    } catch {
-      /* localStorage blocked */
+  const scope = useCurriculumScope();
+  const hydrated = useHydrated();
+  const values = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const it of items) {
+      out[it.id] = hydrated ? readCurriculum(scope, decisionName(sourceScenario, it.id)) ?? "" : "";
     }
-  }, [sourceScenario, items]);
+    return out;
+  }, [scope, sourceScenario, items, hydrated]);
 
   const anySet = items.some((it) => values[it.id]);
 
@@ -322,41 +326,28 @@ export function FindingsPanel({ sourceScenario, title, items }: FindingsPanelPro
 // to surface "what did your plan close vs defer" without making the
 // student manually recall their selections.
 export function PlanCoveragePanel({ title }: { title: string }) {
-  const [snapshot, setSnapshot] = useState<{
-    hasPlan: boolean;
-    coverage: ReturnType<typeof computeCoverage>;
-    summary: ReturnType<typeof summariseCoverage>;
-  }>({
-    hasPlan: false,
-    coverage: [],
-    summary: { total: 0, covered: 0, partial: 0, gap: 0, na: 0 },
-  });
+  const scope = useCurriculumScope();
+  useCurriculumStorageRevision(scope);
+  const requirements = readRequirements(scope);
+  const plan = loadRemediationPlan(scope);
+  const selected = new Set(plan?.selectedActionIds ?? []);
+  const coverage = computeCoverage(requirements, selected, scope.curriculum);
+  const summary = summariseCoverage(coverage);
+  const hasPlan = !!plan && plan.selectedActionIds.length > 0;
 
-  useEffect(() => {
-    const requirements = readRequirements();
-    const plan = loadRemediationPlan();
-    const selected = new Set(plan?.selectedActionIds ?? []);
-    const coverage = computeCoverage(requirements, selected);
-    const summary = summariseCoverage(coverage);
-    setSnapshot({
-      hasPlan: !!plan && plan.selectedActionIds.length > 0,
-      coverage,
-      summary,
-    });
-  }, []);
+  if (!scope.curriculum) return null;
 
-  if (!snapshot.hasPlan && snapshot.coverage.length === 0) {
+  if (!hasPlan && coverage.length === 0) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-500 italic">
         No remediation plan recorded yet. Visit <Link
-          href="/exercises/remediation-planning"
+          href={`/exercises/${scope.curriculum?.roles.planning}`}
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
         >Lab 1.4 (Remediation Planning)</Link> to select actions and your plan coverage will appear here.
       </div>
     );
   }
 
-  const { coverage, summary } = snapshot;
   const allClosed = summary.covered === summary.total - summary.na && summary.gap === 0 && summary.partial === 0;
 
   return (
@@ -397,7 +388,7 @@ export function PlanCoveragePanel({ title }: { title: string }) {
                 <CircleCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
                 <span className="text-slate-300">
                   <span className="font-bold">{c.req.label}</span>
-                  <span className="text-slate-500"> - {c.req.verdict}, fully addressed by your plan</span>
+                  <span className="text-slate-500"> - {c.req.verdict}, planned actions selected (not prevention proof)</span>
                 </span>
               </div>
             );
@@ -428,10 +419,10 @@ export function PlanCoveragePanel({ title }: { title: string }) {
         })}
       </div>
       <div className="mt-2 text-[10px] text-slate-500 italic">
-        Read-only snapshot of your <Link
-          href="/exercises/remediation-planning"
+        Current selection coverage only, not firewall proof. Change selections in your <Link
+          href={`/exercises/${scope.curriculum?.roles.planning}`}
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
-        >Lab 1.4 plan</Link>. Edit selections there to update.
+        >Lab 1.4 plan</Link>.
       </div>
     </div>
   );
@@ -478,7 +469,7 @@ export function IconStamp({ name, color, label }: { name: string; color: string;
   const Icon = ICON_MAP[name] ?? Shield;
   const c = ICON_COLORS[color] ?? ICON_COLORS.amber;
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 align-middle ${c.border} ${c.bg}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 align-middle ${c.border} ${c.bg}`}>
       <Icon className={`h-3.5 w-3.5 ${c.text}`} />
       {label && <span className={`text-[11px] font-medium ${c.text}`}>{label}</span>}
     </span>
@@ -587,99 +578,14 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
   );
 }
 
-// Plan summary panel rendered in Exercise 3 Phase 3 - shows selected and
-// unselected remediation actions as styled cards rather than markdown text.
-export function RemediationPlanSummary({ plan }: { plan: DynamicExercisePlan }) {
-  const [showUnselected, setShowUnselected] = useState(false);
-
-  if (!plan.hasRemediationPlan) return null;
-
-  return (
-    <div className="space-y-3">
-      <div className="rounded-lg border border-sky-800/50 bg-sky-950/20 p-4">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-3">
-          Your Remediation Plan - {plan.selectedActions.length} actions selected
-        </div>
-        <div className="space-y-2">
-          {plan.selectedSummary.map((a) => (
-            <PlanActionCard key={a.id} action={a} selected />
-          ))}
-        </div>
-        {plan.includeDpi && (
-          <div className="mt-3 rounded border border-purple-800/40 bg-purple-950/20 px-3 py-2 text-[11px] text-purple-300">
-            <span className="font-bold">ICS DPI enabled</span> - containd will filter by Modbus/DNP3 function code, not just port number
-          </div>
-        )}
-        {plan.enableLogging && (
-          <div className="mt-2 rounded border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-300">
-            <span className="font-bold">Logging enabled</span> - set <code className="bg-slate-800 px-1 rounded text-[10px]">&quot;log&quot;: true</code> on DENY rules and critical ALLOW rules
-          </div>
-        )}
-      </div>
-
-      {plan.unselectedSummary.length > 0 && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/30">
-          <button
-            onClick={() => setShowUnselected(!showUnselected)}
-            className="flex w-full items-center justify-between px-4 py-2.5 hover:bg-slate-900/50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Not selected - {plan.unselectedSummary.length} actions deferred
-              </span>
-            </div>
-            <span className="text-[10px] text-slate-600">{showUnselected ? "hide" : "show"}</span>
-          </button>
-          {showUnselected && (
-            <div className="border-t border-slate-800 p-4 space-y-2">
-              <div className="text-[10px] text-slate-500 mb-2">
-                These actions were not in your plan. The attack paths they address remain open.
-              </div>
-              {plan.unselectedSummary.map((a) => (
-                <PlanActionCard key={a.id} action={a} selected={false} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PlanActionCard({ action, selected }: { action: ActionSummary; selected: boolean }) {
-  return (
-    <div className={`flex items-start gap-2.5 rounded border px-3 py-2 ${
-      selected
-        ? "border-sky-800/40 bg-sky-950/30"
-        : "border-slate-800/40 bg-slate-950/30 opacity-60"
-    }`}>
-      <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold ${
-        selected ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-500"
-      }`}>
-        {selected ? "✓" : "-"}
-      </div>
-      <div className="min-w-0">
-        <div className={`text-[11px] font-bold ${selected ? "text-sky-300" : "text-slate-500"}`}>
-          {action.title}
-        </div>
-        <div className="text-[10px] text-slate-500 mt-0.5">{action.description}</div>
-        {selected && action.hasRules && (
-          <div className="text-[9px] text-sky-600 mt-0.5">→ produces firewall rules below</div>
-        )}
-        {selected && !action.hasRules && (
-          <div className="text-[9px] text-slate-600 mt-0.5">configuration / process change (no firewall rule)</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function DescriptionSegments({
   scenarioId,
   currentStep,
   stepTitle,
+  stepId,
   stepDescription,
   dynamicPlan,
+  expectations,
   exerciseNodes,
   firewallTrack,
   autoRunning,
@@ -690,8 +596,10 @@ export function DescriptionSegments({
   scenarioId: string;
   currentStep: number;
   stepTitle: string;
+  stepId: string;
   stepDescription: string;
-  dynamicPlan: DynamicExercisePlan | null;
+  dynamicPlan: CompiledPlan | null;
+  expectations?: PlanExpectation[];
   exerciseNodes: string[];
   firewallTrack: "guided" | "technical" | null;
   autoRunning: string | null;
@@ -699,14 +607,15 @@ export function DescriptionSegments({
   handleGenerateTraffic: (durationSec?: number) => Promise<void>;
   generatingTraffic: boolean;
 }) {
+  const scope = useCurriculumScope();
   const scenario = { id: scenarioId };
   const step = { title: stepTitle, description: stepDescription };
   return (
     <>
             {/* Description with inline command blocks and hint panels */}
             {step?.description && (() => {
-              const effectiveDesc = scenario.id === "firewall-implementation" && dynamicPlan
-                ? injectDynamicContent(step.description, step.title, dynamicPlan)
+              const effectiveDesc = scope.curriculum && dynamicPlan
+                ? injectDynamicContent(step.description, stepId, dynamicPlan, scope.curriculum, Object.keys(scope.curriculum.roles).find((role) => scope.curriculum?.roles[role] === scenarioId))
                 : step.description;
               const segments = splitDescription(effectiveDesc);
               let bodyCmdIdx = 0;
@@ -715,13 +624,13 @@ export function DescriptionSegments({
                 ? (cmd: string, runId: string) => handleAutoRun(cmd, runId, step.description)
                 : null;
               return (
-                <div className="space-y-2">
+                <div className="stack-y-2">
                   {segments.map((seg, si) => {
                     if (seg.type === "prose") {
                       const trimmed = seg.value.replace(/^\n+|\n+$/g, "");
                       if (!trimmed) return null;
                       return (
-                        <div key={si} className="space-y-2">
+                        <div key={si} className="stack-y-2">
                           <MarkdownProse>{trimmed}</MarkdownProse>
                         </div>
                       );
@@ -787,7 +696,7 @@ export function DescriptionSegments({
                           <button
                             onClick={() => handleGenerateTraffic(45)}
                             disabled={generatingTraffic}
-                            className="rounded border border-sky-700 bg-sky-950/50 px-4 py-2 text-xs font-medium text-sky-300 hover:bg-sky-900/60 disabled:opacity-50"
+                            className="rounded-sm border border-sky-700 bg-sky-950/50 px-4 py-2 text-xs font-medium text-sky-300 hover:bg-sky-900/60 disabled:opacity-50"
                           >
                             {generatingTraffic ? "Generating Traffic…" : "Generate Traffic (45s)"}
                           </button>
@@ -800,7 +709,7 @@ export function DescriptionSegments({
                           key={`${scenario.id}-${currentStep}-${si}`}
                           className="my-3"
                         >
-                          <ValidationReportPanel />
+                          <ValidationReportPanel expectations={expectations} />
                         </div>
                       );
                     }
@@ -833,7 +742,7 @@ export function DescriptionSegments({
                             seg.track === "guided"
                               ? "border-emerald-700/60"
                               : "border-sky-700/60"
-                          } space-y-2`}
+                          } stack-y-2`}
                         >
                           <div
                             className={`text-[10px] font-bold uppercase tracking-wider ${

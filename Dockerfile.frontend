@@ -1,10 +1,10 @@
-FROM node:20-alpine AS deps
+FROM node:24.22.2-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS deps
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
-FROM node:20-alpine AS builder
+FROM node:24.22.2-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend .
@@ -12,7 +12,10 @@ RUN --mount=type=cache,target=/root/.npm \
     --mount=type=cache,target=/app/.next/cache \
     npm run build
 
-FROM node:20-alpine
+FROM node:24.22.2-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
+# The refreshed Node base still bundles npm's older dependency tree. Update the
+# runtime CLI from npm's versioned, bundled release, not individual nested files.
+RUN npm install --global --ignore-scripts --no-audit --no-fund npm@11.21.1
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/.next ./.next

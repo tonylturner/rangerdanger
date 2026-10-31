@@ -36,14 +36,14 @@ export function OneLine({
     <div className="space-y-3">
       {/* Alarm banner - operational language */}
       {anyAlarm && (
-        <div className="rounded border border-red-800 bg-red-950/50 px-3 py-2">
+        <div className="rounded-sm border border-red-800 bg-red-950/50 px-3 py-2">
           <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-red-400">
             <span className="animate-pulse">ALARM</span>
-            {!bkrClosed && <span className="rounded bg-red-900/60 px-2 py-0.5">FEEDER BREAKER OPEN - customers without power</span>}
-            {bkrClosed && !rclClosed && <span className="rounded bg-red-900/60 px-2 py-0.5">RECLOSER OPEN - downstream loads lost</span>}
-            {recloseOff && <span className="rounded bg-yellow-900/60 px-2 py-0.5 text-yellow-400">AUTO-RECLOSE DISABLED - no fault recovery</span>}
-            {lowVoltage && <span className="rounded bg-red-900/60 px-2 py-0.5">LOW VOLTAGE - equipment damage risk</span>}
-            {highVoltage && <span className="rounded bg-red-900/60 px-2 py-0.5">HIGH VOLTAGE - equipment damage risk</span>}
+            {!bkrClosed && <span className="rounded-sm bg-red-900/60 px-2 py-0.5">FEEDER BREAKER OPEN - customers without power</span>}
+            {bkrClosed && !rclClosed && <span className="rounded-sm bg-red-900/60 px-2 py-0.5">RECLOSER OPEN - downstream loads lost</span>}
+            {recloseOff && <span className="rounded-sm bg-yellow-900/60 px-2 py-0.5 text-yellow-400">AUTO-RECLOSE DISABLED - no fault recovery</span>}
+            {lowVoltage && <span className="rounded-sm bg-red-900/60 px-2 py-0.5">LOW VOLTAGE - equipment damage risk</span>}
+            {highVoltage && <span className="rounded-sm bg-red-900/60 px-2 py-0.5">HIGH VOLTAGE - equipment damage risk</span>}
           </div>
         </div>
       )}
@@ -58,7 +58,7 @@ export function OneLine({
         </div>
 
         {/* Main feeder path */}
-        <div className="ml-[7.5rem] border-l-2 border-sky-800/60 pl-4 space-y-0.5">
+        <div className="ml-30 border-l-2 border-sky-800/60 pl-4 space-y-0.5">
 
           {/* Breaker 52 */}
           <div className="py-1">
@@ -109,7 +109,7 @@ export function OneLine({
 
               {/* Capacitor Bank - shunt at the load bus (reactive support) */}
               <div className="flex items-center gap-2 py-1 text-[11px]">
-                <span className="rounded border border-purple-800/60 bg-purple-950/20 px-1.5 py-0.5 font-bold text-[10px] text-purple-400">
+                <span className="rounded-sm border border-purple-800/60 bg-purple-950/20 px-1.5 py-0.5 font-bold text-[10px] text-purple-400">
                   CAP
                 </span>
                 <span className="text-slate-400">Capacitor Bank</span>
@@ -125,7 +125,7 @@ export function OneLine({
               {/* Voltage Regulator 90 - series element feeding the critical load
                   (Transformer.VReg: load_bus -> reg_bus in substation_feeder.dss) */}
               <div className="flex items-center gap-2 py-1 text-[11px]">
-                <span className="rounded border border-cyan-800/60 bg-cyan-950/20 px-1.5 py-0.5 text-cyan-400 font-bold text-[10px]">
+                <span className="rounded-sm border border-cyan-800/60 bg-cyan-950/20 px-1.5 py-0.5 text-cyan-400 font-bold text-[10px]">
                   90
                 </span>
                 <span className="text-slate-500">Voltage Regulator</span>
@@ -201,7 +201,7 @@ function StatusBadge({ color, children }: { color: string; children: React.React
     green: "border-green-800/60 bg-green-950/40 text-green-400",
   };
   return (
-    <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${cls[color] || cls.red}`}>
+    <span className={`rounded-sm border px-1.5 py-0.5 text-[9px] font-bold ${cls[color] || cls.red}`}>
       {children}
     </span>
   );

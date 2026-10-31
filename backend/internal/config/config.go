@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
+
+	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
 // Config stores runtime configuration for the backend service.
@@ -15,9 +18,18 @@ type Config struct {
 	DBPath             string
 	AllowedOrigins     []string
 	LabDefinitionsPath string
-	ContaindAPIURL     string
-	ContaindConfigPath string
+	// Package is the package served until a range is recorded
+	// (RANGERDANGER_PACKAGE); the runtime record wins after that.
+	Package string
+	// Root is the installation root H (RANGERDANGER_ROOT): mounted at the
+	// same path in the backend, and the Compose project directory of ranges.
+	Root string
+	// Mode selects each package's Compose file (RANGERDANGER_MODE).
+	Mode manifest.Mode
 }
+
+// DefaultPackage is the package served when none is configured.
+const DefaultPackage = "us-dnp3-substation"
 
 // envPrefix is the Viper env var prefix. Configuration is read from
 // RANGERDANGER_* environment variables. The legacy OTLAB_* prefix is
@@ -69,8 +81,7 @@ func Load() (*Config, error) {
 	v.SetDefault("db_path", "backend/data/rangerdanger.db")
 	v.SetDefault("allowed_origins", []string{"*"})
 	v.SetDefault("lab_definitions_path", "lab-definitions")
-	v.SetDefault("containd_api_url", "http://firewall:8080")
-	v.SetDefault("containd_config_path", "lab-definitions/firewall/substation-weak.json")
+	v.SetDefault("package", DefaultPackage)
 
 	if err := v.ReadInConfig(); err != nil {
 		// Config file is optional; ignore if not found.
@@ -80,8 +91,9 @@ func Load() (*Config, error) {
 		HTTPPort:           v.GetInt("http_port"),
 		DBPath:             v.GetString("db_path"),
 		LabDefinitionsPath: v.GetString("lab_definitions_path"),
-		ContaindAPIURL:     v.GetString("containd_api_url"),
-		ContaindConfigPath: v.GetString("containd_config_path"),
+		Package:            v.GetString("package"),
+		Root:               v.GetString("root"),
+		Mode:               manifest.Mode(v.GetString("mode")),
 	}
 
 	if origins := v.GetStringSlice("allowed_origins"); len(origins) > 0 {
@@ -96,6 +108,19 @@ func Load() (*Config, error) {
 
 	if cfg.LabDefinitionsPath == "" {
 		cfg.LabDefinitionsPath = "lab-definitions"
+	}
+
+	if cfg.Package == "" {
+		cfg.Package = DefaultPackage
+	}
+
+	// Ranges cannot run without these, and both come from the platform
+	// Compose file, so there is no default to fall back to.
+	if !filepath.IsAbs(cfg.Root) {
+		return nil, fmt.Errorf("root (RANGERDANGER_ROOT) must be an absolute path, got %q", cfg.Root)
+	}
+	if cfg.Mode != manifest.ModeSource && cfg.Mode != manifest.ModeRelease {
+		return nil, fmt.Errorf("mode (RANGERDANGER_MODE) must be %q or %q, got %q", manifest.ModeSource, manifest.ModeRelease, cfg.Mode)
 	}
 
 	return cfg, nil

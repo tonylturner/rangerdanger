@@ -6,19 +6,27 @@
 #   ./setup.sh                              # pull pre-built images from GHCR (default)
 #   ./setup.sh --version v0.1.0             # pin to a specific release
 #   ./setup.sh --from-tarballs <PATH>       # offline: docker load from images-<arch>.tar
-#   ./setup.sh --check-only                 # run pre-flight only and exit (no install);
-#                                           # passes on an already-running lab
-#   ./setup.sh --skip-firewall-gate         # bring stack up without the workshop
+#   ./setup.sh --from-source                # build the images on this host
+#   ./setup.sh --package <id>               # first-start range package (default:
+#                                           # us-dnp3-substation)
+#   ./setup.sh --check-only                 # run pre-flight only and exit (no install)
+#   ./setup.sh --skip-firewall-gate         # bring the lab up without the workshop
 #                                           # firewall apply/reset gate (developer
 #                                           # iteration on a known-broken stack)
 #   ./setup.sh --help
 #
-# Runs from the repo root. Validates prerequisites, brings the lab up
-# via docker-compose.release.yml, and prints next steps. With
-# --check-only, runs the pre-flight checks and exits — useful for a
-# pre-workshop "is my laptop ready?" check.
+# Runs from the repo root. Validates prerequisites, writes .env, gets the
+# images, starts the platform (backend, frontend, proxy; Compose project
+# rangerdanger-platform), then asks the backend to start the range
+# (project rangerdanger) through POST /api/range, the same path the UI
+# toggle uses. Re-running it is safe: ports held by the running install
+# do not fail the pre-flight, and the range is restarted on the current
+# package. With --check-only, runs the pre-flight checks and exits —
+# useful for a pre-workshop "is my laptop ready?" check.
 
 set -euo pipefail
+# Preserve the user's stderr for timeout guidance outside probe redirects.
+exec 3>&2
 
 # ─── color helpers ──────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -52,6 +60,8 @@ amd64_emulation_present() {
 # ─── arg parsing ────────────────────────────────────────────────────
 VERSION="${VERSION:-latest}"
 TARBALL_DIR=""
+FROM_SOURCE=0
+PACKAGE=""
 SHOW_HELP=0
 CHECK_ONLY=0
 SKIP_FW_GATE=0
@@ -62,6 +72,9 @@ while [ $# -gt 0 ]; do
         --version=*)          VERSION="${1#*=}"; shift ;;
         --from-tarballs)      TARBALL_DIR="$2"; shift 2 ;;
         --from-tarballs=*)    TARBALL_DIR="${1#*=}"; shift ;;
+        --from-source)        FROM_SOURCE=1; shift ;;
+        --package)            PACKAGE="$2"; shift 2 ;;
+        --package=*)          PACKAGE="${1#*=}"; shift ;;
         --check-only)         CHECK_ONLY=1; shift ;;
         --skip-firewall-gate) SKIP_FW_GATE=1; shift ;;
         -h|--help)            SHOW_HELP=1; shift ;;
@@ -70,40 +83,134 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$SHOW_HELP" -eq 1 ]; then
-    sed -n '2,/^$/p' "$0" | sed -e 's/^# //' -e 's/^#$//'
+    sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
     exit 0
 fi
 
-ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
-OFFLINE_OVERLAY="$ROOT_DIR/docker-compose.offline.yml"
+# Installation root H: Compose's project directory for the platform and
+# every range, and the path the backend sees H at (it mounts H at H, so
+# the daemon resolves the range's relative binds to real host paths).
+# Physical path, so a symlinked checkout still names the directory the
+# Docker daemon shares.
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+PACKAGES_DIR="$ROOT_DIR/lab-definitions/packages"
+ENV_FILE="$ROOT_DIR/.env"
+API="http://localhost:8088"
+PLATFORM_PROJECT="rangerdanger-platform"
+RANGE_PROJECT="rangerdanger"
+MGMT_NET="rangerdanger_mgmt_net"
 
-# Compose flag set used by every `docker compose ...` invocation below.
-# Offline (--from-tarballs) installs add the offline overlay so
-# `pull_policy: never` overrides the release file's `pull_policy: always`,
-# preventing GHCR fetches in network-blocked classroom environments.
-COMPOSE_FLAGS=(-f "$COMPOSE_FILE")
-if [ -n "$TARBALL_DIR" ]; then
-    [ -f "$OFFLINE_OVERLAY" ] || die "$OFFLINE_OVERLAY not found — required for --from-tarballs."
-    COMPOSE_FLAGS+=(-f "$OFFLINE_OVERLAY")
+# Mode: source builds on this host, release pulls from GHCR, offline loads
+# the SSD tarball. Offline is release plus `--pull never`.
+if [ "$FROM_SOURCE" -eq 1 ] && [ -n "$TARBALL_DIR" ]; then
+    die "--from-source and --from-tarballs are exclusive."
 fi
+if [ "$FROM_SOURCE" -eq 1 ]; then
+    MODE=source
+    PLATFORM_FILE="$ROOT_DIR/docker-compose.yml"
+    RANGE_FILE_NAME="compose.source.yml"
+elif [ -n "$TARBALL_DIR" ]; then
+    MODE=offline
+    PLATFORM_FILE="$ROOT_DIR/docker-compose.release.yml"
+    RANGE_FILE_NAME="compose.release.yml"
+else
+    MODE=release
+    PLATFORM_FILE="$ROOT_DIR/docker-compose.release.yml"
+    RANGE_FILE_NAME="compose.release.yml"
+fi
+
+# Every package directory: the range images of all of them are fetched,
+# so a later switch in the UI finds its images on this host.
+package_ids() {
+    local d
+    for d in "$PACKAGES_DIR"/*/; do
+        if [ -f "$d/package.yml" ]; then basename "$d"; fi
+    done
+}
+
+# Platform and range Compose calls. Both always run with H as the project
+# directory and their explicit file, so relative paths resolve against H
+# and Compose reads H/.env.
+platform_compose() {
+    docker compose -p "$PLATFORM_PROJECT" --project-directory "$ROOT_DIR" -f "$PLATFORM_FILE" "$@"
+}
+range_compose() { # <package id> <compose args...>
+    local id="$1"; shift
+    docker compose -p "$RANGE_PROJECT" --project-directory "$ROOT_DIR" \
+        -f "$PACKAGES_DIR/$id/$RANGE_FILE_NAME" "$@"
+}
+
+# GHCR occasionally returns transient 5xx during layer fetches — retry
+# each pull up to 3 times with backoff before giving up.
+with_pull_retry() {
+    local attempt wait_s
+    for attempt in 1 2 3; do
+        if "$@"; then return 0; fi
+        if [ "$attempt" -lt 3 ]; then
+            wait_s=$(( attempt * 15 ))
+            warn "Pull attempt $attempt failed (likely a transient GHCR / network blip). Retrying in ${wait_s}s..."
+            sleep "$wait_s"
+        fi
+    done
+    die "Pulling images failed after 3 attempts. Common causes:
+    - Network blocks ghcr.io (try the offline path: --from-tarballs <PATH>)
+    - GHCR is genuinely down (rare; check https://www.githubstatus.com/)
+    - Disk filled mid-pull (df -h to verify)"
+}
+
+# range_field and range_status: GET /api/range parsing shared with the
+# host scripts.
+# shellcheck source=scripts/lib/range.sh
+# shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
+. "$ROOT_DIR/scripts/lib/range.sh"
+# docker_bounded: readiness queries must not wait forever for a stalled CLI.
+# shellcheck source=scripts/lib/docker-bounded.sh
+# shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
+. "$ROOT_DIR/scripts/lib/docker-bounded.sh"
+# docker_floor_check: the Compose and Engine versions interface_name needs.
+# shellcheck source=scripts/lib/docker-floor.sh
+# shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
+. "$ROOT_DIR/scripts/lib/docker-floor.sh"
 
 # ─── pre-flight checks ──────────────────────────────────────────────
 banner "Pre-flight checks"
 
-[ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE not found — run from repo root or release tarball."
+[ -f "$PLATFORM_FILE" ] || die "$PLATFORM_FILE not found — run from repo root or release tarball."
+[ -n "$(package_ids)" ] || die "No range packages under $PACKAGES_DIR — run from repo root or release tarball."
+for id in $(package_ids); do
+    [ -f "$PACKAGES_DIR/$id/$RANGE_FILE_NAME" ] \
+        || die "Package $id has no $RANGE_FILE_NAME — the checkout is incomplete."
+done
+case "$PACKAGE" in
+    *[!a-z0-9-]*) die "Package ids are lowercase letters, digits and '-': '$PACKAGE'." ;;
+esac
+if [ -n "$PACKAGE" ] && [ ! -f "$PACKAGES_DIR/$PACKAGE/package.yml" ]; then
+    die "Unknown package '$PACKAGE'. Available: $(package_ids | tr '\n' ' ')"
+fi
+# H goes into .env unquoted and into the backend's `H:H:ro` bind, so it
+# must not hold characters either syntax treats specially.
+case "$ROOT_DIR" in
+    *[:\$\#\'\"\\]*|*$'\n'*)
+        die "The install path '$ROOT_DIR' contains one of : \$ # ' \" \\ — move the checkout to a plain path." ;;
+esac
+say "Install root: $ROOT_DIR (mode: $MODE)"
 
 # Docker engine reachable
-if ! docker info >/dev/null 2>&1; then
+if ! docker_bounded 30 info >/dev/null 2>&1; then
     die "Docker is not running or not installed. Start Docker Desktop / dockerd, then re-run."
 fi
 say "Docker reachable"
 
 # Compose v2
-if ! docker compose version >/dev/null 2>&1; then
+if ! docker_bounded 20 compose version >/dev/null 2>&1; then
     die "Docker Compose v2 not found (this script requires the 'docker compose' subcommand, not 'docker-compose')."
 fi
-say "Compose v2 present ($(docker compose version --short 2>/dev/null || echo 'unknown'))"
+# The range Compose files pin firewall NIC names (interface_name), which
+# older Compose rejects and older Engines cannot create.
+COMPOSE_VERSION=$(docker_bounded 20 compose version --short 2>/dev/null || true)
+ENGINE_API=$(docker_bounded 20 version --format '{{.Server.APIVersion}}' 2>/dev/null || true)
+FLOOR_PROBLEM=$(docker_floor_check "$COMPOSE_VERSION" "$ENGINE_API") || die "$FLOOR_PROBLEM"
+say "Compose $COMPOSE_VERSION on Engine API $ENGINE_API"
 
 # Architecture
 ARCH_RAW=$(uname -m)
@@ -166,8 +273,8 @@ fi
 # Read /proc/meminfo as the fallback so Linux-native students still
 # get a warning if the host itself is too small.
 MEM_GB=0
-if docker info --format '{{.MemTotal}}' >/dev/null 2>&1; then
-    MEM_BYTES=$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
+if docker_bounded 30 info --format '{{.MemTotal}}' >/dev/null 2>&1; then
+    MEM_BYTES=$(docker_bounded 30 info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
     MEM_GB=$(( MEM_BYTES / 1073741824 ))
 fi
 MEM_SOURCE="Docker"
@@ -197,9 +304,19 @@ fi
 # could not run, e.g. a bash built without /dev/tcp; PORT_ERR has bash's
 # message). LC_ALL=C keeps those messages unlocalized.
 probe_port() {
-    local out
+    local out receipt probe watchdog rc=0
     PORT_ERR=""
-    if out=$( (LC_ALL=C; exec 3<>"/dev/tcp/127.0.0.1/$1") 2>&1 ); then
+    receipt=$(mktemp)
+    LC_ALL=C bash -c 'exec 3<>"/dev/tcp/127.0.0.1/$1"' probe "$1" 2>"$receipt" &
+    probe=$!
+    ( sleep 3; kill "$probe" 2>/dev/null ) &
+    watchdog=$!
+    wait "$probe" 2>/dev/null || rc=$?
+    kill "$watchdog" 2>/dev/null || true
+    wait "$watchdog" 2>/dev/null || true
+    out=$(cat "$receipt")
+    rm -f "$receipt"
+    if [ "$rc" -eq 0 ] || [ "$rc" -eq 143 ]; then
         PORT_STATE=busy
         return
     fi
@@ -210,21 +327,18 @@ probe_port() {
     esac
 }
 
-# Host ports published by running containers of the installed lab: Compose
-# project "rangerdanger" (docker-compose.release.yml and docker-compose.yml
-# both set `name: rangerdanger`). A busy required port in this set is the
-# student's own running lab, not a conflict.
+# Both projects may publish this install's ports, including a pre-split
+# rangerdanger project. Own listeners permit rerun/migration; foreign ones do not.
 lab_held_ports() {
-    docker ps --filter label=com.docker.compose.project=rangerdanger --format '{{.Ports}}' 2>/dev/null \
-        | tr ',' '\n' | sed -n 's/.*:\([0-9][0-9]*\)->.*/\1/p' | sort -u | tr '\n' ' '
+    local project
+    for project in "$RANGE_PROJECT" "$PLATFORM_PROJECT"; do
+        docker_bounded 15 ps --filter "label=com.docker.compose.project=$project" --format '{{.Ports}}' 2>/dev/null \
+            | tr ',' '\n' | sed -n 's/.*:\([0-9][0-9]*\)->.*/\1/p' | sort -u | tr '\n' ' '
+    done
 }
 
-# When the running lab holds every required port, --check-only passes (the
-# "night before" check on an installed laptop) and an install stops with
-# how to refresh. A lab holding only some of them (e.g. the firewall is up
-# but the proxy on 8088 is not) is partly running and fails both, with the
-# same stop-and-re-run commands. Anything else holding a port fails both;
-# lsof, when present, names it.
+# An existing or partly running install may migrate/restart. Only foreign
+# listeners or an unknown probe fail preflight; lsof is diagnostic only.
 PORTS_REQUIRED="8088 9080 9443 2222"
 PORTS_FREE=""
 PORTS_LAB=""
@@ -266,47 +380,13 @@ if [ -n "$PORTS_UNKNOWN" ]; then
   This check never reports a port free without a working probe. Check by
   hand what listens on them, e.g. 'lsof -nP -iTCP -sTCP:LISTEN' or 'ss -ltn'."
 fi
-# The explicit release (+ offline) files, as docs/quickstart.md uses them:
-# a bare `docker compose` selects the source stack.
-DOWN_CMD="docker compose -f docker-compose.release.yml"
-[ -z "$TARBALL_DIR" ] || DOWN_CMD="$DOWN_CMD -f docker-compose.offline.yml"
-DOWN_CMD="$DOWN_CMD down"
-RERUN_CMD="./setup.sh"
-[ "$VERSION" = "latest" ] || RERUN_CMD="$RERUN_CMD --version $VERSION"
-[ -z "$TARBALL_DIR" ] || RERUN_CMD="$RERUN_CMD --from-tarballs \"$TARBALL_DIR\""
 if [ -n "$PORTS_LAB" ]; then
-    # Foreign and unknown ports died above, so the rest are free.
-    if [ -n "$PORTS_FREE" ]; then
-        die "RangerDanger is only partly running: it holds loopback ports$PORTS_LAB,
-  but nothing listens on$PORTS_FREE.
-  Stop the lab, then re-run setup:
-    $DOWN_CMD
-    $RERUN_CMD"
-    fi
-    if [ "$CHECK_ONLY" -ne 1 ]; then
-        die "RangerDanger is already installed and running (it holds loopback ports$PORTS_LAB).
-  To check it without reinstalling:  ./setup.sh --check-only
-  To refresh or reinstall it, stop it first, then re-run setup:
-    $DOWN_CMD
-    $RERUN_CMD"
-    fi
-    say "RangerDanger is already installed and running on loopback ports$PORTS_LAB"
+    say "Ports held by this RangerDanger install:$PORTS_LAB (rerun will restart the range)"
 fi
 [ -z "$PORTS_FREE" ] || say "Free loopback ports:$PORTS_FREE"
 
 # ─── check-only short-circuit ───────────────────────────────────────
 if [ "$CHECK_ONLY" -eq 1 ]; then
-    if [ -n "$PORTS_LAB" ]; then
-        banner "Pre-flight passed — RangerDanger is already installed and running"
-        cat <<EOF
-  Open http://localhost:8088. To refresh or reinstall it, stop it first,
-  then re-run setup:
-
-    $DOWN_CMD
-    $RERUN_CMD
-EOF
-        exit 0
-    fi
     banner "Pre-flight passed — laptop is ready"
     cat <<EOF
   All checks above passed. To install:
@@ -315,15 +395,14 @@ EOF
     ./setup.sh --version v0.1.0      # pinned release
 
   For offline / SSD install, use --from-tarballs <PATH>.
+  To build the images on this host, use --from-source.
 EOF
     exit 0
 fi
 
-# ─── image acquisition ──────────────────────────────────────────────
-if [ -n "$TARBALL_DIR" ]; then
-    banner "Loading images from tarballs"
+# ─── resolve the offline version ────────────────────────────────────
+if [ "$MODE" = offline ]; then
     [ -d "$TARBALL_DIR" ] || die "Tarball directory not found: $TARBALL_DIR"
-
     # Auto-detect the staged version from .version file written by
     # stage-ssd.sh. Without this, VERSION defaults to "latest" and
     # compose looks for `:latest` tags that don't exist on the SSD's
@@ -334,63 +413,128 @@ if [ -n "$TARBALL_DIR" ]; then
         VERSION=$(tr -d '\n[:space:]' < "$TARBALL_DIR/.version")
         say "Auto-detected version from SSD: $VERSION"
     fi
-
     TARBALL="$TARBALL_DIR/images-$ARCH.tar"
     [ -f "$TARBALL" ] || die "Expected $TARBALL (this host is $ARCH). Have you staged the right architecture?"
-    SIZE_HUMAN=$(ls -lh "$TARBALL" | awk '{print $5}')
-    say "Loading $TARBALL ($SIZE_HUMAN) - decompressing each image, ~5-15 min on a fast SSD."
-    say "Watch the 'Loaded image:' lines below - one per image, 14-19 total."
-    docker load -i "$TARBALL"
-    say "Images loaded"
-else
-    banner "Pulling images from GHCR"
-    say "Version: $VERSION"
-    say "(this can take a while on first run; subsequent pulls are layer-cached)"
-    # GHCR occasionally returns transient 5xx during layer fetches —
-    # retry up to 3 times with exponential backoff before giving up.
-    PULL_OK=0
-    for attempt in 1 2 3; do
-        if VERSION="$VERSION" docker compose "${COMPOSE_FLAGS[@]}" pull; then
-            PULL_OK=1
-            break
-        fi
-        if [ "$attempt" -lt 3 ]; then
-            wait_s=$(( attempt * 15 ))
-            warn "Pull attempt $attempt failed (likely a transient GHCR / network blip). Retrying in ${wait_s}s..."
-            sleep "$wait_s"
-        fi
-    done
-    if [ "$PULL_OK" -ne 1 ]; then
-        die "Pulling images failed after 3 attempts. Common causes:
-    - Network blocks ghcr.io (try the offline path: --from-tarballs <PATH>)
-    - GHCR is genuinely down (rare; check https://www.githubstatus.com/)
-    - Disk filled mid-pull (df -h to verify)"
-    fi
 fi
 
-# ─── pin VERSION in .env for later release-file compose commands ────
-# Without this, a student who runs `./setup.sh --from-tarballs <SSD>` and
-# later runs `docker compose -f docker-compose.release.yml
-# -f docker-compose.offline.yml up -d` directly will hit
-# `No such image: ...:latest` because compose interpolates
-# `${VERSION:-latest}` and the SSD tarball is tagged :vX.Y.Z.
-# Compose auto-loads .env from the project directory (the repo root), so
-# writing the resolved VERSION there makes those explicit release-file
-# commands use the tag setup.sh installed. A bare `docker compose` with no
-# -f still selects the source stack (docker-compose.yml), not the release
-# one; see docs/quickstart.md. .env is gitignored, so this is safe to
-# write into the repo.
-# Idempotent: replaces an existing VERSION= line, appends if absent.
-ENV_FILE="$ROOT_DIR/.env"
-if [ -f "$ENV_FILE" ] && grep -q "^VERSION=" "$ENV_FILE"; then
-    # BSD sed (macOS) needs the -i.bak / rm dance; GNU sed accepts -i ''
-    # but the -i.bak form is portable across both.
-    sed -i.bak -e "s|^VERSION=.*|VERSION=$VERSION|" "$ENV_FILE" \
-        && rm -f "${ENV_FILE}.bak"
+# ─── write .env ─────────────────────────────────────────────────────
+# Compose reads H/.env for every platform and range call (H is always the
+# project directory), and so does the backend's range Compose. Setup owns
+# these keys; any other line in .env is kept. .env is gitignored.
+#   VERSION                release image tag
+#   RANGERDANGER_ROOT      H; the platform file refuses to start without it
+#   RANGERDANGER_PACKAGE   only with --package: the first-start range
+#   CONTAIND_JWT_SECRET    only when set in this environment
+env_write() { # <key> [value]: drop the key, then append key=value if given
+    local tmp="$ENV_FILE.tmp.$$"
+    if [ -f "$ENV_FILE" ]; then
+        grep -v "^$1=" "$ENV_FILE" > "$tmp" || true
+    else
+        : > "$tmp"
+    fi
+    if [ $# -eq 2 ]; then printf '%s=%s\n' "$1" "$2" >> "$tmp"; fi
+    mv "$tmp" "$ENV_FILE"
+}
+env_write VERSION "$VERSION"
+env_write RANGERDANGER_ROOT "$ROOT_DIR"
+if [ -n "$PACKAGE" ]; then
+    env_write RANGERDANGER_PACKAGE "$PACKAGE"
 else
-    echo "VERSION=$VERSION" >> "$ENV_FILE"
+    env_write RANGERDANGER_PACKAGE
 fi
-say "Pinned VERSION=$VERSION in $ENV_FILE"
+if [ -n "${CONTAIND_JWT_SECRET:-}" ]; then
+    env_write CONTAIND_JWT_SECRET "$CONTAIND_JWT_SECRET"
+fi
+# The shell environment overrides .env in Compose; make both agree.
+export VERSION RANGERDANGER_ROOT="$ROOT_DIR"
+if [ -n "$PACKAGE" ]; then export RANGERDANGER_PACKAGE="$PACKAGE"; else unset RANGERDANGER_PACKAGE; fi
+say "Wrote VERSION=$VERSION, RANGERDANGER_ROOT=$ROOT_DIR${PACKAGE:+, RANGERDANGER_PACKAGE=$PACKAGE} to $ENV_FILE"
+
+# The proxy includes the active range's routes from here, and the backend
+# installs them; both bind it, so it must exist before the platform up.
+mkdir -p "$ROOT_DIR/data/proxy-routes"
+
+# ─── migrate the pre-split stack ────────────────────────────────────
+# Before the platform/range split, one Compose project `rangerdanger` held
+# everything and owned the mgmt network. Compose does not enforce network
+# ownership: a platform up beside it would silently reuse that network
+# under the old project's labels. Take the old project down first (by
+# label; the range project has the same name and nothing else may run
+# under it). Any owner other than these two is someone else's network.
+# Delivery bridges never belonged to the pre-split range. Refuse foreign
+# ownership before any migration/teardown; Compose otherwise reuses them.
+for DELIVERY_NET in rangerdanger_desk_corp rangerdanger_desk_vendor rangerdanger_desk_eng; do
+    DELIVERY_NET_IDS=$(docker_bounded 15 network ls -q --filter "name=^${DELIVERY_NET}$" 2>/dev/null) \
+        || die "Could not query network $DELIVERY_NET. Docker returned an error; start or restart Docker Desktop or dockerd, then re-run."
+    if [ -n "$DELIVERY_NET_IDS" ]; then
+        DELIVERY_OWNER=$(docker_bounded 15 network inspect -f '{{index .Labels "com.docker.compose.project"}}' "$DELIVERY_NET") \
+            || die "Could not inspect network $DELIVERY_NET. Docker returned an error; start or restart Docker Desktop or dockerd, then re-run."
+        [ "$DELIVERY_OWNER" = "$PLATFORM_PROJECT" ] \
+            || die "Network $DELIVERY_NET exists but belongs to '${DELIVERY_OWNER:-no Compose project}', not $PLATFORM_PROJECT.
+  Stop its owner or remove the unused network, then re-run. No network was removed."
+    fi
+done
+MGMT_OWNER=""
+MGMT_NET_IDS=$(docker_bounded 15 network ls -q --filter "name=^${MGMT_NET}$" 2>/dev/null) \
+    || die "Could not query network $MGMT_NET. Docker returned an error; start or restart Docker Desktop or dockerd, then re-run."
+if [ -n "$MGMT_NET_IDS" ]; then
+    MGMT_OWNER=$(docker_bounded 15 network inspect -f '{{index .Labels "com.docker.compose.project"}}' "$MGMT_NET") \
+        || die "Could not inspect network $MGMT_NET. Docker returned an error; start or restart Docker Desktop or dockerd, then re-run."
+    case "$MGMT_OWNER" in
+        "$PLATFORM_PROJECT"|"$RANGE_PROJECT") ;;
+        *) die "Network $MGMT_NET exists but belongs to '${MGMT_OWNER:-no Compose project}', not RangerDanger.
+  Remove it (docker network rm $MGMT_NET) or stop whatever created it, then re-run." ;;
+    esac
+fi
+# Stopped pre-split containers can outlive their network; the platform's
+# fixed container names would collide with them.
+OLD_PLATFORM=$(docker_bounded 15 ps -aq --filter "label=com.docker.compose.project=$RANGE_PROJECT" \
+    --filter "label=com.docker.compose.service=backend")
+# ─── image acquisition ──────────────────────────────────────────────
+case "$MODE" in
+    offline)
+        banner "Loading images from tarballs"
+        SIZE_HUMAN=$(du -h "$TARBALL" | cut -f1)
+        say "Loading $TARBALL ($SIZE_HUMAN) - decompressing each image, ~5-15 min on a fast SSD."
+        say "Watch the 'Loaded image:' lines below - one per image, 14-19 total."
+        docker load -i "$TARBALL"
+        say "Images loaded"
+        ;;
+    release)
+        banner "Pulling images from GHCR"
+        say "Version: $VERSION"
+        say "(this can take a while on first run; subsequent pulls are layer-cached)"
+        with_pull_retry platform_compose pull
+        for id in $(package_ids); do
+            say "Range package: $id"
+            with_pull_retry range_compose "$id" pull
+        done
+        say "Images pulled"
+        ;;
+    source)
+        banner "Building images from source"
+        say "(the first build takes several minutes; later builds reuse the layer cache)"
+        platform_compose build
+        for id in $(package_ids); do
+            say "Range package: $id"
+            range_compose "$id" build
+        done
+        # Image-only services (containd, nginx, the HMI poller, ...).
+        with_pull_retry platform_compose pull --ignore-buildable
+        for id in $(package_ids); do
+            with_pull_retry range_compose "$id" pull --ignore-buildable
+        done
+        say "Images built"
+        ;;
+esac
+
+# No teardown occurs until every platform/package image is available.
+if [ "$MGMT_OWNER" = "$RANGE_PROJECT" ] || [ -n "$OLD_PLATFORM" ]; then
+    banner "Migrating the pre-split stack"
+    say "Stopping Compose project $RANGE_PROJECT (the single-project stack) before the platform starts."
+    "$ROOT_DIR/scripts/dev-down.sh" --range-only \
+        || die "Could not remove the pre-split stack; nothing else was changed. Fix the error above, then re-run."
+fi
 
 # ─── amd64 emulation for OpenPLC on arm64 Linux ─────────────────────
 # OpenPLC is amd64-only (upstream tuttas/openplc_v3). macOS arm64 runs it
@@ -423,28 +567,107 @@ if [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ] && ! amd64_emulation_present; th
     fi
 fi
 
-# ─── start the stack ────────────────────────────────────────────────
-banner "Starting RangerDanger"
-VERSION="$VERSION" docker compose "${COMPOSE_FLAGS[@]}" up -d
-say "Containers started"
+# ─── start the platform ─────────────────────────────────────────────
+banner "Starting the platform"
+UP_FLAGS=(up -d --wait --wait-timeout 120)
+[ "$MODE" = offline ] && UP_FLAGS+=(--pull never)
+platform_compose "${UP_FLAGS[@]}"
+say "Platform started (backend, frontend, proxy)"
 
 # ─── health smoke check ─────────────────────────────────────────────
 banner "Health check"
 say "Waiting for the backend to come up (up to 120 s)..."
-HEALTH_URL="http://localhost:8088/api/health"
-# ~2 s per iteration; 60 iterations = ~120 s. A cold start after a fresh
-# image pull can take 60-90 s, which tripped the old 30-iteration (60 s)
-# budget into a scary "didn't report healthy" warning even though the
-# readiness gate right below then passed. Mirrors setup.ps1.
-ATTEMPTS=60
-for i in $(seq 1 $ATTEMPTS); do
-    if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
+HEALTH_URL="$API/api/health"
+# A cold start after a fresh
+# image pull can take 60-90 s. The platform services have no
+# healthchecks, so `up --wait` returns before the backend answers; the
+# range request below needs it. Mirrors setup.ps1.
+HEALTH_OK=0
+DEADLINE=$((SECONDS + 120))
+while [ "$SECONDS" -lt "$DEADLINE" ]; do
+    if curl -fsS --connect-timeout 2 --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
         say "Backend reports healthy at $HEALTH_URL"
+        HEALTH_OK=1
         break
     fi
     sleep 2
-    [ $i -eq $ATTEMPTS ] && warn "Backend didn't report healthy in 120 s. Check 'docker compose -f docker-compose.release.yml logs backend'."
 done
+[ "$HEALTH_OK" = 1 ] || die "Backend didn't report healthy in 120 s. Check 'docker logs rangerdanger-backend'."
+
+# ─── start the range ────────────────────────────────────────────────
+# The backend owns the range lifecycle: the same request the UI toggle
+# sends. With no package in the body the backend restarts its recorded
+# package, or RANGERDANGER_PACKAGE on first start.
+banner "Starting the range"
+RANGE_BODY='{}'
+[ -n "$PACKAGE" ] && RANGE_BODY="{\"package\":\"$PACKAGE\"}"
+range_settled() { # <status json>: no transition in flight
+    case "$(range_field "$1" phase)" in
+        none|ready|failed) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+RANGE_RESP=""
+for attempt in 1 2 3; do
+    POST_OUT=$(curl -sS --connect-timeout 3 --max-time 30 -X POST -H 'Content-Type: application/json' -d "$RANGE_BODY" \
+        -w '\n%{http_code}' "$API/api/range") || die "POST $API/api/range failed."
+    POST_CODE=${POST_OUT##*$'\n'}
+    RANGE_RESP=${POST_OUT%$'\n'*}
+    case "$POST_CODE" in
+        202) break ;;
+        409)
+            # Another transition holds the range (a UI switch). Let it
+            # finish, then ask again.
+            say "A range transition is already running; waiting for it to finish..."
+            DEADLINE=$((SECONDS + 600))
+            while [ "$SECONDS" -lt "$DEADLINE" ]; do
+                RANGE_STATUS=$(curl -fsS --connect-timeout 3 --max-time 10 "$API/api/range" 2>/dev/null) || RANGE_STATUS=""
+                range_settled "$RANGE_STATUS" && break
+                sleep 3
+            done
+            RANGE_RESP=""
+            ;;
+        *) die "POST $API/api/range returned HTTP $POST_CODE: $RANGE_RESP" ;;
+    esac
+done
+[ -n "$RANGE_RESP" ] || die "POST $API/api/range kept returning 409 (a transition is still running)."
+# `target` names the package while the transition is in preflight; from
+# stopping on, `package` is the new package.
+RANGE_TARGET=$(range_field "$RANGE_RESP" target)
+[ -n "$RANGE_TARGET" ] || RANGE_TARGET=$(range_field "$RANGE_RESP" package)
+say "Range requested: ${RANGE_TARGET:-<backend default>}"
+
+# up --wait has a 300 s budget in the backend, plus teardown, policy
+# import and route install: allow 600 s.
+say "Waiting for the range to report ready (up to 600 s)..."
+LAST_PHASE=""
+RANGE_OK=0
+DEADLINE=$((SECONDS + 600))
+while [ "$SECONDS" -lt "$DEADLINE" ]; do
+    RANGE_STATUS=$(curl -fsS --connect-timeout 3 --max-time 10 "$API/api/range" 2>/dev/null) || RANGE_STATUS=""
+    PHASE=$(range_field "$RANGE_STATUS" phase)
+    RANGE_PACKAGE=$(range_field "$RANGE_STATUS" package)
+    RANGE_ERROR=$(range_field "$RANGE_STATUS" error)
+    if [ -n "$PHASE" ] && [ "$PHASE" != "$LAST_PHASE" ]; then
+        say "  range phase: $PHASE"
+        LAST_PHASE="$PHASE"
+    fi
+    # A preflight failure leaves the previous phase (ready, none or
+    # failed) with `error` set; a failure after preflight is `failed`.
+    if range_settled "$RANGE_STATUS" && [ -n "$RANGE_ERROR" ]; then
+        die "The range did not start: $RANGE_ERROR
+  Status: $RANGE_STATUS
+  Logs:   docker logs rangerdanger-backend"
+    fi
+    if [ "$PHASE" = ready ] && { [ -z "$RANGE_TARGET" ] || [ "$RANGE_PACKAGE" = "$RANGE_TARGET" ]; }; then
+        RANGE_OK=1
+        break
+    fi
+    sleep 3
+done
+[ "$RANGE_OK" = 1 ] || die "The range did not report ready in 600 s (last phase: ${LAST_PHASE:-unknown}).
+  Check: curl -s $API/api/range ; docker logs rangerdanger-backend"
+say "Range $RANGE_PACKAGE is ready"
 
 # Workshop-critical surfaces. /api/health alone returned green in past
 # audits while firewall apply/reset were broken — students hit the
@@ -457,7 +680,7 @@ if [ "$SKIP_FW_GATE" -eq 1 ]; then
 else
     say "Workshop-readiness gate: firewall health + apply + reset..."
     fw_fail=0
-    if ! curl -fsS http://localhost:8088/api/firewall/health >/dev/null 2>&1; then
+    if ! curl -fsS --connect-timeout 3 --max-time 10 http://localhost:8088/api/firewall/health >/dev/null 2>&1; then
         warn "  /api/firewall/health failed — containd management interface is down"
         fw_fail=1
     fi
@@ -469,7 +692,7 @@ else
         # returns 200 — so a gate that pipes to /dev/null passes green while
         # segmentation silently does NOT enforce (the DPI "queue num" rules need
         # nfnetlink_queue / CONFIG_NFT_QUEUE in the host kernel). Mirrors setup.ps1.
-        apply_resp=$(curl -fsS -X POST -H 'Content-Type: application/json' \
+        apply_resp=$(curl -fsS --connect-timeout 3 --max-time 30 -X POST -H 'Content-Type: application/json' \
                 -d "{\"config\":\"$cfg\"}" \
                 http://localhost:8088/api/firewall/apply 2>/dev/null) || apply_resp=""
         if [ -z "$apply_resp" ]; then
@@ -479,7 +702,7 @@ else
             dpi_degraded=1
         fi
     done
-    reset_resp=$(curl -fsS -X POST http://localhost:8088/api/workshop/reset 2>/dev/null) || reset_resp=""
+    reset_resp=$(curl -fsS --connect-timeout 3 --max-time 60 -X POST http://localhost:8088/api/workshop/reset 2>/dev/null) || reset_resp=""
     # Read the TOP-LEVEL "success", not a substring: the response embeds a
     # per-action array whose entries each carry their own "success":true, so a
     # naive grep false-passes even when the overall reset failed. Parse with
@@ -495,9 +718,9 @@ except Exception: sys.stdout.write("0")' 2>/dev/null)
     fi
     if [ "$dpi_degraded" = "1" ]; then
         warn "------------------------------------------------------------"
-        warn "Hardened policy applied WITH WARNINGS — ICS DPI / segmentation"
-        warn "is NOT enforcing. Labs 2.3 / 2.3-bonus and the hardened L4 rules"
-        warn "will silently fail to block the attacks they teach."
+        warn "Hardened policy applied WITH WARNINGS — inspect the active rules."
+        warn "The L4 source pin enforces; DPI detects and logs."
+        warn "A rejected atomic ruleset can leave the previous policy active."
         warn "Cause: the host kernel rejected the DPI 'queue num' ruleset"
         warn "(nfnetlink_queue / CONFIG_NFT_QUEUE missing). On Linux native:"
         warn "    sudo modprobe nfnetlink_queue   # then re-run ./setup.sh"
@@ -523,8 +746,8 @@ fi
 # depends on it), so warn loudly with the fix instead of blocking install.
 say "Workshop-readiness: OpenPLC (protection-logic lab)..."
 openplc_ok=0
-for i in $(seq 1 8); do
-    if [ "$(docker inspect -f '{{.State.Status}}' rangerdanger-openplc 2>/dev/null)" = "running" ]; then
+for _ in $(seq 1 8); do
+    if [ "$(docker_bounded 5 inspect -f '{{.State.Status}}' rangerdanger-openplc 2>/dev/null)" = "running" ]; then
         openplc_ok=1; break
     fi
     sleep 2
@@ -534,17 +757,17 @@ if [ "$openplc_ok" = "1" ]; then
 else
     # `|| true`: under `set -euo pipefail`, docker inspect failing on a
     # missing container would otherwise abort setup at this assignment.
-    op_state=$(docker inspect -f '{{.State.Status}}' rangerdanger-openplc 2>/dev/null | tr -d '[:space:]' || true)
+    op_state=$(docker_bounded 5 inspect -f '{{.State.Status}}' rangerdanger-openplc 2>/dev/null | tr -d '[:space:]' || true)
     [ -n "$op_state" ] || op_state=missing
-    op_rc=$(docker inspect -f '{{.RestartCount}}' rangerdanger-openplc 2>/dev/null | tr -d '[:space:]' || true)
+    op_rc=$(docker_bounded 5 inspect -f '{{.RestartCount}}' rangerdanger-openplc 2>/dev/null | tr -d '[:space:]' || true)
     [ -n "$op_rc" ] || op_rc="?"
     warn "OpenPLC is not running (state=$op_state, restarts=$op_rc) — the protection-logic lab won't work."
-    if docker logs rangerdanger-openplc 2>&1 | grep -qi 'exec format error'; then
+    if docker_bounded 5 logs --tail 200 rangerdanger-openplc 2>&1 | grep -qi 'exec format error'; then
         warn "  Cause: 'exec format error' — amd64 emulation is missing on this arm64 host."
         warn "  Fix:   docker run --privileged --rm $BINFMT_REF --install amd64"
-        warn "         then re-run ./setup.sh (or: docker compose -f docker-compose.release.yml up -d openplc)"
+        warn "         then re-run ./setup.sh (it restarts the range)"
     else
-        warn "  Check: docker compose -f docker-compose.release.yml logs openplc"
+        warn "  Check: docker logs rangerdanger-openplc"
     fi
 fi
 
@@ -555,15 +778,19 @@ cat <<EOF
   Exercises:     http://localhost:8088/exercises
   containd UI:   http://localhost:9080
   containd SSH:  ssh -p 2222 containd@localhost   (password: containd)
+  Range:         $RANGE_PACKAGE (switch packages in the web UI)
 
-To stop:
-  docker compose -f docker-compose.release.yml down
+To stop (the range, then the platform):
+  ./scripts/dev-down.sh
+
+To start again: re-run ./setup.sh with the same options.
 
 To check status:
-  docker compose -f docker-compose.release.yml ps
+  curl -s $API/api/range
+  docker compose ls
 
 To view logs:
-  docker compose -f docker-compose.release.yml logs -f <service>
+  docker logs -f rangerdanger-<service>     # e.g. rangerdanger-backend, rangerdanger-firewall
 
 When you're done with the workshop (removes the stack and lab state):
   ./scripts/uninstall-rangerdanger.sh

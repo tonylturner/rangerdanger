@@ -31,8 +31,8 @@ the running stack - unit tests don't catch playthrough regressions. -->
 - [ ] `(cd services && go vet ./... && go test -race ./... && go build ./...)` clean
 - [ ] `(cd dnp3go && go vet ./... && go test -race ./... && go build ./...)` clean
 - [ ] `(cd frontend && npm ci && npm run lint && npm test && npm run build)` clean
-- [ ] `docker compose config -q` clean
-- [ ] Spun up the affected exercise end-to-end in `docker compose up -d --build`
+- [ ] `(cd backend && go run ./cmd/packagelint)` clean (Compose models, manifests, proxy routes)
+- [ ] Spun up the affected exercise end-to-end with `./scripts/dev-up.sh`
 - [ ] Other (describe):
 
 ## Anything reviewers should know?

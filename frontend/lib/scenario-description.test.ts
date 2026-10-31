@@ -111,7 +111,7 @@ describe("splitDescription — command blocks", () => {
 
   it("recognizes every CMD_TOOL_RE prefix", () => {
     const tools = [
-      "nmap", "mbpoll", "dnp3poll", "dnp3cmd", "curl", "tshark",
+      "nmap", "mbpoll", "dnp3poll", "dnp3cmd", "iec104cmd", "curl", "tshark",
       "tcpdump", "nc", "telnet", "ssh", "wget", "ls", "grep", "cat", "docker",
     ];
     for (const tool of tools) {

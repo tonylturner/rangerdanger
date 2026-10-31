@@ -1,10 +1,12 @@
 # Multi-stage Dockerfile for all substation simulator services.
 # Usage: docker build --target <service-name> -t <tag> .
 
-FROM golang:1.27-alpine AS go-deps
+FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS go-deps
+ENV GOTOOLCHAIN=local
 WORKDIR /app
 COPY services/go.mod ./
 COPY dnp3go/go.mod /dnp3go/go.mod
+COPY iec104go/go.mod /iec104go/go.mod
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
@@ -58,11 +60,24 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 go build -o /bin/gps-sim ./gps-sim
 
+FROM sim-builder AS field-device-sim-builder
+COPY services/devices/ ./devices/
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/field-device-sim ./devices/cmd/field-device-sim
+
+FROM sim-builder AS historian-eu-builder
+COPY services/historian-eu/ ./historian-eu/
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/historian-eu ./historian-eu
+
 # Build dnp3poll/dnp3cmd from the dnp3go library so rtac-sim can ship
 # them as student-runnable diagnostic tools. The eng-ws Dockerfile
 # uses the same dnp3go module via its own builder stage; keeping a
 # parallel build here avoids cross-Dockerfile coupling.
-FROM golang:1.27-alpine AS dnp3-builder
+FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS dnp3-builder
+ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY dnp3go/go.mod ./go.mod
 COPY dnp3go/*.go ./
@@ -78,25 +93,25 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # source against alpine's libmodbus. Resulting binary links against
 # libmodbus.so dynamically, so the final rtac-sim stage installs the
 # libmodbus runtime package alongside it.
-FROM alpine:3.21 AS mbpoll-builder
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS mbpoll-builder
 RUN apk add --no-cache git cmake make gcc musl-dev libmodbus-dev pkgconfig
-RUN git clone --depth 1 https://github.com/epsilonrt/mbpoll /src
+RUN git init /src \
+ && git -C /src remote add origin https://github.com/epsilonrt/mbpoll \
+ && git -C /src fetch --depth 1 origin d541211d0e2451888de11c82fb1604c3d6285b1a \
+ && git -C /src checkout --detach FETCH_HEAD
 WORKDIR /src
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
  && cmake --build build
 
-FROM alpine:3.21 AS sim-base
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS sim-base
 
 # iproute2: ip(8) for route manipulation in harden scripts
 # iptables: FORWARD DROP policy and per-interface INPUT filtering in rtac-harden.sh
 # bash:     student-facing terminal consistency (~2MB per image)
-# nmap:     Lab 2.4 validation report runs reachability probes from
-#           lan1-only OT hosts (historian-sim) to confirm the
-#           firewall enforces non-RTAC → field denies. Without nmap
-#           in sim-base, the only lan1-only-with-probes host would
-#           be openplc — which is multi-homed and bypasses the
-#           firewall, so a probe from there proves nothing about
-#           segmentation enforcement.
+# nmap:     The US Lab 2.4 validation report probes from historian-sim
+#           (OT Ops only) to check non-RTAC → field denies. OpenPLC
+#           attaches to OT Ops/station and management, not field, in
+#           either package.
 RUN apk add --no-cache iproute2 iptables bash nmap
 COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
 COPY scripts/rtac-harden.sh /usr/local/bin/rtac-harden.sh
@@ -151,7 +166,10 @@ EXPOSE 22 443 8080 502 20000
 # RTAC silently loses cross-zone reachability when peers restart.
 # rtac-mgmt-init.sh: starts sshd on :22 and nginx on :443 so the
 # vendor-to-ot-restricted firewall rule has real listeners to probe.
-CMD ["sh", "-c", "set-gateway.sh && rtac-harden.sh && rtac-mgmt-init.sh && rtac-route-monitor.sh & exec rtac-sim"]
+# The three init steps run in the foreground under set -e, so rtac-sim
+# never starts on a half-configured network and a failed step exits
+# the container non-zero. Only the route monitor is backgrounded.
+CMD ["sh", "-c", "set -e; set-gateway.sh; rtac-harden.sh; rtac-mgmt-init.sh; rtac-route-monitor.sh & exec rtac-sim"]
 
 FROM sim-base AS capbank-sim
 COPY --from=capbank-sim-builder /bin/capbank-sim /usr/local/bin/capbank-sim
@@ -168,3 +186,12 @@ COPY --from=gps-sim-builder /bin/gps-sim /usr/local/bin/gps-sim
 EXPOSE 8080 502
 CMD ["sh", "-c", "set-gateway.sh && gps-sim"]
 
+FROM sim-base AS field-device-sim
+COPY --from=field-device-sim-builder /bin/field-device-sim /usr/local/bin/field-device-sim
+EXPOSE 8080 502
+CMD ["sh", "-c", "set -e; set-gateway.sh; exec field-device-sim"]
+
+FROM sim-base AS historian-eu
+COPY --from=historian-eu-builder /bin/historian-eu /usr/local/bin/historian-eu
+EXPOSE 8080 8081
+CMD ["sh", "-c", "set -e; set-gateway.sh; exec historian-eu"]

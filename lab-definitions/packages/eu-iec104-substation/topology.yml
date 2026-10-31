@@ -1,0 +1,311 @@
+id: telecontrol-segmentation
+name: European Feeder Telecontrol Segmentation
+description: >
+  A 20 kV feeder uses IEC 60870-5-104 between the control centre and RTU,
+  Modbus TCP to the breaker, RMUs and OLTC, OpenPLC voltage regulation,
+  a read-only historian in the Operations DMZ, and an OpenDSS truth model.
+  Students validate source- and port-based segmentation without mistaking
+  transport policy for command-level filtering.
+
+firewall_config: firewall/weak.json
+
+networks:
+  - id: enterprise_net
+    name: Enterprise Zone
+    subnet: 10.10.10.0/24
+    zone: wan
+    description: Enterprise attacker workstation and untrusted ingress
+
+  - id: vendor_net
+    name: Vendor / Engineering Zone
+    subnet: 10.20.20.0/24
+    zone: dmz
+    description: Vendor access and engineering maintenance
+
+  - id: station_net
+    name: Station Zone
+    subnet: 10.30.30.0/24
+    zone: lan1
+    description: IEC104 RTU, OpenPLC voltage controller and station clock
+
+  - id: field_net
+    name: Field Device Zone
+    subnet: 10.40.40.0/24
+    zone: lan2
+    description: Two breakers, two RMUs and OLTC Modbus endpoints
+
+  - id: control_centre_net
+    name: Control Centre Zone
+    subnet: 10.60.60.0/24
+    zone: lan4
+    description: IEC104 control-centre client
+
+  - id: ops_dmz_net
+    name: Operations DMZ
+    subnet: 10.70.70.0/24
+    zone: lan5
+    description: Read-only historian, fed by control-centre snapshots
+
+nodes:
+  - id: fw-1
+    type: containd_ngfw
+    name: Containd Firewall
+    container: rangerdanger-firewall
+    networks:
+      - enterprise_net
+      - vendor_net
+      - station_net
+      - field_net
+      - control_centre_net
+      - ops_dmz_net
+    ip: 10.10.10.2
+
+  - id: kali-1
+    type: kali_pentest
+    name: Kali Attacker
+    container: rangerdanger-kali
+    networks:
+      - enterprise_net
+    ip: 10.10.10.50
+
+  - id: vendor-jump-1
+    type: vendor_jumpbox
+    name: Vendor Jump Box
+    container: rangerdanger-vendor-jump
+    networks:
+      - vendor_net
+    ip: 10.20.20.10
+
+  - id: eng-ws-1
+    type: eng_workstation
+    name: Engineering Workstation
+    container: rangerdanger-eng-ws
+    networks:
+      - vendor_net
+    ip: 10.20.20.20
+
+  - id: gps-1
+    type: gps_sim
+    name: Station GPS Clock
+    container: rangerdanger-gps-sim
+    networks:
+      - station_net
+    ip: 10.30.30.50
+
+  - id: rtu-1
+    type: iec104_rtu
+    name: IEC104 Remote Terminal Unit
+    container: rangerdanger-iec104-rtu
+    networks:
+      - station_net
+    ip: 10.30.30.20
+
+  - id: cc-1
+    type: control_centre
+    name: Control Centre
+    container: rangerdanger-control-centre
+    networks:
+      - control_centre_net
+    ip: 10.60.60.20
+
+  - id: breaker-1
+    type: feeder_breaker
+    name: Feeder Breaker
+    container: rangerdanger-feeder-breaker
+    networks:
+      - field_net
+    ip: 10.40.40.20
+
+  - id: f2-breaker
+    type: feeder_breaker
+    name: F2 Breaker (indication only)
+    container: rangerdanger-f2-breaker
+    networks:
+      - field_net
+    ip: 10.40.40.24
+
+  - id: rmu-1
+    type: rmu
+    name: RMU 1 (normally closed)
+    container: rangerdanger-rmu-1
+    networks:
+      - field_net
+    ip: 10.40.40.21
+
+  - id: rmu-2
+    type: rmu
+    name: RMU 2 (normally open tie)
+    container: rangerdanger-rmu-2
+    networks:
+      - field_net
+    ip: 10.40.40.22
+
+  - id: oltc-1
+    type: oltc
+    name: Transformer OLTC
+    container: rangerdanger-oltc-1
+    networks:
+      - field_net
+    ip: 10.40.40.23
+
+  - id: plc-1
+    type: openplc
+    name: OpenPLC Voltage Controller
+    container: rangerdanger-openplc
+    networks:
+      - station_net
+    ip: 10.30.30.30
+
+  - id: historian-1
+    type: historian_sim
+    name: Read-only Historian
+    container: rangerdanger-historian
+    networks:
+      - ops_dmz_net
+    ip: 10.70.70.40
+
+scenarios: []
+
+# Package-owned teaching flows; liveness keys are opaque to consumers.
+flows:
+  - id: cc-rtu
+    source: cc-1
+    target: rtu-1
+    protocol: IEC104
+    port: 2404
+    cadence: persistent
+    category: baseline
+    liveness_key: cc-rtu
+  - id: rtu-breaker
+    source: rtu-1
+    target: breaker-1
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-breaker
+  - id: rtu-f2-breaker
+    source: rtu-1
+    target: f2-breaker
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-f2-breaker
+  - id: station-clock
+    source: rtu-1
+    target: gps-1
+    protocol: HTTP
+    port: 8080
+    cadence: ~1s
+    category: baseline
+    liveness_key: station-clock
+  - id: attacker-rtu
+    source: kali-1
+    target: rtu-1
+    protocol: IEC104
+    port: 2404
+    cadence: manual
+    category: scenario
+    liveness_key: attacker-rtu
+
+  - id: rtu-rmu-1
+    source: rtu-1
+    target: rmu-1
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-rmu-1
+  - id: rtu-rmu-2
+    source: rtu-1
+    target: rmu-2
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-rmu-2
+  - id: rtu-oltc-1
+    source: rtu-1
+    target: oltc-1
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-oltc-1
+  - id: rtu-plc-1
+    source: rtu-1
+    target: plc-1
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-plc-1
+  - id: plc-oltc
+    source: plc-1
+    target: oltc-1
+    protocol: Modbus
+    port: 502
+    cadence: ~100ms
+    category: baseline
+    liveness_key: plc-oltc
+  - id: cc-historian
+    source: cc-1
+    target: historian-1
+    protocol: HTTP
+    port: 8081
+    cadence: ~1s
+    category: baseline
+    liveness_key: cc-historian
+  - id: enterprise-historian
+    source: kali-1
+    target: historian-1
+    protocol: HTTP
+    port: 8080
+    cadence: manual
+    category: scenario
+    liveness_key: enterprise-historian
+  - id: engineering-plc
+    source: eng-ws-1
+    target: plc-1
+    protocol: HTTP
+    port: 8080
+    cadence: manual
+    category: scenario
+    liveness_key: engineering-plc
+
+liveness:
+  cc-rtu:
+    provider: operator-link
+  rtu-breaker:
+    provider: operator-device
+    points: ["feeder-breaker-position", "feeder-protection-trip"]
+  rtu-f2-breaker:
+    provider: operator-device
+    points: ["f2-position", "f2-protection-trip"]
+  station-clock:
+    provider: unobserved
+  attacker-rtu:
+    provider: session-presence
+    transport: tcp
+  # No application-freshness provider exists for PLC master I/O or historian HTTP.
+  rtu-rmu-1:
+    provider: operator-device
+    points: ["rmu-1-position", "rmu-1-fault-passage"]
+  rtu-rmu-2:
+    provider: operator-device
+    points: ["rmu-2-position", "rmu-2-fault-passage"]
+  rtu-oltc-1:
+    provider: operator-device
+    points: ["oltc-1-tap", "oltc-1-auto"]
+  rtu-plc-1:
+    provider: operator-device
+    points: ["plc-1-running", "plc-1-input-valid"]
+  plc-oltc:
+    provider: unobserved
+  cc-historian:
+    provider: unobserved
+  enterprise-historian:
+    provider: unobserved
+  engineering-plc:
+    provider: unobserved

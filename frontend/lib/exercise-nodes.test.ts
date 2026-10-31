@@ -1,6 +1,6 @@
+import { US_CURRICULUM } from "./curriculum-storage.test-util";
 import { describe, it, expect } from "vitest";
 import {
-  EXERCISE_NODE_MAP,
   getExerciseNodes,
   inferNodeFromDescription,
 } from "./exercise-nodes";
@@ -20,40 +20,40 @@ describe("EXERCISE_NODE_MAP — workshop lab inventory", () => {
 
   it("has an entry for every shipped lab", () => {
     for (const id of EXPECTED_LABS) {
-      expect(EXERCISE_NODE_MAP[id], `missing entry for ${id}`).toBeDefined();
+      expect(US_CURRICULUM.nodeMap[id], `missing entry for ${id}`).toBeDefined();
     }
   });
 
   it("has no entries for removed labs", () => {
     const removed = ["modbus-override", "dnp3-command-injection", "capbank-switching-attack"];
     for (const id of removed) {
-      expect(EXERCISE_NODE_MAP[id], `${id} should be gone after restructure`).toBeUndefined();
+      expect(US_CURRICULUM.nodeMap[id], `${id} should be gone after restructure`).toBeUndefined();
     }
   });
 });
 
 describe("getExerciseNodes", () => {
   it("returns scenario-supplied nodes when present", () => {
-    const result = getExerciseNodes("anything", ["alpha", "beta"]);
+    const result = getExerciseNodes("anything", ["alpha", "beta"], US_CURRICULUM);
     expect(result).toEqual(["alpha", "beta"]);
   });
 
   it("falls back to the EXERCISE_NODE_MAP entry", () => {
     // baseline-assessment uses fw-1 + others
-    const result = getExerciseNodes("baseline-assessment");
+    const result = getExerciseNodes("baseline-assessment", undefined, US_CURRICULUM);
     expect(result[0]).toBe("fw-1");
     expect(result).toContain("eng-ws-1");
   });
 
   it("returns empty array for unknown scenario with no info", () => {
-    expect(getExerciseNodes("nonexistent")).toEqual([]);
+    expect(getExerciseNodes("nonexistent", undefined, US_CURRICULUM)).toEqual([]);
   });
 
   it("returns empty array for design-only scenarios with no primary", () => {
     // segmentation-requirements + remediation-planning are pure UI,
     // no terminal nodes
-    expect(getExerciseNodes("segmentation-requirements")).toEqual([]);
-    expect(getExerciseNodes("remediation-planning")).toEqual([]);
+    expect(getExerciseNodes("segmentation-requirements", undefined, US_CURRICULUM)).toEqual([]);
+    expect(getExerciseNodes("remediation-planning", undefined, US_CURRICULUM)).toEqual([]);
   });
 });
 
@@ -72,7 +72,7 @@ describe("inferNodeFromDescription", () => {
 
   for (const [desc, expected] of cases) {
     it(`infers ${expected ?? "nothing"} from ${JSON.stringify(desc.slice(0, 40))}`, () => {
-      expect(inferNodeFromDescription(desc)).toBe(expected);
+      expect(inferNodeFromDescription(desc, US_CURRICULUM)).toBe(expected);
     });
   }
 });

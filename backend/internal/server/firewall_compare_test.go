@@ -10,10 +10,10 @@ import (
 
 // firewall_compare.go drives the lab UI's "what changed between weak
 // and improved" panel. The pure-logic helpers (compareRuleSets,
-// zonePairLabel, loadFirewallRules) are testable without a server.
+// usCompare.label, loadFirewallRules) are testable without a server.
 // The HTTP handlers (handleFirewallApply, handleFirewallApplyCustom)
-// route through s.containdClient.ImportConfig — those need a mocked
-// containd to test cleanly and are deferred.
+// route through the generation's containd client — those need a
+// mocked containd to test cleanly and are deferred.
 //
 // NB: same external-data caveat as firewall_config_test.go — these
 // tests read JSON from lab-definitions/firewall/ at runtime via
@@ -63,9 +63,9 @@ func TestZonePairLabel_KnownAndUnknown(t *testing.T) {
 		{"foo", "bar", "foo → bar"},
 	}
 	for _, tc := range cases {
-		got := zonePairLabel(tc.src, tc.dst)
+		got := usCompare.label(tc.src, tc.dst)
 		if got != tc.want {
-			t.Errorf("zonePairLabel(%q, %q) = %q; want %q", tc.src, tc.dst, got, tc.want)
+			t.Errorf("label(%q, %q) = %q; want %q", tc.src, tc.dst, got, tc.want)
 		}
 	}
 }
@@ -80,7 +80,7 @@ func TestCompareRuleSets_WeakVsImproved(t *testing.T) {
 		t.Fatalf("load improved: %v", err)
 	}
 
-	diffs := compareRuleSets(weak, improved)
+	diffs := compareRuleSets(usCompare, weak, improved)
 	if len(diffs) == 0 {
 		t.Fatal("expected at least one diff between weak and improved")
 	}
@@ -134,7 +134,7 @@ func TestCompareRuleSets_IdentityComparison(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 
-	diffs := compareRuleSets(improved, improved)
+	diffs := compareRuleSets(usCompare, improved, improved)
 	for _, d := range diffs {
 		if d.Change == "tightened" || d.Change == "added" || d.Change == "removed" {
 			t.Errorf("identity compare on %s reported change=%q (weak=%q improved=%q); expected unchanged",
@@ -144,7 +144,7 @@ func TestCompareRuleSets_IdentityComparison(t *testing.T) {
 }
 
 func TestCompareRuleSets_OutputOrderIsStable(t *testing.T) {
-	// The diff order is fixed in compareRuleSets via orderedPairs.
+	// The diff order is fixed by the recipe's compare pairs.
 	// The UI renders rows in this order; reordering would shuffle
 	// the "before/after" panel between renders. Pin it.
 	weak, err := loadFirewallRules(policyPath(t, "substation-weak.json"))
@@ -156,8 +156,8 @@ func TestCompareRuleSets_OutputOrderIsStable(t *testing.T) {
 		t.Fatalf("load improved: %v", err)
 	}
 
-	diffs1 := compareRuleSets(weak, improved)
-	diffs2 := compareRuleSets(weak, improved)
+	diffs1 := compareRuleSets(usCompare, weak, improved)
+	diffs2 := compareRuleSets(usCompare, weak, improved)
 
 	if len(diffs1) != len(diffs2) {
 		t.Fatalf("compareRuleSets returned different lengths on repeat call: %d vs %d", len(diffs1), len(diffs2))

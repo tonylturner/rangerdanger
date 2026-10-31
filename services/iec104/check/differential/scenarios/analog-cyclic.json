@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "analog-cyclic",
+  "kind": "raw-rtu",
+  "timeout_s": 30,
+  "capture_modbus": true,
+  "point_map": "feeder-analog-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {"op": "start", "args": {}, "timeout_s": 5},
+    {"op": "cycles", "args": {"count": 3}, "timeout_s": 15},
+    {"op": "stop", "args": {}, "timeout_s": 5}
+  ]
+}

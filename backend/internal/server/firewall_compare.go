@@ -1,16 +1,20 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 // PolicyRuleDiff shows a single rule change between two configs.
@@ -31,30 +35,39 @@ type PolicyComparison struct {
 	Summary        string           `json:"summary"`
 }
 
-// handleFirewallCompare returns a structured comparison of weak vs improved firewall configs.
+// handleFirewallCompare returns a structured comparison of the two named
+// policies in a package's comparison recipe.
 func (s *Server) handleFirewallCompare(c *gin.Context) {
-	labDefsDir := s.cfg.LabDefinitionsPath
-	if labDefsDir == "" {
-		labDefsDir = "lab-definitions"
+	recipe, ok := supportedRecipe(c, func(r *packageRecipe) bool { return r.compare != nil })
+	if !ok {
+		return
 	}
-
-	weakPath := filepath.Join(labDefsDir, "firewall", "substation-weak.json")
-	improvedPath := filepath.Join(labDefsDir, "firewall", "substation-improved.json")
+	pkg := rangeOf(c).Package
+	weakPath, err := s.policyPath(pkg, recipe.compare.weakPolicy)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	improvedPath, err := s.policyPath(pkg, recipe.compare.improvedPolicy)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
 
 	weakRules, err := loadFirewallRules(weakPath)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load weak config: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load " + recipe.compare.weakPolicy + " config: " + err.Error()})
 		return
 	}
 
 	improvedRules, err := loadFirewallRules(improvedPath)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load improved config: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load " + recipe.compare.improvedPolicy + " config: " + err.Error()})
 		return
 	}
 
 	// Build diff by zone pair
-	diffs := compareRuleSets(weakRules, improvedRules)
+	diffs := compareRuleSets(recipe.compare, weakRules, improvedRules)
 
 	tightened := 0
 	added := 0
@@ -68,8 +81,8 @@ func (s *Server) handleFirewallCompare(c *gin.Context) {
 	}
 
 	comparison := PolicyComparison{
-		WeakConfig:     "substation-weak.json",
-		ImprovedConfig: "substation-improved.json",
+		WeakConfig:     filepath.Base(weakPath),
+		ImprovedConfig: filepath.Base(improvedPath),
 		Diffs:          diffs,
 		Summary: func() string {
 			parts := []string{}
@@ -97,12 +110,14 @@ func (s *Server) handleFirewallActive(c *gin.Context) {
 	s.activeConfigMu.RLock()
 	active := s.activeConfig
 	source := s.policySource
+	plan := s.planProvenance
 	s.activeConfigMu.RUnlock()
 
-	c.JSON(http.StatusOK, gin.H{
-		"active_config": active,
-		"policy_source": source,
-	})
+	response := gin.H{"active_config": active, "policy_source": source}
+	if source == "plan" {
+		response["plan"] = plan
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // handleFirewallApply applies a named firewall config to the live containd instance.
@@ -115,7 +130,7 @@ func (s *Server) handleFirewallApply(c *gin.Context) {
 		return
 	}
 
-	warnings, err := s.applyFirewallConfigInternal(req.Config)
+	warnings, err := s.applyFirewallConfigInternal(c.Request.Context(), rangeOf(c), req.Config)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -175,27 +190,24 @@ func readPolicyJSONWithRetry(path string) ([]byte, error) {
 // X-Containd-Warnings) so callers can surface partial failures — typical
 // causes: nft apply hit "operation not permitted", interface reconfigure
 // partial, pcap config invalid. Empty warnings + nil error = clean apply.
-func (s *Server) applyFirewallConfigInternal(configName string) ([]string, error) {
-	if configName != "weak" && configName != "improved" {
-		return nil, fmt.Errorf("config must be 'weak' or 'improved'")
+func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle.Generation, configName string) ([]string, error) {
+	s.policyApplyMu.Lock()
+	defer s.policyApplyMu.Unlock()
+	configPath, err := s.policyPath(gen.Package, configName)
+	if err != nil {
+		return nil, err
 	}
-
-	labDefsDir := s.cfg.LabDefinitionsPath
-	if labDefsDir == "" {
-		labDefsDir = "lab-definitions"
-	}
-
-	configPath := filepath.Join(labDefsDir, "firewall", "substation-"+configName+".json")
 	data, err := readPolicyJSONWithRetry(configPath)
 	if err != nil {
 		return nil, err
 	}
-
-	if s.containdClient == nil {
-		return nil, fmt.Errorf("containd client not configured")
+	// The catalog linted the file at load; it is re-read from disk here.
+	if err := labs.LintPolicy(gen.Package.Policies[configName], data, gen.Package.ICSRules); err != nil {
+		return nil, err
 	}
 
-	warnings, err := s.containdClient.ImportConfig(data)
+	applyStarted := time.Now().UTC()
+	warnings, err := gen.Containd().ImportConfig(ctx, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to apply config to containd: %w", err)
 	}
@@ -209,76 +221,33 @@ func (s *Server) applyFirewallConfigInternal(configName string) ([]string, error
 		source = "hardened-reference"
 	}
 
-	s.activeConfigMu.Lock()
-	s.activeConfig = configName
-	s.policySource = source
-	s.recordApplyLocked(data)
-	s.activeConfigMu.Unlock()
+	if !gen.Commit(func() {
+		s.activeConfigMu.Lock()
+		s.activeConfig = configName
+		s.policySource = source
+		s.planProvenance, s.appliedPlan = nil, nil
+		s.recordApplyLocked(data)
+		s.policyEvidenceSince = applyStarted
+		s.activeConfigMu.Unlock()
+	}) {
+		return nil, errRangeStopped
+	}
 
 	return warnings, nil
 }
 
-// handleFirewallApplyCustom accepts a raw JSON config and applies it to containd.
-// Used by the dynamic Exercise 3 to apply the student's remediation-plan-derived config.
-func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512*1024)
-	data, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "request body too large or unreadable"})
-		return
+// policyPath is the file of the package's named policy.
+func (s *Server) policyPath(pkg labs.Package, name string) (string, error) {
+	relative, ok := pkg.Policies[name]
+	if !ok {
+		names := make([]string, 0, len(pkg.Policies))
+		for known := range pkg.Policies {
+			names = append(names, "'"+known+"'")
+		}
+		sort.Strings(names)
+		return "", fmt.Errorf("config must be one of %s", strings.Join(names, ", "))
 	}
-
-	var config struct {
-		Firewall struct {
-			Rules []json.RawMessage `json:"rules"`
-		} `json:"firewall"`
-		Interfaces []json.RawMessage `json:"interfaces"`
-	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid config JSON: " + err.Error()})
-		return
-	}
-	if len(config.Firewall.Rules) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "config must include firewall.rules"})
-		return
-	}
-	if len(config.Interfaces) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "config must include interfaces"})
-		return
-	}
-
-	if s.containdClient == nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "containd client not configured"})
-		return
-	}
-
-	warnings, err := s.containdClient.ImportConfig(data)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to apply config to containd: %v", err)})
-		return
-	}
-
-	// The /apply-custom path is wired to the frontend "Apply Your Plan"
-	// button, which translates the student's Lab 1.4 plan picks into a
-	// containd config and pushes it here. Label the source so the
-	// status banner can distinguish "(Lab 1.4 plan)" from a future
-	// "(your containd commit)" state that Phase B will detect via a
-	// background poller.
-	s.activeConfigMu.Lock()
-	s.activeConfig = "custom"
-	s.policySource = "plan-custom"
-	s.recordApplyLocked(data)
-	s.activeConfigMu.Unlock()
-
-	resp := gin.H{
-		"status":        "applied",
-		"active_config": "custom",
-		"policy_source": "plan-custom",
-	}
-	if len(warnings) > 0 {
-		resp["warnings"] = warnings
-	}
-	c.JSON(http.StatusOK, resp)
+	return filepath.Join(s.cfg.LabDefinitionsPath, relative), nil
 }
 
 type fwConfigFile struct {
@@ -311,28 +280,9 @@ func loadFirewallRules(path string) (*fwConfigFile, error) {
 	return &cfg, nil
 }
 
-// zonePairLabel maps containd zone names to human-readable labels.
-func zonePairLabel(src, dst string) string {
-	names := map[string]string{
-		"wan":  "Enterprise",
-		"dmz":  "Vendor",
-		"lan1": "OT Ops",
-		"lan2": "Field",
-	}
-	s := names[src]
-	if s == "" {
-		s = src
-	}
-	d := names[dst]
-	if d == "" {
-		d = dst
-	}
-	return s + " → " + d
-}
-
-func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
+// compareRuleSets diffs the two policies over spec's zone pairs, in order.
+func compareRuleSets(spec *compareSpec, weak, improved *fwConfigFile) []PolicyRuleDiff {
 	// Index rules by zone pair for each config
-	type zonePair struct{ src, dst string }
 	type ruleInfo struct {
 		desc   string
 		action string
@@ -362,49 +312,6 @@ func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
 		}
 	}
 
-	// Collect all zone pairs
-	allPairs := map[zonePair]bool{}
-	for p := range weakByPair {
-		allPairs[p] = true
-	}
-	for p := range improvedByPair {
-		allPairs[p] = true
-	}
-
-	// Ordered zone pairs for consistent output. Every entry here is
-	// rendered as a row in the Segmentation drawer even if neither
-	// policy has an explicit rule — the implicit default-deny is the
-	// pedagogical point of the panel (per the Lab 1.3 review:
-	// students need to see that "no explicit rule" still means
-	// "denied at the policy edge"). Both shipping configs have
-	// defaultAction: DENY, so an absent rule resolves to DENY here.
-	//
-	// We list BOTH directions for each cross-zone relationship so the
-	// drawer surfaces implicit-deny rows even under the weak baseline
-	// (which has explicit ALLOWs for the 8 "lower-to-higher" pairs but
-	// no rules for the reverse). The first half is the forward
-	// direction (lower-trust → higher-trust, the segmentation lesson);
-	// the second half is the reverse (higher-trust → lower-trust,
-	// which falls through to default-deny for new connections —
-	// conntrack still permits established return traffic).
-	orderedPairs := []zonePair{
-		// Forward (lower trust → higher trust)
-		{"wan", "dmz"}, {"wan", "lan1"}, {"wan", "lan2"},
-		{"dmz", "lan1"}, {"dmz", "lan2"},
-		{"lan1", "lan2"},
-		// Intra-zone
-		{"lan1", "lan1"}, {"lan2", "lan2"},
-		// Reverse (higher trust → lower trust). These are
-		// implicit-deny under both shipping configs; their value is
-		// pedagogical: showing the student that the policy has zero
-		// explicit rules permitting OT-to-corporate or field-to-OT
-		// new connections, even though conntrack happily allows
-		// established return traffic.
-		{"lan2", "lan1"}, {"lan2", "dmz"}, {"lan2", "wan"},
-		{"lan1", "dmz"}, {"lan1", "wan"},
-		{"dmz", "wan"},
-	}
-
 	weakDefault := strings.ToUpper(weak.Firewall.DefaultAction)
 	if weakDefault == "" {
 		weakDefault = "DENY" // containd's runtime default if the field is absent
@@ -416,7 +323,7 @@ func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
 
 	var diffs []PolicyRuleDiff
 
-	for _, pair := range orderedPairs {
+	for _, pair := range spec.pairs {
 		wRules := weakByPair[pair]
 		iRules := improvedByPair[pair]
 
@@ -473,7 +380,7 @@ func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
 		}
 
 		diffs = append(diffs, PolicyRuleDiff{
-			ZonePair:       zonePairLabel(pair.src, pair.dst),
+			ZonePair:       spec.label(pair.src, pair.dst),
 			WeakRule:       strings.Join(wDesc, "; "),
 			ImprovedRule:   strings.Join(iDesc, "; "),
 			WeakAction:     wAction,

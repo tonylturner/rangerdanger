@@ -6,6 +6,399 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- Refresh workstation and HMI bases, update bundled npm and Compose, apply
+  available OpenPLC OS fixes, and upgrade OpenDSS FastAPI/Starlette to fix
+  three CVEs. Document remaining image findings.
+
+## [v0.2.0-rc.5] - 2026-10-30
+
+Fifth release candidate for v0.2.0 and the first built on Ubuntu 26.04
+runners. The range itself is unchanged from rc.4. The pre-release
+publishes images under its own tag and does not move `latest`; install it
+with `./setup.sh --version v0.2.0-rc.5`.
+
+### Changed
+
+- CI and release workflows now run on Ubuntu 26.04 GitHub-hosted runners.
+
+## [v0.2.0-rc.4] - 2026-10-29
+
+Fourth release candidate for v0.2.0. The frontend moves to React 19,
+FUXA ships a read-only RTAC starter monitor, the simulated DNP3 devices
+send well-formed traffic, and the embedded containd console, PCAP
+download and Identities link work through the portal. Requirements are
+unchanged from rc.1. The pre-release publishes images under its own tag
+and does not move `latest`; install it with
+`./setup.sh --version v0.2.0-rc.4`.
+
+### Added
+
+- A fresh US install opens FUXA with a read-only RTAC monitor showing six
+  live substation values. An existing FUXA project is never overwritten.
+  The FUXA image installs its Modbus driver from a committed lockfile.
+
+### Changed
+
+- The frontend runs on React 19. Component tests use React Testing
+  Library with jsdom.
+
+### Fixed
+
+- The containd CLI console in the embedded firewall UI connects again, and
+  PCAP downloads save the capture instead of an HTML page. The proxy smoke
+  test now checks that both paths reach the containd API and performs a real
+  CLI websocket upgrade. Both packages preserve the portal's Host port so
+  the console's browser Origin matches.
+- DNP3 traffic from the simulated field devices is now well-formed in
+  Wireshark: responses use the correct link function, analog commands
+  carry value then status (a -16 setpoint arrives as -16), control replies
+  echo the command, select-before-operate checks the selected value,
+  restart and unsupported-function indications use the right bits, and
+  class 1-3 polls no longer return static data.
+- The Identities link in the embedded firewall UI opens the containd
+  Identities page instead of a portal "not found" page. The proxy smoke test
+  now fails on any containd link that leaves the embedded UI.
+
+## [v0.2.0-rc.3] - 2026-10-28
+
+Third release candidate for v0.2.0. It fixes SSD delta apply: a delta
+staged from rc.2 stopped with a false teardown error on a real install.
+Stage deltas from this tag, not from rc.2. Requirements are unchanged
+from rc.1. The pre-release publishes images under its own tag and does
+not move `latest`; install it with `./setup.sh --version v0.2.0-rc.3`.
+
+### Fixed
+
+- Applying an SSD delta no longer stops with "Could not stop and verify
+  both RangerDanger projects" after the lab shut down cleanly. The same
+  check in the rollback recipe is fixed too. The Bash and PowerShell
+  stagers now write identical delta README recipes.
+
+## [v0.2.0-rc.2] - 2026-10-28
+
+Second release candidate for v0.2.0. The frontend moves to Next.js 16
+with no visible change to the labs, and SSD staging is more robust:
+repo-only deltas work on stock macOS Bash, PowerShell staging works on
+non-Windows hosts, and a transient registry error no longer aborts a
+stage. Requirements are unchanged from rc.1. The pre-release publishes
+images under its own tag and does not move `latest`; install it with
+`./setup.sh --version v0.2.0-rc.2`.
+
+### Changed
+
+- Upgraded the frontend to Next.js 16; ESLint 10 is deferred until its plugins support it.
+
+### Fixed
+
+- SSD staging supports repo-only deltas on stock macOS Bash and finds tar under PowerShell on non-Windows hosts.
+- SSD staging retries transient image-pull failures up to three times.
+
+## [v0.2.0-rc.1] - 2026-10-27
+
+First release candidate for v0.2.0. Students choose the lab environment
+from the portal: the US DNP3 substation, or the new EU IEC 104 substation
+with its own seven-exercise workshop. This release needs containd 0.1.35
+or later and Docker Desktop 4.42 or later (Compose 2.36.0, Engine 28.1).
+The pre-release publishes images under its own tag and does not move
+`latest`; install it with `./setup.sh --version v0.2.0-rc.1`. Back up
+the complete firewall data before the first start on an existing install
+(see RELEASING.md).
+
+### Changed
+
+- **Firewall interfaces are named after their zones, and Docker Desktop
+  4.42 or later is required.** Both packages pin each firewall NIC with
+  Compose `interface_name` (`wan`, `dmz`, `lan1`, `lan2`, `lan3`; EU adds
+  `lan4` and `lan5`), so `tcpdump -i lan2` captures the field zone on
+  every host instead of an `ethN` whose order differs between hosts. The
+  US tcpdump and ESP articles and the Lab 2.4 manual capture use the
+  names; package lint rejects a missing, duplicate or mismatched name.
+  The key needs Compose 2.36.0 or later on Engine 28.1 (API 1.49) or
+  later: `setup.sh` and `setup.ps1` refuse older Docker with the same
+  message, before they change anything.
+- Package curricula now use strict, single-purpose `curriculum/` sections; EU DPI catalog text states planning-only review with no emitted protocol rule.
+- **containd 0.1.35 or later is required.** The backend rejects older
+  firewall builds at range start and when it adopts a running range.
+  containd 0.1.35 moved policy into its own nft table and fixed session listing.
+  Policy applies keep the firewall's NIC bindings, so segmentation holds
+  with the reserved management path; both packages reserve containd
+  management for the backend and proxy. Policy applies use candidate and
+  commit only. `/api/firewall/health` adds forwarding, management binding
+  and reservation diagnostics. Event queries read time-filtered pages, and
+  US packet capture uses containd zone selection. Event smoke checks need a
+  fresh matching DENY. containd 0.1.33 migrates its stored schema to 0.1.7
+  one way: back up the complete firewall data before the first start (see
+  RELEASING.md).
+
+- **Apply Your Plan works in US and EU.** The backend compiles the selected
+  remediation actions into one policy, applies it and records the package
+  revision, action IDs and policy hash. A deferred control leaves its Weak
+  exposure open; an empty or planning-only plan applies as Weak. Labs 2.3
+  and 2.4 judge the applied plan, with Hardened as the comparison: the
+  validation report gives plan proof and Hardened acceptance as separate
+  results. A new `restrict-enterprise-to-vendor` action owns vendor RDP/VNC
+  access. Execute Step probes compare each result with the running policy
+  instead of a fixed expected outcome. Lab 2.2 exports the compiled config
+  and a separate plan record (revision, action IDs, policy hash). In US,
+  Hardened and a plan that restricts vendor access deny and log Vendor DMZ
+  → OT Operations on TCP 8080, 1881, 502 and 20000 (US revision 3).
+  `scripts/validation-report.sh` and `.ps1` now request the backend report
+  for any ready package without changing the running policy; the exit
+  status follows plan proof for an applied plan and Hardened acceptance
+  otherwise. The browser policy compiler and
+  `POST /api/firewall/apply-custom` are removed.
+
+- **Release image bases are digest-pinned.** Go builders use the same
+  1.26.10 toolchain as CI; the portal moves to Node 24 LTS. CI rejects
+  unpinned Dockerfile bases and Dependabot refreshes nested image pins.
+  The simulator's mbpoll source revision and desktop pymodbus versions
+  are fixed; OS packages installed with apk/apt remain unpinned.
+
+- **IEC 104 services and CLI now use the Go port.** C remains only as a
+  sealed test reference; `iec104cmd` renders non-finite measurements as
+  `null` with invalid quality.
+
+- **EU realism and operator parity.** Derive
+  protection, fault passage and P/Q/PF from solved current/power; grade
+  breaker/F2 protection at 400 A / 1 s and 2000 A instantaneous. Put the
+  OLTC on the 110 kV winding, regulate to 20.4 kV ±1% with a 30 s delay,
+  and add a daily load/source profile. Add EU power/protection/profile
+  displays, voltage alarms, device comms health and a clearer one-line;
+  derive workshop node status from Docker. Align gates, CI and teaching
+  references with schema 3 and the new operating points.
+
+- **EU Control Centre observations now follow a selected WEMAG/SvK-modelled
+  teaching profile, not an EU default.** GI runs on connect, every 15 minutes
+  or via Interrogate station; status is spontaneous and measurands use
+  cyclic/deadband reporting. Command admission and validators use GI
+  integrity and quality rather than quiet-status receipt age; floats have
+  a reporting watchdog. The operator GI relay, received-ASDU
+  provenance and status-event journal support separate Control Centre/Field
+  truth views with device controls and Alarms, Events, Points and Trends.
+  Validators, Network Map, exercises and knowledge now follow that evidence
+  model without weakening quality or command-completion checks.
+
+- **The EU IEC-104 workshop now ships as seven package-owned exercises.**
+  Its baseline, design, planning, implementation, hardening, vendor-compromise
+  and validation exercises are served from the EU package rather than
+  retired inline lab content.
+- **Decision prompts use the active package's curriculum catalog.** The
+  EU planning exercises share package-owned budget, team and action data;
+  the US workshop's visible planning behavior is unchanged.
+- **The platform and the range are separate Compose projects.** The
+  portal (backend, frontend, proxy) runs as `rangerdanger-platform` from
+  `docker-compose.yml` (source) or `docker-compose.release.yml`; the
+  range runs as `rangerdanger` from the active package's
+  `lab-definitions/packages/<id>/compose.{source,release}.yml`. The
+  platform owns `rangerdanger_mgmt_net`. Container names, addresses,
+  ports and images of the US range are unchanged. `docker-compose.offline.yml`
+  is gone: offline is the release model with `--pull never`.
+- **Students switch the range from the portal.** The sidebar's Range
+  control restarts the range or switches packages (`GET/POST /api/range`).
+  The backend runs the transition itself: it checks the package and its
+  images, stops the old range, starts the new one with `--no-build
+  --pull never`, installs the package's proxy routes and imports the
+  package's default firewall policy. A failure tears the attempt down and
+  shows `failed` with a Retry; the previous package is not restored
+  automatically. Pages wait while the range is not ready.
+- **Every range start imports the package's default policy; a backend
+  restart no longer reseeds it.** The backend adopts a running range on
+  restart without touching the firewall.
+- **Range teardown removes the range's anonymous volumes.** The
+  engineering, corporate and vendor-jump desktops keep `/config` in
+  anonymous volumes; a range stop (`down -v`, by project label) now
+  removes them instead of leaving three dangling volumes per restart.
+- **setup.** The platform starts first, then setup asks the backend for
+  the range and waits for `ready` or `failed`. New `--from-source` and
+  `--package <id>` flags. `.env` holds `RANGERDANGER_ROOT` and, with
+  `--package`, `RANGERDANGER_PACKAGE`; `CONTAIND_JWT_SECRET` is written
+  only when it is set. An old single-project install is taken down by
+  project label first; a foreign owner of `rangerdanger_mgmt_net` stops
+  setup. Ports held by this install no longer fail the preflight. The
+  backend health timeout is now fatal.
+- **dev-up / dev-down.** `dev-up` is `setup.sh --from-source
+  --skip-firewall-gate`. `dev-down` stops the range, then the platform,
+  by project label only, and fails if anything is left; `--range-only`
+  stops only the range. `dev-down.ps1` no longer forwards Compose
+  arguments.
+- **uninstall** works by project label only and exits 3, removing
+  nothing else, if teardown leaves anything. `--keep-volumes` /
+  `-KeepVolumes` is removed. `--remove-dev-images` also removes the old
+  `rangerdanger-backend` / `rangerdanger-frontend` images.
+- **Gates.** The five US gates, `substation-validate` and
+  `validation-report` refuse to run unless the range is
+  `us-dnp3-substation` and ready; each prints one extra line.
+  `smoke-test` and CI smoke bring up through dev-up and tear down
+  through dev-down. `seed-labs` defaults to port 8088.
+- **Package lint.** `go run ./cmd/packagelint` (CI step) checks every
+  package's manifest, Compose models and proxy routes, and the platform
+  files.
+- **Release and SSD staging** enumerate platform and package images; the
+  release image asset records package membership and Compose file
+  hashes. Delta staging needs a full SSD baseline from a release that
+  carries this metadata.
+- **The Network Map's topology comes from the running range's
+  package**, not from a database copy; `POST /api/admin/seed` no longer
+  stores topologies. Existing databases keep an unused `lab_templates`
+  table (and the retired lab-instance tables).
+- **Range routes answer 503 while no range serves.** Range-bound API
+  routes, including `/api/workshop/graph`, answer
+  `{"error":"range not ready","phase":...}` outside `ready`.
+
+- **Lab content is organised as packages.** Each package
+  (`lab-definitions/packages/<id>/package.yml`) owns a topology, a
+  scenarios directory and a list of capabilities; the US workshop is
+  `us-dnp3-substation` and its files did not move. The backend serves
+  one active package (`RANGERDANGER_PACKAGE`, default
+  `us-dnp3-substation`) and lists them at `GET /api/packages`. Scenarios
+  now name their validator (`validator:`) and every step has a stable
+  `id`; `/api/scenarios` returns `package_id`, `validator` and step
+  `id`. Package, topology and scenario files are read strictly, and a
+  broken package now stops the backend at startup instead of being
+  logged and skipped. The unused `POST /api/scenarios` and
+  `POST /api/labs/templates` routes are gone.
+- **Browser progress follows the active package.** The portal reads the
+  active package from `GET /api/packages` and keys saved progress,
+  decisions, the remediation plan and the firewall track by package and
+  curriculum revision. Completed steps are recorded by step ID, so
+  reordering steps no longer shifts progress. Progress saved before
+  this change is not carried over: students start the labs fresh once.
+
+### Removed
+
+- **The lab-instance API and its Docker SDK provisioner**
+  (`/api/labs/instances/*`). It created range containers outside
+  Compose, which a range switch could not tear down; Compose now creates
+  every range container. Containers an old install created through it
+  carry the label `rangerdanger.lab_id`; remove them with
+  `docker ps -aq --filter label=rangerdanger.lab_id | xargs docker rm -f`
+  before upgrading.
+- `GET /api/labs/templates`, `POST /api/scenarios/:id/run`,
+  `GET /api/scenario-runs/:id` and the placeholder
+  `POST /api/nodes/:node_id/action`, which served only lab instances,
+  and the unlinked `/labs/[id]` page.
+
+### Fixed
+
+- **TCP validation probes on BusyBox images.** A dropped connection on
+  a BusyBox-only or BusyBox-`timeout` image, and a refused connection
+  on a BusyBox-only image, were reported as `skipped`. Each now
+  classifies as `deny` or `allow`.
+- **OLTC audit and EU outage-recovery evidence.** Arming the OLTC from
+  the PLC now writes an audit entry with its actor. EU gate G13 now
+  requires every device revision from its baseline through a settled
+  final field snapshot to be audited and solved, so autonomous OLTC
+  control during the outage no longer fails the gate.
+- **Range start after ad-hoc containers of range images.** Compose labels
+  the images it builds with the range project. A plain `docker run` of one
+  of those images made range teardown count it as a leftover, and the
+  range failed to start. Only containers Compose created now count.
+
+- **Network Map OpenPLC button.** It opened a lab-instance path that
+  always answered 404; it now opens `/apps/openplc/`.
+
+- **Workshop graph interface addresses.** `interface_ips` used the
+  wrong node keys, so nodes listed at most one network; every node now
+  lists each topology network it is on (the RTAC gains
+  `field_net 10.40.40.10`, the firewall all four zones).
+
+- **Firewall flow table works.** `GET /api/firewall/sessions` called a
+  containd route that never existed and always answered 503. It is
+  replaced by `GET /api/firewall/flows`, which returns containd's engine
+  flow table (`/api/v1/flows`, optional `?limit=` 1..5000).
+- **Workbook PDF lab order.** The PDF sorted labs with numeric
+  subtraction on string lab numbers, so `2.3-bonus` produced an
+  undefined order. Labs now sort the same way as the backend.
+- **containd calls keep working after 24 hours.** The backend signed one
+  containd token at startup with a 24-hour expiry, so PCAP, policy
+  apply, the policy observer and workshop status started failing with
+  401 after a day of uptime. It now signs a fresh token per request.
+- **`GET /api/firewall/health` returns what containd sends**
+  (`status`, `component`, `build`, `time`). The `version`, `uptime`,
+  `zones`, `sessions` and `event_rate` fields were never filled in and
+  are gone.
+- **The RTAC starts only after its network is configured.** The
+  container used to background its gateway, hardening and management
+  setup together with the simulator, so the simulator could serve
+  traffic before the routes were in place, and a failed setup step went
+  unnoticed. Setup now runs first; a failed step stops the container and
+  Docker restarts it.
+- **Firewall events show their protocol.** The backend read
+  containd's event protocol and ICS function codes under the wrong JSON
+  keys, so DPI events had no protocol tag and every rule's function-code
+  list was empty. The activity feed and substation audit now tag Modbus
+  and DNP3 events. A rule is labelled "R/O" only when it really allows
+  only reads, not whenever it lists four or fewer function codes.
+- **The substation audit's DPI rows show who talked to whom.** They
+  read event fields containd never sends, so every row showed a blank
+  "→". They now show source and destination address and port, plus the
+  protocol, function code and rule.
+- **Firewall capture instructions no longer assume fixed `ethN` names.**
+  The US tcpdump and ESP/EAP articles named `eth0`-`eth3` per zone, but
+  the firewall's interface order differs between hosts. They now look
+  the interface up from the zone subnet on the firewall, or use `-i any`
+  with a subnet filter, and map each zone to its subnet and containd
+  interface name (`wan`, `dmz`, `lan1`, `lan2`, `lan3`). Lab 2.4's manual
+  PCAP summary counted every packet twice and grouped by direction and
+  ephemeral port; it now counts each forwarded packet once per source and
+  destination host. The tshark article no longer says tshark runs on the
+  firewall.
+
+- **Validators require evidence.** Lab 2.4's report check passes only
+  after the capture finishes and the analysis gate accepts it. A failed
+  audit fetch, a missing tap or voltage reading, or 0 V now fails its
+  check, and the unconditional "Plan saved" pass is gone. Test cleanup
+  reports a failed PCAP stop instead of hiding it.
+- **Smoke totals and denial checks tell the truth.** `events-smoke` (sh and
+  ps1) and `lab-commands-smoke.ps1` count skipped checks, and a skipped
+  required check fails. The lab-command denial oracle accepts only a
+  timeout or filtered result, not "connection refused". `substation-smoke`
+  asserts that the feeder load is energized.
+- **Scenario runner state stays current.** Decision panels and step text
+  reread shared curriculum state when another panel changes it. Execute
+  Step is hidden on decision and manual steps, and Mark Complete says that
+  it is self-attested.
+- **historian-sim and OpenPLC report failures.** historian-sim reports a
+  comms error when the RTAC answers with a non-2xx status or malformed
+  JSON. The OpenPLC entrypoint exits on a compile or database failure
+  instead of starting a blank runtime.
+- **The US OpenPLC starts with a program.** The image compiles a local
+  feeder close-permissive demo at build time. At boot the entrypoint
+  checks the seed hash, installs it with no Modbus master devices, and
+  waits until the scan heartbeat advances. An ST file in `data/openplc`
+  still overrides the seed.
+- **US workstations do not forward packets, and Kali fails fast.**
+  `corp_ws`, `vendor_jump` and `eng_workstation` set
+  `net.ipv4.ip_forward=0`, as the EU webtops do. Kali exits when
+  `set-gateway.sh` cannot install its route through the firewall, instead
+  of running without it.
+- **`setup.sh` and `dev-down.sh` cannot hang on a stalled Docker CLI.**
+  Readiness queries (`info`, `ps`, `network`, `compose version`) stop after
+  a fixed limit and print recovery guidance.
+- **Curriculum claims match the range.** The EU OLTC text gives the
+  20.4 kV ±1% target with a 30 s delay. The US logging action says that
+  applying it turns on per-rule logging only; PCAP retention and syslog
+  forwarding remain advice.
+- **EU CC delivery checks accept device-reported invalid measurements.**
+  An OLTC tap step briefly marks measurements invalid until the next
+  solve, so a GI could end with an IV observation and fail the lab's
+  CC link check and gate G22. A station point now counts as delivered
+  when its current observation arrived after the GI, has a value, and is
+  GOOD or IV with only the measurement-invalid reason. Lost links and
+  other quality flags still fail. The hardening
+  check reads CC state before its active TCP probes.
+
+### Security
+
+- **Frontend toolchain advisories cleared.** Vite and Vitest move to
+  patched releases and Tailwind CSS moves from 3 to 4, which removes the
+  vulnerable build-time dependency chain; `npm audit` now reports zero
+  findings. Direct dependencies are pinned to exact versions. None of
+  the advisories reached the production bundle, and the UI looks the
+  same.
+
 ## [v0.1.36] - 2026-10-25
 
 Full image release using `[rebuild-all]`: all 16 first-party images are
@@ -680,7 +1073,7 @@ enforces. No lab, exercise, or runtime behaviour changes.
   `docker/docker/daemon` ever enters the build graph. The allowlist
   filter matches on GOID alone, so without this the four exceptions
   above would have kept passing even after the "not in the build
-  graph" rationale stopped being true. Raised by Codex review on #91.
+  graph" rationale stopped being true. Raised in review on #91.
 
 ### Changed
 
@@ -697,7 +1090,7 @@ enforces. No lab, exercise, or runtime behaviour changes.
   pull progress output (#82).
 - Bumped the `events-smoke` gate-1 event-poll budget 20s -> 45s so it
   stops flaking on loaded CI runners (#80).
-- Codex PR #78 follow-ups: DNP3 DPI consistency + smoke cleanup, plus
+- PR #78 review follow-ups: DNP3 DPI consistency + smoke cleanup, plus
   a docs audit pass (#79).
 
 ### Documentation
@@ -1217,7 +1610,7 @@ preserved.
   event store + REST endpoint on CI runner load — the gate sometimes
   declared "nflog consumer regressed" on what was actually just
   propagation latency. Now polls within an `EVENT_POLL_BUDGET`
-  budget (default 20s, inclusive of the upper bound after Codex
+  budget (default 20s, inclusive of the upper bound after
   review on PR #72 caught the off-by-one), once per second, with
   a fail-loud at the budget edge. PowerShell sibling rewritten to
   use the same polling loop so the two scripts stay in lockstep
@@ -1546,7 +1939,7 @@ content, schema, or API changes — drop-in upgrade from v0.1.15.
 
 ## [v0.1.15] - 2026-05-14
 
-Lab text accuracy pass plus the deferred Codex P2 fix on the v0.1.13
+Lab text accuracy pass plus the deferred P2 review fix on the v0.1.13
 event-schema migration. No backend changes; safe drop-in for anyone
 already on v0.1.14.
 
@@ -1586,7 +1979,7 @@ already on v0.1.14.
 ### Fixed
 
 - **IDS rows in the Live DPI Events strip now render amber, not
-  red** (Codex P2 review on #47). `eventVerdict` no longer maps
+  red** (P2 review on #47). `eventVerdict` no longer maps
   `kind: "anomaly"` to `DENY` before the `category === "ids"`
   rowTone branch can match, so anomaly rows keep their distinct
   amber tone and pure firewall denies stay red.
@@ -2197,7 +2590,7 @@ trade-off transparently in its Secure-by-Design pledge.
 
 ## [v0.1.5] - 2026-05-08
 
-Audit-pass-3 closeout. Codex surfaced two reproducible workshop
+Audit-pass-3 closeout. Review surfaced two reproducible workshop
 blockers and twelve smaller findings on top of v0.1.4. Validated
 against three back-to-back clean rebuilds (each producing a different
 docker `ethN` ordering on the firewall - confirming the determinism
@@ -2263,7 +2656,7 @@ fix holds): all three iterations passed `firewall-smoke 52/52`,
   complete or absent.
 - **`docker-compose.release.yml`** restored
   `CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24` (lockstep drift
-  codex caught - release-image users would have hit 502 on
+  caught in review - release-image users would have hit 502 on
   apply when the mgmt subnet fell outside containd's input
   chain). `CONTAIND_CAPTURE_IFACES` removed from both compose
   files since the static `ethN,...` pin was non-deterministic
@@ -2312,7 +2705,7 @@ fix holds): all three iterations passed `firewall-smoke 52/52`,
   + capbank handler coverage from "Still open" to shipped
   (landed in v0.1.4 - was stale carry-over). Added the
   audit-pass-3 P0/P1/P2 items + an "Open questions" section
-  parking codex P0-001 (firewall apply 502/403 - not
+  parking review finding P0-001 (firewall apply 502/403 - not
   reproduced) and the upstream containd PCAP zone-name
   issue.
 
@@ -2667,7 +3060,7 @@ directly in the containd CLI. Major doc + setup polish.
   when a node references an unknown network zone, instead of silently
   no-op'ing and letting the container land on Docker's default
   bridge. Pinned with `backend/internal/orchestrator/orchestrator_test.go`.
-  Surfaced by Codex review on PR #26.
+  Surfaced in review on PR #26.
 
 - Backend dispatch in `handleValidateScenario` cleaned up: removed
   case arms for the deleted exercise IDs, added a case +
@@ -2809,14 +3202,14 @@ ergonomics).
   operator HMI is FUXA at `/apps/fuxa-hmi/` (proxy route, not a
   Next.js route).
 - README's Documentation section now lists ROADMAP/SUPPORT/SECURITY/
-  CONTRIBUTING/CHANGELOG; outdated `CLAUDE.md` link replaced with
+  CONTRIBUTING/CHANGELOG; outdated local-only context link replaced with
   the workshop-overview and security-known-issues pointers.
-- `dnp3go/README.md` - dropped the dangling "see CLAUDE.md" pointer.
+- `dnp3go/README.md` - dropped the dangling local-only context pointer.
 
 ### Repo hygiene
 
-- `CLAUDE.md` untracked (added to `.gitignore`). Local-only AI agent
-  context; not useful to public visitors.
+- Local-only development context untracked (added to `.gitignore`);
+  not useful to public visitors.
 - Dead code removed: `Dockerfile.labtools`, `scripts/tools-entrypoint.sh`,
   `scripts/scenarios/` (6 pre-YAML attack scripts), `scripts/seed-fuxa.sh`,
   `scripts/smoke-test-opendss.sh`, `scripts/configure-fuxa.py`,
@@ -2946,7 +3339,12 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.36...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.5...HEAD
+[v0.2.0-rc.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.5
+[v0.2.0-rc.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.4
+[v0.2.0-rc.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.3
+[v0.2.0-rc.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.2
+[v0.2.0-rc.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.1
 [v0.1.36]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.36
 [v0.1.35]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.35
 [v0.1.34]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.34

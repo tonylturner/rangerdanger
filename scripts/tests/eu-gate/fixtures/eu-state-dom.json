@@ -1,0 +1,152 @@
+{
+  "view": "cc",
+  "visible": true,
+  "cached": false,
+  "sections": [
+    {
+      "section": "S1",
+      "state": "LIVE",
+      "path": "via CB1",
+      "kv": "19.8",
+      "text": "S1 · LIVE19.80 kV · GOODvia CB1",
+      "textNodes": [
+        "S1 · LIVE",
+        "19.80 kV · GOOD",
+        "via CB1"
+      ]
+    },
+    {
+      "section": "S2",
+      "state": "LIVE",
+      "path": "via CB1",
+      "kv": "19.7",
+      "text": "S2 · LIVE19.70 kV · GOODvia CB1",
+      "textNodes": [
+        "S2 · LIVE",
+        "19.70 kV · GOOD",
+        "via CB1"
+      ]
+    },
+    {
+      "section": "S3",
+      "state": "LIVE",
+      "path": "via F2",
+      "kv": "19.9",
+      "text": "S3 · LIVE19.90 kV · GOODvia F2",
+      "textNodes": [
+        "S3 · LIVE",
+        "19.90 kV · GOOD",
+        "via F2"
+      ]
+    }
+  ],
+  "devices": [
+    {
+      "device": "CB1",
+      "position": "closed",
+      "quality": "good",
+      "text": "CB1: CLOSED · GOODCB1CLOSED · GOOD",
+      "textNodes": [
+        "CB1: CLOSED · GOOD",
+        "CB1",
+        "CLOSED · GOOD"
+      ]
+    },
+    {
+      "device": "RMU1",
+      "position": "closed",
+      "quality": "good",
+      "text": "RMU1 · NC: CLOSED · GOODRMU1 · NCCLOSED · GOOD",
+      "textNodes": [
+        "RMU1 · NC: CLOSED · GOOD",
+        "RMU1 · NC",
+        "CLOSED · GOOD"
+      ]
+    },
+    {
+      "device": "RMU2",
+      "position": "open",
+      "quality": "good",
+      "text": "RMU2 · NOP: OPEN · GOODRMU2 · NOPOPEN · GOOD",
+      "textNodes": [
+        "RMU2 · NOP: OPEN · GOOD",
+        "RMU2 · NOP",
+        "OPEN · GOOD"
+      ]
+    },
+    {
+      "device": "T1",
+      "tap": "0",
+      "quality": "good",
+      "text": "T1 110/20 kV · OLTCTap 0 · GOODMANUAL · GOOD",
+      "textNodes": [
+        "T1 110/20 kV · OLTC",
+        "Tap 0 · GOOD",
+        "MANUAL · GOOD"
+      ]
+    },
+    {
+      "device": "F2",
+      "position": "closed",
+      "text": "",
+      "quality": "good",
+      "textNodes": []
+    }
+  ],
+  "f2Line": "LIVE",
+  "measurements": [
+    {
+      "point": "oltc-1-current",
+      "text": "T1 current 72.3 A GOOD",
+      "visible": true
+    },
+    {
+      "point": "oltc-1-bus-kv",
+      "state": "LIVE",
+      "text": "20 kV GOOD",
+      "visible": true
+    },
+    {
+      "point": "feeder-current",
+      "text": "61.4 A GOOD",
+      "visible": true
+    },
+    {
+      "point": "feeder-voltage",
+      "state": "LIVE",
+      "text": "19.91 kV GOOD",
+      "visible": true
+    },
+    {
+      "point": "rmu-1-current",
+      "text": "18.7 A GOOD",
+      "visible": true
+    },
+    {
+      "point": "rmu-2-current",
+      "text": "0 A GOOD",
+      "visible": true
+    },
+    {
+      "point": "rmu-2-section-kv",
+      "state": "LIVE",
+      "text": "19.7 kV GOOD",
+      "visible": true
+    }
+  ],
+  "conditions": [
+    {
+      "id": "none",
+      "text": "No alarms in GOOD observations"
+    }
+  ],
+  "comparisons": [],
+  "viewState": "ok",
+  "observationUncertainty": "0",
+  "f2Telemetry": "F2 · IEC 104 · indication only: NORMAL · I 11.2 A · P 0.33 MW. Alternative feeder from the same T1 / bus20.",
+  "textNodes": [
+    "Protection ",
+    "TRIPPED",
+    " lockout"
+  ]
+}

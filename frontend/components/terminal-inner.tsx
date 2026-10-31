@@ -6,11 +6,10 @@ import "@xterm/xterm/css/xterm.css";
 
 type TerminalInnerProps = {
   nodeId: string;
-  labId: string;
   expanded?: boolean;
 };
 
-export default function TerminalInner({ nodeId, labId, expanded = false }: TerminalInnerProps) {
+export default function TerminalInner({ nodeId, expanded = false }: TerminalInnerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -84,9 +83,7 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
     term.writeln("\x1b[36mConnecting to container...\x1b[0m");
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = labId === "workshop"
-      ? `${protocol}//${window.location.host}/api/workshop/nodes/${nodeId}/terminal`
-      : `${protocol}//${window.location.host}/api/labs/instances/${labId}/nodes/${nodeId}/terminal`;
+    const wsUrl = `${protocol}//${window.location.host}/api/workshop/nodes/${nodeId}/terminal`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -157,7 +154,7 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
       fitAddonRef.current = null;
       wsRef.current = null;
     };
-  }, [nodeId, labId, expanded, fitTerminal, connectKey]);
+  }, [nodeId, expanded, fitTerminal, connectKey]);
 
   // Re-fit when expanded changes
   useEffect(() => {
@@ -174,7 +171,7 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
         {(status === "disconnected" || status === "error") && (
           <button
             onClick={reconnect}
-            className="rounded border border-amber-700 bg-amber-950/80 px-2 py-0.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/80 transition-colors"
+            className="rounded-sm border border-amber-700 bg-amber-950/80 px-2 py-0.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/80 transition-colors"
           >
             Reconnect
           </button>

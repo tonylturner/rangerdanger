@@ -12,6 +12,7 @@ type stepExecutors struct {
 	firewall      func(configName string) StepActionResult
 	check         func(expect map[string]any) []StepActionResult
 	probe         func(step labs.ScenarioStep) []StepActionResult
+	sessionCut    func(flow string) StepActionResult
 	sequencePause func()
 }
 
@@ -28,7 +29,7 @@ func evaluateTestStep(index int, step labs.ScenarioStep, executors stepExecutors
 	case "command":
 		r := executors.command(step.Action.Device, step.Action.Command, step.Action.Source, step.Action.Value)
 		result.Passed = r.Success
-		if !r.Success && strings.Contains(r.Detail, "BLOCKED by containd") {
+		if !r.Success && r.Blocked {
 			result.Passed = true
 			r.Detail += " (expected — hardened policy is working)"
 		}
@@ -74,6 +75,11 @@ func evaluateTestStep(index int, step labs.ScenarioStep, executors stepExecutors
 			}
 		}
 		result.Detail = fmt.Sprintf("%d probes, all pass: %v", len(probes), result.Passed)
+
+	case "session-cut":
+		r := executors.sessionCut(step.Action.Flow)
+		result.Passed = r.Success
+		result.Detail = r.Detail
 
 	case "decision":
 		result.Passed = true

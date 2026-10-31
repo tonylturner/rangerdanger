@@ -1,0 +1,7 @@
+sections:
+  - id: basics
+    heading: Telecontrol
+    articles:
+      - id: baseline
+        title: Baseline
+        file: baseline.md

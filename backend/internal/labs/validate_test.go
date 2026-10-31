@@ -1,24 +1,44 @@
 package labs
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
+
+// testValidators stands in for the server's registry.
+var testValidators = ValidatorRequirements{
+	"electrical-check": {CapabilityProcessElectrical},
+	"audited-policy":   {CapabilityPolicyContaind, CapabilityAuditDeviceControl},
+}
+
+var electricalPackage = []string{CapabilityProcessElectrical}
+
+// usPolicies are the US package's policy names; validation reads only the names.
+var usPolicies = map[string]string{"weak": "firewall/weak.json", "improved": "firewall/improved.json"}
 
 func validatorFixture() (*LabYAML, ScenarioYAML) {
 	def := &LabYAML{
-		ID:    "substation",
-		Nodes: []NodeYAML{{ID: "rtac-1"}, {ID: "fw-1"}},
+		ID: "substation",
+		Networks: []NetworkYAML{
+			{ID: "ot-ops", CIDR: "10.30.30.0/24", Zone: "lan1"},
+			{ID: "field", CIDR: "10.40.40.0/24", Zone: "lan2"},
+		},
+		Nodes: []NodeYAML{
+			{ID: "rtac-1", IP: "10.30.30.20", Networks: []string{"ot-ops"}},
+			{ID: "fw-1", IP: "10.30.30.2", Networks: []string{"ot-ops"}},
+			{ID: "relay-1", IP: "10.40.40.20", Networks: []string{"field"}},
+		},
 	}
 	scenario := ScenarioYAML{
 		ID: "baseline", Name: "Baseline", Order: "1.1",
-		Steps: []ScenarioStep{{Title: "Review policy"}},
+		Steps: []ScenarioStep{{ID: "review-policy", Title: "Review policy"}},
 	}
 	return def, scenario
+}
+
+// validateElectrical validates scenarios as a process.electrical package.
+func validateElectrical(def *LabYAML, scenarios ...ScenarioYAML) error {
+	return ValidateLab(def, scenarios, electricalPackage, usPolicies, testValidators)
 }
 
 func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
@@ -37,9 +57,9 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 		{
 			name: "bad expected config",
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
-				scenario.Steps[0].ExpectedConfig = "improved"
+				scenario.Steps[0].ExpectedConfig = "strict"
 			},
-			problem: "expected_config must be weak or hardened",
+			problem: `expected_config must be one of the package policies (improved, weak) or hardened, got "strict"`,
 		},
 		{
 			name: "unknown step node",
@@ -74,7 +94,7 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
 				scenario.Steps[0].Action = &StepAction{Type: "firewall", Config: "hardened"}
 			},
-			problem: "firewall config must be weak or improved",
+			problem: `firewall config must be one of the package policies (improved, weak), got "hardened"`,
 		},
 		{
 			name: "unknown check key",
@@ -95,7 +115,7 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
 				scenario.Steps[0].Action = &StepAction{Type: "check", Expect: map[string]any{"firewall_config": "hardened"}}
 			},
-			problem: "check firewall_config must be weak or improved",
+			problem: `check firewall_config must be one of the package policies (improved, weak), got "hardened"`,
 		},
 		{
 			name: "empty check expect",
@@ -119,22 +139,32 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 			problem: `commands[0] unknown command "explode" for device "relay"`,
 		},
 		{
-			name: "decision role mismatch",
+			name: "unknown validator",
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
-				scenario.Steps[0].Action = validDecision()
-				scenario.Steps[0].Action.Actions[0].Roles = []string{"Missing role"}
+				scenario.Validator = "no-such-validator"
 			},
-			problem: `decision action "plan" references unknown role "Missing role"`,
+			problem: `unknown validator "no-such-validator"`,
 		},
 		{
-			name: "duplicate scenario id across template and files",
-			mutate: func(def *LabYAML, scenario *ScenarioYAML) {
-				def.Scenarios = []ScenarioYAML{{
-					ID: scenario.ID, Name: "Embedded", Order: "1.0",
-					Steps: []ScenarioStep{{Title: "Embedded title"}},
-				}}
+			name: "validator capability missing from package",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Validator = "audited-policy"
 			},
-			problem: "scenario id must be unique across the template and scenario files",
+			problem: `validator "audited-policy" requires capability "policy.containd", which the package does not declare`,
+		},
+		{
+			name: "missing step id",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].ID = ""
+			},
+			problem: "step id must not be empty",
+		},
+		{
+			name: "step id not a slug",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].ID = "Review_Policy"
+			},
+			problem: `step id "Review_Policy" must be lowercase letters and digits separated by single hyphens`,
 		},
 	}
 
@@ -142,7 +172,7 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			def, scenario := validatorFixture()
 			test.mutate(def, &scenario)
-			err := ValidateLab(def, []ScenarioYAML{scenario})
+			err := validateElectrical(def, scenario)
 			if err == nil {
 				t.Fatal("ValidateLab() error = nil, want validation failure")
 			}
@@ -176,7 +206,7 @@ func TestValidateLabRejectsMissingRequiredFields(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			def, scenario := validatorFixture()
 			test.mutate(def, &scenario)
-			err := ValidateLab(def, []ScenarioYAML{scenario})
+			err := validateElectrical(def, scenario)
 			if err == nil || !strings.Contains(err.Error(), test.problem) {
 				t.Fatalf("ValidateLab() error = %v, want %q", err, test.problem)
 			}
@@ -194,9 +224,9 @@ func TestValidateLabAggregatesProblemsWithStepContext(t *testing.T) {
 		},
 	}
 	scenario.Steps = append(scenario.Steps, ScenarioStep{
-		Title: "Bad node", Node: "not-in-template", ExpectedConfig: "improved",
+		ID: "bad-node", Title: "Bad node", Node: "not-in-template", ExpectedConfig: "strict",
 	})
-	err := ValidateLab(def, []ScenarioYAML{scenario})
+	err := validateElectrical(def, scenario)
 	if err == nil {
 		t.Fatal("ValidateLab() error = nil, want aggregated validation failure")
 	}
@@ -204,7 +234,7 @@ func TestValidateLabAggregatesProblemsWithStepContext(t *testing.T) {
 		`scenario baseline step 0 "Review policy": unknown check key "unknown"`,
 		`scenario baseline step 0 "Review policy": check breaker_closed value must be a boolean`,
 		`scenario baseline step 1 "Bad node": unknown node "not-in-template"`,
-		`scenario baseline step 1 "Bad node": expected_config must be weak or hardened`,
+		`scenario baseline step 1 "Bad node": expected_config must be one of the package policies`,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("aggregated error %q does not contain %q", err, want)
@@ -212,44 +242,58 @@ func TestValidateLabAggregatesProblemsWithStepContext(t *testing.T) {
 	}
 }
 
-func TestValidateLabRejectsInvalidDecisionFields(t *testing.T) {
-	def, scenario := validatorFixture()
-	decision := validDecision()
-	decision.BudgetHours = 0
-	decision.Roles[0].CapacityHours = 0
-	decision.Actions[0].ID = ""
-	decision.Actions[0].EffortHours = 0
-	decision.Actions = append(decision.Actions,
-		DecisionAction{ID: "plan", EffortHours: 2, Roles: []string{"Operator"}},
-		DecisionAction{ID: "plan", EffortHours: 2, Roles: []string{"Operator"}},
-	)
-	scenario.Steps[0].Action = decision
-	err := ValidateLab(def, []ScenarioYAML{scenario})
-	if err == nil {
-		t.Fatal("ValidateLab() error = nil, want decision validation failure")
+func TestValidateDecisionCanonical(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(*Curriculum)
+		want   string
+	}{
+		{"budget", func(c *Curriculum) { c.BudgetHours = 0 }, "budget, teams and catalog"},
+		{"capacity", func(c *Curriculum) {
+			for i := range c.Teams {
+				c.Teams[i].CapacityHours = 0
+			}
+		}, "capacity_hours must be greater than zero"},
+		{"empty id", func(c *Curriculum) { c.Catalog[0].ID = "" }, "action id must not be empty"},
+		{"effort", func(c *Curriculum) { c.Catalog[0].EffortHours = 0 }, "effort_hours must be greater than zero"},
+		{"duplicate id", func(c *Curriculum) { c.Catalog[1].ID = c.Catalog[0].ID }, "duplicate catalog action"},
+		{"unknown role", func(c *Curriculum) { c.Catalog[0].Roles = []string{"Missing role"} }, "references unknown team"},
+		{"no actions", func(c *Curriculum) { c.Catalog = nil }, "budget, teams and catalog"},
 	}
-	for _, want := range []string{
-		"decision budget_hours must be greater than zero",
-		"decision must have at least one role with capacity_hours greater than zero",
-		"decision action id must not be empty",
-		"decision action \"\" effort_hours must be greater than zero",
-		`duplicate decision action id "plan"`,
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("decision error %q does not contain %q", err, want)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pkg, _ := curriculumExample(t)
+			tc.change(pkg.Curriculum)
+			if err := validateCurriculum(pkg); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error=%v want %s", err, tc.want)
+			}
+		})
 	}
 }
 
-func TestValidateLabRejectsDecisionWithoutActions(t *testing.T) {
-	def, scenario := validatorFixture()
-	scenario.Steps[0].Action = &StepAction{
-		Type: "decision", BudgetHours: 40,
-		Roles: []DecisionRole{{Name: "Operator", CapacityHours: 8}},
-	}
-	err := ValidateLab(def, []ScenarioYAML{scenario})
-	if err == nil || !strings.Contains(err.Error(), "decision must have at least one action") {
-		t.Fatalf("ValidateLab() error = %v, want missing decision actions", err)
+func TestValidateDecisionBinding(t *testing.T) {
+	for _, defect := range []string{"absent", "wrong role", "missing step", "duplicate step"} {
+		t.Run(defect, func(t *testing.T) {
+			pkg, _ := curriculumExample(t)
+			for i := range pkg.Scenarios {
+				if pkg.Scenarios[i].ID == pkg.Curriculum.Roles["planning"] {
+					switch defect {
+					case "wrong role":
+						pkg.Curriculum.Roles["planning"] = pkg.Curriculum.Roles["baseline"]
+					case "missing step":
+						pkg.Scenarios[i].Steps = nil
+					case "duplicate step":
+						pkg.Scenarios[i].Steps = append(pkg.Scenarios[i].Steps, pkg.Scenarios[i].Steps[0])
+					}
+				}
+			}
+			if defect == "absent" {
+				pkg.Curriculum = nil
+			}
+			if err := validateCurriculum(pkg); err == nil {
+				t.Fatal("accepted unbound decision")
+			}
+		})
 	}
 }
 
@@ -257,7 +301,7 @@ func TestValidateProbe(t *testing.T) {
 	valid := func() (*LabYAML, ScenarioYAML) {
 		def, scenario := validatorFixture()
 		scenario.Steps[0].Node = "rtac-1"
-		scenario.Steps[0].Action = &StepAction{Type: "probe", Outcome: "reachable", Targets: []ProbeTarget{{Host: "10.40.40.20", Port: 502}}}
+		scenario.Steps[0].Action = &StepAction{Type: "probe", Targets: []ProbeTarget{{Host: "10.40.40.20", Port: 502}}}
 		return def, scenario
 	}
 	tests := []struct {
@@ -265,11 +309,11 @@ func TestValidateProbe(t *testing.T) {
 		mutate  func(*ScenarioStep)
 		problem string
 	}{
-		{"invalid outcome", func(s *ScenarioStep) { s.Action.Outcome = "allow" }, "probe outcome must be reachable or blocked"},
 		{"check expect on probe", func(s *ScenarioStep) { s.Action.Expect = map[string]any{"breaker_closed": true} }, "probe expect must be empty"},
 		{"no targets", func(s *ScenarioStep) { s.Action.Targets = nil }, "probe must contain at least one target"},
 		{"bad host", func(s *ScenarioStep) { s.Action.Targets[0].Host = "example.com" }, "host must be a valid IPv4"},
 		{"IPv6 host", func(s *ScenarioStep) { s.Action.Targets[0].Host = "::1" }, "host must be a valid IPv4"},
+		{"unknown target", func(s *ScenarioStep) { s.Action.Targets[0].Host = "10.40.40.99" }, "cannot resolve policy tuple"},
 		{"zero port", func(s *ScenarioStep) { s.Action.Targets[0].Port = 0 }, "port must be 1-65535"},
 		{"large port", func(s *ScenarioStep) { s.Action.Targets[0].Port = 65536 }, "port must be 1-65535"},
 		{"missing source", func(s *ScenarioStep) { s.Node = "" }, "must have a source"},
@@ -279,7 +323,7 @@ func TestValidateProbe(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			def, scenario := valid()
 			tt.mutate(&scenario.Steps[0])
-			err := ValidateLab(def, []ScenarioYAML{scenario})
+			err := validateElectrical(def, scenario)
 			if err == nil || !strings.Contains(err.Error(), tt.problem) {
 				t.Fatalf("ValidateLab error = %v, want %q", err, tt.problem)
 			}
@@ -288,37 +332,142 @@ func TestValidateProbe(t *testing.T) {
 	def, scenario := valid()
 	scenario.Steps[0].Node = ""
 	scenario.Steps[0].Action.Targets[0].From = "fw-1"
-	if err := ValidateLab(def, []ScenarioYAML{scenario}); err != nil {
+	if err := validateElectrical(def, scenario); err != nil {
 		t.Fatalf("override-only probe rejected: %v", err)
 	}
 }
 
-func validDecision() *StepAction {
-	return &StepAction{
-		Type: "decision", BudgetHours: 40,
-		Roles:   []DecisionRole{{Name: "Operator", CapacityHours: 8}},
-		Actions: []DecisionAction{{ID: "plan", EffortHours: 2, Roles: []string{"Operator"}}},
+func TestValidateLabAcceptsDeclaredValidator(t *testing.T) {
+	def, scenario := validatorFixture()
+	scenario.Validator = "electrical-check"
+	if err := validateElectrical(def, scenario); err != nil {
+		t.Fatalf("ValidateLab() = %v, want a known validator with its capability to pass", err)
+	}
+	scenario.Validator = ""
+	if err := validateElectrical(def, scenario); err != nil {
+		t.Fatalf("ValidateLab() = %v, want a scenario without a validator to pass", err)
 	}
 }
 
-func TestValidateLabAcceptsShippedLabDefinitions(t *testing.T) {
-	definitions := filepath.Clean(filepath.Join("..", "..", "..", "lab-definitions"))
-	data, err := os.ReadFile(filepath.Join(definitions, "substation-segmentation.yml"))
-	if err != nil {
-		t.Fatalf("read shipped template: %v", err)
+func TestValidateLabRejectsDuplicateIDs(t *testing.T) {
+	def, scenario := validatorFixture()
+	scenario.Steps = append(scenario.Steps, ScenarioStep{ID: "review-policy", Title: "Again"})
+	err := validateElectrical(def, scenario)
+	if err == nil || !strings.Contains(err.Error(), `step 1 "Again": step id "review-policy" must be unique within the scenario`) {
+		t.Fatalf("ValidateLab() error = %v, want duplicate step id", err)
 	}
-	var def LabYAML
-	if err := yaml.Unmarshal(data, &def); err != nil {
-		t.Fatalf("parse shipped template: %v", err)
+
+	def, first := validatorFixture()
+	_, second := validatorFixture()
+	err = validateElectrical(def, first, second)
+	if err == nil || !strings.Contains(err.Error(), "scenario id must be unique within the package") {
+		t.Fatalf("ValidateLab() error = %v, want duplicate scenario id", err)
 	}
-	scenarios, err := loadScenarioFiles(filepath.Join(definitions, "scenarios"))
-	if err != nil {
-		t.Fatalf("load shipped scenarios: %v", err)
+}
+
+func TestValidateLabRejectsNonSlugScenarioID(t *testing.T) {
+	def, scenario := validatorFixture()
+	scenario.ID = "us--baseline"
+	err := validateElectrical(def, scenario)
+	if err == nil || !strings.Contains(err.Error(), "scenario id must be lowercase letters and digits separated by single hyphens") {
+		t.Fatalf("ValidateLab() error = %v, want slug error", err)
 	}
-	if len(scenarios) != 7 {
-		t.Fatalf("loaded %d shipped scenarios, want all 7", len(scenarios))
+}
+
+func TestValidateLabGatesActionVocabularyOnCapability(t *testing.T) {
+	for _, action := range []*StepAction{
+		{Type: "command", Device: "relay", Command: "trip"},
+		{Type: "sequence", Commands: []StepActionCmd{{Device: "relay", Command: "trip"}}},
+		{Type: "check", Expect: map[string]any{"breaker_closed": true}},
+	} {
+		t.Run(action.Type, func(t *testing.T) {
+			def, scenario := validatorFixture()
+			scenario.Steps[0].Action = action
+			if err := validateElectrical(def, scenario); err != nil {
+				t.Fatalf("electrical package rejected %s: %v", action.Type, err)
+			}
+			err := ValidateLab(def, []ScenarioYAML{scenario}, []string{CapabilityPolicyContaind}, usPolicies, testValidators)
+			want := action.Type + " actions need a package capability with an action vocabulary (process.electrical)"
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("ValidateLab() error = %v, want %q", err, want)
+			}
+		})
 	}
-	if err := ValidateLab(&def, scenarios); err != nil {
-		t.Fatalf("ValidateLab(shipped labs): %v", err)
+}
+
+// TestValidateLabChecksPolicyNamesAgainstThePackage accepts whatever names
+// the package declares, and the hardened alias only where the package has
+// the policy it stands for.
+func TestValidateLabChecksPolicyNamesAgainstThePackage(t *testing.T) {
+	custom := map[string]string{"baseline": "a.json", "locked": "b.json"}
+	tests := []struct {
+		name     string
+		policies map[string]string
+		step     ScenarioStep
+		problem  string
+	}{
+		{"declared firewall action", custom, ScenarioStep{Action: &StepAction{Type: "firewall", Config: "locked"}}, ""},
+		{"undeclared firewall action", custom, ScenarioStep{Action: &StepAction{Type: "firewall", Config: "improved"}},
+			`firewall config must be one of the package policies (baseline, locked), got "improved"`},
+		{"declared expected config", custom, ScenarioStep{ExpectedConfig: "baseline"}, ""},
+		{"undeclared expected config", custom, ScenarioStep{ExpectedConfig: "weak"},
+			`expected_config must be one of the package policies (baseline, locked) or hardened, got "weak"`},
+		{"hardened alias without improved", custom, ScenarioStep{ExpectedConfig: "hardened"},
+			`expected_config must be one of the package policies (baseline, locked) or hardened, got "hardened"`},
+		{"hardened alias with improved", usPolicies, ScenarioStep{ExpectedConfig: "hardened"}, ""},
+		{"improved by name", usPolicies, ScenarioStep{ExpectedConfig: "improved"}, ""},
+		{"declared check", custom, ScenarioStep{Action: &StepAction{Type: "check", Expect: map[string]any{"firewall_config": "locked"}}}, ""},
+		{"undeclared check", custom, ScenarioStep{Action: &StepAction{Type: "check", Expect: map[string]any{"firewall_config": "weak"}}},
+			`check firewall_config must be one of the package policies (baseline, locked), got "weak"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			def, scenario := validatorFixture()
+			step := test.step
+			step.ID, step.Title = "policy-step", "Policy step"
+			scenario.Steps = []ScenarioStep{step}
+			err := ValidateLab(def, []ScenarioYAML{scenario}, electricalPackage, test.policies, testValidators)
+			if test.problem == "" {
+				if err != nil {
+					t.Fatalf("ValidateLab() = %v, want pass", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.problem) {
+				t.Fatalf("ValidateLab() error = %v, want %q", err, test.problem)
+			}
+		})
+	}
+}
+
+func TestTruthCheckVocabulary(t *testing.T) {
+	for _, key := range []string{"breaker_closed", "supply_present", "cc_link_fresh", "rmu_normal", "oltc_auto", "firewall_config", "loads_energized", "typo"} {
+		for _, validType := range []bool{true, false} {
+			t.Run(key+"/"+map[bool]string{true: "typed", false: "wrong-type"}[validType], func(t *testing.T) {
+				def, scenario := validatorFixture()
+				var value any = true
+				if key == "firewall_config" {
+					value = "improved"
+				}
+				if !validType {
+					if key == "firewall_config" {
+						value = true
+					} else {
+						value = "true"
+					}
+				}
+				scenario.Steps[0].Action = &StepAction{Type: "check", Expect: map[string]any{key: value}}
+				err := ValidateLab(def, []ScenarioYAML{scenario}, []string{CapabilityProcessTruth}, usPolicies, nil)
+				want := validType && key != "loads_energized" && key != "typo"
+				if (err == nil) != want {
+					t.Fatalf("valid=%t err=%v", want, err)
+				}
+			})
+		}
+	}
+	def, scenario := validatorFixture()
+	scenario.Steps[0].Action = &StepAction{Type: "check", Expect: map[string]any{"supply_present": true}}
+	if err := validateElectrical(def, scenario); err == nil {
+		t.Fatal("EU-only key leaked into US vocabulary")
 	}
 }

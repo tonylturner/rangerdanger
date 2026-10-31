@@ -1,10 +1,10 @@
 # Architecture Overview
 
-RangerDanger is a containerized substation cyber range. It runs entirely inside Docker - six virtual networks (four firewalled zones plus management and physics), a deep-packet-inspection firewall at the center, custom Go simulators for field devices, and a Next.js web application for orchestration and exercise delivery.
+RangerDanger is a containerized substation cyber range. It runs entirely inside Docker - a package-specific teaching topology plus management, physics and isolated desktop delivery bridges, a deep-packet-inspection firewall at the center, custom Go simulators for field devices, and a Next.js web application for orchestration and exercise delivery.
 
 ## Network topology
 
-The substation is modeled as four firewalled zones plus one non-firewalled physics network and one out-of-band management network. The containd NGFW is multi-homed across all four firewalled zones and acts as the default gateway for each, forcing all inter-zone traffic through deep-packet inspection and policy enforcement.
+The US substation is modeled as four firewalled teaching zones plus one non-firewalled physics network and one out-of-band management network. The containd NGFW is multi-homed across the teaching zones and acts as their default gateway, forcing teaching inter-zone traffic through deep-packet inspection and policy enforcement. The inventory below describes US; EU uses station/process instead of OT-Ops/physics and adds Control Centre and Operations DMZ teaching zones. Each package's manifest defines its full attachment set. Desktop delivery bridges, described below, are outside the teaching topology.
 
 | Zone | Subnet | containd zone | Purpose |
 |------|--------|---------------|---------|
@@ -15,7 +15,7 @@ The substation is modeled as four firewalled zones plus one non-firewalled physi
 | Management (`mgmt_net`) | 10.99.99.0/24 | lan3 | Backend ↔ firewall control plane (out of band) |
 | Physics (`physics_net`) | 10.50.50.0/24 | not firewalled | OpenDSS feeder simulation |
 
-Zone names (`wan`/`dmz`/`lan1`/`lan2`/`lan3`) are containd's logical interface names. They auto-bind to whatever `ethN` Docker assigns at boot via the `CONTAIND_AUTO_*_SUBNET` env in `docker-compose.yml`. **`ethN` ordering is not stable across hosts** - Docker assigns `ethN` by alphabetical network name, not by compose declaration order - so policy and tooling reference zone names rather than `eth` indices. The `eth0`/`eth1`/`...` mapping is a runtime artifact of the host you're on; never rely on it.
+Zone names (`wan`/`dmz`/`lan1`/`lan2`/`lan3`) are containd's logical interface names, and the firewall's kernel interfaces carry the same names. Each firewall network attachment in the range package's Compose files sets `interface_name` (`enterprise_net` → `wan`, `vendor_net` → `dmz`, `ot_ops_net` → `lan1`, `field_net` → `lan2`, `mgmt_net` → `lan3`; the EU package adds `lan4` and `lan5`), and package lint checks those names against the topology zones and the package policies. containd binds each zone through the `CONTAIND_AUTO_*_SUBNET` env, so the policy never names a device. Without the pin, Docker names the NICs `eth0`, `eth1`, ... in an order that differs between hosts; with it, `tcpdump -i lan2` on the firewall captures the field zone on every host. Compose supports `interface_name` from 2.36.0 on Engine 28.1 (API 1.49), which is why `setup.sh` refuses older Docker.
 
 The RTAC is intentionally multi-homed on **four** networks: OT Operations (`10.30.30.20`), Field (`10.40.40.10`), Physics (`10.50.50.10`, so it can poll the OpenDSS model), and Management (`10.99.99.20`, so the backend can reach `http://rtac-sim:8080`). However, `scripts/rtac-harden.sh` actively prevents the RTAC from acting as a firewall bypass by replacing the directly-connected route to `field_net` with an indirect route via the OT-Ops firewall, disabling IP forwarding, dropping the FORWARD chain, and disabling proxy ARP. The result: **all RTAC → field traffic transits the containd firewall and is visible to its capture/policy pipeline**, with the wire-visible source IP being `10.30.30.20` (the RTAC's OT-Ops leg). The field leg exists for realism - many production RTACs have one - but is intentionally inert as a routed source.
 
@@ -25,10 +25,10 @@ This compensating control is why the hardened `substation-improved.json` source-
 
 | Node | Container | Zone(s) | IP | Role |
 |------|-----------|---------|-----|------|
-| Corporate workstation | `corp_ws` | enterprise | 10.10.10.10 | Generic IT workstation |
+| Corporate workstation | `corp_ws` | enterprise + desk_corp | 10.10.10.10 | Generic IT workstation |
 | Kali attacker | `kali` | enterprise | 10.10.10.50 | Offense tooling: nmap, mbpoll, dnp3poll, dnp3cmd, pymodbus |
-| Vendor jump box | `vendor_jump` | vendor | 10.20.20.10 | Vendor remote access |
-| Engineering workstation | `eng_workstation` | vendor | 10.20.20.20 | Ubuntu MATE desktop with Wireshark, tshark, mbpoll, dnp3 tools |
+| Vendor jump box | `vendor_jump` | vendor + desk_vendor | 10.20.20.10 | Vendor remote access |
+| Engineering workstation | `eng_workstation` | vendor + desk_eng | 10.20.20.20 | Ubuntu MATE desktop with Wireshark, tshark, mbpoll, dnp3 tools |
 | FUXA HMI | `fuxa_hmi` | ot_ops | 10.30.30.10 | Operator HMI (SCADA) |
 | RTAC | `rtac_sim` | ot_ops + field + physics + mgmt | 10.30.30.20 (also 10.40.40.10 on field_net pinned via the OT-Ops firewall, 10.50.50.10 on physics_net for OpenDSS polling, 10.99.99.20 on mgmt_net so the backend can reach it) | Supervisory controller / protocol broker |
 | OpenPLC | `openplc` | ot_ops | 10.30.30.30 | Substation automation PLC (Modbus client of the RTAC) |
@@ -42,23 +42,67 @@ This compensating control is why the hardened `substation-improved.json` source-
 | Firewall | `firewall` | all (incl. mgmt) | .2 on each zone | containd NGFW |
 | Backend | `backend` | mgmt | 10.99.99.10 | RangerDanger API |
 | Frontend | `frontend` | mgmt | 10.99.99.11 | Next.js UI |
-| Proxy | `proxy` | mgmt | 10.99.99.3 | Nginx reverse proxy to all node UIs |
+| Proxy | `proxy` | mgmt + all delivery bridges | 10.99.99.3 | Nginx reverse proxy to all node UIs |
 
-The platform services (backend, frontend, proxy) live on `mgmt_net` (10.99.99.0/24) only. User-facing lab nodes that expose UIs (corp_ws, vendor_jump, eng_workstation, fuxa_hmi, openplc) get a `mgmt_net` leg in addition to their lab zone so the proxy can reach them; `rtac_sim` likewise gets a mgmt leg (10.99.99.20) so the backend can reach `http://rtac-sim:8080`. The firewall (containd) sits on every zone.
+Backend and frontend attach only to `mgmt_net` (10.99.99.0/24).
+The proxy retains its management leg and also attaches to three internal,
+platform-owned delivery bridges. Each desktop keeps its teaching-zone leg
+and replaces its management leg with exactly one delivery leg:
+
+| Compose key / Engine name | CIDR | Gateway | Proxy | Desktop (US / EU) |
+|---|---|---|---|---|
+| `desk_corp_net` / `rangerdanger_desk_corp` | 10.98.1.0/28 | 10.98.1.1 | 10.98.1.2 | 10.98.1.3: corp_ws / unused |
+| `desk_vendor_net` / `rangerdanger_desk_vendor` | 10.98.2.0/28 | 10.98.2.1 | 10.98.2.2 | 10.98.2.3: vendor_jump / vendor_jump |
+| `desk_eng_net` / `rangerdanger_desk_eng` | 10.98.3.0/28 | 10.98.3.1 | 10.98.3.2 | 10.98.3.3: eng_workstation / eng_workstation |
+
+Delivery bridges have no containd zone, no backend endpoint and no host
+egress (`internal: true`). `set-gateway.sh` still installs the desktop's
+zone-firewall default route; the connected delivery route carries replies
+to the proxy. nginx resolves the unchanged desktop service names over
+these bridges and forwards HTTP/WebSocket connections as before. Its
+persistent server rejects socket peers in `10.98.0.0/16` with 403 before
+location selection (including redirects); forwarding headers cannot grant
+access. A desktop may answer the proxy, not call through it to management.
+
+FUXA and OpenPLC retain their management legs for UI delivery. The RTAC,
+containd, simulator, solver, historian and GPS management attachments are
+unchanged. Kali remains enterprise-only. Removing a desktop's management
+NIC does not by itself prove a deny: traffic can still follow its zone
+firewall default, so acceptance probes must cover management destinations
+under both weak and improved policies as well as permitted teaching flows.
+
+### Platform and range
+
+The lab runs as two Compose projects:
+
+| Project | Services | Compose files | Started by |
+|---|---|---|---|
+| `rangerdanger-platform` | backend, frontend, proxy | `docker-compose.yml` (source) or `docker-compose.release.yml` (release) | `setup.sh` / `scripts/dev-up.sh` on the host; never stopped by a range switch |
+| `rangerdanger` (the range) | everything else in the tables above | `lab-definitions/packages/<id>/compose.{source,release}.yml` | the backend only, through `POST /api/range` |
+
+The platform owns `mgmt_net` (Engine name `rangerdanger_mgmt_net`) and all three delivery bridges; range files declare the platform networks they use as external. Teaching and physics/process networks belong to the range and keep their `rangerdanger_<key>` names. Delivery networks persist across range switches, including the corporate bridge when EU is active. One range runs at a time; switching packages (the UI toggle) stops the old range, starts the new one, installs its proxy routes (`nginx.routes.conf`) and imports its default firewall policy. Each package's `manifest.json` names which container plays which role and the endpoints the backend calls. `setup.sh` writes `RANGERDANGER_ROOT` (the install directory) to `.env`; every Compose call uses it as the project directory, and the backend mounts it read-only at the same path so the range's relative binds resolve to host paths. Teardown is by Compose project label only (`scripts/dev-down.sh`): the range with `down -v --remove-orphans`, which removes only its image-declared anonymous volumes because range models have no named volumes, and the platform without `-v`. The API is in [`api-spec.md`](api-spec.md).
+
+### EU console boundaries
+
+The Network console depicts the package's teaching paths, not every network attachment. Its collapsed **Infrastructure planes** explanation covers management/orchestration, internal solver-to-device process truth and isolated proxy-to-desktop delivery. These are not teaching conduits. Portal OpenPLC access is management access, not proof of the engineering-workstation-to-PLC conduit. RTU→PLC and RTU→station-clock traffic stays inside the station zone without containd; the clock path is simulated HTTP, not NTP/PTP.
+
+Selected-flow evidence separates declared **Topology**, **Observed liveness** and **Authorization**, alongside operational purpose. Arrows identify connection initiation, not one-way information: IEC 104 and Modbus exchanges are bidirectional. Even an `ALLOW` zone-pair summary is not endpoint/port evaluation; `ALLOW`, `MIXED` and missing summaries leave flow authorization unknown, while `DENY` retains its summary evidence. EU reference policy is source/port based with DPI disabled, so a port allowance does not separate monitoring from commands or Modbus reads from writes.
+
+The package knowledge pages hold the detailed [EU node/plane map](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-range-node-map.md), [zone/conduit matrix](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-zone-conduit-design.md), [authorization limits](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-port-source-boundary.md) and [telecontrol roles](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-telecontrol-architecture.md).
 
 ## Services
 
 ### Backend (Go + Gin)
 
-The backend at `backend/cmd/server` exposes a Gin HTTP API, manages container orchestration through the Docker SDK, persists lab state in SQLite via GORM, and proxies to the containd firewall over REST and SSE.
+The backend at `backend/cmd/server` exposes a Gin HTTP API, runs the range through Compose, execs into its containers through the Docker SDK, keeps the packages' scenarios in SQLite via GORM (topologies are served from the package catalog loaded at startup), and proxies to the containd firewall over REST and SSE.
 
 Internal packages:
 
 - `internal/config` - Viper-based configuration
 - `internal/db` - GORM + SQLite setup
-- `internal/models` - LabTemplate, LabInstance, NodeDefinition, Scenario, ScenarioRun, TelemetryPoint
-- `internal/labs` - YAML definition loader and node type catalog
-- `internal/orchestrator` - Docker SDK wrapper (container lifecycle, exec sessions, exec resize)
+- `internal/models` - Scenario, the one persisted model
+- `internal/labs` - package loader: the in-memory catalog (topology, default policy, scenarios) and the scenario rows
+- `internal/orchestrator` - Docker SDK wrapper for exec sessions and exec resize; Compose owns container lifecycle
 - `internal/containd` - REST client for containd firewall API
 - `internal/server` - HTTP handlers, WebSocket terminals, exercise validators, PCAP management, traffic generation
 
@@ -74,11 +118,19 @@ Top-level pages:
 - `/console` - Network Map with React Flow topology and per-node terminals
 - `/substation` - Substation control panel (live device state, control popups)
 - `/knowledge` - Reference material accompanying the exercises
-- `/labs` / `/labs/[id]` - Lab template and instance management
+- `/labs` - Workshop environment status
 - `/scenarios` - Legacy redirect to `/exercises`
 
-The operator HMI itself is **FUXA**, served via the nginx proxy at
-`/apps/fuxa-hmi/` rather than as a route inside the Next.js app.
+For the US package, the operator HMI is **FUXA**, served via the nginx proxy
+at `/apps/fuxa-hmi/` rather than as a route inside the Next.js app.
+For EU, `/substation` instead presents the IEC 104 **Control Centre** and a
+separate management-backed **Physical System** view. A shared SCADA
+view-state annunciator spans both; the compact link/current-connection
+GI/current-point status precedes the CC schematic, with detailed diagnostics
+collapsed below records. The current station inventory has 42 monitored
+points, including four indication-only F2 points and no F2 supervisory
+command. See [EU HMI/SCADA](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-hmi-scada.md)
+for view states, count semantics and observation-versus-physical-truth limits.
 
 Key components:
 
@@ -147,7 +199,8 @@ Browser ──HTTP──> Nginx proxy ──┬──> /apps/*      → webtop/H
                                 ├──> /api/*       → backend
                                 └──> /            → frontend (Next.js)
 
-Backend ──Docker SDK──> container lifecycle + exec sessions
+Backend ──Compose────> range lifecycle (up / down of the range project)
+        ──Docker SDK──> exec sessions, image and container checks, proxy reload
         ──REST──────> containd /api/v1/* (firewall policy, PCAP, events)
         ──WebSocket─> xterm.js clients (Docker exec, with resize forwarding)
         ──GORM──────> SQLite at /data/rangerdanger.db
@@ -193,15 +246,18 @@ Backend-read variables (`backend/internal/config`):
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `RANGERDANGER_HTTP_PORT` | 8080 | Backend listen port |
-| `RANGERDANGER_DB_PATH` | `backend/data/rangerdanger.db` (the in-container deployment overrides this to `/data/rangerdanger.db` via `docker-compose.yml`) | SQLite path |
+| `RANGERDANGER_DB_PATH` | `backend/data/rangerdanger.db` (the in-container deployment overrides this to `/data/rangerdanger.db` via the platform Compose file) | SQLite path |
 | `RANGERDANGER_LAB_DEFINITIONS_PATH` | `lab-definitions` | YAML source directory |
-| `RANGERDANGER_CONTAIND_API_URL` | `http://firewall:8080` | containd HTTP base URL |
-| `RANGERDANGER_CONTAIND_CONFIG_PATH` | `lab-definitions/firewall/substation-weak.json` | Initial firewall config |
-| `CONTAIND_JWT_SECRET` | `rangerdanger-dev` | Shared secret the backend uses to mint JWTs for containd's REST API |
+| `RANGERDANGER_ROOT` | none; the platform Compose files refuse to start without it (`setup.sh` writes it to `.env`) | Installation root: Compose project directory for ranges, mounted read-only at the same path |
+| `RANGERDANGER_MODE` | `source` in `docker-compose.yml`, `release` in `docker-compose.release.yml` | Which range Compose file (`compose.source.yml` / `compose.release.yml`) the backend runs |
+| `RANGERDANGER_PACKAGE` | `us-dnp3-substation` | Range package for the first start only; afterwards the recorded package (`/data/range.json`) wins. `setup.sh --package <id>` sets it |
+| `CONTAIND_JWT_SECRET` | `rangerdanger-dev` | Shared secret the backend uses to mint JWTs for containd's REST API; the backend passes its value to the range's Compose so the firewall shares it |
+
+The containd API URL and the initial firewall policy are no longer variables: they come from the active package (the firewall's `api` endpoint in `manifest.json`, and the package's default policy).
 
 The legacy `OTLAB_*` prefix is honored as a deprecated alias - existing deployments continue to work but emit a warning at startup.
 
-Variables read by the **containd container itself** (not the backend) and set in `docker-compose.yml`:
+Variables read by the **containd container itself** (not the backend) and set in the US package's range Compose files:
 
 | Variable | Value | Purpose |
 |----------|-------|---------|

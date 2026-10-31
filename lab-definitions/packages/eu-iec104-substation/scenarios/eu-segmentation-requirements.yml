@@ -1,0 +1,123 @@
+id: eu-segmentation-requirements
+order: '1.3'
+name: Segmentation Requirements & Policy Design
+summary: Turn five EU findings into design verdicts, readiness answers and testable success criteria.
+estimated_minutes: 12
+description: Decide what the station boundaries should permit. Preview the improved policy without applying it,
+  state five requirements and check organizational readiness. Use IEC 62443 zones and conduits with NIS2 and BDEW
+  change accountability; this exercise designs controls rather than certifying compliance.
+tags:
+- iec104
+- eu-substation
+- requirements
+- planning
+- segmentation
+- defense
+steps:
+- id: translate-findings-into-design-requirements
+  title: Translate findings into design requirements
+  expected_config: weak
+  description: |
+    Open the Network Map's **Segmentation Policy** drawer. Inspect weak, then **preview Improved without clicking Apply**. Compare broad zone trust with six pinned operational conduits and default deny. This is design, not implementation; keep weak active.
+
+    :::decision id=current-policy-allowable options="MOSTLY_ALLOW,MOSTLY_DENY,MIXED"
+    How would you characterize weak trust?
+    :::
+    :::decision id=hardened-changes-rough-count options="FEW_CHANGES,ABOUT_HALF,MOST_ROWS"
+    How much changes when you preview improved?
+    :::
+
+    :::findings-panel from=eu-baseline-assessment title="Passive findings"
+    enterprise-to-field: Enterprise/vendor → field on Modbus/502
+    enterprise-to-station: Enterprise → station RTU on IEC 104/2404
+    vendor-to-station: Vendor DMZ → station engineering access
+    non-rtu-to-field: Non-RTU hosts → field (except PLC→OLTC)
+    unauth-control: Unauthorized IEC 104 commands / Modbus writes
+    :::
+
+    :::findings-panel from=eu-baseline-assessment title="Latent exposure"
+    latent-exposure-confirmed: Active probes beyond passive capture
+    :::
+
+    :::decision id=enterprise-to-field
+    Enterprise/vendor → field on Modbus/502 — choose your requirement.
+    :::
+
+    :::decision id=enterprise-to-station
+    Enterprise → station RTU on IEC 104/2404 — choose your requirement.
+    :::
+
+    :::decision id=vendor-to-station
+    Vendor DMZ → station engineering access — choose your requirement.
+    :::
+
+    :::decision id=non-rtu-to-field
+    Non-RTU station sources → field (except PLC→OLTC) — choose your requirement.
+    :::
+
+    :::decision id=unauth-control options="BLOCK,BLOCK and LOG,RESTRICT,ALLOW,LOG"
+    Cross-zone foreign-source IEC 104 / Modbus attempts — choose your requirement.
+    This does not cover command authorization within an allowed CC session
+    or station same-subnet traffic.
+    :::
+
+    :::hint Expected requirements, not proof of enforcement
+    Block enterprise/vendor field access and enterprise RTU access. Restrict vendor engineering access to the named eng-ws→PLC web conduit, not the whole vendor zone. Pin field access to RTU, with the PLC→OLTC exception. Cross-zone foreign-source prevention needs the enterprise, vendor and non-RTU field closures plus the enterprise/vendor station restrictions. Required diagnostic denies always log. DPI and logging selections are planning-only and emit nothing. No action in this package authorizes commands within an allowed CC session. A LOG-only verdict has no selectable live implementation; retain its monitoring requirement in Notes. No allowed port establishes user identity.
+    :::
+
+    | Required conduit | Pin | Port |
+    |---|---|---|
+    | CC→RTU | 10.60.60.20→10.30.30.20 | TCP/2404 |
+    | RTU→field | 10.30.30.20→10.40.40.20…23 | TCP/502 |
+    | PLC→OLTC | 10.30.30.30→10.40.40.23 | TCP/502 |
+    | CC→historian ingest | 10.60.60.20→10.70.70.40 | TCP/8081 |
+    | Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |
+    | Engineering→PLC web | 10.20.20.20→10.30.30.30 | TCP/8080 |
+- id: resourcing-reality-check
+  title: Resourcing reality check
+  expected_config: weak
+  description: |
+    Real station segmentation projects fail more often on resourcing than on technology - vendor change windows that never materialise, OT engineers stretched between operations and security work, unclear risk-acceptance authority. Before you pick remediation actions in Lab 1.4, commit to your team's current state. Lab 1.4 will surface dependencies on these answers per action.
+
+    :::decision id=ot-eng-availability options=AVAILABLE,STRETCHED,UNAVAILABLE
+    **OT engineering capacity** - do you have a dedicated OT engineer for this segmentation work, or is that person also covering operations / on-call?
+    :::
+
+    :::decision id=fw-admin-skills options=IN_HOUSE,VENDOR_LED,GAP
+    **Firewall admin skills** - who actually configures containd? In-house staff who understand it, vendor-led with your team observing, or a real skills gap that needs hiring or training?
+    :::
+
+    :::decision id=vendor-change-window options=SECURED,NEGOTIATING,NOT_DISCUSSED
+    **Vendor change windows** - have you secured outage / change windows for the vendor-touching changes (vendor-to-station restriction, vendor-to-field block)?
+    :::
+
+    :::decision id=risk-acceptance-authority options=CLEAR,UNCLEAR,DISPUTED
+    **Risk-acceptance authority** - for residual risk in OT (e.g. an attack path you're deferring), is it clear who signs off? Or is the authority ambiguous / contested between IT, OT, and operations leadership?
+    :::
+
+    :::hint Why this matters
+    Lab 1.4 will read these answers and overlay each remediation action with the resourcing dependencies that affect it. For example, if you mark OT engineering as `STRETCHED`, the action `pin-rtu-to-field` (which requires OT Engineer review of the source-pin) gets a warning that it's harder to land than the labor-budget number suggests. If you mark vendor change windows as `NOT_DISCUSSED`, vendor-touching actions get a "blocked by readiness" flag - the technical change can't ship until that conversation happens.
+
+    These annotations are advisory and do not disable selection. Right now they are observational - they don't reduce the Lab 1.4 labor budget. A future workshop iteration may drive 1.4's role caps directly from these answers (tracked in [issue #27](https://github.com/tonylturner/rangerdanger/issues/27)).
+    :::
+- id: define-success-criteria-for-segmentation
+  title: Define success criteria for segmentation
+  description: |
+    Write concrete pass/fail criteria before planning the work:
+
+    1. New Kali→RTU:2404 and enterprise/vendor→field:502 connections time out under hardened policy.
+    2. Vendor engineering access is named-source PLC web only; enterprise→vendor 3389/5900 is closed.
+    3. All six operational intents survive, with completed current-connection GI inside the attempt window, non-null GOOD observations received since its start and healthy device/process state. Quiet status does not age out; missing GI evidence calls for **Interrogate station**, not a forced reconnect.
+    4. Unauthorized control is constrained by L4 today; semantic command restrictions remain a planned second layer. Do not certify DPI before it is live.
+    5. Export policy, test results, UTC bounds and PCAP; name an owner for each deferred risk.
+
+    :::hint IEC 62443, NIS2 and BDEW
+    Treat zones/conduits as an engineering design and continuity as a hard constraint. Record change approval, rollback, residual-risk authority and evidence retention. A range PASS is not regulatory certification. [Risk design](/knowledge#eu-iec62443-risk-design).
+    :::
+nodes:
+- kali-1
+- eng-ws-1
+- fw-1
+- cc-1
+- rtu-1
+- vendor-jump-1

@@ -39,6 +39,8 @@
       "zone": "lan3",
       "access": {
         "mgmt": true,
+        "http": true,
+        "https": true,
         "ssh": true
       }
     }

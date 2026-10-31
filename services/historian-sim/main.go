@@ -20,6 +20,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -37,6 +38,7 @@ type HistorianState struct {
 	RtacEndpoint     string  `json:"rtac_endpoint"`
 	PollIntervalSec  int     `json:"poll_interval_sec"`
 	CommsOK          bool    `json:"comms_ok"`
+	CommsError       string  `json:"comms_error"`
 	LastPollTime     string  `json:"last_poll_time"`
 	LastReading      any     `json:"last_reading"`
 	History          []Point `json:"history"`
@@ -67,6 +69,7 @@ func (s *HistorianState) snapshot() map[string]any {
 		"rtac_endpoint":      s.RtacEndpoint,
 		"poll_interval_sec":  s.PollIntervalSec,
 		"comms_ok":           s.CommsOK,
+		"comms_error":        s.CommsError,
 		"last_poll_time":     s.LastPollTime,
 		"last_reading":       s.LastReading,
 	}
@@ -177,6 +180,97 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	shared.WriteJSON(w, map[string]string{"status": "ok", "service": "historian-sim"})
 }
 
+func fetchRTACState(client *http.Client, endpoint string) (map[string]any, error) {
+	// Poll the RTAC's canonical state endpoint. The old path
+	// /api/substation/state was a RangerDanger backend proxy path, not an
+	// RTAC endpoint, so it 404'd silently.
+	resp, err := client.Get(endpoint + "/api/state")
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("unexpected HTTP status: %s", resp.Status)
+	}
+
+	var data map[string]any
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&data); err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+	if data == nil {
+		return nil, fmt.Errorf("invalid JSON response: expected an object")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("invalid JSON response: multiple values")
+		}
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+	return data, nil
+}
+
+func pollRTACOnce(client *http.Client, endpoint string) {
+	data, err := fetchRTACState(client, endpoint)
+	pollTime := time.Now().Format(time.RFC3339)
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.LastPollTime = pollTime
+	if err != nil {
+		state.CommsOK = false
+		state.CommsError = err.Error()
+		log.Printf("RTAC poll failed: %s", err)
+		return
+	}
+
+	state.CommsOK = true
+	state.CommsError = ""
+	state.LastReading = data
+
+	// Extract electrical values for time-series storage.
+	if elec, ok := data["electrical"].(map[string]any); ok {
+		pt := Point{
+			Timestamp: state.LastPollTime,
+		}
+		if v, ok := elec["substation_bus_voltage_v"].(float64); ok {
+			pt.SubstationVoltageV = v
+		}
+		if v, ok := elec["downstream_voltage_v"].(float64); ok {
+			pt.DownstreamVoltageV = v
+		}
+		if v, ok := elec["feeder_current_a"].(float64); ok {
+			pt.FeederCurrentA = v
+		}
+		if v, ok := elec["general_load_kw"].(float64); ok {
+			pt.GeneralLoadKw = v
+		}
+		if v, ok := elec["critical_load_kw"].(float64); ok {
+			pt.CriticalLoadKw = v
+		}
+		if v, ok := elec["breaker_closed"].(bool); ok {
+			pt.BreakerClosed = v
+		}
+		if v, ok := elec["recloser_closed"].(bool); ok {
+			pt.RecloserClosed = v
+		}
+		if v, ok := elec["total_losses_kw"].(float64); ok {
+			pt.TotalLossesKw = v
+		}
+		if v, ok := elec["power_factor"].(float64); ok {
+			pt.PowerFactor = v
+		}
+
+		state.History = append(state.History, pt)
+		if len(state.History) > maxHistory {
+			state.History = state.History[len(state.History)-maxHistory:]
+		}
+		state.PointCount = len(state.History)
+	}
+}
+
 // pollRTAC periodically fetches substation state from the RTAC.
 func pollRTAC() {
 	client := &http.Client{Timeout: 3 * time.Second}
@@ -189,65 +283,7 @@ func pollRTAC() {
 		state.mu.RUnlock()
 
 		if recording {
-			// Poll the RTAC's canonical state endpoint. The old path
-			// /api/substation/state was a RangerDanger backend proxy
-			// path, not an RTAC endpoint, so it 404'd silently.
-			resp, err := client.Get(endpoint + "/api/state")
-			if err != nil {
-				state.mu.Lock()
-				state.CommsOK = false
-				state.mu.Unlock()
-			} else {
-				var data map[string]any
-				json.NewDecoder(resp.Body).Decode(&data)
-				resp.Body.Close()
-
-				state.mu.Lock()
-				state.CommsOK = true
-				state.LastPollTime = time.Now().Format(time.RFC3339)
-				state.LastReading = data
-
-				// Extract electrical values for time-series storage
-				if elec, ok := data["electrical"].(map[string]any); ok {
-					pt := Point{
-						Timestamp: state.LastPollTime,
-					}
-					if v, ok := elec["substation_bus_voltage_v"].(float64); ok {
-						pt.SubstationVoltageV = v
-					}
-					if v, ok := elec["downstream_voltage_v"].(float64); ok {
-						pt.DownstreamVoltageV = v
-					}
-					if v, ok := elec["feeder_current_a"].(float64); ok {
-						pt.FeederCurrentA = v
-					}
-					if v, ok := elec["general_load_kw"].(float64); ok {
-						pt.GeneralLoadKw = v
-					}
-					if v, ok := elec["critical_load_kw"].(float64); ok {
-						pt.CriticalLoadKw = v
-					}
-					if v, ok := elec["breaker_closed"].(bool); ok {
-						pt.BreakerClosed = v
-					}
-					if v, ok := elec["recloser_closed"].(bool); ok {
-						pt.RecloserClosed = v
-					}
-					if v, ok := elec["total_losses_kw"].(float64); ok {
-						pt.TotalLossesKw = v
-					}
-					if v, ok := elec["power_factor"].(float64); ok {
-						pt.PowerFactor = v
-					}
-
-					state.History = append(state.History, pt)
-					if len(state.History) > maxHistory {
-						state.History = state.History[len(state.History)-maxHistory:]
-					}
-					state.PointCount = len(state.History)
-				}
-				state.mu.Unlock()
-			}
+			pollRTACOnce(client, endpoint)
 		}
 
 		time.Sleep(time.Duration(interval) * time.Second)

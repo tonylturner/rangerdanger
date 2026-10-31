@@ -1,0 +1,155 @@
+id: eu-hardening-configurations
+order: '2.3'
+name: Protocol-Hardened Configurations
+summary: Unauthorized IEC 104 SBO breaker OPEN, loss of supply, restoration and identical retest under source pinning.
+estimated_minutes: 10
+validator: eu-hardening-configurations
+description: Stress-test the EU telecontrol boundary with an unauthorized breaker command from Kali. Observe loss
+  of supply, restore the feeder, harden and repeat the identical wire command. L4 source pinning is live; IEC 104
+  command inspection is a planned second layer, not enforced in this phase.
+nodes:
+- kali-1
+- eng-ws-1
+- fw-1
+- cc-1
+- rtu-1
+- vendor-jump-1
+tags:
+- iec104
+- eu-substation
+- dpi
+- segmentation
+- hardening
+- modbus
+steps:
+- id: verify-normal-operations
+  title: Verify normal operations
+  expected_config: weak
+  node: cc-1
+  description: |
+    Under weak policy confirm breaker closed, RMU1 closed/RMU2 open, OLTC remote/auto and supply present. Compare fresh CC observations with the separate **Physical System** view in [/substation](/substation). The PLC targets 20.4 kV ±1% (20.196–20.604 kV); out-of-band voltage must persist for 30 s before a tap request, not a US low-voltage band.
+
+    :::hint Do not repair stale data with truth
+    A completed current-connection GI and non-null GOOD observations within the attempt establish operator visibility, not continuously advancing status receipts. If the GI evidence is missing or outside ten minutes, press **Interrogate station** in the **Control Centre** and validate again. The **Physical System** view can remain correct while the CC is stale. Record both before the attack.
+    :::
+  action:
+    type: check
+    expect:
+      breaker_closed: true
+      supply_present: true
+      cc_link_fresh: true
+      rmu_normal: true
+      oltc_auto: true
+- id: attack-iec104-breaker-open
+  title: Attack — unauthorized IEC 104 breaker OPEN
+  expected_config: weak
+  node: kali-1
+  description: |
+    From the **Kali terminal** (10.10.10.50), issue the prescribed unauthorized SBO C_DC (type 46) breaker OPEN at IOA 3001:
+
+        iec104cmd 10.30.30.20 dc 3001 open -sbo --json
+
+    This is a **manual wire command**, not a simulator action button. Observe the loss of supply in the physical feeder and fresh CC breaker feedback after the poll/solve interval. Record ACT-CON/ACT-TERM and source; a command acknowledgement alone is not physical outcome. There is no auto-reclose model.
+
+    :::decision id=attack-hmi-impact options="LOSS_OF_SUPPLY,LOW_VOLTAGE_ALARM,NO_ALARM" correct=LOSS_OF_SUPPLY
+    What did the feeder show?
+    :::
+
+    :::hint SBO is not authorization
+    Weak allows enterprise→RTU:2404. Select/execute sequencing does not authenticate Kali. [SBO and command evidence](/knowledge#iec104-sbo-commands).
+    :::
+- id: restore-the-substation
+  title: Restore the substation
+  expected_config: weak
+  description: |
+    Restore with the breaker reset below after exporting the attack evidence. This is a lab restoration action, not the attack and not proof of a safe operating switching order. Confirm closed breaker, supply restored and fresh CC observations before changing policy.
+
+    :::hint Preserve causality
+    Keep command source, audit revision and solved outcome before restoration. Do not reset after hardening: Reset Lab reapplies weak and invalidates your hardened evidence window.
+    :::
+  action:
+    type: sequence
+    commands:
+    - device: breaker
+      command: reset
+- id: apply-the-hardened-policy
+  title: Apply the hardened policy
+  description: |
+    Apply your hardened boundary before retesting.
+
+    :::guided
+    Use Apply Hardened for the reference, or Apply Your Plan to test your funded changes.
+    :::
+
+    :::technical
+    Recommit your Lab 2.2 named-source policy. Only CC 10.60.60.20 may initiate RTU TCP/2404. Preserve six operational intents, deny new foreign sources and inspect the running rules. A plan that defers enterprise-to-station closure may still expose this attack.
+    :::
+
+    `block-enterprise-to-station` owns the Kali→RTU TCP/2404 path. If selected,
+    expect denial. If deferred, the Weak exposure stays open and the breaker
+    command can still land. EU DPI and logging actions are planning-only.
+    They change no verdict and promise no later semantic enforcement.
+    The L4 source pin enforces; DPI detects and logs. EU DPI is disabled.
+
+    :::plan-coverage title="Your plan vs the attack"
+    :::
+
+    :::hint Live boundary and residual risk
+    L4 restricts foreign sources. It does not authorize commands on an allowed
+    CC session. Keep trusted-controller and same-subnet risks explicit.
+    :::
+  action:
+    type: firewall
+    config: improved
+- id: re-test-the-attack-under-the-hardened-policy
+  title: Re-test the attack under the hardened policy
+  expected_config: hardened
+  node: kali-1
+  description: |
+    From **Kali**, repeat the identical wire command:
+
+        iec104cmd 10.30.30.20 dc 3001 open -sbo --json
+
+    With `block-enterprise-to-station` selected, expect a connection timeout;
+    the breaker stays closed and supply remains. With it deferred, the command
+    still opens the breaker and removes supply. Record physical truth and fresh
+    CC feedback. The deferred result can pass plan proof but leaves a Hardened
+    prevention gap. An acknowledgement alone is not the physical outcome.
+
+    :::decision id=retest-hmi-state options="NORMAL_OPS,LOSS_OF_SUPPLY,UNCHANGED_FROM_ATTACK"
+    What did the feeder show for this applied plan?
+    :::
+    :::decision id=retest-defense-in-depth options="L4_SOURCE_PIN,IEC104_DPI,EITHER_LAYER" correct=L4_SOURCE_PIN
+    When the foreign path is denied, which layer enforces it?
+    :::
+
+    Restore the breaker and supply before Validate for every plan. Preserve
+    wire/audit/solve evidence first. Use the prescribed breaker restoration,
+    not Reset Lab to improve a verdict. Reset Lab reapplies Weak; if recovery
+    needs it, reapply the intended plan and collect a new evidence window.
+    Required CC/RTU, HMI, GI and supply checks do not depend on the selected plan.
+
+    :::hint Preserve both claims
+    A deferred command can match plan proof while failing Hardened acceptance.
+    Neither TCP reachability nor a logged event establishes command authorization
+    on an allowed CC session. Restore supply and fresh observations in all cases.
+    :::
+- id: validate
+  title: Validate
+  expected_config: hardened
+  description: |
+    Before Validate, force a fresh CC connection with `POST /api/operator/reconnect` (no body; see [operator API](/knowledge#eu-rtu-control-centre-apis)). Wait for `link.since` strictly later than the policy commit, matched GI completion on that connection and every inventory point non-null and GOOD received since GI start. Interrogate station on an old established session is not post-commit proof. If the link stays down, compare Network Map and the logged CC→RTU TCP/2404 deny in Live DPI Events; restore the missing CC allow, not the breaker.
+
+    Run Validate with the intended applied plan or reference active. It also requires restored breaker and fresh section supply, active strict foreign-source negative probes and absence of foreign breaker operations only when this plan denies
+    the Kali→RTU path. When it allows that path, retain the visible command
+    consequence instead. Missing evidence is not a pass. A physically supplied feeder with stale CC points fails visibility, not supply.
+
+    :::hint What this certifies
+    PASS checks the current sampled plan verdicts, restored breaker/supply and post-commit CC visibility. Bounded absence of foreign breaker operations is required only for a plan that denies that source. It does not certify that you performed the earlier attack/restoration sequence, command-aware filtering on an allowed session, all possible paths or regulatory compliance. DPI selections emit nothing. Keep the trusted-controller residual risk in your handover to [Lab 2.4](/exercises/eu-validation-evidence).
+    :::
+  action:
+    type: check
+    expect:
+      breaker_closed: true
+      supply_present: true
+      firewall_config: improved

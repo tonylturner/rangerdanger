@@ -1,0 +1,23 @@
+id: eu-baseline-assessment
+name: Telecontrol boundary
+summary: Test fixture
+description: Probe and firewall actions only.
+order: "1.1"
+nodes: [cc-1, rtu-1]
+tags: [iec104]
+steps:
+  - id: apply-improved
+    title: Apply improved
+    description: Apply the improved policy.
+    action:
+      type: firewall
+      config: improved
+  - id: probe
+    title: Probe the RTU
+    description: The CC still reaches the RTU.
+    node: cc-1
+    action:
+      type: probe
+      targets:
+        - host: 10.30.30.20
+          port: 2404

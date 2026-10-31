@@ -1,4 +1,5 @@
-FROM golang:1.27-alpine AS dnp3-builder
+FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS dnp3-builder
+ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY dnp3go/ .
 RUN --mount=type=cache,target=/root/.cache/go-build \
@@ -7,13 +8,13 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
  && CGO_ENABLED=0 go build -o /bin/dnp3cmd  ./cmd/dnp3cmd
 
 # webtop ubuntu-xfce pinned by digest (A7).
-FROM linuxserver/webtop:ubuntu-xfce@sha256:7c96ba2aa2771b14453fc0e6974aa76f0a1359d25eaab7bf00dceced7f03a111
+FROM linuxserver/webtop:ubuntu-xfce@sha256:432475b977d9ff06f8f8adfb9608541bbde51a566ac0cbe62af44f33265e1a37
 
 # OT vendor-tools + remote-access services.
 #
 # - mbpoll/python3/pymodbus/nmap/etc. — what a vendor laptop would
 #   typically have for substation commissioning and diagnostics.
-# - xrdp + tigervnc + openssh-server + nginx — the SSH/HTTP/HTTPS/
+# - xrdp + x11vnc + openssh-server + nginx — the SSH/HTTP/HTTPS/
 #   RDP/VNC stack that the workshop's segmentation policies test
 #   against. Under the weak baseline these are reachable from the
 #   enterprise zone and demonstrate the lateral paths described in
@@ -23,7 +24,9 @@ FROM linuxserver/webtop:ubuntu-xfce@sha256:7c96ba2aa2771b14453fc0e6974aa76f0a135
 #   docs/lab-credentials.md). Bootstrap script
 #   /custom-cont-init.d/01-vendor-services.sh creates the user and
 #   starts the daemons on first boot.
+# The current webtop snapshot still predates Ubuntu's Brotli fix.
 RUN apt-get update && \
+    apt-get install -y --only-upgrade libbrotli1 && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         mbpoll \
         python3 \
@@ -39,7 +42,7 @@ RUN apt-get update && \
         nginx-light \
         openssl \
         sudo && \
-    pip3 install --no-cache-dir --break-system-packages pymodbus && \
+    pip3 install --no-cache-dir --break-system-packages pymodbus==3.16.1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 

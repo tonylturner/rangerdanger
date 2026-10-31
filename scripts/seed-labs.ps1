@@ -8,9 +8,9 @@ pretty-prints the response. Uses Invoke-RestMethod (ships with PS 5.1+)
 so jq is not required.
 
 .PARAMETER ApiUrl
-Override the seed endpoint. Defaults to http://localhost:8080/api/admin/seed
-(matches the dev compose; if you are running the release stack on
-port 8088, pass -ApiUrl http://localhost:8088/api/admin/seed).
+Override the seed endpoint. Defaults to http://localhost:8088/api/admin/seed:
+the backend has no host port, and the platform proxy serves /api on 8088
+in every install mode.
 
 .NOTES
 ASCII-only. See setup.ps1 for the BOM/encoding rationale.
@@ -18,7 +18,7 @@ ASCII-only. See setup.ps1 for the BOM/encoding rationale.
 
 [CmdletBinding()]
 param(
-    [string]$ApiUrl = $(if ($env:API_URL) { $env:API_URL } else { "http://localhost:8080/api/admin/seed" })
+    [string]$ApiUrl = $(if ($env:API_URL) { $env:API_URL } else { "http://localhost:8088/api/admin/seed" })
 )
 
 $ErrorActionPreference = "Stop"

@@ -3,8 +3,10 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { Check, AlertCircle, CircleCheck, CircleDashed, ChevronUp, ChevronDown } from "lucide-react";
-import type { StepAction, DecisionAction, DecisionRole } from "../lib/api";
+import type { DecisionAction, DecisionRole } from "../lib/api";
 import { saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
+import { useCurriculumScope } from "../lib/curriculum-scope";
+import { useCurriculumStorageRevision } from "../lib/use-curriculum-storage-revision";
 import {
   readRequirements,
   actionImplements,
@@ -12,13 +14,10 @@ import {
   summariseCoverage,
   readReadiness,
   readinessFlagsForAction,
-  type Requirement,
-  type ReadinessAnswer,
 } from "../lib/requirement-coverage";
 
 type DecisionPanelProps = {
   exerciseId: string;
-  action: StepAction;
 };
 
 // Effort split model: each required role consumes effort / roles.length hours.
@@ -28,48 +27,47 @@ function hoursPerRole(action: DecisionAction): number {
   return Math.round(action.effort_hours / action.roles.length);
 }
 
-export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
-  const budgetHours = action.budget_hours ?? 500;
-  const roles: DecisionRole[] = useMemo(() => action.roles ?? [], [action.roles]);
-  const catalog: DecisionAction[] = useMemo(() => action.actions ?? [], [action.actions]);
+function loadSelectedActions(scope: ReturnType<typeof useCurriculumScope>, exerciseId: string): Set<string> {
+  const plan = loadRemediationPlan(scope);
+  return plan?.exerciseId === exerciseId ? new Set(plan.selectedActionIds) : new Set();
+}
 
-  // Load any previously saved plan for this exercise
-  const [selected, setSelected] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    const plan = loadRemediationPlan();
-    if (plan && plan.exerciseId === exerciseId) {
-      return new Set(plan.selectedActionIds);
-    }
-    return new Set();
-  });
+export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
+  const scope = useCurriculumScope();
+  const storageRevision = useCurriculumStorageRevision(scope);
+  const binding = scope.curriculum;
+  const budgetHours = binding?.budgetHours ?? 0;
+  const roles: DecisionRole[] = useMemo(() => binding?.teams ?? [], [binding?.teams]);
+  const catalog: DecisionAction[] = useMemo(() => binding?.catalog ?? [], [binding?.catalog]);
 
-  // Lab 1.3 verdicts (the design requirements) + resourcing
-  // readiness answers. Both read once on mount - students aren't
-  // expected to flip back to 1.3 mid-1.4-session.
-  const [requirements, setRequirements] = useState<Requirement[]>([]);
-  const [readiness, setReadiness] = useState<ReadinessAnswer[]>([]);
-  useEffect(() => {
-    setRequirements(readRequirements());
-    setReadiness(readReadiness());
-  }, []);
+  const selectionScope = `${scope.packageId}:${scope.revision}:${exerciseId}`;
+  const [selectionState, setSelectionState] = useState(() => ({
+    scope: selectionScope,
+    revision: storageRevision,
+    selected: loadSelectedActions(scope, exerciseId),
+  }));
+  const selected = selectionState.scope === selectionScope && selectionState.revision === storageRevision
+    ? selectionState.selected
+    : loadSelectedActions(scope, exerciseId);
+
+  // Shared Lab 1.3 answers stay current when another step or tab changes them.
+  const requirements = readRequirements(scope);
+  const readiness = readReadiness(scope);
   const hasAnyReadiness = readiness.some((r) => r.verdict !== "");
 
-  // Persist on change
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    saveRemediationPlan({
-      exerciseId,
-      selectedActionIds: [...selected],
-      savedAt: new Date().toISOString(),
-    });
-  }, [selected, exerciseId]);
-
   const toggle = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectionState({
+      scope: selectionScope,
+      revision: storageRevision,
+      selected: next,
+    });
+    saveRemediationPlan(scope, {
+      exerciseId,
+      selectedActionIds: [...next],
+      savedAt: new Date().toISOString(),
     });
   };
 
@@ -97,7 +95,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
   const overRoles = roles.filter((r) => roleUsage[r.name] > r.capacity_hours);
 
   // Per-requirement coverage (computed against current selection)
-  const coverage = useMemo(() => computeCoverage(requirements, selected), [requirements, selected]);
+  const coverage = useMemo(() => computeCoverage(requirements, selected, binding), [requirements, selected, binding]);
   const coverageSummary = useMemo(() => summariseCoverage(coverage), [coverage]);
   const hasAnyVerdict = requirements.some((r) => r.verdict !== "");
 
@@ -106,6 +104,8 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
   // catalog. Compact-by-default; click to expand the per-requirement
   // detail rows.
   const [coverageOpen, setCoverageOpen] = useState(false);
+
+  if (!binding) return null;
 
   return (
     <div className="mt-3 space-y-4">
@@ -134,7 +134,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
           </div>
           <div className="mt-2 text-[10px] text-slate-500 italic">
             These are read-only - change them in the <Link
-              href="/exercises/segmentation-requirements"
+              href={`/exercises/${binding?.roles.requirements}`}
               className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
             >Segmentation Requirements</Link> exercise.
           </div>
@@ -201,7 +201,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
             const pct = Math.min(100, Math.round((used / role.capacity_hours) * 100));
             const over = used > role.capacity_hours;
             return (
-              <div key={role.name} className="rounded border border-slate-800 bg-slate-900/60 p-2">
+              <div key={role.name} className="rounded-sm border border-slate-800 bg-slate-900/60 p-2">
                 <div className="text-[9px] uppercase tracking-wider text-slate-500 truncate" title={role.name}>
                   {role.name}
                 </div>
@@ -223,7 +223,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
         </div>
 
         {(overBudget || overRoles.length > 0) && (
-          <div className="mt-3 rounded border border-red-800/60 bg-red-950/30 px-3 py-2 text-[11px] text-red-300">
+          <div className="mt-3 rounded-sm border border-red-800/60 bg-red-950/30 px-3 py-2 text-[11px] text-red-300">
             {overBudget && <div>Over total budget by {totalHours - budgetHours} hours.</div>}
             {overRoles.length > 0 && (
               <div>
@@ -243,8 +243,8 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
         {catalog.map((a) => {
           const isSelected = selected.has(a.id);
           const perRole = hoursPerRole(a);
-          const implements_ = actionImplements(a.id, requirements);
-          const readinessFlags = readinessFlagsForAction(a.id, readiness);
+          const implements_ = actionImplements(a.id, requirements, binding);
+          const readinessFlags = readinessFlagsForAction(a.id, readiness, binding);
           const hasBlocked = readinessFlags.some((f) => f.severity === "blocked");
           return (
             <button
@@ -274,12 +274,13 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                   </div>
                   <div className="mt-1 text-[11px] leading-relaxed text-slate-400 whitespace-pre-line">
                     {a.why}
+                    {" — planned until applied in your plan"}
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {a.roles.map((role) => (
                       <span
                         key={role}
-                        className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-400"
+                        className="rounded-sm bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-400"
                       >
                         {role}
                       </span>
@@ -287,7 +288,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                     {implements_.length > 0 && implements_.map((req) => (
                       <span
                         key={`req-${req.id}`}
-                        className="rounded border border-cyan-800/60 bg-cyan-950/40 px-1.5 py-0.5 text-[9px] text-cyan-300"
+                        className="rounded-sm border border-cyan-800/60 bg-cyan-950/40 px-1.5 py-0.5 text-[9px] text-cyan-300"
                         title={`This action implements your Lab 1.3 verdict: ${req.label} = ${req.verdict}`}
                       >
                         ↳ {req.label.split(" on ")[0].split(" → ").join("→")}: {req.verdict}
@@ -295,7 +296,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                     ))}
                     {implements_.length === 0 && hasAnyVerdict && (
                       <span
-                        className="rounded border border-slate-700/60 bg-slate-800/40 px-1.5 py-0.5 text-[9px] text-slate-500 italic"
+                        className="rounded-sm border border-slate-700/60 bg-slate-800/40 px-1.5 py-0.5 text-[9px] text-slate-500 italic"
                         title="Operational hygiene / process - not tied to a specific 1.3 design verdict"
                       >
                         operational hygiene
@@ -338,7 +339,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
           the bar room so it doesn't overlap the footer text. */}
       {hasAnyVerdict && (
         <div className="sticky bottom-2 z-10 -mx-3">
-          <div className="mx-3 rounded-lg border border-slate-700 bg-slate-950/95 backdrop-blur shadow-lg shadow-slate-950/50">
+          <div className="mx-3 rounded-lg border border-slate-700 bg-slate-950/95 backdrop-blur-sm shadow-lg shadow-slate-950/50">
             <button
               onClick={() => setCoverageOpen(!coverageOpen)}
               className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-900/60 transition-colors rounded-lg"
@@ -395,7 +396,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                         <CircleCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
                         <span className="text-slate-300">
                           <span className="font-bold">{c.req.label}</span>
-                          <span className="text-slate-500"> - {c.req.verdict}, fully addressed</span>
+                          <span className="text-slate-500"> - {c.req.verdict}, planned actions selected (not prevention proof)</span>
                         </span>
                       </div>
                     );

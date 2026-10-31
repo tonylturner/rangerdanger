@@ -2,7 +2,7 @@
 
 This document describes how to cut a RangerDanger release. It is the
 runbook for tagging, publishing images to GHCR, and producing the
-release-flavor compose file students consume.
+release-flavor compose files students consume.
 
 ## Versioning
 
@@ -24,9 +24,12 @@ Before tagging:
 1. **CI is green** on the branch you're cutting from.
 2. **`go test -race ./...`** clean across `backend/`, `services/`, and
    `dnp3go/`.
-3. **`docker compose config -q`** validates with no warnings.
-4. **`docker compose up -d --build`** comes up clean on a workstation
-   with the configured RAM (≥8 GB) and disk (≥30 GB).
+3. **Compose validation** (the loop in `CONTRIBUTING.md` → Running
+   tests) passes with no warnings for the platform files and every
+   package's range files.
+4. **`./scripts/dev-up.sh`** comes up clean on a workstation with the
+   configured RAM (≥8 GB) and disk (≥30 GB): the platform starts and
+   `GET /api/range` reports the US range `ready`.
 5. **`CHANGELOG.md`** has an entry under `[Unreleased]` summarizing
    user-visible changes.
 
@@ -49,8 +52,8 @@ Before tagging:
    ```
 
 The `release.yml` workflow takes over from there. It triggers on any
-`v*` tag push and first creates one plan for all 16 first-party images.
-Fifteen images use the generated publish matrix; `rangerdanger-frontend`
+`v*` tag push and first creates one plan for all 20 first-party images.
+Nineteen images use the generated publish matrix; `rangerdanger-frontend`
 uses its dedicated native `linux/amd64` and `linux/arm64` jobs
 (`rangerdanger-openplc` is amd64-only because its upstream base,
 `tuttas/openplc_v3`, is amd64-only). Each image is either built or
@@ -139,34 +142,67 @@ platform set. It needs docker, buildx, jq and curl, and touches no real
 registry. Run it before a release that will promote, and after a buildx
 upgrade.
 
-## docker-compose.release.yml
+## Release Compose files
 
-`docker-compose.release.yml` (committed alongside `docker-compose.yml`)
-is the image-only flavor for users who don't want the build toolchain.
-Every `build:` block from the dev compose is replaced with `image:
-ghcr.io/tonylturner/rangerdanger-<svc>:${VERSION:-latest}`. Users:
+Each source Compose file has an image-only release twin for users who
+don't want the build toolchain: `docker-compose.release.yml` for the
+platform (Compose project `rangerdanger-platform`) and
+`lab-definitions/packages/<id>/compose.release.yml` for each range
+package (project `rangerdanger`). Every `build:` block is replaced with
+`image: ghcr.io/tonylturner/rangerdanger-<svc>:${VERSION:-latest}`.
+`setup.sh` writes `VERSION` and `RANGERDANGER_ROOT` to `.env`, pulls the
+platform and every package, starts the platform, and asks the backend
+for the range:
 
 ```sh
-# default - :latest
-docker compose -f docker-compose.release.yml up -d
-
-# pin to a specific release
-VERSION=v0.1.0 docker compose -f docker-compose.release.yml up -d
+./setup.sh                       # default - :latest
+./setup.sh --version v0.1.0      # pin to a specific release
 ```
 
-When you bump `docker-compose.yml`, mirror the change into the release
-file too.
+Offline installs (`--from-tarballs`) use the same release files with
+`--pull never`. When you change a source file, mirror the change into
+its release twin; the package lint checks that the two agree.
 
 ## containd image policy
 
 RangerDanger and [containd](https://github.com/tonylturner/containd)
-are co-developed by the same maintainer. Both compose files reference
-`ghcr.io/tonylturner/containd:latest` rather than a per-release pinned
-tag. The contract is **"fix containd, not the pin"** - if a containd
-release breaks RangerDanger behavior, the fix lands in containd, and
-RangerDanger picks it up on the next `docker compose pull`. This keeps
-both repos honest about regressions instead of accumulating workarounds
-in the lab.
+are co-developed by the same maintainer. **RangerDanger v0.2.0 requires
+containd 0.1.35 or later**, in release, source and offline modes; there is
+no compatibility path for older builds. Release package Compose files
+reference `ghcr.io/tonylturner/containd:latest` rather than a per-release
+pinned tag. A mutable tag is not proof of the minimum version.
+RangerDanger owns fixes to its clients when the containd contract changes;
+containd defects belong upstream. Do not mask a client defect by downgrading
+below the supported minimum.
+
+Source-mode package builds use the containd release tag pinned by the package
+(`v0.1.35`), or an explicit `CONTAIND_SOURCE` override, not the published
+image. Source-mode success does not certify the release's containd digest.
+The backend checks the minimum version before seeding and before adopting a
+running range after a backend restart; a 0.1.35 prerelease does not qualify.
+
+### Back up before the first 0.1.33 start
+
+containd upgrades its **stored schema to 0.1.7**, a one-way migration:
+0.1.32 cannot read it. Before starting 0.1.33 or later for the first time,
+stop the lab using its normal teardown procedure so firewall storage is
+quiescent. Back up the complete firewall `/data`, not just an exported
+configuration or `config.db`. Paths relative to `RANGERDANGER_ROOT` are:
+
+- US package (and the old single-project install): `data/firewall/`.
+- EU package: `data/eu-iec104-substation/firewall/`.
+
+Preserve both directories if both packages have been installed, alongside
+`.env`, the repo snapshot and the exact pre-upgrade image/digest. Include
+databases, journals, users, captures and all other files.
+For binary/schema rollback, stop the lab, replace the migrated firewall
+directories with their complete matching pre-upgrade backups (do not merge
+old and new database files), restore the old release and image, then restart
+and verify operations. **An older tag or digest alone is not a rollback.**
+Returning to containd 0.1.32 also requires the older RangerDanger release;
+v0.2.0 does not support it. Policy import uses candidate+commit only, copying
+running NIC `device` bindings before staging; it does not undo a stored-schema
+migration.
 
 The trade-off is workshop-day determinism. `:latest` resolves at pull
 time, so a containd push between your pre-flight check and the morning
@@ -175,28 +211,34 @@ of class can shift behavior under you. **Mitigations for instructors:**
 1. **Pre-pull the night before** and lock the resolved digest:
 
    ```sh
-   docker compose -f docker-compose.release.yml pull
+   docker pull ghcr.io/tonylturner/containd:latest
    docker image inspect ghcr.io/tonylturner/containd:latest \
      --format '{{index .RepoDigests 0}}'
    ```
 
    Save that digest. If anything breaks the morning of class, compare
-   against `:latest` and pin to the digest if they differ.
+   against `:latest`. A known-good digest must still meet the 0.1.35 minimum;
+   if reverting across the schema migration, restore its matching data backup
+   and older RangerDanger release as described above.
 
 2. **Run `setup.sh` (or `setup.ps1`) right before class** - the
    workshop-readiness gate (`/api/firewall/health` + apply weak/
    improved + reset) fails loudly if containd drifted, so you find
    out at setup-time rather than student-time. `--skip-firewall-gate`
    bypasses for diagnosis.
+   Health status `ok` is management liveness, not forwarding readiness.
+   Inspect `ipv4Forwarding`, `managementBinding` and authenticated
+   `managementReservation` (or `managementReservationError`) in that response;
+   degraded diagnostics do not change liveness to an outage.
 
 3. **Stage to SSD** for an offline class. `stage-ssd.sh` snapshots
    whatever is currently `:latest` and produces a tarball that
-   `setup.sh --from-tarballs` consumes via `docker-compose.offline.yml`
-   (`pull_policy: never`). Once staged, the SSD is immutable.
+   `setup.sh --from-tarballs` loads and starts with `--pull never`.
+   Once staged, the SSD is immutable.
 
 If a workshop scenario demands hard determinism (regulatory audit,
-certified curriculum), pin a known-good `containd:vX.Y.Z` tag in both
-compose files for that engagement and document the pin in the
+certified curriculum), pin a known-good `containd:vX.Y.Z` tag (0.1.35 or later) in both
+of the package's range Compose files for that engagement and document the pin in the
 engagement's README. The default `:latest` posture is for the public
 project where currency-of-fixes outweighs frozen-behavior.
 

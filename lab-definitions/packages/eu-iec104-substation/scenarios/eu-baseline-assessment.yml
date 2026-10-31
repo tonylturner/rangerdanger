@@ -1,0 +1,198 @@
+id: eu-baseline-assessment
+order: '1.2'
+name: Baseline Traffic Analysis
+summary: Observe the EU station, capture required conduits and distinguish passive findings from latent reachability.
+estimated_minutes: 15
+validator: eu-baseline-assessment
+description: Build a known-good baseline for a 20 kV feeder. Walk its zones, generate scenario traffic and capture
+  cross-zone communication. Separate operator observations from physical process truth, identify required conduits,
+  then actively test paths absent from the capture. Carry findings into design, not a policy change.
+nodes:
+- kali-1
+- eng-ws-1
+- fw-1
+- cc-1
+- rtu-1
+- vendor-jump-1
+tags:
+- iec104
+- eu-substation
+- assessment
+- pcap
+- baseline
+- defense
+steps:
+- id: walk-the-topology-and-inspect-the-crossings
+  title: Walk the topology and inspect the crossings
+  expected_config: weak
+  description: |
+    Start with weak policy and a healthy feeder. Use Reset Lab only before gathering evidence. On the [Network Map](/console), walk Enterprise, Vendor/Engineering, Station, Field, Control Centre and Operations DMZ. Label the two control hops: CC→RTU TCP/2404 and RTU→field TCP/502. The PLC has a separate pinned OLTC conduit.
+
+    In [/substation](/substation), compare the **Control Centre** observations, quality and receipt times with the separate **Physical System** view. GI runs on connect, every 15 minutes or via **Interrogate station**; quiet GOOD status does not expire. Float measurements are cyclic every 10 seconds, PLC parameters every 60 seconds, with deadband/quality spontaneous reports between cycles. Breaker closed and supply present are your known-good baseline; a socket is not proof of fresh observation.
+
+    :::hint Boundaries and blind spots
+    RTU↔PLC and RTU↔GPS share station_net, so the firewall cannot enforce those same-subnet relationships. PLC→OLTC crosses Station→Field and IS visible. Read [Zones and conduits](/knowledge#eu-zone-conduit-design).
+    :::
+
+    Toggle **Purdue Model View** to relate Enterprise, Vendor/Engineering, Control Centre, Operations DMZ, Station and Field to architectural levels. IEC 62443 zones/conduits add risk-based boundaries to that architecture; a Purdue band alone is not an enforcement policy. Inspect Enterprise→Field, Vendor→Station and Station→Field crossing tooltips, distinguishing exposed policy ports from currently observed traffic.
+
+    :::decision id=zones-located options=ALL_SIX,SOME_MISSING,COULDNT_FIND correct=ALL_SIX
+    Did you locate all six teaching zones on the canvas?
+    :::
+
+    :::decision id=ent-to-field-protocols options=NO_ICS,MODBUS,UNCLEAR correct=MODBUS
+    What control protocol does the weak Enterprise→Field policy crossing expose?
+    :::
+
+    :::decision id=station-to-field-protocols options=MODBUS,HTTP_ONLY,NOTHING correct=MODBUS
+    What protocol crosses Station→Field for RTU polling and PLC regulation?
+    :::
+  action:
+    type: check
+    expect:
+      breaker_closed: true
+      supply_present: true
+      cc_link_fresh: true
+- id: generate-scenario-traffic
+  title: Generate scenario traffic
+  description: |
+    On the Network Map, start **Generate scenario traffic** before capturing. Leave it running during the capture, then stop it. The generator makes real engineering→PLC maintenance GETs, enterprise→historian reads and vendor→historian reads under weak policy. These are scenario flows, not autonomous control polls.
+
+    :::hint What should appear
+    CC↔RTU IEC 104, RTU→field Modbus and PLC→OLTC run autonomously. A vendor historian read does not confer ingest authority. The generator does not send unauthorized control writes: absence of such a write is NOT evidence that writes are blocked.
+    :::
+
+    Start the real scenario flows here:
+
+    :::generate-traffic-button
+    :::
+
+    While generation runs, open **Traffic Matrix** in the Network Map drawer. Compare active Station→Field polling with Vendor→Station maintenance and Enterprise/Vendor→Operations DMZ reads. Same-subnet RTU↔PLC/GPS is absent from this cross-zone view. Leave generation running for the next capture.
+
+    :::decision id=matrix-rtu-to-field options=ACTIVE,QUIET,NOT_SEEN correct=ACTIVE
+    How active is RTU↔field-device traffic in the live Traffic Matrix?
+    :::
+
+    :::decision id=matrix-enterprise-to-station-visible options=YES_VISIBLE,NO_NOT_SEEN,UNCLEAR correct=NO_NOT_SEEN
+    Did you see enterprise traffic reaching station control or field subnets? The EU generator does make enterprise historian reads, but not enterprise RTU/field probes; those come in the latent-exposure step.
+    :::
+- id: capture-traffic-at-the-firewall
+  title: Capture traffic at the firewall
+  node: fw-1
+  description: |
+    Switch to **fw-1**'s terminal. Capture while the generator runs:
+
+        mkdir -p /data/captures
+        tcpdump -i any -nn 'not host 127.0.0.1' -G 30 -W 1 -w /data/captures/baseline.pcap
+
+    Wait for capture completion. The Linux any interface needs no promiscuous mode; the one-file limit is the expected stop, not a failure. Keep the PCAP before any reset.
+
+    :::hint Capture scope
+    Management UI traffic is out of band. Capture shows cross-zone teaching traffic, not all dependencies. Never infer same-subnet isolation from an empty firewall capture. [Capture reference](/knowledge#eu-tool-tcpdump).
+    :::
+- id: analyze-cross-zone-flows
+  title: Analyze cross-zone flows
+  node: eng-ws-1
+  description: |
+    Use the **eng-ws-1 terminal tab**. Its read-only PCAP mount needs no copy:
+
+        ls -lh /home/abc/pcaps/baseline.pcap
+        tshark -r /home/abc/pcaps/baseline.pcap -q -z conv,ip
+        tshark -r /home/abc/pcaps/baseline.pcap -q -z io,stat,0,"tcp.port==2404","tcp.port==502","tcp.port==8080","tcp.port==8081"
+        tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.20.20.0/24 and ip.dst==10.30.30.0/24'
+        tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.10.10.0/24 and (ip.dst==10.30.30.0/24 or ip.dst==10.40.40.0/24)'
+
+    Inventory source, destination, protocol, operational purpose and whether each crosses a boundary. Expect engineering→PLC and enterprise/vendor→historian GETs during generation. Enterprise control traffic should be absent until deliberately probed.
+
+    :::hint Important traffic you cannot see
+    RTU→PLC status and RTU→GPS time are same-subnet. CC→historian ingest crosses zones; historian reads are a different port and authority. Keep CC observation quality separate from physical truth. [Architecture](/knowledge#eu-telecontrol-architecture).
+    :::
+- id: critical-conduits-what-must-flow
+  title: Critical conduits - what MUST flow
+  description: |
+    Which flows MUST survive hardening? In Notes answer: (1) which cross-zone flows were operational, (2) which same-subnet relationships were invisible, and (3) could the feeder run with only required cross-zone flows allowed?
+
+    :::hint Required flow answer key
+    | Required conduit | Pin | Port |
+    |---|---|---|
+    | CC→RTU | 10.60.60.20→10.30.30.20 | TCP/2404 |
+    | RTU→field | 10.30.30.20→10.40.40.20…23 | TCP/502 |
+    | PLC→OLTC | 10.30.30.30→10.40.40.23 | TCP/502 |
+    | CC→historian ingest | 10.60.60.20→10.70.70.40 | TCP/8081 |
+    | Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |
+    | Engineering→PLC web | 10.20.20.20→10.30.30.30 | TCP/8080 |
+
+    The six intents above preserve operations. RTU↔PLC/GPS remains intra-zone; protect it with endpoint controls and station architecture, not a fictional cross-zone rule. Vendor historian reading under weak is exposure to review, not an ingest conduit to preserve.
+    :::
+- id: findings-what-you-observed
+  title: Findings - what you observed
+  description: |
+    Record what you SAW, not what you want to block. The next lab owns design verdicts.
+
+    :::decision id=enterprise-to-field options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=NOT_OBSERVED
+    Enterprise/vendor → field on Modbus/502 — what did the passive capture show?
+    :::
+
+    :::decision id=enterprise-to-station options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=NOT_OBSERVED
+    Enterprise → station RTU on IEC 104/2404 — what did the passive capture show?
+    :::
+
+    :::decision id=vendor-to-station options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=EXPOSURE_OBSERVED
+    Vendor DMZ → station engineering access — what did the passive capture show?
+    :::
+
+    :::decision id=non-rtu-to-field options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=NOT_OBSERVED
+    Non-RTU hosts → field (except PLC→OLTC) — what did the passive capture show?
+    :::
+
+    :::decision id=unauth-control options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=NOT_OBSERVED
+    Unauthorized IEC 104 commands / Modbus writes — what did the passive capture show?
+    :::
+
+    :::hint Expected passive findings
+    Engineering→PLC web exposes broad vendor-zone trust, so vendor-to-station is observed. The generator makes no enterprise control probes, foreign field polls or unauthorized writes: the other four are NOT_OBSERVED, not proven safe. PLC→OLTC is a legitimate exception to the RTU-only field rule. Passive capture tells you what was used, not what is possible.
+    :::
+- id: probe-for-latent-exposure
+  title: Probe for latent exposure
+  expected_config: weak
+  node: kali-1
+  description: |
+    From **Kali** (10.10.10.50), actively probe the dormant paths:
+
+        nmap -p 2404 10.30.30.20 --max-retries 1 -T4
+        iec104cmd 10.30.30.20 gi --json
+        nmap -p 502 10.40.40.20 --max-retries 1 -T4
+        mbpoll -m tcp -a 1 -t 3 -0 -r 0 -c 11 -1 10.40.40.20
+
+    Weak policy permits both. A completed GI proves a protocol operation, not command authority; an input-register read is not a write.
+
+    :::decision id=latent-exposure-confirmed options="YES,NO,UNSURE" correct=YES
+    Did active probing reveal exposure missed in passive capture?
+    :::
+
+    :::hint Dormant is not denied
+    A path absent from a 30-second capture may still be available on demand. Carry both passive findings and active reachability into Lab 1.3.
+    :::
+  action:
+    type: probe
+    targets:
+    - host: 10.30.30.20
+      port: 2404
+    - host: 10.40.40.20
+      port: 502
+- id: transition-decide-what-to-fix-first
+  title: Transition - decide what to fix first
+  description: |
+    Confirm the known-good baseline still operates: five field devices, 42 IEC 104 points including F2 position/trip/current/MW; five commands unchanged. You have observed traffic, identified six operational conduits, recorded five passive findings and tested latent reachability. Write measurable success criteria in Notes.
+
+    Next, [Lab 1.3](/exercises/eu-segmentation-requirements) converts these observations into design verdicts. [Lab 1.4](/exercises/eu-remediation-planning) funds selected changes. You cannot fix everything at once: deferred exposure remains risk, not a completed control.
+
+    :::hint Keep the evidence
+    Retain PCAP, source/destination inventory and baseline quality/receipt times. They are the comparison point for the implementation and change-board evidence.
+    :::
+  action:
+    type: check
+    expect:
+      breaker_closed: true
+      supply_present: true
+      cc_link_fresh: true

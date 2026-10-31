@@ -96,6 +96,13 @@ policy() {
   fi
 }
 curl -fsS --max-time 10 "$API/api/health" >/dev/null
+# These semantic checks assert the US package, never another range.
+# shellcheck source=lib/range.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/range.sh"
+if ! range_is_ready us-dnp3-substation; then
+  err "range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)"
+  exit 1
+fi
 # fd 3: docker exec children must never read the matrix from stdin.
 while IFS='|' read -r idx scenario step cfg action intent <&3; do
   if [ "$action" = SKIP ]; then

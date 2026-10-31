@@ -114,31 +114,10 @@ probe_tcp() {
   printf '%s %s\n' "$verdict" "$dur"
 }
 
-# probe_udp uses the firewall's nft drop counter snapshot. Rough but
-# sufficient for the one UDP rule we currently care about (NTP). When
-# the matrix grows we'll switch to a per-rule counter.
-probe_udp() {
-  local src="$1" dst="$2" port="$3"
-  local before after
-  before=$(docker exec rangerdanger-firewall nft list table inet containd 2>/dev/null \
-           | awk '/policy drop/{getline; print}' | grep -oE 'packets [0-9]+' | head -1 | awk '{print $2}')
-  docker exec "$src" sh -c "echo probe | timeout $PROBE_TIMEOUT nc -u -w1 $dst $port" >/dev/null 2>&1 || true
-  sleep 0.5
-  after=$(docker exec rangerdanger-firewall nft list table inet containd 2>/dev/null \
-          | awk '/policy drop/{getline; print}' | grep -oE 'packets [0-9]+' | head -1 | awk '{print $2}')
-  before=${before:-0}; after=${after:-0}
-  if [ "$after" -gt "$before" ]; then
-    printf 'deny 0\n'
-  else
-    printf 'allow 0\n'
-  fi
-}
-
 probe() {
   local proto="$1"; shift
   case "$proto" in
     tcp) probe_tcp "$@" ;;
-    udp) probe_udp "$@" ;;
     *)   echo "deny:bad-proto" ;;
   esac
 }
@@ -282,6 +261,17 @@ else
   exit 1
 fi
 
+# These checks assert the US range. Refuse another package or a range
+# mid-switch: GET /api/range must report us-dnp3-substation ready.
+# shellcheck source=lib/range.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/range.sh"
+if range_is_ready us-dnp3-substation; then
+  ok "range us-dnp3-substation ready"
+else
+  err "range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)"
+  exit 1
+fi
+
 REQUIRED_CONTAINERS=(
   rangerdanger-firewall
   rangerdanger-kali
@@ -373,7 +363,7 @@ declare -a LISTENERS=(
   "10.30.30.30:502|openplc Modbus"
   "10.30.30.30:8080|openplc HTTP"
   "10.40.40.20:502|relay Modbus"
-  "10.20.20.10:8082|vendor-jump kasm"
+  "10.20.20.10:3000|vendor-jump desktop"
   "10.20.20.10:22|vendor-jump SSH"
 )
 # Apply weak briefly so listener probes can traverse zones; the matrix

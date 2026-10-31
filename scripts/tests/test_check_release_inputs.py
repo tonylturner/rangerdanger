@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tempfile
@@ -17,29 +18,45 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
     common = {
         ("file", "services/go.mod"),
         ("file", "dnp3go/go.mod"),
+        ("file", "iec104go/go.mod"),
         ("glob", "services/shared/*.go"),
         ("file", "scripts/set-gateway.sh"),
         ("file", "scripts/rtac-harden.sh"),
         ("file", "scripts/rtac-route-monitor.sh"),
     }
     dnp3_sim = common | {("glob", "dnp3go/*.go")}
+    iec104_cli_sources = {
+        ("file", "iec104go/go.mod"),
+        ("glob", "iec104go/*.go"),
+        ("dir", "iec104go/cmd/iec104cmd"),
+        ("file", "iec104go/LICENSE"),
+    }
     return {
         "rangerdanger-backend": {("dir", "backend")},
         "rangerdanger-frontend": {("dir", "frontend")},
-        "rangerdanger-kali": {("dir", "dnp3go")},
+        "rangerdanger-kali": {("dir", "dnp3go")} | iec104_cli_sources,
         "rangerdanger-vendor-jump": {
             ("dir", "dnp3go"),
             ("file", "scripts/vendor-jump-services.sh"),
             ("file", "scripts/vendor-jump-x11vnc-service.sh"),
         },
-        "rangerdanger-eng-ws": {("dir", "dnp3go")},
+        "rangerdanger-eng-ws": {("dir", "dnp3go")} | iec104_cli_sources,
         "rangerdanger-corp-ws": set(),
         "rangerdanger-openplc": {
             ("dir", "dnp3go"),
+            ("dir", "lab-definitions/packages/us-dnp3-substation/seeds/openplc"),
             ("file", "scripts/openplc-entrypoint.sh"),
             ("file", "scripts/set-gateway.sh"),
         },
+        "rangerdanger-openplc-eu": {
+            ("dir", "lab-definitions/packages/eu-iec104-substation/seeds/openplc"),
+            ("file", "scripts/openplc-eu-entrypoint.sh"),
+            ("file", "scripts/set-gateway.sh"),
+        },
+        "rangerdanger-historian-eu": common | {
+            ("dir", "services/historian-eu")},
         "rangerdanger-fuxa-hmi": {
+            ("dir", "lab-definitions/packages/us-dnp3-substation/seeds/fuxa"),
             ("file", "scripts/set-gateway.sh"),
             ("file", "scripts/fuxa-entrypoint.sh"),
         },
@@ -66,8 +83,30 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
             ("file", "services/opendss-sim/models.py"),
             ("file", "services/opendss-sim/runtime_state.py"),
             ("file", "services/opendss-sim/time_utils.py"),
+            ("file", "services/opendss-sim/eu_app.py"),
+            ("file", "services/opendss-sim/eu_circuit.py"),
+            ("file", "services/opendss-sim/eu_profile.py"),
+            ("file", "services/opendss-sim/eu_truth_loop.py"),
+            ("file", "services/opendss-sim/eu_wire.py"),
+            ("file", "services/opendss-sim/eu_controls.py"),
+            ("file", "services/opendss-sim/eu_state.py"),
+            ("file", "services/opendss-sim/eu_models.py"),
+            ("file", "services/opendss-sim/eu_dynamics.py"),
             ("dir", "services/opendss-sim/dss"),
             ("file", "scripts/set-gateway.sh"),
+        },
+        "rangerdanger-iec104": iec104_cli_sources | {
+            ("file", "services/go.mod"),
+            ("file", "dnp3go/go.mod"),
+            ("dir", "services/iec104/internal"),
+            ("dir", "services/iec104/cmd/iec104-rtu"),
+            ("dir", "services/iec104/cmd/iec104-cc"),
+            ("file", "services/iec104/entrypoint.sh"),
+            ("file", "scripts/set-gateway.sh"),
+        },
+        "rangerdanger-field-device-sim": common | {
+            ("file", "services/Dockerfile"),
+            ("dir", "services/devices"),
         },
     }
 
@@ -128,6 +167,63 @@ class CheckReleaseInputsTests(unittest.TestCase):
         }
         self.assertEqual(set(actual), set(expected))
         self.assertEqual(actual, expected)
+
+    def test_production_iec104_recipes_are_go_only(self) -> None:
+        inventory = json.loads((ROOT / ".github/release-images.json").read_text())
+        for image in inventory["images"]:
+            for entry in image["inputs"]:
+                path = entry["path"]
+                self.assertFalse(path.startswith("services/iec104/src"))
+                self.assertFalse(path.startswith("services/iec104/check/reference"))
+                self.assertNotEqual(path, "services/iec104/build-iec104cmd.sh")
+            if image["image"] == "rangerdanger-iec104":
+                self.assertEqual(image["dockerfile"], "services/iec104/Dockerfile")
+                self.assertEqual(image["target"], "")
+
+    def test_eu_release_membership_uses_the_increment_four_images(self) -> None:
+        metadata = check_release_inputs.release_compose_metadata(ROOT, "v9.9.9")
+        eu = metadata["packages"]["eu-iec104-substation"]["services"]
+        field_image = "ghcr.io/tonylturner/rangerdanger-field-device-sim:v9.9.9"
+        for service in ("feeder_breaker", "rmu_1", "rmu_2", "oltc_1"):
+            with self.subTest(service=service):
+                self.assertEqual(eu[service], field_image)
+        self.assertEqual(
+            eu["openplc_eu"], "ghcr.io/tonylturner/rangerdanger-openplc-eu:v9.9.9")
+        self.assertEqual(
+            eu["historian_eu"], "ghcr.io/tonylturner/rangerdanger-historian-eu:v9.9.9")
+        self.assertEqual(eu["firewall"], "ghcr.io/tonylturner/containd:latest")
+        us = metadata["packages"]["us-dnp3-substation"]["services"]
+        self.assertEqual(us["openplc"], "ghcr.io/tonylturner/rangerdanger-openplc:v9.9.9")
+        self.assertEqual(
+            us["historian_sim"], "ghcr.io/tonylturner/rangerdanger-historian-sim:v9.9.9")
+        self.assertFalse(any("feeder-breaker-sim" in image for image in eu.values()))
+
+    def test_eu_simulator_targets_and_architecture_contract(self) -> None:
+        inventory = json.loads(
+            (ROOT / ".github/release-images.json").read_text(encoding="utf-8"))
+        images = {item["image"]: item for item in inventory["images"]}
+        instructions, issues = check_release_inputs._read_instructions(
+            ROOT / "services/Dockerfile")
+        self.assertEqual(issues, [])
+        for image, target in (
+            ("rangerdanger-field-device-sim", "field-device-sim"),
+            ("rangerdanger-historian-eu", "historian-eu"),
+        ):
+            with self.subTest(image=image):
+                entry = images[image]
+                self.assertEqual(entry["target"], target)
+                self.assertEqual(entry["platforms"], ["linux/amd64", "linux/arm64"])
+                stages, aliases, issues = check_release_inputs._resolve_stages(
+                    instructions, entry["dockerfile"], image)
+                self.assertEqual(issues, [])
+                reachable, issues = check_release_inputs._reachable_stages(
+                    stages, aliases, target, entry["dockerfile"], image)
+                self.assertEqual(issues, [])
+                self.assertIn(aliases[target + "-builder"], reachable)
+                self.assertNotIn("feeder-breaker-sim", aliases)
+        plc = images["rangerdanger-openplc-eu"]
+        self.assertEqual(plc["dockerfile"], "Dockerfile.openplc-eu")
+        self.assertEqual(plc["platforms"], ["linux/amd64"])
 
     def test_catches_copy_source_not_covered_by_reviewed_envelope(self) -> None:
         with (self.root / "src/extra.txt").open("w", encoding="utf-8") as output:
@@ -222,6 +318,100 @@ class CheckReleaseInputsTests(unittest.TestCase):
                             message for message in messages))
         self.assertTrue(any("inventory image is not a first-party image" in
                             message for message in messages))
+
+    def test_first_party_inventory_covers_platform_and_package_release_files(self) -> None:
+        (self.root / "docker-compose.release.yml").write_text(
+            "services:\n  portal:\n    image: nginx@sha256:" + "a" * 64 + "\n",
+            encoding="utf-8",
+        )
+        package_file = self.root / (
+            "lab-definitions/packages/test-package/compose.release.yml")
+        package_file.parent.mkdir(parents=True)
+        package_file.write_text(
+            "services:\n  simulator:\n"
+            "    image: ghcr.io/tonylturner/rangerdanger-test:${VERSION-latest}\n",
+            encoding="utf-8",
+        )
+        self.assertFalse(any("first-party Compose image" in message
+                             or "inventory image is not" in message
+                             for message in self._messages()))
+
+    def test_release_guard_requires_images_in_package_services(self) -> None:
+        (self.root / "docker-compose.release.yml").write_text(
+            "services:\n  portal:\n    image: nginx:1\n",
+            encoding="utf-8",
+        )
+        package_file = self.root / (
+            "lab-definitions/packages/test-package/compose.release.yml")
+        package_file.parent.mkdir(parents=True)
+        package_file.write_text(
+            "services:\n  simulator:\n    environment:\n      MODE: release\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(any("release service must declare an image" in message
+                            for message in self._messages()))
+
+    def test_split_release_models_emit_service_membership_and_exact_hashes(self) -> None:
+        (self.root / "docker-compose.release.yml").write_text(
+            "services:\n  portal:\n    image: nginx:1\n",
+            encoding="utf-8",
+        )
+        package_file = self.root / (
+            "lab-definitions/packages/test-package/compose.release.yml")
+        package_file.parent.mkdir(parents=True)
+        package_file.write_text(
+            "services:\n  simulator:\n"
+            "    image: ghcr.io/tonylturner/rangerdanger-test:${VERSION-latest}\n",
+            encoding="utf-8",
+        )
+
+        metadata = check_release_inputs.release_compose_metadata(
+            self.root, "v9.9.9")
+
+        self.assertEqual(metadata["platform"]["services"], {"portal": "nginx:1"})
+        self.assertEqual(
+            metadata["platform"]["sha256"],
+            hashlib.sha256(
+                (self.root / "docker-compose.release.yml").read_bytes()).hexdigest(),
+        )
+        package = metadata["packages"]["test-package"]
+        self.assertEqual(package["file"],
+                         "lab-definitions/packages/test-package/compose.release.yml")
+        self.assertEqual(
+            package["services"],
+            {"simulator": "ghcr.io/tonylturner/rangerdanger-test:v9.9.9"},
+        )
+        self.assertEqual(
+            package["sha256"], hashlib.sha256(package_file.read_bytes()).hexdigest())
+
+    def test_checked_in_split_layout_fixture_keeps_package_models_independent(self) -> None:
+        fixture = Path(__file__).parent / "fixtures/split-release"
+        metadata = check_release_inputs.release_compose_metadata(fixture, "v2.0.0")
+        self.assertEqual(
+            set(metadata["packages"]), {"package-a", "package-b"})
+        self.assertEqual(
+            metadata["packages"]["package-a"]["services"]["firewall"],
+            "ghcr.io/tonylturner/rangerdanger-kali:v2.0.0",
+        )
+        self.assertEqual(
+            metadata["packages"]["package-b"]["services"]["firewall"],
+            "ghcr.io/tonylturner/rangerdanger-vendor-jump:v2.0.0",
+        )
+        union = set()
+        for model in [metadata["platform"], *metadata["packages"].values()]:
+            union.update(model["services"].values())
+        self.assertEqual(
+            union,
+            {
+                "ghcr.io/tonylturner/rangerdanger-backend:v2.0.0",
+                "ghcr.io/tonylturner/rangerdanger-frontend:v2.0.0",
+                "nginx:1.27-alpine",
+                "ghcr.io/tonylturner/rangerdanger-kali:v2.0.0",
+                "ghcr.io/tonylturner/rangerdanger-relay-sim:v2.0.0",
+                "ghcr.io/tonylturner/rangerdanger-vendor-jump:v2.0.0",
+                "alpine:3.20",
+            },
+        )
 
 
 if __name__ == "__main__":

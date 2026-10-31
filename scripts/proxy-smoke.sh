@@ -14,12 +14,12 @@ else
 fi
 
 # A portal 200 alone misses RD-09: it can replace webtop's nginx site.
-# The v0.1.35 Selkies SPA has neither the old branding nor a noVNC title.
+# The Selkies shell is identified by its title and touch-gamepad mount point.
 # Receipts contain the body followed by curl's HTTP status on its own line.
 is_desktop_shell() {
   [ "$(tail -n 1 "$1")" = "200" ] &&
-    grep -Fq 'touch-gamepad-host' "$1" &&
-    grep -Fq 'universalTouchGamepad.js' "$1"
+    grep -Fq '<title>Selkies</title>' "$1" &&
+    grep -Fq 'touch-gamepad-host' "$1"
 }
 
 ready=0

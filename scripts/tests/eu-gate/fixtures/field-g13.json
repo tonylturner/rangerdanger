@@ -1,0 +1,220 @@
+{
+  "process": {
+    "schema": 3,
+    "profile_id": "eu-cigre-mv-teaching",
+    "solve_seq": 23,
+    "truth_stale": false,
+    "devices": {
+      "feeder-breaker": {
+        "delivered": true,
+        "solved_revision": 9,
+        "revision": 9,
+        "current_a": 28.88,
+        "p_mw": 0.94,
+        "q_mvar": 0.32
+      },
+      "f2-breaker": {
+        "delivered": true,
+        "solved_revision": 19,
+        "revision": 19,
+        "current_a": 10.0,
+        "p_mw": 0.33,
+        "q_mvar": 0.32
+      },
+      "rmu-1": {
+        "delivered": true,
+        "solved_revision": 29,
+        "revision": 29
+      },
+      "rmu-2": {
+        "delivered": true,
+        "solved_revision": 39,
+        "revision": 39
+      },
+      "oltc-1": {
+        "delivered": true,
+        "solved_revision": 49,
+        "revision": 49
+      }
+    },
+    "buses": {
+      "s1": {
+        "live": true,
+        "kv": 19.77
+      }
+    },
+    "fault_section": "none",
+    "solver_epoch": "9d1c2f4e",
+    "solved_at": "2026-10-09T21:02:09.010Z",
+    "f2_tripped": false,
+    "load_multiplier": 1,
+    "source_pu": 1,
+    "tap": 0,
+    "profile": {
+      "enabled": true,
+      "load_factors": {
+        "residential": 0.8,
+        "commercial": 0.8,
+        "industrial": 0.8
+      },
+      "source_pu": 1
+    }
+  },
+  "devices": {
+    "breaker-1": {
+      "schema": 3,
+      "device_id": "feeder-breaker",
+      "generation": 42,
+      "revision": 9,
+      "position": "closed",
+      "remote_enabled": true,
+      "lockout": false,
+      "protection_tripped": false,
+      "event_seq": 5,
+      "changed_at": "2026-10-09T21:02:08.002Z",
+      "measurements": {
+        "current_a": 28.88,
+        "voltage_kv_ll": 19.93,
+        "valid": true,
+        "solver_epoch": "9d1c2f4e",
+        "solve_seq": 23,
+        "solved_at": "2026-10-09T21:02:09.010Z",
+        "received_at": "2026-10-09T21:02:09.020Z",
+        "source_kv_ll": 20.0,
+        "section_live": true,
+        "source_live": true,
+        "p_mw": 0.94,
+        "q_mvar": 0.32,
+        "pf": 0.947
+      },
+      "kind": "breaker",
+      "protection": {
+        "function": "overcurrent",
+        "pickup_a": 400,
+        "delay_ms": 1000,
+        "instantaneous_a": 2000,
+        "picked_up": false,
+        "picked_up_since": null,
+        "last_trip_current_a": null
+      }
+    },
+    "f2-breaker": {
+      "schema": 3,
+      "device_id": "f2-breaker",
+      "generation": 142,
+      "revision": 19,
+      "position": "closed",
+      "remote_enabled": true,
+      "lockout": false,
+      "protection_tripped": false,
+      "event_seq": 5,
+      "changed_at": "2026-10-09T21:02:08.002Z",
+      "measurements": {
+        "current_a": 10.0,
+        "voltage_kv_ll": 19.93,
+        "valid": true,
+        "solver_epoch": "9d1c2f4e",
+        "solve_seq": 23,
+        "solved_at": "2026-10-09T21:02:09.010Z",
+        "received_at": "2026-10-09T21:02:09.020Z",
+        "source_kv_ll": 20.0,
+        "section_live": true,
+        "source_live": true,
+        "p_mw": 0.33,
+        "q_mvar": 0.32,
+        "pf": 0.947
+      },
+      "kind": "breaker",
+      "protection": {
+        "function": "overcurrent",
+        "pickup_a": 400,
+        "delay_ms": 1000,
+        "instantaneous_a": 2000,
+        "picked_up": false,
+        "picked_up_since": null,
+        "last_trip_current_a": null
+      }
+    },
+    "rmu-1": {
+      "schema": 3,
+      "kind": "rmu",
+      "device_id": "rmu-1",
+      "generation": 242,
+      "revision": 29,
+      "remote_enabled": true,
+      "measurements": {
+        "current_a": 28.88,
+        "voltage_kv_ll": 19.93,
+        "valid": true,
+        "solver_epoch": "9d1c2f4e",
+        "solve_seq": 23,
+        "solved_at": "2026-10-09T21:02:09.010Z",
+        "received_at": "2026-10-09T21:02:09.020Z",
+        "source_kv_ll": 20.0,
+        "section_live": true,
+        "source_live": true,
+        "p_mw": 0.94,
+        "q_mvar": 0.32,
+        "pf": 0.947
+      },
+      "position": "closed",
+      "earth_closed": false,
+      "fault_passage": false
+    },
+    "rmu-2": {
+      "schema": 3,
+      "kind": "rmu",
+      "device_id": "rmu-2",
+      "generation": 342,
+      "revision": 39,
+      "remote_enabled": true,
+      "measurements": {
+        "current_a": 28.88,
+        "voltage_kv_ll": 19.93,
+        "valid": true,
+        "solver_epoch": "9d1c2f4e",
+        "solve_seq": 23,
+        "solved_at": "2026-10-09T21:02:09.010Z",
+        "received_at": "2026-10-09T21:02:09.020Z",
+        "source_kv_ll": 20.0,
+        "section_live": true,
+        "source_live": true,
+        "p_mw": 0.94,
+        "q_mvar": 0.32,
+        "pf": 0.947
+      },
+      "position": "open",
+      "earth_closed": false,
+      "fault_passage": false
+    },
+    "oltc-1": {
+      "schema": 3,
+      "kind": "oltc",
+      "device_id": "oltc-1",
+      "generation": 442,
+      "revision": 49,
+      "remote_enabled": true,
+      "measurements": {
+        "current_a": 28.88,
+        "voltage_kv_ll": 19.93,
+        "valid": true,
+        "solver_epoch": "9d1c2f4e",
+        "solve_seq": 23,
+        "solved_at": "2026-10-09T21:02:09.010Z",
+        "received_at": "2026-10-09T21:02:09.020Z",
+        "source_kv_ll": 20.0,
+        "section_live": true,
+        "source_live": true,
+        "p_mw": 0.94,
+        "q_mvar": 0.32,
+        "pf": 0.947
+      },
+      "tap": 0,
+      "target_tap": 0,
+      "moving": false,
+      "auto": true,
+      "blocked": false,
+      "armed": true
+    }
+  }
+}

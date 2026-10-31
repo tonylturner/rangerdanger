@@ -1,8 +1,10 @@
 # webtop ubuntu-mate pinned by digest (A7 - Linuxserver only ships
 # rolling tags, this freezes the snapshot for reproducible builds).
-FROM linuxserver/webtop:ubuntu-mate@sha256:39afefa41a46fefe3ae910ccf5861933ead54e70d935f1695e70b0627f1b5666
+FROM linuxserver/webtop:ubuntu-mate@sha256:22b9ba5052a2cc584ea3753714d098ed9f885e3aa0e8fa87753d6f6328ccc793
 
+# The current webtop snapshot still predates Ubuntu's Brotli fix.
 RUN apt-get update && \
+    apt-get install -y --only-upgrade libbrotli1 && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         iproute2 && \
     apt-get clean && \

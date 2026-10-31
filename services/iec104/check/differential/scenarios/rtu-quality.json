@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "rtu-quality",
+  "kind": "raw-rtu",
+  "timeout_s": 40,
+  "capture_modbus": true,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {"op": "start", "args": {}, "timeout_s": 5},
+    {"op": "gi", "args": {}, "timeout_s": 5},
+    {"op": "fixture", "args": {"query": "read-loss?active=1"}, "timeout_s": 5},
+    {"op": "expect", "args": {"type": 31, "cot": 3, "ioa": 1001, "value": 194}, "timeout_s": 10},
+    {"op": "expect", "args": {"type": 30, "cot": 3, "ioa": 1002, "value": 192}, "timeout_s": 5},
+    {"op": "fixture", "args": {"query": "read-loss?active=0"}, "timeout_s": 5},
+    {"op": "expect", "args": {"type": 31, "cot": 3, "ioa": 1001, "value": 2}, "timeout_s": 10},
+    {"op": "expect", "args": {"type": 30, "cot": 3, "ioa": 1002, "value": 0}, "timeout_s": 5},
+    {"op": "fixture", "args": {"query": "fault?active=1"}, "timeout_s": 5},
+    {"op": "expect", "args": {"type": 31, "cot": 3, "ioa": 1001, "value": 1}, "timeout_s": 5},
+    {"op": "expect", "args": {"type": 30, "cot": 3, "ioa": 1002, "value": 1}, "timeout_s": 5}
+  ]
+}

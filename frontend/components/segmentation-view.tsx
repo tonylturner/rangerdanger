@@ -5,76 +5,127 @@
 // Network Map can render the exact same panel as a collapsible overlay
 // without duplicating the apply logic.
 //
-// The component manages its own state (active config, comparison) and
-// only depends on React Query for cross-component cache invalidation
-// when the user applies a new config - that lets the network map's
-// edge labels and the header policy badge update immediately when the
-// firewall flips between weak and improved.
+// Active policy and package comparison use React Query so the range
+// lifecycle clears them when one package is replaced by another.
 
-import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
+  ApiError,
   getActiveFirewallConfig,
   getFirewallComparison,
-  applyFirewallConfig,
-  getSubstationNetworkEvents,
   type NetworkEvent,
-  type PolicyComparison,
+  type PolicySource,
+  type PlanProvenance,
 } from "../lib/api";
+import { FIREWALL_ACTIVE_KEY, useSubstationNetworkEvents } from "../lib/live-queries";
+import { useOperatorView, usePackagePolicies } from "../lib/operator-queries";
+import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
+import {
+  HARDENED_POLICY,
+  isHardened,
+  activePolicyWording,
+  policyWording,
+  type PackagePolicies,
+  type PolicyWording,
+} from "../lib/policy-wording";
+import { errorMessage } from "../lib/utils";
+import { EU_OPERATOR_VIEW, isView } from "../lib/operator-view";
 
-// Catalogue of policies the drawer knows about. The backend currently
-// only validates `weak` and `improved`, but the frontend treats this
-// list as the source of truth for the dropdown so adding a new
-// policy is one entry here plus a matching JSON in the lab-definitions
-// folder. `actionField` tells the evaluation renderer which column of
-// PolicyComparison.diffs to read from for this policy.
-type PolicyId = "weak" | "improved";
-type PolicyMeta = {
-  id: PolicyId;
-  label: string;
-  description: string;
-  actionField: "weak_action" | "improved_action";
-  ruleField: "weak_rule" | "improved_rule";
-  toneActive: string;
-  toneInactive: string;
-};
-const POLICIES: PolicyMeta[] = [
-  {
-    id: "weak",
+export const FIREWALL_COMPARISON_KEY = ["firewall-comparison"] as const;
+
+// The policies are the active package's (package.yml `policies`). The
+// US package keeps its own wording; any other package's policies show
+// by their declared names, without a description.
+const US_DRAWER_WORDING: Record<string, PolicyWording> = {
+  weak: {
     label: "Weak Baseline",
     description:
       "All zones can reach field devices directly. Attackers have clear paths to breakers and regulators.",
-    actionField: "weak_action",
-    ruleField: "weak_rule",
-    toneActive: "border-red-700/60 bg-red-950/15 text-red-400",
-    toneInactive: "border-slate-700 text-slate-400 hover:border-red-700 hover:text-red-400",
   },
-  {
-    id: "improved",
+  improved: {
     label: "Hardened Segmentation",
-    description:
-      "Only the RTAC can reach field devices. Enterprise and vendor zones are blocked.",
-    actionField: "improved_action",
-    ruleField: "improved_rule",
-    toneActive: "border-green-700/60 bg-green-950/15 text-green-400",
-    toneInactive: "border-slate-700 text-slate-400 hover:border-green-700 hover:text-green-400",
+    description: "Only the RTAC can reach field devices. Enterprise and vendor zones are blocked.",
   },
-];
-function policyMeta(id: string | null | undefined): PolicyMeta {
-  return POLICIES.find((p) => p.id === id) || POLICIES[0];
+};
+const US_PILL_WORDING: Record<string, PolicyWording> = {
+  weak: { label: "Weak", description: "" },
+  improved: { label: "Hardened", description: "" },
+};
+const EU_DRAWER_WORDING: Record<string, PolicyWording> = {
+  weak: {
+    label: "weak",
+    description:
+      "Enterprise, vendor, and Control Centre sources can reach the RTU over IEC 104; any station-zone host can reach the feeder breaker over Modbus TCP.",
+  },
+  improved: {
+    label: "improved",
+    description:
+      "Only the Control Centre (10.60.60.20/32) can reach the RTU (10.30.30.20/32) over TCP/2404, and only the RTU (10.30.30.20/32) can reach the feeder breaker (10.40.40.20/32) over TCP/502.",
+  },
+};
+
+// The columns of PolicyComparison.diffs per named policy pair.
+type ComparisonFields = {
+  actionField: "weak_action" | "improved_action";
+  ruleField: "weak_rule" | "improved_rule";
+};
+const COMPARISON_FIELDS: Record<string, ComparisonFields> = {
+  weak: { actionField: "weak_action", ruleField: "weak_rule" },
+  improved: { actionField: "improved_action", ruleField: "improved_rule" },
+};
+
+type PolicyMeta = PolicyWording & {
+  id: string;
+  pill: string;
+  toneActive: string;
+  toneInactive: string;
+};
+
+function policyMetas(policies: PackagePolicies, euWording: boolean): PolicyMeta[] {
+  return policies.names.map((id) => ({
+    id,
+    ...(euWording
+      ? EU_DRAWER_WORDING[id] ?? { label: id, description: "" }
+      : policyWording(id, policies, US_DRAWER_WORDING)),
+    pill: policyWording(id, policies, US_PILL_WORDING).label,
+    toneActive: isHardened(id)
+      ? "border-green-700/60 bg-green-950/15 text-green-400"
+      : "border-red-700/60 bg-red-950/15 text-red-400",
+    toneInactive: isHardened(id)
+      ? "border-slate-700 text-slate-400 hover:border-green-700 hover:text-green-400"
+      : "border-slate-700 text-slate-400 hover:border-red-700 hover:text-red-400",
+  }));
+}
+
+// The active config may be custom, not one of the named comparison
+// columns. Never substitute the baseline's metadata for it.
+function activePolicyMeta(
+  metas: PolicyMeta[],
+  activeConfig: string | null,
+  policies: PackagePolicies,
+  source?: PolicySource,
+  plan?: PlanProvenance,
+): PolicyMeta | undefined {
+  const declared = metas.find((p) => p.id === activeConfig);
+  if (declared || !activeConfig) return declared ?? metas[0];
+  const wording = activePolicyWording(activeConfig, policies, US_DRAWER_WORDING, source, plan);
+  return { id: activeConfig, ...wording, pill: wording.label, toneActive: "", toneInactive: "" };
 }
 
 export function SegmentationView({ compact = false }: { compact?: boolean }) {
-  const queryClient = useQueryClient();
-  const [comparison, setComparison] = useState<PolicyComparison | null>(null);
-  const [applying, setApplying] = useState(false);
+  const packagePolicies = usePackagePolicies();
+  const operatorView = useOperatorView();
+  const euWording = isView(operatorView, EU_OPERATOR_VIEW);
+  const apply = useApplyPolicy();
+  const applying = apply.isPending;
   // Which policy the evaluation panel is previewing. Defaults to
   // whatever is currently applied so the panel opens "self-consistent".
   // Track whether the user has manually changed the selection so we
   // don't keep snapping back to the active config when they're trying
   // to inspect a different one.
-  const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyId>("improved");
-  const [userPickedPolicy, setUserPickedPolicy] = useState(false);
+  const [selection, setSelection] = useState({ id: HARDENED_POLICY, manual: false });
+  const selectedPolicyId = selection.id;
 
   // Active firewall config - shared via React Query so this drawer
   // and the top-right PolicyBadge stay in sync whichever entry point
@@ -82,97 +133,104 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   // manual containd commits the policy-observer flips to
   // "manual-custom" within its grace window.
   const { data: activeData } = useQuery({
-    queryKey: ["firewall-active"],
+    queryKey: FIREWALL_ACTIVE_KEY,
     queryFn: getActiveFirewallConfig,
     refetchInterval: 5000,
     staleTime: 2000,
   });
   const activeConfig = activeData?.active_config ?? null;
+  const policies = useMemo(
+    () => (packagePolicies ? policyMetas(packagePolicies, euWording) : []),
+    [packagePolicies, euWording],
+  );
+  const comparisonQuery = useQuery({
+    queryKey: FIREWALL_COMPARISON_KEY,
+    queryFn: getFirewallComparison,
+    retry: false,
+  });
 
-  useEffect(() => {
-    getFirewallComparison().then(setComparison).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!userPickedPolicy && (activeConfig === "weak" || activeConfig === "improved")) {
-      setSelectedPolicyId(activeConfig);
+  const [observed, setObserved] = useState<{ config: string | null; policies: PolicyMeta[] | null }>({
+    config: null, policies: null,
+  });
+  // Follow changed policy snapshots before rendering, until the student
+  // chooses a comparison. Keep the last named selection for custom policies.
+  // Applying a choice does not itself resync to an older cached snapshot.
+  if (observed.config !== activeConfig || observed.policies !== policies) {
+    setObserved({ config: activeConfig, policies });
+    if (!selection.manual && activeConfig !== null && policies.some((p) => p.id === activeConfig)) {
+      setSelection({ id: activeConfig, manual: false });
     }
-    // userPickedPolicy intentionally excluded so the initial sync
-    // happens but a manual pick stays sticky.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeConfig]);
+  }
 
-  const handleApply = async (config: "weak" | "improved") => {
-    setApplying(true);
-    try {
-      await applyFirewallConfig(config);
-      setSelectedPolicyId(config);
-      setUserPickedPolicy(false); // re-sync with active after apply
-      // All three of these queries care about firewall state; the
-      // PolicyBadge subscribes to workshop status, the canvas
-      // subscribes to firewall-rules, and this drawer subscribes
-      // to firewall-active. Invalidate all of them so any entry
-      // point that flips policy (drawer apply, badge apply,
-      // observer-detected manual commit) propagates everywhere.
-      queryClient.invalidateQueries({ queryKey: ["firewall-rules"] });
-      queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
-      queryClient.invalidateQueries({ queryKey: ["firewall-active"] });
-    } catch {
-      // swallow - UI state stays as-is
-    } finally {
-      setApplying(false);
-    }
+  // The apply refreshes every firewall view (lib/policy-apply.ts); on
+  // success the inspector re-syncs with the policy now active.
+  const handleApply = (config: string) => {
+    apply.mutate(config, {
+      onSuccess: () => {
+        setSelection({ id: config, manual: false });
+      },
+    });
   };
+  const failedMeta = policies.find((p) => p.id === apply.variables);
+  const applyFailure = apply.error
+    ? policyApplyErrorText(failedMeta?.label ?? apply.variables ?? "", apply.error)
+    : null;
 
   // Build the evaluation rows for the currently-selected policy. Each
   // row reads the chosen policy's action/rule columns from the diff
   // and tags whether it differs from what's currently active - that
   // tag drives the "would change if applied" highlight.
-  const selectedMeta = policyMeta(selectedPolicyId);
-  const activeMeta = policyMeta(activeConfig);
+  const selectedMeta = policies.find((p) => p.id === selectedPolicyId) ?? policies[0];
+  const activeMeta = packagePolicies ? activePolicyMeta(policies, activeConfig, packagePolicies, activeData?.policy_source, activeData?.plan) : undefined;
+  const comparison = comparisonQuery.data;
+  const selectedFields = selectedMeta ? COMPARISON_FIELDS[selectedMeta.id] : undefined;
+  const activeFields = activeMeta ? COMPARISON_FIELDS[activeMeta.id] : undefined;
   const evaluation = useMemo(() => {
-    if (!comparison) return [];
+    if (!comparison || !selectedFields) return [];
     return comparison.diffs.map((d) => {
-      const action = d[selectedMeta.actionField];
-      const rule = d[selectedMeta.ruleField];
-      const activeAction = d[activeMeta.actionField];
-      const differsFromActive = action !== activeAction;
-      return { zonePair: d.zone_pair, action, rule, activeAction, differsFromActive };
+      const action = d[selectedFields.actionField];
+      const rule = d[selectedFields.ruleField];
+      const activeAction = activeFields ? d[activeFields.actionField] : undefined;
+      const differsFromActive = activeAction !== undefined && action !== activeAction;
+      return { zonePair: d.zone_pair, action, rule, differsFromActive };
     });
-  }, [comparison, selectedMeta, activeMeta]);
+  }, [comparison, selectedFields, activeFields]);
   const changeCount = evaluation.filter((r) => r.differsFromActive).length;
 
-  if (!comparison) {
+  if (!packagePolicies || !selectedMeta || !activeMeta) {
     return (
       <div className="py-6 text-center text-sm text-slate-500">
-        Loading policy comparison…
+        Loading policy controls…
       </div>
     );
   }
 
-  const isSelectedActive = selectedPolicyId === activeConfig;
+  const isSelectedActive = selectedMeta.id === activeConfig;
+  const activeHardened = isHardened(activeConfig);
+  const activeTone = activeHardened
+    ? "border-green-700/60 bg-green-950/15 text-green-400"
+    : activeConfig === "weak"
+    ? "border-red-700/60 bg-red-950/15 text-red-400"
+    : "border-slate-700 bg-slate-900/50 text-slate-300";
+  const activeTextTone = activeHardened
+    ? "text-green-400"
+    : activeConfig === "weak"
+    ? "text-red-400"
+    : "text-slate-300";
+  const comparisonUnsupported =
+    comparisonQuery.error instanceof ApiError && comparisonQuery.error.status === 404;
 
   return (
     <div className="space-y-3">
       {/* Active policy banner */}
-      <div
-        className={`rounded-lg border p-2.5 ${
-          activeConfig === "improved"
-            ? "border-green-700/60 bg-green-950/15"
-            : "border-red-700/60 bg-red-950/15"
-        }`}
-      >
+      <div className={`rounded-lg border p-2.5 ${activeTone}`}>
         <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
           containd NGFW · Active Policy
         </div>
-        <div
-          className={`mt-0.5 text-sm font-bold ${
-            activeConfig === "improved" ? "text-green-400" : "text-red-400"
-          }`}
-        >
+        <div className={`mt-0.5 text-sm font-bold ${activeTextTone}`}>
           {activeMeta.label}
         </div>
-        {!compact && (
+        {!compact && activeMeta.description && (
           <div className="mt-1 text-[11px] leading-snug text-slate-500">
             {activeMeta.description}
           </div>
@@ -186,14 +244,13 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
         </div>
         <div className="flex items-center gap-1.5">
           <select
-            value={selectedPolicyId}
+            value={selectedMeta.id}
             onChange={(e) => {
-              setSelectedPolicyId(e.target.value as PolicyId);
-              setUserPickedPolicy(true);
+              setSelection({ id: e.target.value, manual: true });
             }}
-            className="flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-200 focus:border-slate-500 focus:outline-none"
+            className="flex-1 rounded-sm border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-200 focus:border-slate-500 focus:outline-hidden"
           >
-            {POLICIES.map((p) => (
+            {policies.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.label}
                 {p.id === activeConfig ? " · active" : ""}
@@ -201,9 +258,9 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
             ))}
           </select>
           <button
-            onClick={() => handleApply(selectedPolicyId)}
+            onClick={() => handleApply(selectedMeta.id)}
             disabled={applying || isSelectedActive}
-            className="rounded border border-sky-700 bg-sky-950/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sky-300 transition-colors hover:bg-sky-900/60 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-sm border border-sky-700 bg-sky-950/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sky-300 transition-colors hover:bg-sky-900/60 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {applying ? "Applying…" : isSelectedActive ? "Active" : "Apply"}
           </button>
@@ -211,7 +268,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
 
         {/* Quick-set pills */}
         <div className="flex items-center gap-1">
-          {POLICIES.map((p) => (
+          {policies.map((p) => (
             <button
               key={p.id}
               onClick={() => handleApply(p.id)}
@@ -221,17 +278,22 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
               }`}
               title={`Apply ${p.label}`}
             >
-              {p.id === "weak" ? "Weak" : "Hardened"}
+              {p.pill}
             </button>
           ))}
         </div>
+        {applyFailure && (
+          <div role="alert" className="text-[10px] leading-snug text-red-400">
+            {applyFailure}
+          </div>
+        )}
       </div>
 
       {/* Live containd DPI events - shows real allow/deny decisions
           on the wire so students can watch the policy enforce when
           they fire a probe from a terminal. Empty under the weak
           baseline by design (no rules have log:true). */}
-      <LiveEvents compact={compact} activeConfig={activeConfig} />
+      <LiveEvents compact={compact} activeConfig={activeConfig} activePolicyLabel={activeConfig ? activeMeta.label : "Policy loading…"} usWording={packagePolicies.usWording} />
 
       {/* Dynamic policy evaluation - driven by the dropdown selection.
           Rows that differ from the currently-active policy get a
@@ -239,43 +301,68 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
           selected policy would actually do. */}
       {!compact && (
         <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-              Evaluation · {selectedMeta.label}
-            </div>
-            {!isSelectedActive && (
-              <span className="rounded bg-amber-950/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-400">
-                {changeCount} change{changeCount === 1 ? "" : "s"} vs active
-              </span>
-            )}
+          <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+            Named policy comparison
           </div>
-          <div className="space-y-1.5">
-            {evaluation.map((r, i) => (
-              <div
-                key={i}
-                className={`rounded border p-2 text-[11px] ${
-                  r.differsFromActive
-                    ? "border-amber-900/40 bg-amber-950/10"
-                    : "border-slate-800/60 bg-slate-900/30"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-slate-300">{r.zonePair}</span>
-                  <div className="flex items-center gap-1.5">
-                    <ActionChip action={r.action} />
-                    {r.differsFromActive && (
-                      <span className="text-[9px] font-bold uppercase text-amber-400">
-                        → would change
-                      </span>
-                    )}
-                  </div>
+          <div className="mb-2 text-[10px] leading-snug text-slate-600">
+            Named-policy preview is separate from live sessions and firewall enforcement.
+          </div>
+          {comparisonQuery.isPending && (
+            <div className="text-[10px] leading-snug text-slate-500">
+              Loading named policy comparison…
+            </div>
+          )}
+          {comparisonUnsupported && (
+            <div className="text-[10px] leading-snug text-slate-500">
+              Named policy comparison is not available for this package.
+            </div>
+          )}
+          {comparisonQuery.isError && !comparisonUnsupported && (
+            <div className="text-[10px] leading-snug text-red-400">
+              Policy comparison unavailable: {errorMessage(comparisonQuery.error)}
+            </div>
+          )}
+          {comparison && selectedFields && (
+            <>
+              <div className="mb-1.5 flex items-center justify-between">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                  Preview · {selectedMeta.label}
                 </div>
-                {r.rule && (
-                  <div className="mt-1 text-[10px] leading-snug text-slate-500">{r.rule}</div>
+                {activeFields && !isSelectedActive && (
+                  <span className="rounded-sm bg-amber-950/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-400">
+                    {changeCount} change{changeCount === 1 ? "" : "s"} vs active
+                  </span>
                 )}
               </div>
-            ))}
-          </div>
+              <div className="space-y-1.5">
+                {evaluation.map((r, i) => (
+                  <div
+                    key={i}
+                    className={`rounded border p-2 text-[11px] ${
+                      r.differsFromActive
+                        ? "border-amber-900/40 bg-amber-950/10"
+                        : "border-slate-800/60 bg-slate-900/30"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-slate-300">{r.zonePair}</span>
+                      <div className="flex items-center gap-1.5">
+                        <ActionChip action={r.action} />
+                        {r.differsFromActive && (
+                          <span className="text-[9px] font-bold uppercase text-amber-400">
+                            → would change
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {r.rule && (
+                      <div className="mt-1 text-[10px] leading-snug text-slate-500">{r.rule}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -291,7 +378,7 @@ function ActionChip({ action }: { action: string; label?: string }) {
       ? "text-red-400 border-red-800/40"
       : "text-yellow-400 border-yellow-800/40";
   return (
-    <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${cls}`}>
+    <span className={`rounded-sm border px-1.5 py-0.5 text-[9px] font-bold ${cls}`}>
       {action}
     </span>
   );
@@ -303,16 +390,10 @@ function ActionChip({ action }: { action: string; label?: string }) {
 // them inflates the deny counter + paints amber-categorized rows red.
 // Operators read "N deny" as "the firewall actually stopped N packets";
 // anomalies belong in the separate `ids` count alongside the amber
-// row tone. (Codex review on PR #47 caught the original conflation.)
+// row tone. (Review on PR #47 caught the original conflation.)
 //
-// Legacy heuristics (type/severity/details) are kept as fallback so an
-// older containd image in the loop still produces sensible output.
 function eventVerdict(e: NetworkEvent): "ALLOW" | "DENY" {
   if (e.attributes?.action === "DENY") return "DENY";
-  // Legacy schema fallbacks (pre-v0.1.25 containd builds)
-  if (e.type === "alert") return "DENY";
-  if (e.severity === "critical") return "DENY";
-  if (e.details && /blocked|denied|deny/i.test(e.details)) return "DENY";
   return "ALLOW";
 }
 
@@ -347,37 +428,33 @@ function eventLabel(e: NetworkEvent): string {
     case "ids":
       return a.anomaly_type ?? a.message ?? "IDS anomaly";
     default:
-      return e.kind ?? e.type ?? "event";
+      return e.kind ?? "event";
   }
 }
 
-// Pull a printable src→dst pair from whichever schema is present.
-// Prefer v0.1.25+ camelCase; fall back to legacy snake_case so the
-// strip degrades gracefully if an older containd is in the loop.
 function eventEndpoints(e: NetworkEvent): { src: string; dst: string } {
   return {
-    src: e.srcIp ?? e.source ?? "?",
-    dst: e.dstIp ?? e.dest ?? "?",
+    src: e.srcIp ?? "?",
+    dst: e.dstIp ?? "?",
   };
 }
 
 function LiveEvents({
   compact,
   activeConfig,
+  activePolicyLabel,
+  usWording,
 }: {
   compact: boolean;
   activeConfig: string | null;
+  activePolicyLabel: string;
+  usWording: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   // 2.5s poll matches the substation Command Audit cadence and keeps
   // the strip responsive without burning bandwidth when nothing is
   // happening on the wire.
-  const { data } = useQuery({
-    queryKey: ["segmentation", "live-events"],
-    queryFn: getSubstationNetworkEvents,
-    refetchInterval: 2500,
-    refetchOnWindowFocus: false,
-  });
+  const { data } = useSubstationNetworkEvents(2500, { refetchOnWindowFocus: false });
 
   const events = data?.events ?? [];
   const unavailable = data?.source === "unavailable";
@@ -397,9 +474,9 @@ function LiveEvents({
         className="mb-1.5 flex w-full items-center justify-between text-[9px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-300"
       >
         <span className="flex items-center gap-2">
-          Live DPI Events
+          Live Firewall Events · {activePolicyLabel}
           {events.length > 0 && (
-            <span className="rounded bg-slate-800/60 px-1.5 py-0.5 text-slate-400 normal-case tracking-normal">
+            <span className="rounded-sm bg-slate-800/60 px-1.5 py-0.5 text-slate-400 normal-case tracking-normal">
               {ruleCount} rule · {dpiCount} dpi · {idsCount} ids · {denyCount} deny
             </span>
           )}
@@ -408,13 +485,13 @@ function LiveEvents({
       </button>
 
       {expanded && (
-        <div className={`space-y-1 overflow-y-auto rounded border border-slate-800/60 bg-slate-900/30 p-1.5 ${compact ? "max-h-32" : "max-h-56"}`}>
+        <div className={`space-y-1 overflow-y-auto rounded-sm border border-slate-800/60 bg-slate-900/30 p-1.5 ${compact ? "max-h-32" : "max-h-56"}`}>
           {unavailable ? (
             <div className="py-2 text-center text-[10px] text-slate-600">
               containd unreachable
             </div>
           ) : events.length === 0 ? (
-            <EmptyEventsHint compact={compact} activeConfig={activeConfig} />
+            <EmptyEventsHint compact={compact} activeConfig={activeConfig} usWording={usWording} />
           ) : (
             events.slice(0, maxRows).map((e, i) => <LiveEventRow key={`${e.id}-${i}`} e={e} />)
           )}
@@ -424,20 +501,24 @@ function LiveEvents({
   );
 }
 
-// EmptyEventsHint - policy-aware empty-state message for the Live DPI
+// EmptyEventsHint - policy-aware empty-state message for the Live Firewall
 // Events panel. Under the weak baseline the panel is silent by design
 // (no shipped rule has log:true - mirrors a real misconfigured
 // firewall and is part of the segmentation lesson); under hardened
 // the panel is "empty because no probe has been fired yet"; outside
-// those two there's not enough context to be more specific.
+// those two there's not enough context to be more specific. The two
+// specific hints describe the US policy files and tools, so another
+// package gets the generic one.
 function EmptyEventsHint({
   compact,
   activeConfig,
+  usWording,
 }: {
   compact: boolean;
   activeConfig: string | null;
+  usWording: boolean;
 }) {
-  if (activeConfig === "weak") {
+  if (usWording && activeConfig === "weak") {
     return (
       <div className="space-y-1 py-2 px-1 text-[10px] leading-snug text-slate-500">
         <div className="font-medium text-slate-400">
@@ -455,7 +536,7 @@ function EmptyEventsHint({
       </div>
     );
   }
-  if (activeConfig === "improved") {
+  if (usWording && activeConfig === "improved") {
     return (
       <div className="py-2 px-1 text-[10px] leading-snug text-slate-500">
         Hardened policy is active and rules have <span className="font-mono text-amber-400">log: true</span>,
@@ -477,8 +558,8 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
   const category = eventCategory(e);
   const { src, dst } = eventEndpoints(e);
   const label = eventLabel(e);
-  const port = e.dstPort ?? e.dst_port ?? null;
-  const proto = e.transport ?? e.protocol ?? "";
+  const port = e.dstPort ?? null;
+  const proto = e.protocol || e.transport || "";
 
   // Row tone is dominated by DENY (red) since that's the highest-value
   // signal for the operator. ALLOWs use the standard slate background;
@@ -494,7 +575,7 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
     : "--";
 
   return (
-    <div className={`rounded border p-1.5 text-[10px] ${rowTone}`}>
+    <div className={`rounded-sm border p-1.5 text-[10px] ${rowTone}`}>
       <div className="flex items-center gap-1.5">
         <span className="w-14 shrink-0 text-[9px] text-slate-600">{ts}</span>
         {/* For firewall.rule.hit rows show the ALLOW/DENY action chip;
@@ -514,11 +595,6 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
           <span className="text-[9px] text-purple-400">[{proto}]</span>
         )}
       </div>
-      {e.details && (
-        <div className="ml-14 mt-0.5 text-[10px] leading-tight text-slate-500">
-          {e.details}
-        </div>
-      )}
     </div>
   );
 }
@@ -535,7 +611,7 @@ function KindChip({ category }: { category: EventCategory }) {
       : { label: "EVT", cls: "text-slate-400 border-slate-700/40" };
   return (
     <span
-      className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${meta.cls}`}
+      className={`rounded-sm border px-1.5 py-0.5 text-[9px] font-bold ${meta.cls}`}
     >
       {meta.label}
     </span>
