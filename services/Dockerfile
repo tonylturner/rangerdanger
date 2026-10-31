@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for all substation simulator services.
 # Usage: docker build --target <service-name> -t <tag> .
 
-FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS go-deps
+FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS go-deps
 ENV GOTOOLCHAIN=local
 WORKDIR /app
 COPY services/go.mod ./
@@ -76,7 +76,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # them as student-runnable diagnostic tools. The eng-ws Dockerfile
 # uses the same dnp3go module via its own builder stage; keeping a
 # parallel build here avoids cross-Dockerfile coupling.
-FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS dnp3-builder
+FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS dnp3-builder
 ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY dnp3go/go.mod ./go.mod
