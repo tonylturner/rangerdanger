@@ -1,3 +1,5 @@
+import { commandSourceMarker } from "./exercise-nodes";
+
 // scenario-description.ts — pure-logic parser for lab step
 // description bodies. Extracted from scenario-runner.tsx so it can
 // be unit-tested without dragging React in.
@@ -12,7 +14,7 @@
 
 // Tools whose indented lines are runnable command blocks. The PDF
 // export (exercise-pdf-text.ts) uses the same list.
-export const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
+export const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker|timeout)\s/;
 
 // containd appliance-CLI commands. These are NOT run via the lab's
 // per-node exec (they live in the containd CLI, reached from the fw-1
@@ -119,8 +121,8 @@ export type FindingsPanelItem = { id: string; label: string };
 
 export type Segment =
   | { type: "prose"; value: string }
-  | { type: "cmd"; value: string; cli?: boolean; copyOnly?: boolean }
-  | { type: "hint"; title: string; value: string }
+  | { type: "cmd"; value: string; cli?: boolean; copyOnly?: boolean; sourceNode?: string }
+  | { type: "hint"; title: string; value: string; sourceNode?: string }
   | {
       type: "decision";
       id: string;
@@ -156,6 +158,7 @@ export type Segment =
     }
   | {
       type: "trackOnly";
+      sourceNode?: string;
       track: "guided" | "technical";
       // Body is parsed recursively into segments by the renderer so
       // nested commands / hints / decisions still work inside a
@@ -232,13 +235,16 @@ export function parsePlanCoverageAttrs(attrs: string): { title: string } {
  * decision, and findingsPanel segments. Order in the output preserves
  * the order in the input.
  */
-export function splitDescription(text: string): Segment[] {
+export function splitDescription(text: string, inheritedSource?: string): Segment[] {
   const result: Segment[] = [];
   const lines = text.split("\n");
   let prose: string[] = [];
   let i = 0;
+  let sourceNode = inheritedSource;
+  const source = () => sourceNode ? { sourceNode } : {};
 
   const flushProse = () => {
+    sourceNode = commandSourceMarker(prose.join("\n")) ?? sourceNode;
     // Drop pure-whitespace prose buffers — blank lines between
     // fences (which is the natural way to write a YAML
     // description) shouldn't produce empty <p> segments. The UI
@@ -263,7 +269,7 @@ export function splitDescription(text: string): Segment[] {
         i++;
       }
       if (i < lines.length) i++; // skip closing fence
-      result.push({ type: "hint", title, value: body.join("\n") });
+      result.push({ type: "hint", title, value: body.join("\n"), ...source() });
       continue;
     }
     const planCoverageOpen = PLAN_COVERAGE_OPEN_RE.exec(trimmed);
@@ -335,7 +341,7 @@ export function splitDescription(text: string): Segment[] {
         i++;
       }
       if (i < lines.length) i++;
-      result.push({ type: "trackOnly", track, body: body.join("\n") });
+      result.push({ type: "trackOnly", track, body: body.join("\n"), ...source() });
       continue;
     }
     const findingsOpen = FINDINGS_PANEL_OPEN_RE.exec(trimmed);
@@ -398,16 +404,16 @@ export function splitDescription(text: string): Segment[] {
         i++;
         cmd += "\n  " + lines[i].trim();
       }
-      result.push({ type: "cmd", value: cmd });
+      result.push({ type: "cmd", value: cmd, ...source(), ...(sourceNode === "host" ? { copyOnly: true } : {}) });
     } else if (isIndented && CONTAIND_CLI_RE.test(trimmed)) {
       // containd CLI command — copy-only (the student runs it in the
       // fw-1 containd terminal, not via the lab's per-node Run).
       flushProse();
-      result.push({ type: "cmd", value: trimmed, cli: true });
+      result.push({ type: "cmd", value: trimmed, cli: true, ...source() });
     } else if (isIndented && COPY_ONLY_TOOL_RE.test(trimmed)) {
       // Interactive/GUI command — copy-only (run it in a real terminal).
       flushProse();
-      result.push({ type: "cmd", value: trimmed, copyOnly: true });
+      result.push({ type: "cmd", value: trimmed, copyOnly: true, ...source() });
     } else {
       prose.push(lines[i]);
     }

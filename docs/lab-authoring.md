@@ -199,7 +199,7 @@ Any indented line that begins with one of these tools becomes a
 
 `nmap`, `mbpoll`, `dnp3poll`, `dnp3cmd`, `curl`, `tshark`,
 `tcpdump`, `nc`, `telnet`, `ssh`, `wget`, `ls`, `grep`, `cat`,
-`docker`.
+`docker`, `iec104cmd`, `timeout`.
 
 Continuation lines with trailing backslash get joined automatically.
 
@@ -215,14 +215,23 @@ description: |
         | python3 -m json.tool
 ```
 
-The Run button targets the step's `node`, or falls back to prose
-inference (look for "from the kali terminal", "on the firewall", etc.).
-For multi-source steps, use **per-section "From X terminal" headers**
-above each command - the runner picks the nearest one walking up.
+The Run button targets the nearest preceding source marker, then the step's
+`node`, then prose inference, curriculum primary and the first exercise node.
+Use **per-section "From the X terminal" headers** above commands. Markers
+are case-insensitive `From`, `On` or `Via`, optional `the`, then a node ID
+or short name (Kali, vendor-jump, eng-ws, RTAC, RTU, CC, firewall, historian,
+OpenPLC or HMI). Markdown bold/backticks are allowed around the name.
+Unrelated prose does not clear the marker; a later recognized marker replaces
+it. Hints and track blocks inherit the surrounding source, but markers inside
+them remain local. Dynamic plan descriptions follow the same rule.
+Use **From the host terminal:** for host-side commands: these are copy-only,
+with no Run button. Switch back with another source marker before container
+commands. Avoid combining two source headers above two separate commands.
 
-The lab-commands smoke test (`./scripts/lab-commands-smoke.sh`)
-extracts these the same way and runs each. If a command in your
-lab YAML doesn't run cleanly, CI fails.
+The US lab-commands smoke test (`./scripts/lab-commands-smoke.sh`)
+also prefers source headers, but maintains a separate reviewed command
+inventory. Check its extraction tests and expectations as well as frontend
+routing tests when changing US recipes.
 
 The gate keeps `pipefail`, but drains terminal `| head -N` pipelines with
 `sed -n '1,Np'`: visible lines are unchanged and an early closed pipe cannot

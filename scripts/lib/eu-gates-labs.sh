@@ -91,7 +91,7 @@ eu_lab_wait_capture() {
   }
   # Capture from fw-1 as the scenario directs. The bounded run leaves time for
   # the asynchronous traffic recipe while staying inside the exec/API budget.
-  eu_lab_exec fw-1 "tcpdump -i any -nn 'not host 127.0.0.1' -G 12 -W 1 -w /data/captures/baseline.pcap" 0 25 || return
+  eu_lab_exec fw-1 "timeout -s INT -k 2 12 tcpdump -i any -nn 'not host 127.0.0.1' -w /data/captures/baseline.pcap || [ \$? -eq 124 ]" 0 25 || return
   eu_lab_wait_traffic_quiescent "$label capture" || return
   eu_lab_exec fw-1 'ls -lh /data/captures/baseline.pcap' || return
   pass "$label student traffic and firewall capture completed"

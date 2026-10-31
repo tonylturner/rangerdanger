@@ -83,9 +83,9 @@ steps:
     Switch to **fw-1**'s terminal. Capture while the generator runs:
 
         mkdir -p /data/captures
-        tcpdump -i any -nn 'not host 127.0.0.1' -G 30 -W 1 -w /data/captures/baseline.pcap
+        timeout -s INT -k 2 12 tcpdump -i any -nn 'not host 127.0.0.1' -w /data/captures/baseline.pcap || [ $? -eq 124 ]
 
-    Wait for capture completion. The Linux any interface needs no promiscuous mode; the one-file limit is the expected stop, not a failure. Keep the PCAP before any reset.
+    Wait for capture completion. The Linux any interface needs no promiscuous mode. After 12 seconds, timeout interrupts tcpdump to flush the PCAP, even if no packets arrive; the final test accepts its expected timeout status (124). A 2-second hard-stop grace keeps Run inside its 30-second budget. Keep the PCAP before any reset.
 
     :::hint Capture scope
     Management UI traffic is out of band. Capture shows cross-zone teaching traffic, not all dependencies. Never infer same-subnet isolation from an empty firewall capture. [Capture reference](/knowledge#eu-tool-tcpdump).

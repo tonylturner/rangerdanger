@@ -540,3 +540,31 @@ describe("splitDescription — guided / technical fences", () => {
   });
 });
 
+describe("command source markers", () => {
+  const commands = (text: string, source?: string) => splitDescription(text, source).filter((s) => s.type === "cmd");
+
+  it("uses the nearest known source, across wrapped prose and continuations", () => {
+    const result = commands("From **Kali**:\n    curl first\nOn the network map, inspect RTU.\n    curl second\nFrom\n**vendor-jump** terminal:\n    mbpoll target");
+    expect(result.map((s) => s.sourceNode)).toEqual(["kali-1", "kali-1", "vendor-jump-1"]);
+  });
+
+  it("supports node IDs, short names, markdown and On/Via, but not negated markers", () => {
+    expect(commands("On `cc-1` terminal:\n    wget endpoint\nVia the **eng-ws** terminal:\n    curl endpoint\nnot from Kali\n    curl again").map((s) => s.sourceNode)).toEqual(["cc-1", "eng-ws-1", "eng-ws-1"]);
+    expect(commands("No marker\n    curl endpoint")[0].sourceNode).toBeUndefined();
+  });
+
+  it("makes host commands copy-only and restores Run after a container marker", () => {
+    const result = commands("From the host terminal:\n    curl localhost\nFrom the cc-1 terminal:\n    wget endpoint");
+    expect(result[0]).toMatchObject({ sourceNode: "host", copyOnly: true });
+    expect(result[1].copyOnly).toBeUndefined();
+  });
+
+  it("inherits sources into hints and tracks without leaking local markers", () => {
+    const result = splitDescription("From Kali:\n:::hint More\nFrom RTU:\n    curl local\n:::\n:::technical\n    curl inherited\n:::\n    curl outer");
+    for (const seg of result) {
+      if (seg.type === "hint") expect(commands(seg.value, seg.sourceNode)[0].sourceNode).toBe("rtu-1");
+      if (seg.type === "trackOnly") expect(commands(seg.body, seg.sourceNode)[0].sourceNode).toBe("kali-1");
+      if (seg.type === "cmd") expect(seg.sourceNode).toBe("kali-1");
+    }
+  });
+});

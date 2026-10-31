@@ -49,3 +49,22 @@ export function getExerciseNodes(scenarioId: string, scenarioNodes?: string[], c
 export function inferNodeFromDescription(desc: string, curriculum?: CurriculumBinding): string | null {
   return curriculum?.nodeInference.find((n) => desc.includes(n.ip) || new RegExp(n.pattern, "i").test(desc))?.node ?? null;
 }
+
+// Source markers use node IDs or the short names already used by US labs.
+// Ignore unrelated "from/on/via" prose rather than clearing the last source.
+const SOURCE_NODES: Record<string, string> = {
+  ...Object.fromEntries(Object.keys(NODE_LABELS).map((id) => [id, id])),
+  kali: "kali-1", vendor: "vendor-jump-1", "vendor-jump": "vendor-jump-1",
+  engineering: "eng-ws-1", "eng-ws": "eng-ws-1", eng: "eng-ws-1",
+  openplc: "openplc-1", plc: "plc-1", rtac: "rtac-1", rtu: "rtu-1",
+  cc: "cc-1", hmi: "hmi-1", fuxa: "hmi-1", firewall: "fw-1",
+  historian: "historian-1", host: "host",
+};
+
+export function commandSourceMarker(text: string): string | undefined {
+  let source: string | undefined;
+  for (const match of text.matchAll(/(?<!not )\b(?:from|on|via)\s+(?:the\s+)?[`*]*([a-z][a-z0-9-]*)\b/gi)) {
+    source = SOURCE_NODES[match[1].toLowerCase()] ?? source;
+  }
+  return source;
+}

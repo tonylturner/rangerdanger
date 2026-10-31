@@ -152,11 +152,11 @@ steps:
   description: |
     Preserve PCAP and the UTC commit boundary. Keep `deny-unauthorized-iec104` after the CC allow: it includes the CC zone, TCP/2404, DENY and `log: true`. If the allow is missing, new CC→RTU sessions hit this explicit logged deny rather than the silent default drop. A custom policy must keep equivalent logged coverage for this lesson.
 
-    Compare the **Control Centre** link/quality, **Network Map** CC→RTU conduit and **Live DPI Events** tuple/rule. A missing CC allow can leave the old session healthy because conntrack survives commit. Force a fresh session after every commit with the portal operator API (from a host terminal):
+    Compare the **Control Centre** link/quality, **Network Map** CC→RTU conduit and **Live DPI Events** tuple/rule. A missing CC allow can leave the old session healthy because conntrack survives commit. Force a fresh session after every commit with the portal operator API. From the host terminal:
 
         curl -fsS -X POST http://localhost:8088/api/operator/reconnect
 
-    Or in the **cc-1 terminal**, use its management listener:
+    Or from the **cc-1 terminal**, use its management listener:
 
         wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect
 
@@ -200,9 +200,11 @@ steps:
     3. Now request **two lower steps**, waiting for completed feedback after each, to exercise automatic correction next. Watch IOA 1301 go transient, then settle at each adjacent tap. One step can remain inside the band and would not prove automatic correction. See [step telemetry](/knowledge#eu-iec104-step-telemetry).
     4. Return to **auto**: `oltc-1-mode` → `auto`. Wait for the configured 30 s sustained demand, then the 2 s motion for each correction; IOA 2403 reports configured delay, not its countdown. Automatic control now issues PLC-originated Modbus requests toward the operating band, not necessarily the exact starting tap under the daily profile. Confirm that PLC request, its motion completion and the solved revision, and that the historian ingests the advancing tap.
 
-    From **Kali**, read the historian; from **eng-ws**, retrieve the PLC login page:
+    From the **Kali terminal**, read the historian:
 
         curl -fsS --max-time 3 http://10.70.70.40:8080/api/points
+
+    From the **eng-ws terminal**, retrieve the PLC login page:
 
         curl -fsS --max-time 3 http://10.30.30.30:8080/login
 

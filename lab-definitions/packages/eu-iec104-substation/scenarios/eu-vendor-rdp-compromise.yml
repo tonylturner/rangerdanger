@@ -132,7 +132,7 @@ steps:
     With `restrict-enterprise-to-vendor` selected, both ports time out or show
     filtered. Deferred means reachable. No graphical client is required.
 
-    From the still-available **vendor-jump-1 terminal tab**, repeat the identical field write:
+    From the **vendor-jump-1 terminal tab** (still available), repeat the identical field write:
 
         mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
 

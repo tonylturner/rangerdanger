@@ -55,17 +55,18 @@ type CommandBlockProps = {
   cmd: string;
   runId: string;
   runningId: string | null;
-  onRun: ((cmd: string, runId: string) => void) | null;
+  onRun: ((cmd: string, runId: string, sourceNode?: string) => void) | null;
+  sourceNode?: string;
   // cli = a containd appliance-CLI command: copy-only (no Run), prefixed
   // with the containd# prompt and badged so it's clear the student runs
   // it in the fw-1 containd terminal, not via the lab's per-node exec.
   cli?: boolean;
-  // copyOnly = an interactive/GUI command (remote-desktop client, sshpass
-  // shell): copy button only, no Run, no badge - run it in a terminal.
+  // copyOnly = a host-side or interactive/GUI command: copy button only,
+  // no Run, no badge - run it in the indicated terminal.
   copyOnly?: boolean;
 };
 
-export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: CommandBlockProps) {
+export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly, sourceNode }: CommandBlockProps) {
   const runnable = cli || copyOnly ? null : onRun;
   return (
     <div className="group relative rounded-sm border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
@@ -81,7 +82,7 @@ export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: Co
         )}
         {runnable && (
           <button
-            onClick={() => runnable(cmd, runId)}
+            onClick={() => runnable(cmd, runId, sourceNode)}
             disabled={runningId !== null}
             className="rounded-sm border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
           >
@@ -443,7 +444,8 @@ type HintBlockProps = {
   body: string;
   runIdPrefix: string;
   runningId: string | null;
-  onRun: ((cmd: string, runId: string) => void) | null;
+  onRun: ((cmd: string, runId: string, sourceNode?: string) => void) | null;
+  sourceNode?: string;
   scenarioId: string;
 };
 
@@ -478,9 +480,9 @@ export function IconStamp({ name, color, label }: { name: string; color: string;
   );
 }
 
-export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: HintBlockProps) {
+export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId, sourceNode }: HintBlockProps) {
   const [open, setOpen] = useState(false);
-  const segments = splitDescription(body.replace(/^\n+|\n+$/g, ""));
+  const segments = splitDescription(body.replace(/^\n+|\n+$/g, ""), sourceNode);
   let cmdIdx = 0;
   return (
     <div className="rounded-lg border border-amber-900/60 bg-amber-950/20">
@@ -520,6 +522,7 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
                   runId={id}
                   runningId={runningId}
                   onRun={onRun}
+                  sourceNode={seg.sourceNode}
                   cli={seg.cli}
                   copyOnly={seg.copyOnly}
                 />
@@ -565,6 +568,7 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
                   key={si}
                   title={seg.title}
                   body={seg.value}
+                  sourceNode={seg.sourceNode}
                   runIdPrefix={`${runIdPrefix}-h${si}`}
                   runningId={runningId}
                   onRun={onRun}
@@ -605,7 +609,7 @@ export function DescriptionSegments({
   exerciseNodes: string[];
   firewallTrack: "guided" | "technical" | null;
   autoRunning: string | null;
-  handleAutoRun: (cmd: string, runId: string, stepDesc: string) => Promise<void>;
+  handleAutoRun: (cmd: string, runId: string, stepDesc: string, sourceNode?: string) => Promise<void>;
   handleGenerateTraffic: (durationSec?: number) => Promise<void>;
   generatingTraffic: boolean;
 }) {
@@ -623,7 +627,7 @@ export function DescriptionSegments({
               let bodyCmdIdx = 0;
               let hintIdx = 0;
               const runHandler = exerciseNodes.length > 0
-                ? (cmd: string, runId: string) => handleAutoRun(cmd, runId, step.description)
+                ? (cmd: string, runId: string, sourceNode?: string) => handleAutoRun(cmd, runId, effectiveDesc, sourceNode)
                 : null;
               return (
                 <div className="stack-y-2">
@@ -644,6 +648,7 @@ export function DescriptionSegments({
                           key={`${scenario.id}-${currentStep}-${si}`}
                           title={seg.title}
                           body={seg.value}
+                          sourceNode={seg.sourceNode}
                           runIdPrefix={`hint-${hi}`}
                           runningId={autoRunning}
                           onRun={runHandler}
@@ -736,7 +741,7 @@ export function DescriptionSegments({
                       // Recursively split + render the body so nested
                       // commands / hints / decisions inside a track
                       // block still work.
-                      const inner = splitDescription(seg.body);
+                      const inner = splitDescription(seg.body, seg.sourceNode);
                       return (
                         <div
                           key={`${scenario.id}-${currentStep}-${si}`}
@@ -770,6 +775,7 @@ export function DescriptionSegments({
                                   runId={`body-${ci}`}
                                   runningId={autoRunning}
                                   onRun={runHandler}
+                                  sourceNode={sub.sourceNode}
                                   cli={sub.cli}
                                   copyOnly={sub.copyOnly}
                                 />
@@ -782,6 +788,7 @@ export function DescriptionSegments({
                                   key={sj}
                                   title={sub.title}
                                   body={sub.value}
+                                  sourceNode={sub.sourceNode}
                                   runIdPrefix={`hint-t-${hi}`}
                                   runningId={autoRunning}
                                   onRun={runHandler}
@@ -807,6 +814,7 @@ export function DescriptionSegments({
                         runId={`body-${ci}`}
                         runningId={autoRunning}
                         onRun={runHandler}
+                        sourceNode={seg.sourceNode}
                         cli={seg.cli}
                         copyOnly={seg.copyOnly}
                       />
