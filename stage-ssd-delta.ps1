@@ -629,6 +629,9 @@ if ($applyRetagCommands.Count -eq 0) {
     $applyRetagText = $applyRetagCommands -join "`n"
 }
 
+# The installed .env owns RANGERDANGER_ROOT (setup translates Windows paths
+# through windows-root.ps1). Do not override it with a Bash working directory
+# or an inherited staging root when restarting the generated recipe.
 $recipeFunctions = @'
 compose_down_project() {
     local project="$1" compose_dir range_containers volume_names remaining_volumes volume
@@ -668,9 +671,9 @@ compose_down_project() {
 
 start_platform_and_selected_range() {
     local ready attempt range_status phase
-    RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
+    (unset RANGERDANGER_ROOT; docker compose -p rangerdanger-platform \
         --project-directory "$PWD" -f docker-compose.release.yml \
-        up -d --pull never || return 1
+        up -d --pull never) || return 1
     ready=0
     for attempt in $(seq 1 120); do
         if curl -fsS --max-time 5 http://127.0.0.1:8088/api/health >/dev/null; then

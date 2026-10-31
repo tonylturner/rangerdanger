@@ -373,9 +373,15 @@ esac
                     )
                     self.assertEqual(count, 1)
                     normalized.append(value)
-                self.assertEqual(*normalized)
+                # PowerShell output deliberately delegates ROOT to the installed
+                # .env, preserving setup's Windows daemon-root translation.
+                expected = self._powershell_root_recipe(normalized[0].decode("utf-8"))
+                self.assertEqual(expected.encode("utf-8"), normalized[1])
                 blocks = re.findall(r"```sh\n(.*?)\n```", bash, flags=re.DOTALL)
+                powershell_blocks = re.findall(
+                    r"```sh\n(.*?)\n```", powershell, flags=re.DOTALL)
                 self.assertEqual(len(blocks), 2)
+                self.assertEqual(len(powershell_blocks), 2)
                 source = (ROOT / "stage-ssd-delta.sh").read_text(encoding="utf-8")
                 for function in ("compose_down_project", "start_platform_and_selected_range"):
                     literal = re.search(
@@ -384,15 +390,53 @@ esac
                     self.assertIsNotNone(literal)
                     for block in blocks:
                         self.assertIn(literal.group(), block)
+                    for block in powershell_blocks:
+                        self.assertIn(self._powershell_root_recipe(literal.group()), block)
                 for shell in ("/bin/bash", shutil.which("zsh")):
                     if not shell:
                         continue  # zsh is not installed on every Linux CI host.
-                    for block in blocks:
+                    for block in blocks + powershell_blocks:
                         result = subprocess.run(
                             [shell, "-n"], input=block, text=True,
                             capture_output=True, timeout=10, check=False,
                         )
                         self.assertEqual(result.returncode, 0, result.stderr)
+
+    @staticmethod
+    def _powershell_root_recipe(value: str) -> str:
+        return value.replace(
+            'RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform',
+            '(unset RANGERDANGER_ROOT; docker compose -p rangerdanger-platform',
+        ).replace('up -d --pull never || return 1', 'up -d --pull never) || return 1')
+
+    def test_powershell_recipe_preserves_installed_root_not_shell_or_inherited_root(self) -> None:
+        readme = self._run_powershell_generator()
+        functions = re.findall(
+            r"(?m)^start_platform_and_selected_range\(\) \{\n.*?^\}", readme, flags=re.DOTALL,
+        )
+        self.assertEqual(len(functions), 2)
+        self.assertNotIn('RANGERDANGER_ROOT="$PWD"', readme)
+        (self.root / ".env").write_text(
+            "RANGERDANGER_ROOT=/run/desktop/mnt/host/c/Users/A B/rangerdanger\n")
+        driver = r'''
+docker() {
+    [ -z "${RANGERDANGER_ROOT+x}" ] || { echo 'inherited root overrode .env' >&2; return 1; }
+    grep -Fx 'RANGERDANGER_ROOT=/run/desktop/mnt/host/c/Users/A B/rangerdanger' .env >/dev/null
+    printf '%s\n' "$*" >> "$RD_RECIPE_CALLS"
+}
+curl() { printf '{"phase":"ready"}'; }
+'''
+        for function in functions:
+            calls = self.root / "recipe-calls"
+            calls.unlink(missing_ok=True)
+            result = subprocess.run(
+                ["/bin/bash", "-c", driver + function + "\nstart_platform_and_selected_range"],
+                cwd=self.root, env=dict(self.env, RANGERDANGER_ROOT="wrong host path",
+                                        RD_RECIPE_CALLS=str(calls)),
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("up -d --pull never", calls.read_text())
 
     def _enable_kernel_asset(self) -> bytes:
         kernel = b"fixture WSL kernel\n"
