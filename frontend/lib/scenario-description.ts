@@ -14,7 +14,9 @@ import { commandSourceMarker } from "./exercise-nodes";
 
 // Tools whose indented lines are runnable command blocks. The PDF
 // export (exercise-pdf-text.ts) uses the same list.
-export const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker|timeout)\s/;
+export const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
+
+export const RUN_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|wget|ls|cat)\s/;
 
 // containd appliance-CLI commands. These are NOT run via the lab's
 // per-node exec (they live in the containd CLI, reached from the fw-1
@@ -404,7 +406,7 @@ export function splitDescription(text: string, inheritedSource?: string): Segmen
         i++;
         cmd += "\n  " + lines[i].trim();
       }
-      result.push({ type: "cmd", value: cmd, ...source(), ...(sourceNode === "host" ? { copyOnly: true } : {}) });
+      result.push({ type: "cmd", value: cmd, ...source(), ...(sourceNode === "host" || !RUN_TOOL_RE.test(cmd) ? { copyOnly: true } : {}) });
     } else if (isIndented && CONTAIND_CLI_RE.test(trimmed)) {
       // containd CLI command — copy-only (the student runs it in the
       // fw-1 containd terminal, not via the lab's per-node Run).

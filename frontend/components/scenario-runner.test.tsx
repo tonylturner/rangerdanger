@@ -159,7 +159,7 @@ describe("authored description → Run → node exec", () => {
     const tree = renderStep(authoredScenario("eu-baseline-assessment"), "capture-traffic-at-the-firewall", EU);
     try {
       fireEvent.click(tree.getByRole("button", { name: "Run" }));
-      await waitFor(() => expect(exec).toHaveBeenCalledWith("fw-1", "timeout -s INT -k 2 12 tcpdump -i any -nn 'not host 127.0.0.1' -w /data/captures/baseline.pcap || [ $? -eq 124 ]", 30));
+      await waitFor(() => expect(exec).toHaveBeenCalledWith("fw-1", "tcpdump -i any -nn 'not host 127.0.0.1' -G 12 -W 1 -w /data/captures/baseline.pcap", 30));
     } finally { tree.close(); }
   });
 

@@ -1,6 +1,11 @@
 package server
 
-import "testing"
+import (
+	"os"
+	"regexp"
+	"strings"
+	"testing"
+)
 
 // TestIsAllowedCommand documents the EXISTING behavior of the
 // command-allowlist filter on /api/workshop/nodes/:nodeId/exec.
@@ -125,32 +130,20 @@ func TestIsAllowedCommand_ShellInjectionPasses(t *testing.T) {
 	}
 }
 
-// TestAllowedCommandsCoverExerciseTools is a regression guard:
-// every shell tool the exercises actually invoke from kali / eng-ws
-// must be in the allowlist, otherwise the auto-run UI breaks.
-//
-// The set below comes from auditing
-// `lab-definitions/scenarios/*.yml` for shell command patterns
-// (May 2026). When adding a new exercise that uses a new tool,
-// either add the tool here AND in `allowedCommands`, or document
-// in the scenario YAML that the command is for manual paste only
-// (i.e., not auto-runnable through /api/workshop/.../exec).
+// TestAllowedCommandsCoverExerciseTools reads the UI's runnable grammar rather
+// than maintaining a second list of tools. Copy-only examples are not execs.
 func TestAllowedCommandsCoverExerciseTools(t *testing.T) {
-	exerciseTools := []string{
-		"nmap",      // network scan
-		"mbpoll",    // Modbus client (33 references in scenarios)
-		"dnp3poll",  // DNP3 master poll (25 references)
-		"dnp3cmd",   // DNP3 control (5 references)
-		"iec104cmd", // IEC 104 client (EU package, on kali-1)
-		"tshark",    // packet analysis (15 references)
-		"tcpdump",   // packet capture (8 references)
-		"curl",      // HTTP testing (16 references)
+	source, err := os.ReadFile("../../../frontend/lib/scenario-description.ts")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tool := range exerciseTools {
+	match := regexp.MustCompile(`export const RUN_TOOL_RE = /\^\(([^)]+)\)`).FindSubmatch(source)
+	if len(match) != 2 {
+		t.Fatal("cannot find frontend Run tool grammar")
+	}
+	for _, tool := range strings.Split(string(match[1]), "|") {
 		if !isAllowedCommand(tool) {
-			t.Errorf("exercise tool %q is NOT in the allowlist — auto-run "+
-				"buttons in scenarios that invoke %q will return 403. Add "+
-				"%q to allowedCommands in exec.go.", tool, tool, tool)
+			t.Errorf("UI Run tool %q would return 403; render copy-only, do not expand the backend allowlist", tool)
 		}
 	}
 }

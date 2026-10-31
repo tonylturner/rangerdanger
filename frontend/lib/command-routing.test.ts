@@ -67,7 +67,6 @@ describe("authored command routing inventory", () => {
           "validation-evidence.yml/generate-the-validation-report: dnp3poll -a 3 -t 3s 10.40.40.22:20000 [kali-1 → rtac-1]",
           "validation-evidence.yml/generate-the-validation-report: curl -s http://10.30.30.20:8080/api/health [kali-1 → rtac-1]",
           "validation-evidence.yml/generate-the-validation-report: curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool [kali-1 → rtac-1]",
-          "validation-evidence.yml/generate-the-validation-report: ssh -o StrictHostKeyChecking=no rangerdanger@10.30.30.20 'hostname' [kali-1 → vendor-jump-1]",
           "validation-evidence.yml/generate-the-validation-report: curl -ks https://10.30.30.20/ -o /dev/null -w '%{http_code}\\n' [kali-1 → vendor-jump-1]",
           "validation-evidence.yml/generate-the-validation-report: nmap -Pn -p 20000 10.40.40.21 --max-retries 1 -T4 [kali-1 → vendor-jump-1]",
           "validation-evidence.yml/generate-the-validation-report: dnp3poll -a 2 -t 3s 10.40.40.21:20000 [kali-1 → vendor-jump-1]",

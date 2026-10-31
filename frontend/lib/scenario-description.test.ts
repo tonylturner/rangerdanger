@@ -568,3 +568,9 @@ describe("command source markers", () => {
     }
   });
 });
+
+describe("exec allowlist presentation", () => {
+  it.each(["ssh", "telnet", "grep", "docker"])("keeps %s examples copy-only", (tool) => {
+    expect(splitDescription(`    ${tool} example`)).toEqual([{ type: "cmd", value: `${tool} example`, copyOnly: true }]);
+  });
+});
