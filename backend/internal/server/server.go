@@ -62,6 +62,10 @@ type Server struct {
 	policyApplyMu  sync.Mutex // serializes backend imports and provenance publication
 	activeConfigMu sync.RWMutex
 	activeConfig   string // "weak", "improved", or "custom"
+	// policyHashNames contains canonical hashes for this generation's named
+	// policies. The package default wins when policy files have identical
+	// firewall content.
+	policyHashNames map[string]string
 	// policySource is weak, hardened-reference, plan, or manual-custom.
 	// A plan retains its provenance while the running firewall hash matches,
 	// even when its full compilation is identical to the Hardened reference.

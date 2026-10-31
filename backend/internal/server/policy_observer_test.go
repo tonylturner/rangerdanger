@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/tturner/rangerdanger/backend/internal/config"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
@@ -22,14 +25,30 @@ import (
 // us" scenario deterministically without a real containd.
 func hashServerForFirewall(t *testing.T, firewall any) *httptest.Server {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts, _ := mutableHashServerForFirewall(t, firewall)
+	return ts
+}
+
+func mutableHashServerForFirewall(t *testing.T, firewall any) (*httptest.Server, func(any)) {
+	t.Helper()
+	var mu sync.RWMutex
+	current := firewall
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/config" {
 			http.NotFound(w, r)
 			return
 		}
+		mu.RLock()
+		observed := current
+		mu.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"firewall": firewall})
+		_ = json.NewEncoder(w).Encode(map[string]any{"firewall": observed})
 	}))
+	return ts, func(next any) {
+		mu.Lock()
+		current = next
+		mu.Unlock()
+	}
 }
 
 // TestObserver_NoChange_NoReclassify confirms the observer stays
@@ -134,30 +153,97 @@ func TestObserver_GraceWindow_SuppressesFlip(t *testing.T) {
 	}
 }
 
-// TestObserver_FirstObservation_SeedsBaseline confirms that on the
-// first tick after server start (no lastAppliedHash set yet), the
-// observer adopts the current hash silently instead of firing a
-// spurious "manual commit" flip.
-func TestObserver_FirstObservation_SeedsBaseline(t *testing.T) {
-	containdSays := map[string]any{"defaultAction": "DENY", "rules": []any{}}
-	ts := hashServerForFirewall(t, containdSays)
-	defer ts.Close()
-
-	s := &Server{
-		activeConfig: "weak",
-		policySource: "",
-		// no lastAppliedHash set
+// TestObserver_FirstObservationClassifiesRunningPolicy covers fresh starts,
+// adopted ranges, and the next genuine divergence after the baseline.
+func TestObserver_FirstObservationClassifiesRunningPolicy(t *testing.T) {
+	weak := map[string]any{"defaultAction": "DENY", "rules": []any{}}
+	improved := map[string]any{"defaultAction": "DROP", "rules": []any{}}
+	unknown := map[string]any{
+		"defaultAction": "DENY",
+		"rules": []any{
+			map[string]any{"id": "manual-rule", "action": "ALLOW", "sourceZones": []string{"lan1"}, "destZones": []string{"lan2"}},
+		},
+	}
+	tests := []struct {
+		name             string
+		running          any
+		wantConfig       string
+		wantSource       string
+		wantBoundary     bool
+		divergeAfterSeed bool
+	}{
+		{"fresh default", weak, "weak", "weak", false, false},
+		{"adopted improved", improved, "improved", "hardened-reference", true, false},
+		{"adopted custom", unknown, "custom", "manual-custom", true, false},
+		{"later divergence", improved, "improved", "hardened-reference", true, true},
 	}
 
-	s.observePolicyOnce(context.Background(), observedGeneration(ts.URL))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			definitions := t.TempDir()
+			policies := map[string]any{"weak": weak, "improved": improved}
+			for name, firewall := range policies {
+				data, err := json.Marshal(map[string]any{"firewall": firewall})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(definitions, name+".json"), data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 
-	s.activeConfigMu.RLock()
-	defer s.activeConfigMu.RUnlock()
-	if s.activeConfig != "weak" {
-		t.Errorf("activeConfig = %q, want weak (baseline seed should not reclassify)", s.activeConfig)
-	}
-	if s.lastAppliedHash == "" {
-		t.Errorf("lastAppliedHash still empty — first observation should seed it")
+			ts, setFirewall := mutableHashServerForFirewall(t, tt.running)
+			defer ts.Close()
+			pkg := labs.Package{
+				ID:                 "test-package",
+				FirewallConfigPath: "weak.json",
+				Policies:           map[string]string{"weak": "weak.json", "improved": "improved.json"},
+			}
+			startedAt := time.Now().UTC().Add(-time.Hour)
+			gen := lifecycle.NewGeneration(1, pkg, &manifest.Manifest{}, containd.NewClient(ts.URL), startedAt)
+			defer func() {
+				if err := gen.Stop(time.Second); err != nil {
+					t.Errorf("stop generation: %v", err)
+				}
+			}()
+			s := &Server{cfg: &config.Config{LabDefinitionsPath: definitions}}
+			s.activateRange(gen)
+			observationStart := time.Now().UTC()
+			s.observePolicyOnce(context.Background(), gen)
+			observationEnd := time.Now().UTC()
+
+			s.activeConfigMu.RLock()
+			gotConfig, gotSource, gotHash := s.activeConfig, s.policySource, s.lastAppliedHash
+			policyChangedAt, policyEvidenceSince := s.policyChangedAt, s.policyEvidenceSince
+			s.activeConfigMu.RUnlock()
+			if gotConfig != tt.wantConfig || gotSource != tt.wantSource {
+				t.Errorf("first observation = %q/%q, want %q/%q", gotConfig, gotSource, tt.wantConfig, tt.wantSource)
+			}
+			if gotHash == "" {
+				t.Error("first observation did not seed the running hash")
+			}
+			if tt.wantBoundary {
+				if !policyEvidenceSince.Equal(startedAt) {
+					t.Errorf("policyEvidenceSince = %s, want generation start %s", policyEvidenceSince, startedAt)
+				}
+				if policyChangedAt.Before(observationStart) || policyChangedAt.After(observationEnd) {
+					t.Errorf("policyChangedAt = %s, want observation window [%s, %s]", policyChangedAt, observationStart, observationEnd)
+				}
+			} else if !policyChangedAt.IsZero() || !policyEvidenceSince.IsZero() {
+				t.Errorf("default policy boundaries = %s/%s, want both zero", policyChangedAt, policyEvidenceSince)
+			}
+
+			if tt.divergeAfterSeed {
+				setFirewall(unknown)
+				s.observePolicyOnce(context.Background(), gen)
+				s.activeConfigMu.RLock()
+				gotConfig, gotSource = s.activeConfig, s.policySource
+				s.activeConfigMu.RUnlock()
+				if gotConfig != "custom" || gotSource != "manual-custom" {
+					t.Errorf("later divergence = %q/%q, want custom/manual-custom", gotConfig, gotSource)
+				}
+			}
+		})
 	}
 }
 

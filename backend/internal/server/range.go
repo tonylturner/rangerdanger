@@ -64,15 +64,11 @@ func (s *Server) activateRange(gen *lifecycle.Generation) {
 	// start imports. The loader guarantees the default is a named policy;
 	// a package built without one starts with no known policy name.
 	activeConfig, _ := gen.Package.PolicyName(gen.Package.FirewallConfigPath)
+	policyHashNames := s.namedPolicyHashes(gen.Package)
 	s.activeConfigMu.Lock()
 	s.activeConfig = activeConfig
-	s.policySource = ""
-	if activeConfig == "weak" {
-		s.policySource = "weak"
-	}
-	if activeConfig == "improved" {
-		s.policySource = "hardened-reference"
-	}
+	s.policySource = policySourceForName(activeConfig)
+	s.policyHashNames = policyHashNames
 	s.planProvenance, s.appliedPlan = nil, nil
 	s.lastAppliedHash = ""
 	s.lastAppliedAt = time.Time{}
@@ -89,6 +85,15 @@ func (s *Server) activateRange(gen *lifecycle.Generation) {
 	s.trafficMu.Unlock()
 
 	gen.Go("policy-observer", func(ctx context.Context) { s.policyObserverLoop(ctx, gen) })
+}
+
+// policySourceForName keeps the named-policy labels consistent between range
+// activation and explicit policy applies.
+func policySourceForName(name string) string {
+	if name == "improved" {
+		return "hardened-reference"
+	}
+	return name
 }
 
 // errRangeStopped reports work whose generation stopped before it could
