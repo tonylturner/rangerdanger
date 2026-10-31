@@ -2,7 +2,7 @@ A source allowlist answers “which host may connect?” It cannot decide whethe
 
 ### Three trusted paths in this range
 
-**The Control Centre.** Improved policy permits `10.60.60.20` to RTU `10.30.30.20:2404`. That flow carries observation and switching. If the CC is misused, source pinning does not distinguish its harmful command from its authorized command. The package has no command-aware IEC 104 filtering by ASDU, CA or IOA.
+**The Control Centre.** Improved policy permits `10.60.60.20` to RTU `10.30.30.20:2404`. That flow carries observation and switching. If the CC is misused, source pinning does not distinguish its harmful command from its authorized command. Explicit monitor rules observe selected CC breaker and OLTC requests by ASDU, CA, IOA and command state; they never deny commands or establish user intent. A would-deny match is not a denied command. See [shadow evidence](#eu-ics-dpi).
 
 **The tap PLC.** OpenPLC `10.30.30.30` reaches OLTC `10.40.40.23:502`. The normal program requests adjacent taps after a sustained voltage deviation. The network rule does not constrain the session to one register or function code; device-side logic supplies the automatic-request checks.
 

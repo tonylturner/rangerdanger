@@ -26,7 +26,7 @@ impact:
   iec104-dpi:
     defends:
     - eu-hardening-configurations
-    note: Planning-only protocol review. No IEC 104 inspection or command restriction is emitted.
+    note: Observe CC breaker and OLTC commands with explicit monitor rules; never admits or denies traffic.
   improve-logging:
     defends:
     - eu-hardening-configurations
@@ -82,7 +82,7 @@ groups:
     effect: semantic
   iec104-dpi:
     title: iec104 dpi
-    description: Planning-only protocol review. No IEC 104 inspection or command restriction is emitted.
+    description: Observe CC breaker and OLTC commands with explicit monitor rules; never admits or denies traffic.
     effect: semantic
   improve-logging:
     title: improve logging

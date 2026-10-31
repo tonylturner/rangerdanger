@@ -24,7 +24,7 @@ Keep the EU package's two similarly named areas distinct. Vendor/Engineering is 
 
 Purdue levels describe an asset's architectural function. IEC 62443 zones and conduits describe groupings and communications boundaries, while Security Levels express security requirements or capability targets. These ideas can inform the same design, but there is no automatic mapping from a Purdue level to a zone, firewall rule or numeric Security Level. Use the [risk-design workflow](#eu-iec62443-risk-design) to document the system scope, risks and target requirements rather than inferring them from a layer diagram.
 
-For this range, name the actual interface and path alongside any Purdue label: for example, CC `10.60.60.20` to RTU `10.30.30.20:2404`, RTU to field devices on TCP/502, or Enterprise to Historian `10.70.70.40:8080`. This keeps functional placement separate from reachability. The reference firewall enforces source- and port-based boundaries at L4, with DPI disabled; a Purdue diagram does not imply IEC 104 command filtering, ASDU/IOA predicates or Modbus function filtering. See [policy comparison](#eu-policy-comparison) for the policy's demonstrated limits.
+For this range, name the actual interface and path alongside any Purdue label: for example, CC `10.60.60.20` to RTU `10.30.30.20:2404`, RTU to field devices on TCP/502, or Enterprise to Historian `10.70.70.40:8080`. This keeps functional placement separate from reachability. The reference firewall enforces source- and port-based boundaries at L4, with separate explicit-monitor IEC 104 observations; a Purdue diagram does not imply command authorization or Modbus function filtering. See [policy comparison](#eu-policy-comparison) for the policy's demonstrated limits.
 
 ### Limits
 

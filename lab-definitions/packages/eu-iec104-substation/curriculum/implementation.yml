@@ -22,11 +22,12 @@ phases:
     :::
 
     :::hint No semantic enforcement claim
-    Keep ICS rules absent. EU DPI actions are planning-only and emit no rules. No IEC 104 command restriction is enforced or promised. The L4 source pin enforces; DPI detects and logs. EU DPI is disabled; required diagnostic denies still log.
+    Keep the six L4 allows and four diagnostic denies unchanged. Hardened adds `observe-cc-breaker-command`, `observe-cc-oltc-step` and `observe-cc-oltc-raise-only` as separate IEC 104 rules, each explicitly `mode: monitor`; Apply Your Plan adds them only when `iec104-dpi` is selected. Never overlay a monitor predicate on an operational allow. Monitor ALLOW does not admit traffic and monitor DENY does not deny it. The L4 source pin enforces; DPI detects and logs. Monitoring never satisfies a BLOCK requirement; Modbus DPI remains planning-only.
     :::
 
     The compiler retains the six required allows and four logged diagnostic denies.
-    EU selected slots emit no extra per-action rule. Selecting a closure removes
+    EU selected closure slots emit no extra per-action rule; `iec104-dpi` appends
+    three observation rules. Selecting a closure removes
     its deferred Weak allow; it does not remove the required operational rules.
     An empty or planning-only plan is valid and keeps those exposures open.
     Export the compiled config and the companion **Export plan record**.
@@ -44,11 +45,28 @@ phases:
     The validator anchors the proof on a retained matched GI start/completion on the current connection within ten minutes and after the attempt boundary. The CC `link.since` must be strictly later than the policy commit; use **POST /api/operator/reconnect** first, then wait for its connect GI. Interrogate station on the old connection does not test the new policy. If only GI evidence is missing or outside the window on an already post-commit connection, press **Interrogate station** and validate again. Establish this GI boundary before collecting the PLC and historian proof; later periodic GIs do not restart an already valid attempt. Routine GI runs on connect and every 15 minutes, not every second.
     :::
 
+    ### Verify applied IEC 104 observations
+
+    For Hardened, or a plan selecting `iec104-dpi`, inspect the embedded containd **Firewall/ICS tables** and running configuration. Confirm DPI and the IEC 104 decoder are healthy, NFQUEUE is **101**, and all three separate rules are applied with `protocol: iec104`, explicit `mode: monitor`, `direction: request`, CA **1**, and CC **10.60.60.20** → RTU **10.30.30.20 TCP/2404** (lan4→lan1):
+
+    | Rule ID | Configured action | Selectors |
+    |---|---|---|
+    | `observe-cc-breaker-command` | DENY (monitor) | Type 46, IOA 3001 |
+    | `observe-cc-oltc-step` | ALLOW (monitor) | Type 47, IOA 3301, COT 6, states [1,2], QU [0], negative false, test false |
+    | `observe-cc-oltc-raise-only` | ALLOW (monitor) | Same OLTC selectors, but states [2] |
+
+    **Reconnect CC first** with the Phase 4 procedure: inspection starts only at a fresh SYN, not halfway through the old session. Wait for connect GI, then record a shadow-counter baseline from the embedded tables: `available: true`, all three rule IDs, `snapshotVersion`, `since`, `unit` and each rule's `shadowMatches`, `wouldAllow`, `wouldDeny`. Counters reset on every successful apply and are lost on engine restart. `available:false` is never zero; a missing applied rule is not zero either. If the snapshot or since changes, discard the comparison and establish a new baseline after reconnect/GI. A plan deferring `iec104-dpi` has no such rules: record observation work as deferred, not as zero matches or prevention.
+
+    Correlate a prescribed, approved CC breaker operation with `observe-cc-breaker-command` `wouldDeny` increasing by **≥1**, `ics.decision` (`mode: monitor`, `decision: would_drop`, `reason: rule`, matching `ruleId` and UTC window), fresh feedback and the actual field result. Restore normal breaker/supply state before continuing. The monitor DENY does not stop CB1 operating; it is a rule-local hypothetical decision, not a denied command or a whole-policy prediction. See [monitor evidence](/knowledge#eu-ics-dpi).
+
+    **Forwarding dependency:** monitor traffic traverses NFQUEUE 101 and adds engine processing latency. There is no queue bypass; if the engine is down, the CC conduit drops. Monitor-only does not mean availability-neutral. Preserve rollback and prove GI, PLC and historian continuity independently; do not deliberately stop the engine for this lesson.
+
     **Package test instructions — controlled regulation loop.** First wait for a settled tap and the 20.196–20.604 kV band (20.4 kV ±1%). Reset starts at zero but the profile-disabled nominal equilibrium is +2, about 20.429 kV; the daily profile normally keeps running. When regulation is quiescent the PLC sends no tap request, so perturb regulation and let automatic control correct it, producing the PLC-originated request the proof requires. Use the **Control Centre** selected-device faceplate or the [operator API](/knowledge#eu-rtu-control-centre-apis); read tap, auto and voltage from `GET /api/operator/state` and wait for completed feedback before each command — an in-flight step returns 409:
 
     1. Select **manual**: command `oltc-1-mode` → `manual`. Verify the auto feedback (IOA 1303) clears before continuing.
-    2. Request **two lower steps**: `oltc-1-step` → `lower`, waiting for completed feedback after each. Watch IOA 1301 go transient, then settle at each adjacent tap. One step can remain inside the band and would not prove automatic correction. See [step telemetry](/knowledge#eu-iec104-step-telemetry).
-    3. Return to **auto**: `oltc-1-mode` → `auto`. Wait for the configured 30 s sustained demand, then the 2 s motion for each correction; IOA 2403 reports configured delay, not its countdown. Automatic control now issues PLC-originated Modbus requests toward the operating band, not necessarily the exact starting tap under the daily profile. Confirm that PLC request, its motion completion and the solved revision, and that the historian ingests the advancing tap.
+    2. With `iec104-dpi` applied, compare OLTC shadow evidence while manual: record counters, request `oltc-1-step` → `lower`, and wait for completed feedback. `observe-cc-oltc-step` must gain **≥1** match; `observe-cc-oltc-raise-only` must gain **0**. Then request one `raise` to restore that tap and wait: **both** rules must gain **≥1** match. Keep snapshotVersion/since unchanged and correlate rule/mode/time events with the field feedback. A successful fully decoded SBO action normally produces **2 matches** per matching rule (select + execute, both COT 6), but this is **not guaranteed**; early refusal can end the sequence. Count matching decoded messages, not successful operations. Never require exactly two or interpret missing/unavailable evidence as a non-match. If monitoring is deferred, still perform the lower/raise and check field feedback, but record shadow evidence as deferred.
+    3. Now request **two lower steps**, waiting for completed feedback after each, to exercise automatic correction next. Watch IOA 1301 go transient, then settle at each adjacent tap. One step can remain inside the band and would not prove automatic correction. See [step telemetry](/knowledge#eu-iec104-step-telemetry).
+    4. Return to **auto**: `oltc-1-mode` → `auto`. Wait for the configured 30 s sustained demand, then the 2 s motion for each correction; IOA 2403 reports configured delay, not its countdown. Automatic control now issues PLC-originated Modbus requests toward the operating band, not necessarily the exact starting tap under the daily profile. Confirm that PLC request, its motion completion and the solved revision, and that the historian ingests the advancing tap.
 
     From **Kali**, read the historian; from **eng-ws**, retrieve the PLC login page:
 

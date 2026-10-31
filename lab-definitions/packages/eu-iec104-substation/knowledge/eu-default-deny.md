@@ -12,7 +12,7 @@ These are useful design patterns, not a reliable vendor taxonomy. Products can e
 
 Both EU package policies set `defaultAction` to `DENY`. The weak policy is still permissive because it adds broad cross-zone allows; “weak” does not mean its fallback is allow. The improved policy narrows the permitted sources and destinations and includes explicit denies for selected unauthorized IEC 104 and Modbus attempts. Other unmatched traffic is covered by the default deny. See the [weak and improved policy comparison](#eu-policy-comparison) for the actual exchanges.
 
-The reference policy makes network decisions using sources, destinations and services. It does not authorize particular IEC 104 commands or Modbus operations: allowing TCP/2404 does not make a session read-only, and allowing TCP/502 does not filter Modbus function codes. The policy disables DPI. It demonstrates L4 reachability enforcement only—not application-command inspection or ASDU/IOA filtering. Keep network reachability separate from [device and control authority](#eu-control-authority).
+The reference policy makes network decisions using sources, destinations and services. It does not authorize particular IEC 104 commands or Modbus operations: allowing TCP/2404 does not make a session read-only, and allowing TCP/502 does not filter Modbus function codes. Improved also observes selected CC breaker and OLTC commands using explicit monitor-only IEC 104 predicates. Those observations never admit or deny traffic and do not enforce ASDU/IOA restrictions; Modbus DPI remains planning-only. Keep network reachability separate from [device and control authority](#eu-control-authority).
 
 ### Verify the intended boundary
 

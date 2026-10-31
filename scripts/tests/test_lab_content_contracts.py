@@ -389,9 +389,73 @@ class EnforcementContracts(unittest.TestCase):
         suffix = ("Planning-only protocol review; this range emits no protocol rule. "
                   "The L4 source pin enforces; DPI detects and logs.")
         actions = {action["id"]: action for action in curriculum["catalog"]}
+        self.assertTrue(actions["modbus-dpi"]["why"].endswith(suffix))
+        observation = actions["iec104-dpi"]
+        self.assertEqual(observation["effort_hours"], 80)
+        self.assertIn("explicit monitor rules", observation["why"])
+        self.assertIn("Monitoring never blocks or satisfies a BLOCK requirement.", observation["why"])
+        self.assertTrue(observation["why"].endswith("The L4 source pin enforces; DPI detects and logs."))
         for action_id in ("modbus-dpi", "iec104-dpi"):
-            self.assertTrue(actions[action_id]["why"].endswith(suffix))
             self.assertNotRegex(actions[action_id]["why"], r"(?i)\b(yet|future|soon)\b")
+
+    def test_eu_monitor_lesson_is_present_in_both_implementation_sources(self):
+        package = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        curriculum = read_curriculum(package)
+        doc = yaml.safe_load((package / "scenarios/eu-firewall-implementation.yml").read_text())
+        steps = {step["id"]: step["description"] for step in doc["steps"]}
+        for key, step_id in (("rules", "implement-rules"), ("positive", "test-positive")):
+            with self.subTest(phase=key):
+                authored = curriculum["phases"][key].split("\n\n### Compiled")[0]
+                self.assertEqual(authored.strip(), steps[step_id].strip())
+        positive = steps["test-positive"]
+        for phrase in ("observe-cc-breaker-command", "observe-cc-oltc-step",
+                       "observe-cc-oltc-raise-only", "fresh SYN", "snapshotVersion",
+                       "since", "available:false", "Firewall/ICS tables", "NFQUEUE",
+                       "if the engine is down, the CC conduit drops", "no queue bypass",
+                       "**≥1**", "**0**", "**both**", "**not guaranteed**"):
+            self.assertIn(phrase, positive)
+        self.assertIn("Never overlay a monitor predicate", steps["implement-rules"])
+
+    def test_eu_hardened_staffing_overrun_is_not_hidden(self):
+        package = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        text = (package / "scenarios/eu-remediation-planning.yml").read_text()
+        for phrase in ("149h vs 140h", "9h overrun", "80h", "partial plan", "GAP", "UNAVAILABLE"):
+            self.assertIn(phrase, text)
+        curriculum = read_curriculum(package)
+        team = next(team for team in curriculum["teams"] if team["name"] == "Firewall Admin")
+        self.assertEqual(team["capacity_hours"], 140)
+        technical = {"restrict-enterprise-to-vendor", "block-enterprise-to-field",
+                     "block-enterprise-to-station", "restrict-vendor-to-station",
+                     "block-vendor-to-field", "pin-rtu-to-field",
+                     "tighten-firewall-objects", "iec104-dpi"}
+        admin_load = sum(int(action["effort_hours"] / len(action["roles"]) + 0.5)
+                         for action in curriculum["catalog"]
+                         if action["id"] in technical and "Firewall Admin" in action["roles"])
+        self.assertEqual(admin_load, 149)
+        self.assertEqual(admin_load - team["capacity_hours"], 9)
+        self.assertIn("observe", curriculum["groups"]["iec104-dpi"]["description"].lower())
+        self.assertIn("Planning-only", curriculum["groups"]["modbus-dpi"]["description"])
+
+    def test_eu_shadow_handover_and_optional_pcap_review_have_limits(self):
+        package = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        for rel in ("scenarios/eu-validation-evidence.yml", "knowledge/eu-ics-dpi.md"):
+            with self.subTest(path=rel):
+                text = (package / rel).read_text()
+                for phrase in ("snapshotVersion", "since", "available:false", "NFQUEUE 101",
+                               "no queue bypass", "if the engine is down, the CC conduit drops",
+                               "withheld", "SBO sequences, setpoint values/QL and bitstrings",
+                               "not graded", "does not grade anything", "PCAP Analysis", "Generate suggestions", "Review",
+                               "Stage selected", "Commit is a separate deliberate step",
+                               "discarding the candidate", "running policy/hash is unchanged"):
+                    self.assertIn(phrase.casefold(), text.casefold())
+                self.assertNotIn("would have blocked", text)
+
+    def test_eu_content_does_not_retain_dpi_disabled_qualifications(self):
+        package = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        paths = list((package / "knowledge").glob("*.md")) + list((package / "scenarios").glob("*.yml"))
+        for path in paths:
+            with self.subTest(path=path.name):
+                self.assertNotRegex(path.read_text(), r"(?i)(?:DPI (?:is |setting is |explicitly )?(?:currently )?disabled|disables DPI|DPI-off|no detection-only action)")
 
     def test_us_curriculum_dpi_does_not_claim_to_block_or_filter_writes(self):
         curriculum = read_curriculum(ROOT / "lab-definitions/packages/us-dnp3-substation")
