@@ -109,7 +109,7 @@ eu_shadow_commands() {
 eu_gate_G29() {
   local initial result=0 prepared=0
   initial=$(jq -er '.initial_tap | numbers' "$PACKAGE/process/reference-cases.json") || return
-  if eu_apply_named improved && eu_set_profile false && eu_reset_all \
+  if eu_set_profile false && eu_reset_all && eu_apply_named improved \
     && eu_lab_reconnect_cc; then
     prepared=1
     if ! eu_reference_tap "$initial" || ! eu_shadow_health \
@@ -123,7 +123,13 @@ eu_gate_G29() {
   fi
   # Restore the normalized reset pre-state even after a failed evidence assertion.
   if [ "$prepared" -eq 1 ]; then
-    eu_lab_cc feeder-breaker-command close || result=1
+    if eu_get_field; then
+      if printf '%s' "$API_BODY" | jq -e '.devices["breaker-1"].position == "open"' >/dev/null; then
+        eu_lab_cc feeder-breaker-command close || result=1
+      fi
+    else
+      result=1
+    fi
     eu_reference_tap "$initial" || result=1
     eu_wait_for_field ".devices[\"oltc-1\"].tap == $initial and .devices[\"oltc-1\"].moving == false" \
       15 "G29 restored reference tap" || result=1

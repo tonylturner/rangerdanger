@@ -111,8 +111,10 @@ ORIGINAL_PACKAGE="$PACKAGE"
 PACKAGE="$TMP_DIR/package"
 mkdir -p "$PACKAGE/firewall" "$PACKAGE/process"
 cp "$POLICY" "$PACKAGE/firewall/improved.json"
+cp "$ORIGINAL_PACKAGE/firewall/weak.json" "$PACKAGE/firewall/weak.json"
 cp "$ORIGINAL_PACKAGE/process/reference-cases.json" "$PACKAGE/process/reference-cases.json"
 CALLS=""
+APPLIED_POLICY=weak
 COUNTS=$(cat "$BASE")
 FAIL_AT=""
 HEALTH_MUTATION="."
@@ -122,21 +124,35 @@ POSITION=closed
 AUTO=true
 sleep() { :; }
 docker() { fail "offline test leaked a Docker command"; return 99; }
-eu_apply_named() { CALLS="$CALLS apply:$1"; }
+eu_apply_named() { CALLS="$CALLS apply:$1"; APPLIED_POLICY="$1"; }
 eu_set_profile() { CALLS="$CALLS profile:$1"; }
-eu_reset_all() { CALLS="$CALLS reset"; }
+eu_reset_all() {
+  CALLS="$CALLS reset"
+  APPLIED_POLICY=weak
+  POSITION=closed
+  AUTO=true
+  TAP=$(jq -er '.initial_tap' "$PACKAGE/process/reference-cases.json")
+}
 eu_lab_reconnect_cc() { CALLS="$CALLS reconnect"; }
 eu_reference_tap() { CALLS="$CALLS reference:$1"; TAP="$1"; AUTO=false; }
-eu_firewall_config() { jq "$CONFIG_MUTATION" "$POLICY"; }
-eu_wait_for_field() {
-  jq -ne --argjson tap "$TAP" --arg position "$POSITION" --argjson auto "$AUTO" \
+eu_firewall_config() { jq "$CONFIG_MUTATION" "$PACKAGE/firewall/$APPLIED_POLICY.json"; }
+eu_get_field() {
+  API_BODY=$(jq -n --argjson tap "$TAP" --arg position "$POSITION" --argjson auto "$AUTO" \
     "{devices:{\"breaker-1\":{position:\$position},\"oltc-1\":{tap:\$tap,moving:false,auto:\$auto}},
-      process:{buses:{s1:{live:(\$position == \"closed\")}}}} | ($1)" >/dev/null
+      process:{buses:{s1:{live:(\$position == \"closed\")}}}}")
+}
+eu_wait_for_field() {
+  eu_get_field || return
+  printf '%s' "$API_BODY" | jq -e "$1" >/dev/null
 }
 eu_lab_cc() {
   CALLS="$CALLS command:$1:$2"
   case "$1:$2" in
     feeder-breaker-command:*)
+      if [ "$2:$POSITION" = close:closed ]; then
+        fail "execute rejected (negative ACT-CON): breaker already closed"
+        return 1
+      fi
       if [ "$2" = close ]; then POSITION=closed; else POSITION=open; fi
       COUNTS=$(printf '%s' "$COUNTS" | jq '.rules[0] |= (.shadowMatches+=1 | .wouldDeny+=1)') ;;
     oltc-1-step:lower)
@@ -174,10 +190,10 @@ t_expect_eq "$T_STATUS" 0 "G29 proves field results, monitor counters and all co
 t_expect_fails 0 "complete synthetic G29 has no gate failures"
 t_expect_out "G29 lower monitor deltas" "lower selector comparison is an explicit gate result"
 t_expect_eq "${CALLS%% get:/health*}" \
-  " apply:improved profile:false reset reconnect reference:0" \
-  "Improved apply and fresh CC session precede health and counter baseline"
+  " profile:false reset apply:improved reconnect reference:0" \
+  "reset precedes Improved apply and fresh CC session before health and counter baseline"
 t_expect_eq "$TAP:$AUTO:$POSITION" "0:true:closed" "cleanup restores reference tap, auto and CB1 command"
-for FAIL_AT in baseline lower raise final; do
+for FAIL_AT in baseline breaker lower raise final; do
   CALLS=""
   COUNTS=$(cat "$BASE")
   t_run eu_gate_G29
@@ -188,8 +204,15 @@ done
 FAIL_AT=""
 for HEALTH_MUTATION in '.iec104Enforcement.healthy=false' \
   '.enforcement.state="degraded"' 'del(.iec104Enforcement)'; do
+  CALLS=""
   t_run eu_gate_G29
   t_expect_eq "$T_STATUS" 1 "G29 refuses unhealthy/unknown engine readiness: $HEALTH_MUTATION"
+  t_expect_fails 1 "failed health reports only the health failure"
+  t_expect_out "G29 DPI/decoder/queue or applied-engine health is not ready" \
+    "health failure remains the reported cause"
+  t_expect_eq "${CALLS#* command:feeder-breaker-command:}" "$CALLS" \
+    "failed health issues no breaker command, including a redundant close"
+  t_expect_eq "$TAP:$AUTO:$POSITION" "0:true:closed" "failed health preserves reset field state"
 done
 HEALTH_MUTATION="."
 for CONFIG_MUTATION in '.dataplane.dpiEnabled=false' '.dataplane.nfqueueGroup=0' \
