@@ -4,7 +4,7 @@
       "dpiMode": "enforce",
       "nflogGroup": 100,
       "nfqueueGroup": 101,
-      "dpiEnabled": false
+      "dpiEnabled": true
     },
     "firewall": {
       "defaultAction": "DENY",
@@ -1176,7 +1176,7 @@
     },
     {
       "id": "iec104-dpi",
-      "kind": "plan",
+      "kind": "detect",
       "chosen": false
     },
     {
@@ -1217,7 +1217,7 @@
   ],
   "label": "weak",
   "packageId": "eu-iec104-substation",
-  "revision": 5,
+  "revision": 6,
   "policyHash": "6820ac97489b6fcc0978dc11039610c292bcd53eb7a7941c7e9f8d17ef315db8",
   "expectations": [
     {
