@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import shlex
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 from urllib.error import HTTPError, URLError
 
 
@@ -69,22 +69,24 @@ ON_DEMAND = (
 )
 CLI_CHUNK = DOUBLE_PREFIXED[1].replace('"/containd/api/', '"/api/')
 # Shared with the native PowerShell probe tests: runtime shapes and the failure they
-# must give (None passes). Unknown shapes fail rather than skip on-demand chunks.
+# must give (None passes). Unknown shapes fail with an explicit live-inspection warning.
 WEBPACK_CASES = (
     (WEBPACK, None),
     ('t.p="/elsewhere/",' + WEBPACK, None),
     (WEBPACK + 'r.p="/containd/_next/";', None),
     # The first ===-test for an id decides its name, as in the JavaScript conditional chain.
     (WEBPACK.replace('(3888===e?"e868780c":e)', '(3888===e?"e868780c":3888===e?"later":e)'), None),
-    ("", "0 webpack runtime chunk maps, expected 1"),
-    (WEBPACK + WEBPACK, "2 webpack runtime chunk maps, expected 1"),
+    ("", "unsupported or ambiguous Next.js chunk-map shape"),
+    (WEBPACK + WEBPACK, "unsupported or ambiguous Next.js chunk-map shape"),
     (WEBPACK.replace('r.p="/containd/_next/",', ""), "exactly one public path"),
     (WEBPACK + 'r.p="/other/";', "exactly one public path"),
     (WEBPACK.replace('"/containd/_next/"', '"/_next/"'), "on-demand chunk: /_next/static/chunks/"),
     (WEBPACK.replace("r.u=e=>", "r.u=function(e){return ").replace('".js",r.miniCssF', '".js"},r.miniCssF'),
-     "0 webpack runtime chunk maps"),
-    (WEBPACK.replace('6625:"caa6f620978d1981"', '6625:"../../x"'), "0 webpack runtime chunk maps"),
-    (WEBPACK.replace('"e868780c":e', '"e868780c":t'), "0 webpack runtime chunk maps"),
+     "unsupported or ambiguous Next.js chunk-map shape"),
+    (WEBPACK.replace('6625:"caa6f620978d1981"', '6625:"../../x"'),
+     "unsupported or ambiguous Next.js chunk-map shape"),
+    (WEBPACK.replace('"e868780c":e', '"e868780c":t'),
+     "unsupported or ambiguous Next.js chunk-map shape"),
 )
 
 # Route-page literals and the pages they name (shared with the PowerShell probe tests).
@@ -270,7 +272,7 @@ class ChunkTests(unittest.TestCase):
             probe.ondemand_chunks({"w.js": 'n.p="/p/";n.u=t=>"static/chunks/"+t+"."+({1:"a",22:"b"})[t]+".js"'}),
             ["/p/static/chunks/1.a.js", "/p/static/chunks/22.b.js"],
         )
-        with self.assertRaisesRegex(probe.ProbeError, "2 webpack runtime chunk maps"):
+        with self.assertRaisesRegex(probe.ProbeError, "unsupported or ambiguous Next.js chunk-map shape"):
             probe.ondemand_chunks({"a.js": WEBPACK, "b.js": WEBPACK})
 
     def test_route_pages_from_path_literals(self):
@@ -331,30 +333,55 @@ class ProbeTests(unittest.TestCase):
                 '{"token":"test-token","user":{"username":"containd"}}', "application/json", 200,
             ),
             "/containd/api/v1/auth/me": ('{"username":"containd"}', "application/json", 200),
-            probe.API_ROUTES[0]: REFUSED,
-            probe.API_ROUTES[1]: (
+            "/containd/api/v1/cli/ws/ticket": (
+                '{"ticket":"fixture-ticket","expiresIn":30}', "application/json", 200,
+            ),
+            probe.API_ROUTES[0]: (
                 '{"error":"engine pcap download status 404"}', "application/json", 400,
             ),
         }
         self.requests = []
+        self.ticket_count = 0
+        self.ticket_expires_in = 30
+        self.ticket_missing = False
 
     def open(self, request, timeout):
         self.assertEqual(timeout, 15)
         self.assertTrue(request.full_url.startswith("http://127.0.0.1:8088/containd/"))
         path = request.full_url.removeprefix("http://127.0.0.1:8088")
         self.requests.append(request)
+        if path == "/containd/api/v1/cli/ws/ticket":
+            self.ticket_count += 1
+            self.assertEqual(request.get_method(), "POST")
+            self.assertIsNone(request.data)
+            self.assertEqual(request.get_header("Authorization"), "Bearer test-token")
+            self.assertIsNone(request.get_header("Cookie"))
+            body = {"expiresIn": self.ticket_expires_in}
+            if not self.ticket_missing:
+                body["ticket"] = f"fixture-ticket-{self.ticket_count}"
+            return Response(json.dumps(body), "application/json")
         response = self.responses[path]
         if isinstance(response, Exception):
             raise response
         return Response(*response)
 
     def run_probe(self):
+        self.ticket_count = 0
+        self.requests = []
         output = io.StringIO()
         with patch.object(probe, "build_opener") as build, patch.object(probe, "cli_upgrade") as upgrade, \
                 redirect_stdout(output):
             build.return_value.open.side_effect = self.open
             probe.probe("http://127.0.0.1:8088/")
-            upgrade.assert_called_once_with("http://127.0.0.1:8088", "test-token")
+            upgrade.assert_has_calls([
+                call("http://127.0.0.1:8088", expected_status=401),
+                call("http://127.0.0.1:8088", token="test-token", expected_status=401),
+                call("http://127.0.0.1:8088", token="test-token", query_token=True, expected_status=401),
+                call("http://127.0.0.1:8088", ticket="fixture-ticket-1"),
+                call("http://127.0.0.1:8088", ticket="fixture-ticket-2"),
+                call("http://127.0.0.1:8088", ticket="fixture-ticket-2", expected_status=401),
+            ])
+            self.assertEqual(upgrade.call_count, 6)
         return output.getvalue()
 
     def test_probes_all_chunks_then_logs_in_reads_me_and_checks_api_routes(self):
@@ -362,18 +389,32 @@ class ProbeTests(unittest.TestCase):
         self.assertIn("5 chunks (2 on demand)", output)
         self.assertIn("/containd/api/v1/auth/me: 200 application/json", output)
         self.assertIn("400 from the containd API", output)
-        self.assertEqual(len(self.requests), 10)
+        self.assertEqual(len(self.requests), 11)
         self.assertEqual([req.full_url.removeprefix("http://127.0.0.1:8088") for req in self.requests[4:6]],
                          list(ON_DEMAND))
-        login, me, cli, pcap = self.requests[-4:]
+        login, me, ticket1, ticket2, pcap = self.requests[-5:]
         self.assertEqual(login.get_method(), "POST")
         self.assertEqual(json.loads(login.data), {"username": "containd", "password": "containd"})
-        for request, path in ((me, "/containd/api/v1/auth/me"), (cli, probe.API_ROUTES[0]),
-                              (pcap, probe.API_ROUTES[1])):
-            self.assertEqual(request.get_method(), "GET")
-            self.assertEqual(request.full_url, "http://127.0.0.1:8088" + path)
+        self.assertEqual(me.get_method(), "GET")
+        self.assertEqual(me.full_url, "http://127.0.0.1:8088/containd/api/v1/auth/me")
+        self.assertEqual(me.get_header("Authorization"), "Bearer test-token")
+        for request in (ticket1, ticket2):
+            self.assertEqual(request.get_method(), "POST")
+            self.assertEqual(request.full_url, "http://127.0.0.1:8088/containd/api/v1/cli/ws/ticket")
             self.assertEqual(request.get_header("Authorization"), "Bearer test-token")
+            self.assertIsNone(request.get_header("Cookie"))
+        self.assertEqual(pcap.get_method(), "GET")
+        self.assertEqual(pcap.full_url, "http://127.0.0.1:8088" + probe.API_ROUTES[0])
+        self.assertEqual(pcap.get_header("Authorization"), "Bearer test-token")
         self.assertTrue(all("/containd/containd/" not in req.full_url for req in self.requests))
+
+    def test_ticket_issuance_requires_nonempty_ticket_and_exact_ttl(self):
+        for missing, ttl in ((True, 30), (False, 29), (False, 31)):
+            with self.subTest(missing=missing, ttl=ttl):
+                self.ticket_missing = missing
+                self.ticket_expires_in = ttl
+                with self.assertRaisesRegex(probe.ProbeError, "expected an opaque ticket and expiresIn=30"):
+                    self.run_probe()
 
     def test_bad_literal_only_in_an_on_demand_chunk_fails_before_login(self):
         # Regression: the CLI console chunk is not a page script; only the runtime map names it.
@@ -415,8 +456,8 @@ class ProbeTests(unittest.TestCase):
         self.assertIn("8 chunks (2 on demand), 4 route pages", output)
         paths = [req.full_url.removeprefix("http://127.0.0.1:8088") for req in self.requests]
         self.assertEqual(paths[4:6], list(ON_DEMAND))
-        self.assertEqual(paths[6:-4], ROUTE_REQUESTS)
-        self.assertTrue(all(req.get_method() == "GET" for req in self.requests[:-4]))
+        self.assertEqual(paths[6:-5], ROUTE_REQUESTS)
+        self.assertTrue(all(req.get_method() == "GET" for req in self.requests[6:-5]))
 
     def test_bad_literal_only_in_a_route_page_chunk_fails_before_login(self):
         # Regression: a route's page chunk loads only from that route's HTML, here a

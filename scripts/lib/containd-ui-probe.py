@@ -19,7 +19,7 @@ import os
 import re
 import sys
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlencode, urljoin, urlsplit
 from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener
 
 
@@ -27,36 +27,49 @@ class ProbeError(ValueError):
     """An incomplete check is a failure, never a pass."""
 
 
-def cli_upgrade(origin, token):
-    """Authenticate a browser-origin handshake, then close without sending CLI commands."""
+def cli_upgrade(origin, *, ticket=None, token=None, query_token=False, expected_status=101):
+    """Check one ticketed or deliberately unauthorized browser-origin handshake."""
     url = urlsplit(origin)
     connection = (HTTPSConnection if url.scheme == "https" else HTTPConnection)(
         url.hostname, url.port, timeout=15,
     )
     path = "/containd/api/v1/cli/ws"
+    query = {"ticket": ticket} if ticket is not None else (
+        {"token": token} if query_token and token is not None else {}
+    )
+    target = path + ("?" + urlencode(query) if query else "")
     key = base64.b64encode(os.urandom(16)).decode("ascii")
     try:
-        connection.request("GET", path, headers={
-            "Host": url.netloc, "Origin": origin, "Authorization": f"Bearer {token}",
+        headers = {
+            "Host": url.netloc, "Origin": origin,
             "Connection": "Upgrade", "Upgrade": "websocket",
             "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": key,
-        })
+        }
+        if token is not None and not query_token:
+            headers["Authorization"] = f"Bearer {token}"
+        connection.request("GET", target, headers=headers)
         response = connection.getresponse()
         with response:
-            if response.status != 101:
-                raise ProbeError(f"{path}: expected websocket 101, got {response.status} {response.reason}")
-            accept = base64.b64encode(hashlib.sha1(
-                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
-            ).digest()).decode("ascii")
-            if (response.getheader("Upgrade", "").lower() != "websocket"
-                    or "upgrade" not in {
-                        part.strip().lower() for part in response.getheader("Connection", "").split(",")
-                    }
-                    or response.getheader("Sec-WebSocket-Accept") != accept):
-                raise ProbeError(f"{path}: invalid websocket upgrade headers")
+            if response.status != expected_status:
+                raise ProbeError(
+                    f"{path}: expected HTTP {expected_status}, got {response.status} {response.reason}"
+                )
+            if expected_status == 101:
+                accept = base64.b64encode(hashlib.sha1(
+                    (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+                ).digest()).decode("ascii")
+                if (response.getheader("Upgrade", "").lower() != "websocket"
+                        or "upgrade" not in {
+                            part.strip().lower() for part in response.getheader("Connection", "").split(",")
+                        }
+                        or response.getheader("Sec-WebSocket-Accept") != accept):
+                    raise ProbeError(f"{path}: invalid websocket upgrade headers")
     finally:
         connection.close()
-    print(f"PASS {path}: websocket 101 with browser Origin {origin}")
+    if expected_status == 101:
+        print(f"PASS {path}: websocket 101 with a fresh ticket and browser Origin {origin}")
+    else:
+        print(f"PASS {path}: rejected with HTTP {expected_status}")
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -81,11 +94,8 @@ AUTODETECT = re.compile(
     r"""(?:window\.location\.pathname|\(\s*null\s*!=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\?\s*\1\s*:\s*window\.location\.pathname\s*\))\.startsWith\(\s*["']/containd/["']\s*\)\s*\?\s*["']/containd["']"""
 )
 PREFIXED_API = re.compile(r"""(["'])(/containd/api/[^"']*)\1""")
-# The paths the CLI console and PCAP download build from the runtime base. Without an
-# Upgrade header, or for a capture that does not exist, the API refuses with a 400;
-# a double-prefixed path instead gets the UI page (200 text/html).
+# The PCAP path must remain an API response, not fall through to the UI page.
 API_ROUTES = (
-    "/containd/api/v1/cli/ws",
     "/containd/api/v1/pcap/download/rangerdanger-probe-missing.pcap",
 )
 
@@ -108,7 +118,11 @@ def ondemand_chunks(chunks):
         (path, body, match) for path, body in chunks.items() for match in WEBPACK_CHUNKS.finditer(body)
     ]
     if len(runtimes) != 1:
-        raise ProbeError(f"chunks contain {len(runtimes)} webpack runtime chunk maps, expected 1")
+        raise ProbeError(
+            f"cannot verify on-demand chunks in {runtimes[0][0] if runtimes else 'served bundle'}: "
+            f"unsupported or ambiguous Next.js chunk-map shape ({len(runtimes)} webpack maps; "
+            "expected exactly 1); inspect the live bundle before changing this oracle"
+        )
     path, body, match = runtimes[0]
     public = {found.group(2) for found in PUBLIC_PATH.finditer(body) if found.group(1) == match.group(1)}
     if len(public) != 1:
@@ -191,16 +205,16 @@ def probe(base):
         raise ProbeError("supply a portal origin, e.g. http://127.0.0.1:8088")
     opener = build_opener(NoRedirect(), HTTPCookieProcessor(CookieJar()))
 
-    def request(path, data=None, token=None):
+    def request(path, data=None, token=None, method=None):
         headers = {"Accept-Encoding": "identity"}
         if data is not None:
             headers["Content-Type"] = "application/json"
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        return Request(base + path, data=data, headers=headers)
+        return Request(base + path, data=data, headers=headers, method=method)
 
-    def fetch(path, types, data=None, token=None):
-        with opener.open(request(path, data, token), timeout=15) as response:
+    def fetch(path, types, data=None, token=None, method=None, client=None):
+        with (client or opener).open(request(path, data, token, method), timeout=15) as response:
             content_type = response.headers.get_content_type()
             if response.status != 200 or content_type not in types:
                 raise ProbeError(f"{path}: expected 200 {types}, got {response.status} {content_type}")
@@ -265,6 +279,33 @@ def probe(base):
         raise ProbeError(f"{me_path}: JSON does not identify the logged-in lab user")
     print(f"PASS {login_path} -> {me_path}: 200 application/json, username=containd")
 
+    ticket_path = "/containd/api/v1/cli/ws/ticket"
+    ticket_opener = build_opener(NoRedirect())
+
+    def issue_ticket():
+        ticket = json.loads(fetch(
+            ticket_path, {"application/json"}, token=login["token"], method="POST",
+            client=ticket_opener,
+        ))
+        if (not isinstance(ticket, dict) or not isinstance(ticket.get("ticket"), str)
+                or not ticket["ticket"] or ticket.get("expiresIn") != 30):
+            raise ProbeError(f"{ticket_path}: expected an opaque ticket and expiresIn=30")
+        return ticket["ticket"]
+
+    print(f"PASS {ticket_path}: authenticated ticket issuance contract (expiresIn=30)")
+
+    # The upgrade endpoint accepts only tickets. Exercise each rejected legacy
+    # credential form before opening a fresh ticket for each valid handshake.
+    cli_upgrade(base, expected_status=401)
+    cli_upgrade(base, token=login["token"], expected_status=401)
+    cli_upgrade(base, token=login["token"], query_token=True, expected_status=401)
+
+    first_ticket = issue_ticket()
+    cli_upgrade(base, ticket=first_ticket)
+    reconnect_ticket = issue_ticket()
+    cli_upgrade(base, ticket=reconnect_ticket)
+    cli_upgrade(base, ticket=reconnect_ticket, expected_status=401)
+
     for path in API_ROUTES:
         try:
             response = opener.open(request(path, token=login["token"]), timeout=15)
@@ -275,7 +316,6 @@ def probe(base):
         if status != 400 or content_type == "text/html":
             raise ProbeError(f"{path}: expected a 400 refusal from the containd API, got {status} {content_type}")
     print(f"PASS {', '.join(API_ROUTES)}: 400 from the containd API, not the UI page")
-    cli_upgrade(base, login["token"])
 
 
 def main():

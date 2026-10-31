@@ -15,7 +15,9 @@ GOOD_CHUNK = (
     'window.location.pathname.startsWith("/containd/") ? "/containd" : "";'
     'fetch("/api/v1/auth/me");' + SERVED
 )
-CLI, PCAP = probe.API_ROUTES
+CLI = "/containd/api/v1/cli/ws"
+TICKET = "/containd/api/v1/cli/ws/ticket"
+PCAP = probe.API_ROUTES[0]
 RUNTIME_SCRIPT = '<script src="/containd/_next/static/webpack.js"></script>'
 
 PROBE = r"""
@@ -24,28 +26,63 @@ $ErrorActionPreference = 'Stop'
 $fixture = $env:FIXTURE | ConvertFrom-Json
 $script:session = $null
 $script:seen = @()
-function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
-    if ($Origin -cne $env:ORIGIN.TrimEnd('/') -or $Token -cne 'lab-token') { throw 'upgrade origin/token lost' }
-    if ($env:WS_STATUS -ne '101') {
-        throw "/containd/api/v1/cli/ws: expected websocket 101, got $env:WS_STATUS"
+function Confirm-ContaindCliUpgrade(
+    [string]$Origin, [string]$Ticket = '', [string]$Token = '',
+    [string]$QueryName = '', [int]$ExpectedStatus = 101
+) {
+    if ($Origin -cne $env:ORIGIN.TrimEnd('/')) { throw 'upgrade origin lost' }
+    $expectedCalls = @(
+        @{ ticket=''; token=''; query=''; status=401 },
+        @{ ticket=''; token='lab-token'; query=''; status=401 },
+        @{ ticket=''; token='lab-token'; query='token'; status=401 },
+        @{ ticket='fixture-ticket-1'; token=''; query=''; status=101 },
+        @{ ticket='fixture-ticket-2'; token=''; query=''; status=101 },
+        @{ ticket='fixture-ticket-2'; token=''; query=''; status=401 }
+    )
+    $expected = $expectedCalls[$script:wsCalls]
+    if ($Ticket -cne $expected.ticket -or $Token -cne $expected.token -or
+        $QueryName -cne $expected.query -or $ExpectedStatus -ne $expected.status) {
+        throw "unexpected websocket attempt $script:wsCalls (ticket=$Ticket token=$Token query=$QueryName status=$ExpectedStatus)"
     }
-    Write-Host 'PASS websocket 101'
+    $observedStatuses = @($env:WS_STATUS -split ',')
+    $observed = [int]$observedStatuses[$script:wsCalls]
+    if ($observed -ne $ExpectedStatus) {
+        throw "/containd/api/v1/cli/ws: expected HTTP $ExpectedStatus, got HTTP/1.1 $observed"
+    }
+    $script:wsCalls++
 }
+$script:wsCalls = 0
+$script:ticketCount = 0
 function Invoke-WebRequest {
     param($Uri, $Headers, $WebSession, $TimeoutSec, $UseBasicParsing,
           $MaximumRedirection, $ErrorAction, $Method, $Body, $ContentType)
     if ($TimeoutSec -ne 15 -or -not $UseBasicParsing -or $MaximumRedirection -ne 0 -or
         $Headers['Accept-Encoding'] -ne 'identity' -or $ErrorAction -ne 'Stop') { throw 'request bounds lost' }
-    if ($script:session -and $script:session -ne $WebSession) { throw 'cookie session lost' }
-    $script:session = $WebSession
     $path = ([uri]$Uri).PathAndQuery
     $script:seen += $path
+    if ($path -eq $env:TICKET) {
+        if ($Method -ne 'POST' -or $Headers.Authorization -cne 'Bearer lab-token' -or
+            $Headers.ContainsKey('Cookie') -or $WebSession -eq $script:session) {
+            throw 'ticket issuance did not use an isolated authenticated POST'
+        }
+        $item = $fixture.PSObject.Properties[$path].Value
+        $script:ticketCount++
+        $ticket = if ($item.omitTicket) { '' } else { "fixture-ticket-$script:ticketCount" }
+        $expires = if ($null -ne $item.expiresIn) { $item.expiresIn } else { 30 }
+        $body = ConvertTo-Json -Compress @{ ticket=$ticket; expiresIn=$expires }
+        $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+        $stream = New-Object IO.MemoryStream
+        $stream.Write($bytes, 0, $bytes.Length)
+        return [pscustomobject]@{ StatusCode=200; Headers=@{'Content-Type'='application/json'}; RawContentStream=$stream }
+    }
+    if ($script:session -and $script:session -ne $WebSession) { throw 'cookie session lost' }
+    $script:session = $WebSession
     if ($path -eq '/containd/api/v1/auth/login') {
         $credentials = $Body | ConvertFrom-Json
         if ($Method -ne 'POST' -or $ContentType -ne 'application/json' -or
             $credentials.username -cne 'containd' -or $credentials.password -cne 'containd') { throw 'login lost' }
     }
-    if ($path -in @('/containd/api/v1/auth/me', $env:CLI, $env:PCAP) -and
+    if ($path -in @('/containd/api/v1/auth/me', $env:PCAP) -and
         ($Headers.Authorization -cne 'Bearer lab-token' -or $Method)) { throw 'bearer lost' }
     $item = $fixture.PSObject.Properties[$path].Value
     if (-not $item) { throw "unexpected request $path" }
@@ -109,27 +146,38 @@ def fixture():
         ON_DEMAND[1]: dict(status=200, type="text/javascript; charset=utf-8", body=CLI_CHUNK),
         "/containd/api/v1/auth/login": dict(status=200, type="application/json", body='{"token":"lab-token"}'),
         "/containd/api/v1/auth/me": dict(status=200, type="application/json", body='{"username":"containd"}'),
-        # Real Invoke-WebRequest throws on a 4xx; the API's live refusals.
-        CLI: dict(status=400, type="text/plain; charset=utf-8", body="Bad Request", raise_="ps7"),
+        TICKET: dict(status=200, type="application/json", body="", expiresIn=30, omitTicket=False),
         PCAP: dict(status=400, type="application/json; charset=utf-8",
                    body='{"error":"engine pcap download status 404"}', raise_="ps7"),
     }
 
 
 class ContaindProbeTests(unittest.TestCase):
-    def run_probe(self, data, origin="http://localhost:8088/", ws_status=101):
+    def run_probe(self, data, origin="http://localhost:8088/", ws_status="401,401,401,101,101,401"):
         for item in data.values():
             if "raise_" in item:
                 item["raise"] = item.pop("raise_")
-        return powershell(PROBE, FIXTURE=json.dumps(data), ORIGIN=origin, CLI=CLI, PCAP=PCAP,
+        return powershell(PROBE, FIXTURE=json.dumps(data), ORIGIN=origin, CLI=CLI, TICKET=TICKET, PCAP=PCAP,
                           WS_STATUS=str(ws_status))
 
-    def test_cli_upgrade_refusal_or_ui_fallback_is_not_success(self):
-        for status in (403, 401, 400, 200, 302):
-            with self.subTest(status=status):
-                result = self.run_probe(fixture(), ws_status=status)
+    def test_ticket_rejections_and_fresh_ticket_handshakes(self):
+        result = self.run_probe(fixture())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("expiresIn=30", result.stdout)
+
+    def test_ticket_issuance_rejects_missing_ticket_or_wrong_ttl(self):
+        for changes in ({"omitTicket": True}, {"expiresIn": 29}, {"expiresIn": 31}):
+            with self.subTest(changes=changes):
+                data = fixture()
+                data[TICKET].update(changes)
+                result = self.run_probe(data)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn(f"expected websocket 101, got {status}", result.stdout)
+                self.assertIn("expected an opaque ticket and expiresIn=30", result.stdout)
+
+    def test_unexpected_cli_refusal_status_is_not_success(self):
+        result = self.run_probe(fixture(), ws_status="403,401,401,101,101,401")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("expected HTTP 401, got HTTP/1.1 403", result.stdout)
 
     def test_autodetect_regex_is_identical_to_python(self):
         text = (ROOT / "scripts/lib/containd-ui-probe.ps1").read_text()
@@ -302,7 +350,9 @@ class ContaindProbeTests(unittest.TestCase):
         self.assertIn("username=containd", result.stdout)
         self.assertIn("400 from the containd API, not the UI page", result.stdout)
         self.assertEqual(result.stdout.count("static/main.js"), 1)
-        self.assertTrue(result.stdout.rstrip().endswith(f"/containd/api/v1/auth/me,{CLI},{PCAP}"), result.stdout)
+        self.assertTrue(result.stdout.rstrip().endswith(
+            f"/containd/api/v1/auth/me,{TICKET},{TICKET},{PCAP}"
+        ), result.stdout)
 
     def test_bundle_assertions(self):
         for body, message in (
@@ -387,7 +437,7 @@ class ContaindProbeTests(unittest.TestCase):
         for raise_ in ("ps7", "legacy", None):
             with self.subTest(raise_=raise_):
                 data = fixture()
-                for path in (CLI, PCAP):
+                for path in (PCAP,):
                     data[path].pop("raise_")
                     if raise_:
                         data[path]["raise_"] = raise_
@@ -396,7 +446,7 @@ class ContaindProbeTests(unittest.TestCase):
                 self.assertIn("400 from the containd API", result.stdout)
 
     def test_api_routes_answered_by_the_ui_page_or_not_refused_fail(self):
-        for path in (CLI, PCAP):
+        for path in (PCAP,):
             for change, message in (
                 (dict(status=200, type="text/html; charset=utf-8", raise_=None), "expected a 400 refusal"),
                 (dict(type="text/html"), "expected a 400 refusal"),
@@ -415,7 +465,7 @@ class ContaindProbeTests(unittest.TestCase):
                     self.assertIn(message, result.stdout)
 
     def test_each_fetch_rejects_status_mime_timeout_and_invalid_utf8(self):
-        for path in (path for path in fixture() if path not in (CLI, PCAP)):
+        for path in (path for path in fixture() if path not in (CLI, PCAP, TICKET)):
             for change, message in (
                 (dict(status=302), "expected 200"),
                 (dict(status=401), "expected 200"),

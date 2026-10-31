@@ -43,7 +43,10 @@ function Get-ContaindOnDemandChunks($Chunks) {
             $runtimes.Add([pscustomobject]@{ Path = $entry.Key; Body = [string]$entry.Value; Match = $match })
         }
     }
-    if ($runtimes.Count -ne 1) { throw "Chunks contain $($runtimes.Count) webpack runtime chunk maps, expected 1" }
+    if ($runtimes.Count -ne 1) {
+        $where = if ($runtimes.Count) { $runtimes[0].Path } else { 'served bundle' }
+        throw "Cannot verify on-demand chunks in $where`: unsupported or ambiguous Next.js chunk-map shape ($($runtimes.Count) webpack maps; expected exactly 1); inspect the live bundle before changing this oracle"
+    }
     $runtime = $runtimes[0]
     $public = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($found in [regex]::Matches($runtime.Body, $publicPath)) {
@@ -109,12 +112,21 @@ function Get-ContaindRoutePages($Chunks) {
     $sorted
 }
 
-function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
+function Confirm-ContaindCliUpgrade(
+    [string]$Origin, [string]$Ticket = '', [string]$Token = '',
+    [string]$QueryName = '', [int]$ExpectedStatus = 101
+) {
     # A raw HTTP/1.1 handshake exposes refusal status on both PS 5.1 and 7.
     # Close immediately after headers: no CLI commands or websocket frame reads.
     $url = [uri]$Origin
     $authority = [regex]::Match($Origin, '^[^:]+://([^/]+)$').Groups[1].Value
     $path = '/containd/api/v1/cli/ws'
+    $target = $path
+    if ($Ticket) {
+        $target += '?ticket=' + [uri]::EscapeDataString($Ticket)
+    } elseif ($QueryName -and $Token) {
+        $target += '?' + $QueryName + '=' + [uri]::EscapeDataString($Token)
+    }
     if ($Token -match '[\r\n]') { throw "${path}: invalid token header" }
     $client = New-Object Net.Sockets.TcpClient
     $stream = $null
@@ -132,7 +144,8 @@ function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
             $null = $tls.GetAwaiter().GetResult()
         }
         $key = [Convert]::ToBase64String([Guid]::NewGuid().ToByteArray())
-        $request = "GET $path HTTP/1.1`r`nHost: $authority`r`nOrigin: $Origin`r`nAuthorization: Bearer $Token`r`n" +
+        $authHeader = if ($Token -and -not $QueryName) { "Authorization: Bearer $Token`r`n" } else { '' }
+        $request = "GET $target HTTP/1.1`r`nHost: $authority`r`nOrigin: $Origin`r`n$authHeader" +
             "Connection: Upgrade`r`nUpgrade: websocket`r`nSec-WebSocket-Version: 13`r`nSec-WebSocket-Key: $key`r`n`r`n"
         $bytes = [Text.Encoding]::ASCII.GetBytes($request)
         $stream.Write($bytes, 0, $bytes.Length)
@@ -148,8 +161,12 @@ function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
             if ($header.Length -gt 16384) { throw "${path}: oversized upgrade response" }
         }
         $lines = $header.ToString() -split "`r`n"
-        if ($lines[0] -notmatch '^HTTP/1\.1 101(?: |$)') {
-            throw "${path}: expected websocket 101, got $($lines[0])"
+        if ($lines[0] -notmatch "^HTTP/1\.1 $ExpectedStatus(?: |$)") {
+            throw "${path}: expected HTTP $ExpectedStatus, got $($lines[0])"
+        }
+        if ($ExpectedStatus -ne 101) {
+            Write-Host "PASS ${path}: rejected with HTTP $ExpectedStatus"
+            return
         }
         $headers = @{}
         foreach ($line in $lines[1..($lines.Length - 1)]) {
@@ -172,7 +189,7 @@ function Confirm-ContaindCliUpgrade([string]$Origin, [string]$Token) {
         if ($stream) { $stream.Dispose() }
         $client.Close()
     }
-    Write-Host "PASS ${path}: websocket 101 with browser Origin $Origin"
+    Write-Host "PASS ${path}: websocket 101 with a fresh ticket and browser Origin $Origin"
 }
 
 function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
@@ -184,18 +201,27 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     }
     $authority = [regex]::Match($Origin, '^[^:]+://([^/]+)$').Groups[1].Value
     $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-    function Get-ProbeRequest([string]$Path, [string]$Data = '', [string]$Token = '') {
+    function Get-ProbeRequest(
+        [string]$Path, [string]$Data = '', [string]$Token = '',
+        [string]$Method = '', [object]$WebSession = $null
+    ) {
         $headers = @{ 'Accept-Encoding' = 'identity' }
         if ($Token) { $headers.Authorization = "Bearer $Token" }
+        $selectedSession = if ($WebSession) { $WebSession } else { $session }
         $request = @{
-            Uri = "$Origin$Path"; Headers = $headers; WebSession = $session
+            Uri = "$Origin$Path"; Headers = $headers; WebSession = $selectedSession
             TimeoutSec = 15; UseBasicParsing = $true; MaximumRedirection = 0; ErrorAction = 'Stop'
         }
-        if ($Data) { $request.Method = 'POST'; $request.Body = $Data; $request.ContentType = 'application/json' }
+        if ($Method) { $request.Method = $Method }
+        elseif ($Data) { $request.Method = 'POST' }
+        if ($Data) { $request.Body = $Data; $request.ContentType = 'application/json' }
         $request
     }
-    function Get-ProbeBody([string]$Path, [string[]]$Types, [string]$Data = '', [string]$Token = '') {
-        $request = Get-ProbeRequest $Path $Data $Token
+    function Get-ProbeBody(
+        [string]$Path, [string[]]$Types, [string]$Data = '', [string]$Token = '',
+        [string]$Method = '', [object]$WebSession = $null
+    ) {
+        $request = Get-ProbeRequest $Path $Data $Token $Method $WebSession
         $response = Invoke-WebRequest @request
         $type = ([string]$response.Headers['Content-Type'] -split ';', 2)[0].Trim().ToLowerInvariant()
         if ($response.StatusCode -ne 200 -or $type -notin $Types) {
@@ -300,10 +326,31 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     }
     Write-Host "PASS $loginPath -> ${mePath}: 200 application/json, username=containd"
 
-    # The paths the CLI console and PCAP download build from the runtime base. Without an
-    # Upgrade header, or for a capture that does not exist, the API refuses with a 400;
-    # a double-prefixed path instead gets the UI page (200 text/html).
-    $apiRoutes = @('/containd/api/v1/cli/ws', '/containd/api/v1/pcap/download/rangerdanger-probe-missing.pcap')
+    $ticketPath = '/containd/api/v1/cli/ws/ticket'
+    function Get-ProbeCliTicket {
+        $ticketSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+        $ticketJson = Get-ProbeBody $ticketPath @('application/json') '' $token 'POST' $ticketSession
+        $ticket = Get-ProbeJsonProperty $ticketJson 'ticket'
+        $expiresIn = Get-ProbeJsonProperty $ticketJson 'expiresIn'
+        if ($ticket -isnot [string] -or -not $ticket -or $expiresIn -ne 30) {
+            throw "${ticketPath}: expected an opaque ticket and expiresIn=30"
+        }
+        $ticket
+    }
+    Write-Host "PASS ${ticketPath}: authenticated ticket issuance contract (expiresIn=30)"
+
+    Confirm-ContaindCliUpgrade $Origin '' '' '' 401
+    Confirm-ContaindCliUpgrade $Origin '' $token '' 401
+    Confirm-ContaindCliUpgrade $Origin '' $token 'token' 401
+
+    $firstTicket = Get-ProbeCliTicket
+    Confirm-ContaindCliUpgrade $Origin $firstTicket
+    $reconnectTicket = Get-ProbeCliTicket
+    Confirm-ContaindCliUpgrade $Origin $reconnectTicket
+    Confirm-ContaindCliUpgrade $Origin $reconnectTicket '' '' 401
+
+    # A missing capture must remain an API response, not fall through to the UI page.
+    $apiRoutes = @('/containd/api/v1/pcap/download/rangerdanger-probe-missing.pcap')
     foreach ($route in $apiRoutes) {
         $request = Get-ProbeRequest $route '' $token
         try {
@@ -324,5 +371,4 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         }
     }
     Write-Host "PASS $($apiRoutes -join ', '): 400 from the containd API, not the UI page"
-    Confirm-ContaindCliUpgrade $Origin $token
 }
