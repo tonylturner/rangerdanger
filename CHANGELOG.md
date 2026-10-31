@@ -25,6 +25,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- US assessment and planning prose describes the shipped DNP3 function-code
+  detection, not object-group inspection. The L4 source pin enforces; DPI
+  detects and logs.
 - The EU firewall lesson points to the portal's `/containd/` link without
   confusing it with the separate host-loopback port.
 - EU readiness evidence labels the firewall's local image ID accurately,
