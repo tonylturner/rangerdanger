@@ -58,6 +58,8 @@ PACKAGE="$ROOT/lab-definitions/packages/$PACKAGE_ID"
 . "$SCRIPT_DIR/lib/eu-gates-history.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/eu-gates-labs.sh
 . "$SCRIPT_DIR/lib/eu-gates-labs.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/eu-gates-shadow.sh
+. "$SCRIPT_DIR/lib/eu-gates-shadow.sh"
 
 # shellcheck source-path=SCRIPTDIR source=lib/eu-gates-management.sh
 . "$SCRIPT_DIR/lib/eu-gates-management.sh"
@@ -166,6 +168,7 @@ EU IEC104 gate plan (no Docker or backend access):
   G26 eu-segmentation-requirements served decisions and package-bound catalog
   G27 eu-remediation-planning served decision step and package-bound catalog
   G28 Full and partial compiled plans: faithful proof, hardened acceptance and golden prevention gaps; restore weak without provenance
+  G29 Improved monitor-only shadow evidence: fresh CC session, CB1 would-deny with field operation, OLTC lower/raise selector comparison; restore tap/mode
   G14 Device reset recovers the chain; apply weak
   EXIT Keep evidence on failure; restore weak + device reset; unpause services paused by this run
 PLAN
@@ -200,7 +203,7 @@ eu_gate_main() {
       ;;
   esac
   eu_gate_preflight
-  for gate in G0 G1 G2 G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 G13 G15 G16 G17 G18 G19 G20 G21 G22 G23 G24 G25 G26 G27 G28 G14; do
+  for gate in G0 G1 G2 G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 G13 G15 G16 G17 G18 G19 G20 G21 G22 G23 G24 G25 G26 G27 G28 G29 G14; do
     eu_run_gate "$gate"
   done
   exit 0

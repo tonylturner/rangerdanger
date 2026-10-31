@@ -55,8 +55,11 @@ eu_policy_has_no_ephemeral_allow() {
           end
       end;
     (.firewall.rules | type == "array")
-    and ([.. | objects | select(has("ics"))] | length == 0)
-    and ([.firewall.rules[] | select(.action == "ALLOW") as $rule
+    and (. as $policy | all(paths | select(.[-1] == "ics");
+      . as $p | ($p | length) == 4 and $p[0:2] == ["firewall","rules"]
+      and ($p[2] | type) == "number"
+      and ($policy | getpath($p) | type == "object" and .protocol == "iec104" and .mode == "monitor")))
+    and ([.firewall.rules[] | select(.action == "ALLOW" and (.ics // {}) == {}) as $rule
           | select(($rule.protocols | type) != "array"
                    or ($rule.protocols | length) == 0
                    or any($rule.protocols[];
@@ -121,10 +124,10 @@ eu_check_nft_chain() {
 eu_check_policy_and_nft() {
   local label="$1" policy="$2"
   if ! eu_policy_has_no_ephemeral_allow "$policy"; then
-    fail "$label policy has ICS keys, unbounded TCP allows, or an ephemeral-port allow"
+    fail "$label policy has invalid/non-monitor IEC104 ICS, unbounded TCP allows, or an ephemeral-port allow"
     return 1
   fi
-  pass "$label policy has no ICS keys or ephemeral destination-port allow"
+  pass "$label policy has only explicit-monitor IEC104 ICS and no ephemeral destination-port allow"
   eu_check_nft_chain "$label"
 }
 eu_apply_named() {
@@ -160,8 +163,13 @@ eu_apply_named() {
   return 0
 }
 eu_normalize_firewall_rules() {
-  # containd serializes absent ICS settings as {}; retain every other value.
-  jq -S '.firewall.rules | map(if .ics == {} then del(.ics) else . end)' "$@"
+  # Only documented semantic no-ops are normalized. In particular negative:false
+  # and test:false restrict IEC104, and must never be erased as echoed defaults.
+  jq -S '.firewall.rules | map(
+    if .ics == {} then del(.ics)
+    elif (.ics | type) == "object" and .ics.protocol == "iec104"
+      and .ics.mode == "monitor" and .ics.readOnly == false
+    then del(.ics.readOnly) else . end)' "$@"
 }
 eu_commit_manual_policy() {
   local policy="$1" label="$2" response status warnings active running effective expected_file actual_file i
@@ -278,6 +286,7 @@ eu_make_custom_policy() {
   jq --arg src "$src" --arg dst "$dst" --arg port "$port" '
     def target($source; $destination; $destination_port):
       .action == "ALLOW"
+      and (.ics // {}) == {}
       and any((.sources // [])[]; . == $source or . == ($source + "/32"))
       and any((.destinations // [])[]; . == $destination or . == ($destination + "/32"))
       and any(.protocols[]?;

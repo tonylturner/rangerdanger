@@ -13,9 +13,9 @@ eu_gate_G11() {
   g11_policy="$TMP_DIR/improved-without-rtu-modbus.json"
   eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$RTU_IP" "$BREAKER_IP" 502 "$g11_policy" || return
   if eu_policy_has_no_ephemeral_allow "$g11_policy"; then
-    pass "G11 custom policy has no ICS keys or ephemeral destination-port allow"
+    pass "G11 custom policy has only explicit-monitor IEC104 ICS and no ephemeral destination-port allow"
   else
-    fail "G11 custom policy has an ICS key, unbounded TCP allow, or ephemeral-port allow"
+    fail "G11 custom policy has invalid/non-monitor IEC104 ICS, unbounded TCP allow, or ephemeral-port allow"
   fi
   eu_commit_manual_policy "$g11_policy" "G11 improved minus RTU-to-breaker allow" || return
   eu_check_nft_chain G11-custom || true

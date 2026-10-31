@@ -1,0 +1,45 @@
+[
+  {
+    "id": "observe-cc-breaker-command",
+    "action": "DENY",
+    "sourceZones": ["lan4"],
+    "destZones": ["lan1"],
+    "sources": ["10.60.60.20/32"],
+    "destinations": ["10.30.30.20/32"],
+    "protocols": [{"name": "tcp", "port": "2404"}],
+    "ics": {
+      "protocol": "iec104", "mode": "monitor", "direction": "request",
+      "typeIds": [46], "ca": [1], "ioa": [{"start": 3001, "end": 3001}]
+    }
+  },
+  {
+    "id": "observe-cc-oltc-step",
+    "action": "ALLOW",
+    "sourceZones": ["lan4"],
+    "destZones": ["lan1"],
+    "sources": ["10.60.60.20/32"],
+    "destinations": ["10.30.30.20/32"],
+    "protocols": [{"name": "tcp", "port": "2404"}],
+    "ics": {
+      "protocol": "iec104", "mode": "monitor", "direction": "request",
+      "typeIds": [47], "ca": [1], "ioa": [{"start": 3301, "end": 3301}],
+      "cot": [6], "commandStates": [1, 2], "commandQualifiers": [0],
+      "negative": false, "test": false
+    }
+  },
+  {
+    "id": "observe-cc-oltc-raise-only",
+    "action": "ALLOW",
+    "sourceZones": ["lan4"],
+    "destZones": ["lan1"],
+    "sources": ["10.60.60.20/32"],
+    "destinations": ["10.30.30.20/32"],
+    "protocols": [{"name": "tcp", "port": "2404"}],
+    "ics": {
+      "protocol": "iec104", "mode": "monitor", "direction": "request",
+      "typeIds": [47], "ca": [1], "ioa": [{"start": 3301, "end": 3301}],
+      "cot": [6], "commandStates": [2], "commandQualifiers": [0],
+      "negative": false, "test": false
+    }
+  }
+]
