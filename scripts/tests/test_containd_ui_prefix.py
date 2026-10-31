@@ -1,17 +1,16 @@
 """Offline route regression guard and embedded-UI probe tests; no live range."""
 
-from contextlib import redirect_stdout
-from email.message import Message
 import importlib.util
 import io
 import json
-from pathlib import Path
 import re
 import shlex
 import unittest
+from contextlib import redirect_stdout
+from email.message import Message
+from pathlib import Path
 from unittest.mock import call, patch
 from urllib.error import HTTPError, URLError
-
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -315,10 +314,12 @@ class ProbeTests(unittest.TestCase):
     def setUp(self):
         self.responses = {
             "/containd/": (
-                '<script src="/containd/_next/static/chunks/shared.js"></script>'
-                '<script src="/containd/_next/static/chunks/console.js"></script>'
-                '<script src="/containd/_next/static/chunks/shared.js"></script>'
-                '<script src="/containd/_next/static/chunks/turbopack.js"></script>',
+                (
+                    '<script src="/containd/_next/static/chunks/shared.js"></script>'
+                    '<script src="/containd/_next/static/chunks/console.js"></script>'
+                    '<script src="/containd/_next/static/chunks/shared.js"></script>'
+                    '<script src="/containd/_next/static/chunks/turbopack.js"></script>'
+                ),
                 "text/html", 200,
             ),
             "/containd/_next/static/chunks/shared.js": (RUNTIME, "application/javascript", 200),
@@ -582,11 +583,15 @@ class ProbeTests(unittest.TestCase):
             URLError("offline"),
             HTTPError("http://127.0.0.1:8088/containd/", 502, "Bad Gateway", {}, io.BytesIO()),
         ):
-            with self.subTest(error=error), patch.object(probe, "probe", side_effect=error):
-                with patch.object(probe.sys, "argv", ["probe"]), redirect_stdout(io.StringIO()):
-                    with patch.object(probe.sys, "stderr", new_callable=io.StringIO) as stderr:
-                        self.assertEqual(probe.main(), 1)
-                        self.assertIn("FAIL containd UI:", stderr.getvalue())
+            with (
+                self.subTest(error=error),
+                patch.object(probe, "probe", side_effect=error),
+                patch.object(probe.sys, "argv", ["probe"]),
+                redirect_stdout(io.StringIO()),
+                patch.object(probe.sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                self.assertEqual(probe.main(), 1)
+                self.assertIn("FAIL containd UI:", stderr.getvalue())
 
 
 if __name__ == "__main__":

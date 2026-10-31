@@ -11,16 +11,21 @@ Uses the documented public lab account, containd/containd. No Docker required.
 import argparse
 import base64
 import hashlib
-from http.client import HTTPConnection, HTTPSConnection
-from html.parser import HTMLParser
-from http.cookiejar import CookieJar
 import json
 import os
 import re
 import sys
+from html.parser import HTMLParser
+from http.client import HTTPConnection, HTTPSConnection
+from http.cookiejar import CookieJar
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlsplit
-from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener
+from urllib.request import (
+    HTTPCookieProcessor,
+    HTTPRedirectHandler,
+    Request,
+    build_opener,
+)
 
 
 class ProbeError(ValueError):
