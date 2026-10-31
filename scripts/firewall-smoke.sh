@@ -363,7 +363,7 @@ declare -a LISTENERS=(
   "10.30.30.30:502|openplc Modbus"
   "10.30.30.30:8080|openplc HTTP"
   "10.40.40.20:502|relay Modbus"
-  "10.20.20.10:8082|vendor-jump kasm"
+  "10.20.20.10:3000|vendor-jump desktop"
   "10.20.20.10:22|vendor-jump SSH"
 )
 # Apply weak briefly so listener probes can traverse zones; the matrix
