@@ -1,7 +1,22 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { ApiError, compilePlan, applyPlan, getActiveFirewallConfig, runValidationReport, stopTrafficGeneration, type ValidationReport } from "./api";
+import { ApiError, compilePlan, applyPlan, getActiveFirewallConfig, getSubstationNetworkEvents, runValidationReport, stopTrafficGeneration, type NetworkEventsResponse, type ValidationReport } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("retains monitor decision metadata and incomplete-history or engine-error evidence", async () => {
+  const answer: NetworkEventsResponse = {
+    source: "containd",
+    since: "2026-10-31T12:00:00Z",
+    historyTruncated: true,
+    engineError: "engine unavailable",
+    events: [{
+      id: "shadow", timestamp: "2026-10-31T12:01:00Z", kind: "ics.decision",
+      attributes: { decision: "would_drop", mode: "monitor", ruleId: "observe-cc-breaker-command", action: "DENY", reason: "rule" },
+    }],
+  };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
+  await expect(getSubstationNetworkEvents()).resolves.toEqual(answer);
+});
 
 it("names the observed run in an additive traffic stop request", async () => {
   const fetch = vi.fn().mockResolvedValue(new Response('{"status":"stopping"}'));

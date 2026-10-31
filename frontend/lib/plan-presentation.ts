@@ -38,13 +38,16 @@ function cell(value: string): string {
 
 export function renderRuleTable(plan: CompiledPlan, binding: CurriculumBinding): string {
   return [
-    "| # | Rule | Source zones / addresses | Destination zones / addresses | Protocol / port | Verdict | Origin | Log | Inspection |",
+    "| # | Rule | Source zones / addresses | Destination zones / addresses | Protocol / port | Decision / effect | Origin | Log | Inspection |",
     "|---|---|---|---|---|---|---|---|---|",
     ...plan.rules.map(({ rule: r, origin }, i) => [
       i + 1, `${r.id}${r.description ? `: ${r.description}` : ""}`, `${r.sourceZones?.join(", ") || "any"} / ${r.sources?.join(", ") || "any"}`,
       `${r.destZones?.join(", ") || "any"} / ${r.destinations?.join(", ") || "any"}`,
-      r.protocols?.map((p) => `${p.name}/${p.port || "any"}`).join(", ") || "any", r.action,
-      `${origin.kind}${origin.action ? `: ${actionName(origin.action, binding)}` : ""}${origin.kind === "deferred" ? " — Weak exposure open" : ""}`,
+      r.protocols?.map((p) => `${p.name}/${p.port || "any"}`).join(", ") || "any",
+      r.ics?.mode === "monitor" ? `would ${r.action === "DENY" ? "deny" : "allow"} (monitor)` : r.action,
+      origin.kind === "observe"
+        ? `observation${origin.action ? `: ${actionName(origin.action, binding)} (${origin.action})` : ""} — monitor only, not an L4 rule`
+        : `${origin.kind}${origin.action ? `: ${actionName(origin.action, binding)}` : ""}${origin.kind === "deferred" ? " — Weak exposure open" : ""}`,
       r.log ? "yes" : "no", r.ics ? JSON.stringify(r.ics) : "none",
     ].map((v) => cell(String(v))).join(" | ")).map((row) => `| ${row} |`),
   ].join("\n");

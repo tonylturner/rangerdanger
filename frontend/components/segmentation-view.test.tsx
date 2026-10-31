@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EU_PACKAGE, US_PACKAGE } from "../lib/operator-fixtures.test-util";
 import { FIREWALL_ACTIVE_KEY, NETWORK_EVENTS_KEY } from "../lib/live-queries";
-import type { PolicyComparison } from "../lib/api";
+import type { NetworkEventsResponse, PolicyComparison } from "../lib/api";
 import { FIREWALL_COMPARISON_KEY, SegmentationView } from "./segmentation-view";
 
 const comparison: PolicyComparison = {
@@ -28,11 +28,12 @@ function renderText(
   pkg: typeof EU_PACKAGE | typeof US_PACKAGE,
   activeConfig: string | null,
   withComparison = true,
+  networkEvents: NetworkEventsResponse = { events: [], source: "containd" },
 ): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(["packages", "active"], pkg);
   client.setQueryData(FIREWALL_ACTIVE_KEY, { active_config: activeConfig, policy_source: "manual-custom" });
-  client.setQueryData(NETWORK_EVENTS_KEY, { events: [], source: "containd" });
+  client.setQueryData(NETWORK_EVENTS_KEY, networkEvents);
   if (withComparison) client.setQueryData(FIREWALL_COMPARISON_KEY, comparison);
   const html = renderToStaticMarkup(
     <QueryClientProvider client={client}>
@@ -44,6 +45,47 @@ function renderText(
 }
 
 describe("SegmentationView", () => {
+  it("separates monitor decisions from actual denials in a mixed event stream", () => {
+    const events: NetworkEventsResponse["events"] = [
+      { id: "drop", timestamp: "", kind: "ics.decision", attributes: { mode: "monitor", decision: "would_drop", action: "DENY", ruleId: "observe-breaker", reason: "rule" } },
+      { id: "allow", timestamp: "", kind: "ics.decision", attributes: { mode: "monitor", decision: "would_allow", action: "ALLOW", ruleId: "observe-oltc", reason: "rule" } },
+      { id: "deny", timestamp: "", kind: "firewall.rule.hit", attributes: { action: "DENY", ruleId: "source-pin-deny" } },
+      { id: "admit", timestamp: "", kind: "firewall.rule.hit", attributes: { action: "ALLOW", ruleId: "source-pin-allow" } },
+      { id: "ids", timestamp: "", kind: "anomaly", attributes: { action: "DENY", anomaly_type: "protocol anomaly" } },
+    ];
+    const html = renderText(EU_PACKAGE, "improved", true, { events, source: "containd" }).split("Named policy comparison")[0];
+    expect(html).toContain("2 rule · 2 dpi · 1 ids · 1 deny");
+    expect(html).toContain("would deny (monitor)");
+    expect(html).toContain("would allow (monitor)");
+    expect(html).toContain("observe-breaker");
+    expect(html).toContain("observe-oltc");
+    expect(html.match(/\bDENY\b/g)).toHaveLength(1);
+    expect(html.match(/\bALLOW\b/g)).toHaveLength(1);
+    expect(html).not.toContain("would have blocked");
+  });
+
+  it("never invents a verdict or counts a monitor-only stream as denied commands", () => {
+    const html = renderText(EU_PACKAGE, "improved", true, {
+      source: "containd",
+      events: [
+        { id: "shadow", timestamp: "", kind: "ics.decision", attributes: { mode: "monitor", decision: "would_drop", action: "DENY" } },
+        { id: "unknown", timestamp: "", kind: "ics.decision", attributes: { mode: "monitor", action: "DENY" } },
+      ],
+    }).split("Named policy comparison")[0];
+    expect(html).toContain("0 rule · 2 dpi · 0 ids · 0 deny");
+    expect(html).toContain("monitor observation");
+    expect(html).not.toMatch(/\b(ALLOW|DENY)\b/);
+  });
+
+  it("shows evidence limits rather than a normal empty-state hint on engine failure", () => {
+    const html = renderText(EU_PACKAGE, "improved", true, {
+      events: [], source: "containd", historyTruncated: true, engineError: "engine down",
+    });
+    expect(html).toContain("Event history is truncated; this is not a complete record.");
+    expect(html).toContain("DPI engine error: engine down");
+    expect(html).not.toContain("No recent events");
+  });
+
   it("follows named active policies, retains custom fallback, and keeps a manual comparison sticky", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     client.setQueryData(["packages", "active"], US_PACKAGE);
