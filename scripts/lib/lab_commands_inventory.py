@@ -9,14 +9,22 @@ ROOT = Path(__file__).resolve().parents[2]
 US = "us-dnp3-substation"
 GRAMMAR = json.loads((ROOT / "frontend/lib/command-grammar.json").read_text())
 CMD_TOOL_RE = re.compile(GRAMMAR["command"])
+RUN_RE = re.compile(GRAMMAR["run"])
 CLI_RE = re.compile(GRAMMAR["cli"])
 COPY_RE = re.compile(GRAMMAR["copy"])
 MARKER_RE = re.compile(GRAMMAR["marker"], re.I)
+FENCE_RE = re.compile(
+    r"^:::(?:hint(?:\s+.+)?|guided|technical|decision\s+.+|"
+    r"(?:findings-panel|plan-coverage|track-picker|generate-traffic-button|"
+    r"validation-report|icon)(?:\s+.+)?)$")
 
 
 def packages(root=ROOT):
-    return sorted(p.parent.name for p in
-                  (Path(root) / "lab-definitions/packages").glob("*/package.yml"))
+    result = sorted(p.parent.name for p in
+                    (Path(root) / "lab-definitions/packages").glob("*/package.yml"))
+    if not result:
+        raise ValueError("no package definitions found")
+    return result
 
 
 def package(root, package_id):
@@ -26,6 +34,8 @@ def package(root, package_id):
         raise ValueError(f"{base}: package identity mismatch")
     topo = yaml.safe_load((base / doc["topology"]).read_text())
     manifest = json.loads((base / "manifest.json").read_text())
+    if manifest["package"] != package_id:
+        raise ValueError(f"{package_id}: manifest package identity mismatch")
     nodes = {s["node"]: s["container"] for s in manifest["services"] if s.get("node")}
     for node in topo["nodes"]:
         if nodes.get(node["id"]) != node["container"]:
@@ -45,16 +55,15 @@ def scenario_files(root=ROOT, package_id=US):
     return files
 
 
-def marker(text, nodes=()):
-    sources = {n: n for n in nodes}
-    sources.update(GRAMMAR["sources"])
+def marker(text):
+    sources = GRAMMAR["sources"]
     found = ""
     for match in MARKER_RE.finditer(text):
         found = sources.get(match[1].lower(), found)
     return found
 
 
-def description_commands(text, nodes=(), inherited=""):
+def description_commands(text, inherited=""):
     """Mirror splitDescription fences; one shared vocabulary/source grammar.
 
     Return command, line, source, UI class. Hints/tracks recurse with their
@@ -65,8 +74,8 @@ def description_commands(text, nodes=(), inherited=""):
     source, i = inherited, 0
     while i < len(lines):
         raw, trimmed = lines[i], lines[i].strip()
-        if trimmed.startswith(":::") and trimmed != ":::":
-            source = marker("\n".join(prose), nodes) or source
+        if FENCE_RE.match(trimmed):
+            source = marker("\n".join(prose)) or source
             prose = []
             start, opening = i + 1, trimmed
             i += 1
@@ -74,15 +83,15 @@ def description_commands(text, nodes=(), inherited=""):
                 i += 1
             if re.match(r"^:::(?:hint(?:\s|$)|guided$|technical$)", opening):
                 for cmd, line, src, kind in description_commands(
-                        "\n".join(lines[start:i]), nodes, source):
+                        "\n".join(lines[start:i]), source):
                     result.append((cmd, start + line, src, kind))
         elif re.match(r"^\s+\S", raw) and (
                 CMD_TOOL_RE.match(trimmed) or CLI_RE.match(trimmed) or COPY_RE.match(trimmed)):
-            source = marker("\n".join(prose), nodes) or source
+            source = marker("\n".join(prose)) or source
             prose = []
             command, line = trimmed, i
-            kind = "cli" if CLI_RE.match(trimmed) else "copy" if COPY_RE.match(trimmed) else "exec"
-            while command.endswith("\\") and i + 1 < len(lines) and kind == "exec":
+            kind = "cli" if CLI_RE.match(trimmed) else "copy" if COPY_RE.match(trimmed) or not RUN_RE.match(trimmed) else "exec"
+            while command.endswith("\\") and i + 1 < len(lines) and CMD_TOOL_RE.match(trimmed):
                 i += 1
                 command = command[:-1].rstrip() + " " + lines[i].strip()
             result.append((command, line, source, kind))
@@ -97,19 +106,20 @@ def extract_step_commands(desc):
 
 
 def infer_node_per_command(desc, line):
-    return marker("\n".join(desc.splitlines()[:line]),
-                  ["fw-1", "kali-1", "rtac-1", "rtu-1", "cc-1"])
+    return marker("\n".join(desc.splitlines()[:line]))
 
 
 def extract(root=ROOT, target="", package_id=US):
     _, _, nodes, curriculum = package(root, package_id)
     rows, found = [], False
     for path in scenario_files(root, package_id):
-        scenario = path.stem
+        doc = yaml.safe_load(path.read_text())
+        if not isinstance(doc, dict) or not isinstance(doc.get("steps"), list) or not doc.get("id"):
+            raise ValueError(f"{path}: invalid scenario")
+        scenario = doc["id"]
         if target and scenario != target:
             continue
         found = True
-        doc = yaml.safe_load(path.read_text())
         default = curriculum["nodeMap"].get(doc["id"], {}).get("primary")
         default = default or (doc.get("nodes") or [""])[0]
         for idx, step in enumerate(doc["steps"], 1):
@@ -118,7 +128,7 @@ def extract(root=ROOT, target="", package_id=US):
                              if r["ip"] in desc or re.search(r["pattern"], desc, re.I)), "")
             fallback = step.get("node") or inferred or default
             occurrences = {}
-            for command, line, source, kind in description_commands(desc, nodes):
+            for command, line, source, kind in description_commands(desc):
                 occurrences[command] = occurrences.get(command, 0) + 1
                 node = "fw-1" if kind == "cli" else source or fallback
                 if node != "host" and node not in nodes:
@@ -142,7 +152,12 @@ def extract(root=ROOT, target="", package_id=US):
 
 
 def inventory(rows, root=ROOT, package_id=US):
-    counts = {p.stem: {"RUN": 0, "SKIP": 0} for p in scenario_files(root, package_id)}
+    counts = {}
+    for path in scenario_files(root, package_id):
+        scenario = yaml.safe_load(path.read_text())["id"]
+        if scenario in counts:
+            raise ValueError(f"{package_id}: duplicate scenario {scenario}")
+        counts[scenario] = {"RUN": 0, "SKIP": 0}
     for row in rows:
         counts[row["scenario"]][row["action"]] += 1
     return counts

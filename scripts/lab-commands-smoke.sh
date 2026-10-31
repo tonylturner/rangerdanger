@@ -9,6 +9,9 @@ API="${RANGERDANGER_API:-http://localhost:8088}"
 PROBE_TIMEOUT="${LAB_CMD_TIMEOUT:-10}"
 SETTLE_SECS="${SETTLE_SECS:-2}"
 target="${1:-}"
+if [ "$target" = eu-iec104-substation ]; then
+  exec python3 scripts/lib/lab_commands_smoke.py "$target"
+fi
 helper="scripts/lib/lab-commands-extract.py"
 logs="${LAB_CMD_LOG_DIR:-build/lab-commands}"
 mkdir -p "$logs"

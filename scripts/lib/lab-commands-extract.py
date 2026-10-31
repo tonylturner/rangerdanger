@@ -7,9 +7,9 @@ No Docker calls during extraction, pinning, validation, or unit tests.
 import argparse
 import json
 import re
-import selectors
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -25,7 +25,7 @@ ORACLE_KEYS = {"intent", "match", "control_match", "nmap", "file",
 
 # Shared offline parser, also exercised against the UI in command-smoke-parity.test.ts.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lab_commands_inventory import (US, extract, inventory, packages, scenario_files,
+from lab_commands_inventory import (US, extract, inventory, packages,
                                     extract_step_commands, infer_node_per_command)
 
 
@@ -47,11 +47,16 @@ def key(row):
 
 
 def validate_inventory(rows, data, target="", root=ROOT, package_id=US):
-    if not rows or len({key(r) for r in rows}) != len(rows):
-        raise ValueError("empty or duplicate command inventory")
+    if data.get("schema") != 1:
+        raise ValueError("unsupported expectations schema")
+    if len({key(r) for r in rows}) != len(rows):
+        raise ValueError("duplicate command inventory")
     actual = inventory(rows, root, package_id)
     expected = data["inventory"]
     scenarios = [target] if target else list(expected)
+    if not target and set(actual) != set(expected):
+        raise ValueError(f"scenario inventory changed; missing scenarios: {sorted(set(actual) - set(expected))}; "
+                         f"stale scenarios: {sorted(set(expected) - set(actual))}")
     if not target and actual != expected:
         raise ValueError(f"inventory changed: expected {expected}, got {actual}")
     for scenario in scenarios:
@@ -60,7 +65,9 @@ def validate_inventory(rows, data, target="", root=ROOT, package_id=US):
     contracts = data["commands"]
     selected = {k for k in contracts if not target or k.startswith(target + "|")}
     if {key(r) for r in rows} != selected:
-        raise ValueError("command inventory changed; review oracles and re-pin")
+        actual_keys = {key(r) for r in rows}
+        raise ValueError(f"command inventory changed; missing contracts: {sorted(actual_keys - selected)}; "
+                         f"stale contracts: {sorted(selected - actual_keys)}; review oracles and re-pin")
     for row in rows:
         contract = contracts[key(row)]
         for field in ("container", "policy", "prompt", "entry", "action"):
@@ -76,6 +83,13 @@ def validate_inventory(rows, data, target="", root=ROOT, package_id=US):
         unknown = set(oracle) - ORACLE_KEYS
         if unknown:
             raise ValueError(f"{key(row)}: unknown oracle key {sorted(unknown)}")
+        if oracle.get("semantic") not in (
+                None, "gi", "registers", "io-stat", "pcap-filter", "reconnect", "historian"):
+            raise ValueError(f"{key(row)}: unknown semantic oracle")
+        if oracle.get("eu_device") and (
+                package_id != "eu-iec104-substation" or
+                oracle["eu_device"] not in ("breaker-1", "rmu-1") or not oracle.get("peer")):
+            raise ValueError(f"{key(row)}: invalid EU device audit oracle")
         if oracle["intent"] != "capture":
             re.compile(oracle["match"])
         if oracle["intent"] == "deny":
@@ -147,47 +161,70 @@ def invocation(row, timeout):
 
 
 def run_staged_shell(argv, row, timeout):
-    """Do not let the CLI's buffered reader swallow subsequent bash input."""
+    """Portable pipe readers: Windows selectors cannot monitor subprocess pipes.
+
+    Wait for the CLI-to-shell marker before sending command input, so the CLI's
+    buffered reader cannot swallow it. Drain both streams throughout the run.
+    """
     with subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE) as process:
-        process.stdin.write((row["entry"] + "\n").encode())
-        process.stdin.flush()
-        prefix = b""
-        errors = b""
-        marker = b"__RD_SHELL_READY__\n"
-        deadline = time.monotonic() + timeout + 5
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ)
-            selector.register(process.stderr, selectors.EVENT_READ)
-            while marker not in prefix and time.monotonic() < deadline:
-                for entry, _ in selector.select(0.1):
-                    chunk = entry.fileobj.read1(65536)
-                    if not chunk:
-                        selector.unregister(entry.fileobj)
-                    elif entry.fileobj is process.stdout:
-                        prefix += chunk
-                    else:
-                        errors += chunk
-                if process.poll() is not None:
-                    break
-        if marker not in prefix:
-            process.kill()
-            out, err = process.communicate()
-            return subprocess.CompletedProcess(
-                argv, 125, (prefix + out).decode(errors="replace"),
-                (errors + err).decode(errors="replace") + "\ndocumented shell transition failed")
+        output, errors = bytearray(), bytearray()
+        reader_errors = []
+        ready = threading.Event()
+        stdout_finished = threading.Event()
+
+        def drain(stream, buffer, watch=False):
+            try:
+                while chunk := stream.read1(65536):
+                    buffer.extend(chunk)
+                    if watch and b"__RD_SHELL_READY__\n" in buffer:
+                        ready.set()
+            except OSError as exc:
+                reader_errors.append(str(exc))
+            finally:
+                if watch:
+                    stdout_finished.set()
+
+        readers = [threading.Thread(target=drain, args=(process.stdout, output, True)),
+                   threading.Thread(target=drain, args=(process.stderr, errors))]
+        for reader in readers:
+            reader.start()
+        rc = 125
+        diagnostic = ""
         try:
-            out, err = process.communicate((shell_command(row["command"]) + "\nexit\n").encode(),
-                                           timeout=timeout + 10)
+            process.stdin.write((row["entry"] + "\n").encode())
+            process.stdin.flush()
+            deadline = time.monotonic() + timeout + 5
+            while not ready.wait(0.1):
+                if stdout_finished.is_set() or time.monotonic() >= deadline:
+                    break
+            if not ready.is_set():
+                diagnostic = "\ndocumented shell transition failed"
+                if process.poll() is None:
+                    process.kill()
+            else:
+                process.stdin.write((shell_command(row["command"]) + "\nexit\n").encode())
+                process.stdin.close()
+                rc = process.wait(timeout=timeout + 10)
         except subprocess.TimeoutExpired:
+            rc, diagnostic = 124, "\nhost execution timeout"
             process.kill()
-            out, err = process.communicate()
-            return subprocess.CompletedProcess(
-                argv, 124, (prefix + out).decode(errors="replace"),
-                (errors + err).decode(errors="replace") + "\nhost execution timeout")
+        except BrokenPipeError:
+            diagnostic = "\ndocumented shell transition failed"
+            process.kill()
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=5)
+            for reader in readers:
+                reader.join(timeout=5)
+            if any(reader.is_alive() for reader in readers):
+                raise ValueError("shell output reader did not finish")
+        if reader_errors:
+            rc, diagnostic = 125, "\nshell output reader failed: " + "; ".join(reader_errors)
         return subprocess.CompletedProcess(
-            argv, process.returncode, (prefix + out).decode(errors="replace"),
-            (errors + err).decode(errors="replace"))
+            argv, rc, output.decode(errors="replace"),
+            errors.decode(errors="replace") + diagnostic)
 
 
 def execute_command(row, oracle, directory, timeout, positive=False, control=False):
@@ -292,7 +329,6 @@ def execute(row, oracle, directory, timeout, positive=False, control=False):
     return passed
 
 
-
 def expectations_path(root, package_id):
     suffix = "" if package_id == US else "-" + package_id
     return Path(root) / f"scripts/lab-commands-expectations{suffix}.json"
@@ -309,6 +345,7 @@ def check_package(root, package_id):
                          "RUN needs a reviewed oracle, SKIP needs a reviewed reason. "
                          "Use --repin --package <package>, review all changes, then rerun --guard. "
                          "See docs/lab-authoring.md.") from exc
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -356,6 +393,8 @@ def main():
         return
     minimum = validate_inventory(rows, data, args.target, args.root, args.package)
     if args.execute is not None:
+        if args.package != US:
+            raise ValueError("use lab-commands-smoke.sh <package> or lab-commands-smoke.ps1 -Package <package> for the reviewed EU lifecycle")
         if args.output is None:
             raise ValueError("--execute needs --output")
         row = rows[args.execute]

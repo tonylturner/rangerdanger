@@ -42,5 +42,6 @@
     "rmu-2": "rmu-2",
     "oltc-1": "oltc-1",
     "plc-1": "plc-1"
-  }
+  },
+  "run": "^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|wget|ls|cat)\\s"
 }

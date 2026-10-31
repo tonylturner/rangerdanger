@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- EU lab command smoke with reviewed semantic oracles and an offline all-package command inventory guard. PowerShell now uses the same reviewed contracts and verdicts.
+
 - Lab 1.3 readiness now adjusts Lab 1.4 role capacity, action effort and draft eligibility in both packages, with a default-budget comparison toggle and visible exclusion reasons.
 - EU Improved policy enables containd IEC 104 inspection with three
   monitor-only rules on the control-centre conduit. The L4 source pin

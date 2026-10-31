@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"os"
 	"regexp"
 	"strings"
@@ -133,15 +134,21 @@ func TestIsAllowedCommand_ShellInjectionPasses(t *testing.T) {
 // TestAllowedCommandsCoverExerciseTools reads the UI's runnable grammar rather
 // than maintaining a second list of tools. Copy-only examples are not execs.
 func TestAllowedCommandsCoverExerciseTools(t *testing.T) {
-	source, err := os.ReadFile("../../../frontend/lib/scenario-description.ts")
+	source, err := os.ReadFile("../../../frontend/lib/command-grammar.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	match := regexp.MustCompile(`export const RUN_TOOL_RE = /\^\(([^)]+)\)`).FindSubmatch(source)
+	var grammar struct {
+		Run string `json:"run"`
+	}
+	if err := json.Unmarshal(source, &grammar); err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(`^\^\(([^)]+)\)\\s$`).FindStringSubmatch(grammar.Run)
 	if len(match) != 2 {
 		t.Fatal("cannot find frontend Run tool grammar")
 	}
-	for _, tool := range strings.Split(string(match[1]), "|") {
+	for _, tool := range strings.Split(match[1], "|") {
 		if !isAllowedCommand(tool) {
 			t.Errorf("UI Run tool %q would return 403; render copy-only, do not expand the backend allowlist", tool)
 		}

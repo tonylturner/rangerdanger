@@ -13,11 +13,11 @@ import { commandSourceMarker } from "./exercise-nodes";
 //
 // See docs/lab-authoring.md for the author-facing reference.
 
-// Tools whose indented lines are runnable command blocks. The PDF
-// export (exercise-pdf-text.ts) uses the same list.
+// Tools whose indented lines form command blocks (including copy-only tools).
+// The PDF export uses the same vocabulary; Run uses the allowlisted subset.
 export const CMD_TOOL_RE = new RegExp(commandGrammar.command);
 
-export const RUN_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|wget|ls|cat)\s/;
+export const RUN_TOOL_RE = new RegExp(commandGrammar.run);
 
 // containd appliance-CLI commands. These are NOT run via the lab's
 // per-node exec (they live in the containd CLI, reached from the fw-1

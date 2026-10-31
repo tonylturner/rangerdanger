@@ -474,6 +474,19 @@ Live smoke mutates policy and devices: run it **only on a disposable stack**;
 never point it at a student workshop. Both host entry points accept a package.
 The orchestrator owns live acceptance, including Windows acceptance.
 
+```powershell
+./scripts/lab-commands-smoke.ps1 -Package eu-iec104-substation
+```
+
+The PowerShell entry point delegates verdicts and cleanup to the same Python
+worker, rather than accepting timeouts or nonzero exits as success. Python 3
+with PyYAML is required on both hosts. EU execution also requires Bash, curl,
+jq and python3 in that Bash environment (for example Git Bash configured with
+those tools on Windows), because it reuses the existing EU reset/policy helpers
+instead of maintaining a separate Windows mutation sequence. Evidence includes
+both streams, exec responses, positive controls, device audit cursors and a
+summary. Weak is restored on failure as well as success.
+
 ## Authoring checklist
 
 Before opening a PR with a new or modified lab:

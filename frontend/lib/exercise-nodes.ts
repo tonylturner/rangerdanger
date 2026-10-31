@@ -1,7 +1,7 @@
-import commandGrammar from "./command-grammar.json";
 // Resolve exercise nodes from scenario metadata or the active package binding.
 
 import type { CurriculumBinding } from "./api";
+import commandGrammar from "./command-grammar.json";
 
 export const NODE_LABELS: Record<string, string> = {
   "fw-1":              "Firewall",
@@ -53,10 +53,7 @@ export function inferNodeFromDescription(desc: string, curriculum?: CurriculumBi
 
 // Source markers use node IDs or the short names already used by US labs.
 // Ignore unrelated "from/on/via" prose rather than clearing the last source.
-const SOURCE_NODES: Record<string, string> = {
-  ...Object.fromEntries(Object.keys(NODE_LABELS).map((id) => [id, id])),
-  ...commandGrammar.sources,
-};
+const SOURCE_NODES: Record<string, string> = commandGrammar.sources;
 
 export function commandSourceMarker(text: string): string | undefined {
   let source: string | undefined;

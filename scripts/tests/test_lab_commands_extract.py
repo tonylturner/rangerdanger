@@ -331,6 +331,24 @@ class ExtractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("evidence", result.stdout)
 
+    def test_staged_transition_drains_stderr_and_fails_without_shell_marker(self):
+        fixture = (
+            "import sys\n"
+            "assert sys.stdin.readline().strip() == 'shell'\n"
+            "sys.stderr.write('diagnostic\\n' * 20000); sys.stderr.flush()\n"
+            "print('__RD_SHELL_READY__', flush=True)\n"
+            "assert sys.stdin.readline().strip() == 'echo evidence'\n"
+            "print('evidence', flush=True)\n")
+        result = extract.run_staged_shell(
+            [sys.executable, "-c", fixture], {"entry": "shell", "command": "echo evidence"}, 2)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "diagnostic\n" * 20000)
+        result = extract.run_staged_shell(
+            [sys.executable, "-c", "print('CLI failed')"],
+            {"entry": "shell", "command": "must not execute"}, 2)
+        self.assertEqual(result.returncode, 125)
+        self.assertIn("documented shell transition failed", result.stderr)
+
     def test_no_ack_requires_weak_state_change_and_denied_state_preservation(self):
         row = {"scenario": "fixture", "step": 1, "command": "dnp3cmd fixture -no-ack"}
         state = {"field": "reclose_enabled", "initial": True, "allowed": False, "denied": True}

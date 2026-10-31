@@ -1,83 +1,76 @@
-"""PowerShell lab-command totals with fake command and container results."""
+"""PowerShell propagates the shared worker's semantic verdicts, not tool totals."""
 import json
+import sys
 import unittest
 
 from .test_setup_ps1_root import powershell
 
 
 HARNESS = r"""
-$ErrorActionPreference = 'Stop'
 $path = "$env:REPO/scripts/lab-commands-smoke.ps1"
-$source = [IO.File]::ReadAllText($path)
 $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
-foreach ($name in @('Note', 'OK', 'Err', 'Skip')) {
-    $functionAst = $ast.Find({
-        param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
-            $n.Name -eq $name
-    }, $true)
-    Invoke-Expression $functionAst.Extent.Text
-}
-$loop = $ast.Find({
-    param($n) $n -is [Management.Automation.Language.ForEachStatementAst] -and
-        $n.Extent.Text -match '(?i)^foreach \(\$row in \$rows\)'
+$functionAst = $ast.Find({
+    param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $n.Name -eq 'Invoke-LabCommandWorker'
 }, $true)
-if (-not $loop) { throw 'lab command loop not found' }
-$script:fail = 0; $script:total = 0; $script:passed = 0
-$script:skipped = 0; $script:executed = 0
-$current_policy = ''; $current_scenario = ''
-$rows = @($env:ROWS | ConvertFrom-Json)
-$minimum = @($rows | Where-Object {
-    $parts = $_ -split '\|', 7
-    $parts.Count -ge 7 -and $parts[5] -eq 'RUN'
-}).Count
-function Invoke-PolicyApply($name) {}
-function docker {
-    $global:LASTEXITCODE = if ($env:MODE -eq 'missing-container') { 1 } else { 0 }
-}
-function Invoke-LabCommand($container, $cmd) {
-    $verdict = if ($env:MODE -eq 'command-fail') { 'FAIL_TEST' } else { 'PASS' }
-    [pscustomobject]@{Verdict=$verdict; Dur=1}
-}
-Invoke-Expression $loop.Extent.Text
-$summaryAt = $source.LastIndexOf('# --- Summary')
-if ($summaryAt -lt 0) { throw 'summary block not found' }
-Invoke-Expression $source.Substring($summaryAt)
+Invoke-Expression $functionAst.Extent.Text
+$PythonExe = $env:PYTHON
+$PythonPrefix = @()
+$code = Invoke-LabCommandWorker @('-c', $env:PROGRAM)
+exit $code
+"""
+
+PROGRAM = r"""
+import sys, os, json
+sys.path.insert(0, os.path.join(os.environ['REPO'], 'scripts/lib'))
+from lab_commands_smoke import gate
+from lab_commands_eu import semantic
+f = json.loads(os.environ['FIXTURE'])
+passed = gate.verdict(f['oracle'], f['rc'], f['out'], f['err'],
+                      control=f.get('control', False), frames=f.get('frames'))
+passed = passed and semantic(f.get('semantic'), f['out'])
+print('stdout receipt retained')
+print('stderr receipt retained', file=sys.stderr)
+print('PASS' if passed else 'FAIL')
+sys.exit(0 if passed else 1)
 """
 
 
-class LabCommandPowerShellTotals(unittest.TestCase):
-    def run_script(self, rows, mode="ok"):
-        return powershell(HARNESS, ROWS=json.dumps(rows), MODE=mode)
+class LabCommandPowerShellSemantics(unittest.TestCase):
+    def verdict(self, oracle, rc, out='', err='', **kwargs):
+        fixture = dict(oracle=oracle, rc=rc, out=out, err=err, **kwargs)
+        return powershell(HARNESS, PYTHON=sys.executable, PROGRAM=PROGRAM,
+                          FIXTURE=json.dumps(fixture))
 
-    @staticmethod
-    def rows():
-        return [
-            "lab|1|read|weak|rangerdanger-kali|RUN|read command",
-            "lab|2|mutate||rangerdanger-kali|SKIP|mutating command",
-        ]
-
-    def test_skip_is_in_total_and_success_does_not_claim_every_command_ran(self):
-        result = self.run_script(self.rows())
+    def test_read_requires_semantic_output_and_both_streams_survive(self):
+        oracle = {"intent": "read", "match": r"\[0\]: 1"}
+        result = self.verdict(oracle, 0, '[0]: 1')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("total  : 2", result.stdout)
-        self.assertIn("executed: 1", result.stdout)
-        self.assertIn("passed : 1", result.stdout)
-        self.assertIn("skipped: 1", result.stdout)
-        self.assertIn("ALL RUNNABLE LAB COMMANDS RAN CLEANLY", result.stdout)
-        self.assertNotIn("ALL DOCUMENTED LAB COMMANDS RUN CLEANLY", result.stdout)
+        self.assertIn('stdout receipt retained', result.stdout)
+        self.assertIn('stderr receipt retained', result.stderr)
+        for rc, out, err in ((0, '', ''), (1, '[0]: 1', ''), (7, '', ''),
+                             (124, '', ''), (143, '', ''), (0, '[0]: 1', 'Illegal function')):
+            with self.subTest(rc=rc, out=out):
+                self.assertEqual(self.verdict(oracle, rc, out, err).returncode, 1)
 
-    def test_missing_container_cannot_be_hidden_by_a_skip(self):
-        result = self.run_script(self.rows(), mode="missing-container")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("container rangerdanger-kali not running", result.stdout)
-        self.assertIn("executed: 0", result.stdout)
-        self.assertIn("skipped: 1", result.stdout)
-        self.assertIn("unverified: 1", result.stdout)
+    def test_denial_requires_weak_positive_control_and_filtered_not_closed(self):
+        oracle = {"intent": "deny", "match": "2404/tcp +filtered", "nmap": True}
+        self.assertEqual(self.verdict(oracle, 0, '2404/tcp filtered', control=True).returncode, 0)
+        self.assertEqual(self.verdict(oracle, 0, '2404/tcp filtered').returncode, 1)
+        self.assertEqual(self.verdict(oracle, 0, '2404/tcp closed', control=True).returncode, 1)
+        self.assertEqual(self.verdict(oracle, 127, err='command not found', control=True).returncode, 1)
 
-    def test_run_failure_is_counted_separately_from_skips(self):
-        result = self.run_script(self.rows(), mode="command-fail")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("failed : 1", result.stdout)
-        self.assertIn("skipped: 1", result.stdout)
+    def test_gi_and_capture_are_not_exit_only_success(self):
+        oracle = {"intent": "read", "match": ".+"}
+        good = '{"event":"result","op":"gi","status":"ok"}'
+        self.assertEqual(self.verdict(oracle, 0, good, semantic='gi').returncode, 0)
+        self.assertEqual(self.verdict(oracle, 0, '{"event":"connected"}', semantic='gi').returncode, 1)
+        capture = {"intent": "capture"}
+        self.assertEqual(self.verdict(capture, 0, frames=0).returncode, 1)
+        self.assertEqual(self.verdict(capture, 0, frames=3).returncode, 0)
+
+
+if __name__ == '__main__':
+    unittest.main()

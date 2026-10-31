@@ -64,7 +64,7 @@ class PackageGuardTests(unittest.TestCase):
                 "From cc-1:\n:::hint More\n    wget reconnect\n:::\n"
                 ":::decision id=x\n    nmap not-a-command\n:::\n"
                 ":::technical\nOn the RTU:\n    iec104cmd station gi\n:::\n")
-        rows = description_commands(text, ["cc-1"])
+        rows = description_commands(text)
         self.assertEqual([(r[0], r[2]) for r in rows], [
             ("curl localhost", "host"), ("wget reconnect", "cc-1"),
             ("iec104cmd station gi", "rtu-1")])

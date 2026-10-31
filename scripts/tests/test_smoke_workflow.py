@@ -88,6 +88,18 @@ class ProxyProbeTests(unittest.TestCase):
 
 
 class SmokeWorkflowTests(unittest.TestCase):
+    def test_eu_commands_follow_gate_with_dependency_and_evidence(self):
+        steps = self.workflow["jobs"]["eu-smoke"]["steps"]
+        commands = next(s for s in steps if s.get("name") == "EU reviewed lab commands smoke")
+        gate = next(s for s in steps if s.get("name") == "EU IEC104 smoke gate")
+        dependency = next(s for s in steps if s.get("name") == "Install EU command inventory dependency")
+        self.assertLess(steps.index(dependency), steps.index(gate))
+        self.assertLess(steps.index(gate), steps.index(commands))
+        self.assertEqual(commands["run"], "./scripts/lab-commands-smoke.sh eu-iec104-substation")
+        upload = next(s for s in steps if s.get("name") == "Upload EU evidence and logs")
+        self.assertEqual(upload["if"], "always()")
+        self.assertIn(commands["env"]["LAB_CMD_LOG_DIR"], upload["with"]["path"])
+
     def test_every_package_command_guard_runs_offline_in_ci(self):
         ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         steps = ci["jobs"]["release-tooling"]["steps"]
