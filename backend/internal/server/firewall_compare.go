@@ -212,19 +212,10 @@ func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle
 		return nil, fmt.Errorf("failed to apply config to containd: %w", err)
 	}
 
-	// Tag the source so the frontend banner can label state correctly.
-	// "weak" stays "weak"; "improved" becomes "hardened-reference" since
-	// the user-facing term is "hardened" (this matches the canned-policy
-	// JSON file name and the lab UI's "Apply Hardened" button label).
-	source := configName
-	if configName == "improved" {
-		source = "hardened-reference"
-	}
-
 	if !gen.Commit(func() {
 		s.activeConfigMu.Lock()
 		s.activeConfig = configName
-		s.policySource = source
+		s.policySource = policySourceForName(configName)
 		s.planProvenance, s.appliedPlan = nil, nil
 		s.recordApplyLocked(data)
 		s.policyEvidenceSince = applyStarted
