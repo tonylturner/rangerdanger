@@ -22,7 +22,7 @@ A complete substation-firewall change package usually includes:
 6. **Post-change monitoring plan.** What will you watch for in the hours after the change to confirm operations are healthy? Which dashboards, which alarms, which log queries?
 
 A configuration rollback is not a binary or stored-schema rollback. Importing
-an old policy does not undo containd's one-way stored schema 0.1.7 migration.
+an old policy does not undo containd's one-way stored schema 0.1.9 migration.
 A binary downgrade needs the complete matching pre-upgrade firewall `/data`
 backup and older image/release, as described in the operator upgrade guide;
 an older image alone cannot read migrated storage.
