@@ -37,7 +37,6 @@ param(
 $ErrorActionPreference = "Continue"
 
 $Api          = if ($env:RANGERDANGER_API)   { $env:RANGERDANGER_API }   else { 'http://localhost:8088' }
-$FirewallApi  = if ($env:CONTAINTD_API)      { $env:CONTAINTD_API }      else { 'http://localhost:9080' }
 $JwtSecret    = if ($env:CONTAIND_JWT_SECRET){ $env:CONTAIND_JWT_SECRET } else { 'rangerdanger-dev' }
 
 $script:fail   = 0
