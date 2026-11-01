@@ -104,13 +104,16 @@ ctl "http://$BRK_IP:8081/reset"
 start_cc "$CC" "$CC_IP" "$CC_HTTP_IP" "$RTU_IP:2404"
 
 # ---- CC 1. connect, STARTDT, GI, feeder points GOOD ------------------
+# The CC sends its connect GI on the first 100 ms link tick, so a cyclic
+# ASDU that arrives first journals point_* entries before gi_started.
+# Order only the link-level events.
 log "CC check 1: GI complete, feeder points GOOD with the device values"
 if probe wait 30 "link(s)=='started' and s['link']['gi']['state']=='complete' and s['link']['connection_seq']>=1 \
     and all_good(s) and ${POS}['value']=='closed' and ${TRIP}['value'] is False \
     and abs(pt(s,'feeder-current')['value']-28.9)<0.01 and abs(pt(s,'feeder-voltage')['value']-20.0)<0.01 \
     and ${POS}['quality']['ov'] is None and pt(s,'feeder-current')['quality']['ov'] is False \
     and pt(s,'feeder-current')['source_time'] is None and pt(s,'feeder-current')['source_time_invalid'] is None \
-    and kinds(j)[:2]==['link_up','gi_started'] and last(j,'gi_complete')['detail']['points_good']==len(s['points'])" \
+    and [k for k in kinds(j) if not k.startswith('point_')][:2]==['link_up','gi_started'] and last(j,'gi_complete')['detail']['points_good']==len(s['points'])" \
   >"$OUT/cc-state-baseline.json"; then
   pass "CC: link started, GI complete, feeder points GOOD with correct values"
 else
