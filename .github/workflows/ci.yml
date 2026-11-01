@@ -159,6 +159,8 @@ jobs:
         run: python3 scripts/check_release_inputs.py
       - name: Install YAML test dependency
         run: python3 -m pip install pyyaml
+      - name: Check generated architecture diagrams
+        run: python3 scripts/generate_architecture.py --check
       - name: Guard every package scenario command contract (offline)
         run: python3 scripts/lib/lab-commands-extract.py --guard
       - name: Test release tooling

@@ -327,15 +327,17 @@ The Go toolchain pin was bumped twice this release cycle:
 The toolchain directive in each module's `go.mod` controls the
 version CI's `actions/setup-go` installs (`go-version-file:
 <module>/go.mod` reads it). `backend/go.mod`, `services/go.mod`,
-and `dnp3go/go.mod` all pinned `toolchain go1.25.10` at the time (since
-raised to `go1.26.7`; see "Resolved by Go toolchain bump (2026-08-22)"
-above). The `go 1.24.0`
-directive (minimum language version) is left alone so the modules
-remain buildable by anyone on Go 1.24+ as a consumer.
+and `dnp3go/go.mod` all pinned `toolchain go1.25.10` at the time. The
+subsequent `go1.26.7` bump is recorded in the 2026-08-22 section above.
+The `go 1.24.0` minimum-language directive was left alone in that historical
+change; it is not the current module floor. For the current toolchain pins,
+see [the 2026-10-25 cutover](#resolved-by-go-toolchain-bump-2026-10-25).
 
 Dockerfile bases were also bumped at the time (`golang:1.25` /
-`golang:1.25-alpine`, from `1.24`); every Go build stage has since
-moved to `golang:1.27` / `golang:1.27-alpine` (v0.1.30).
+`golang:1.25-alpine`, from `1.24`). The v0.1.30 notes described a move
+to `golang:1.27` / `golang:1.27-alpine`; that is historical, not the current
+build-stage contract. Current Go builders use `1.26.10` / `1.26.10-alpine`,
+as recorded in the 2026-10-25 cutover above.
 
 ## Adding a new exception
 

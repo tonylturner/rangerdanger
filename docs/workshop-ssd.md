@@ -341,10 +341,10 @@ If the checksum is unavailable, invalid, or mismatched, staging fails rather
 than writing a delta that could install an unverified kernel. Re-run the delta
 helper, or place both kernel files in the output directory by hand.
 
-Size depends entirely on how many image digests differ between the two
-releases, and that example is the best case. A tagged release rebuilds
-every first-party image, so every digest changes and a plain
-release-to-release delta is close to a full bundle:
+Size depends on how many image digests actually differ between the two
+releases, and that example is the best case. Releases build changed images
+or promote recorded image digests for unchanged inputs. A full rebuild
+can make a release-to-release delta close to a full bundle; for example,
 `v0.1.31 -> v0.1.32` reported 15 changed, 0 unchanged, and wrote 8.1 GB.
 `--include <image>` is additive: it force-adds a named image whose digest
 compared as unchanged. It does not exclude changed images or make a delta
@@ -447,9 +447,19 @@ older images allowed it. `/api/workshop/reset` wipes containd's
 `users.db` so the canonical `containd / containd` is restored on
 next firewall restart. Or manually:
 
+From the install root, select the **active package's** firewall store below.
+Stop the firewall and back up its complete store before deleting credentials;
+this removes local users. Keep the backup with your saved workshop evidence.
+Export any policy and save other range work first: the final `POST` restarts
+the range and resets the firewall policy to the package default.
+
 ```sh
-docker stop rangerdanger-firewall
-rm -f data/firewall/users.db data/firewall/users.db-*
+FIREWALL_DATA=data/firewall                         # US
+# FIREWALL_DATA=data/eu-iec104-substation/firewall   # EU: use this instead
+docker stop rangerdanger-firewall &&
+cp -a "$FIREWALL_DATA" "${FIREWALL_DATA}.backup-$(date +%Y%m%d%H%M%S)" &&
+rm -f "$FIREWALL_DATA/users.db" "$FIREWALL_DATA/users.db-wal" \
+  "$FIREWALL_DATA/users.db-shm" "$FIREWALL_DATA/users.db-journal" &&
 curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8088/api/range
 ```
 
@@ -475,9 +485,11 @@ restart backend.
 **Q: Can I host the delta on a web server / Slack / Drive instead of
 USB?**
 Yes - the bundles are static files. `delta-*.tar` and
-`rangerdanger.tgz` can go anywhere students can fetch them. The
-`--from-tarballs` flag wants a directory containing the right
-file names, so just download to a local dir and point at it.
+`rangerdanger.tgz` can go anywhere students can fetch them. Download the
+delta bundle and its generated `DELTA-README.md`, then follow that file's
+apply and rollback procedure. `--from-tarballs` consumes **full bundles**
+containing `images-<arch>.tar`, not `delta-<arch>.tar`; do not pass a delta
+directory to it.
 
 **Q: What if I need to ship a fix five minutes before the workshop?**
 The new RangerDanger image refs must already exist in the registry.

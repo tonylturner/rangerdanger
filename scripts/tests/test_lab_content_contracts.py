@@ -586,8 +586,7 @@ class EnforcementContracts(unittest.TestCase):
         self.assertIn("The L4 source pin enforces; DPI detects and logs.", overview)
         errata = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
         self.assertIn("**RD-24:**", errata)
-        self.assertIn("L4 source pin is the control that enforces", errata)
-        self.assertIn("DPI detects\nand logs", errata)
+        self.assertIn("The L4 source pin enforces; DPI detects and logs.", errata)
         self.assertNotIn("dnp3cmd ", errata)
         self.assertIn("(RD-24)", errata)
 
