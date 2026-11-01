@@ -10,6 +10,15 @@ import sys
 import time
 
 
+def require_backend_protection(response):
+    """Consume the route's own readiness receipt; never follow up with a GET."""
+    receipt = response.get("containd") if isinstance(response, dict) else None
+    if not isinstance(receipt, dict) or not isinstance(receipt.get("applyId"), str) \
+            or not receipt["applyId"] or receipt.get("protection") != "protecting":
+        raise ValueError(f"backend apply is not protecting: {response}")
+    return receipt
+
+
 def wait_ready(receipt, read, *, health=False, timeout=30, clock=time.monotonic, sleep=time.sleep):
     """Never refresh an apply identity or recommit to hide failed readiness."""
     deadline = clock() + min(timeout, 30)
@@ -83,11 +92,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--container", default="rangerdanger-firewall")
     parser.add_argument("--token")
-    parser.add_argument("--health", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--health", action="store_true")
+    modes.add_argument("--backend-receipt", action="store_true")
     args = parser.parse_args()
     try:
         receipt = {} if args.health else json.load(sys.stdin)
-        wait_ready(receipt, docker_reader(args.container, args.token), health=args.health)
+        if args.backend_receipt:
+            require_backend_protection(receipt)
+        else:
+            wait_ready(receipt, docker_reader(args.container, args.token), health=args.health)
     except (ValueError, subprocess.SubprocessError) as exc:
         print(str(exc), file=sys.stderr)
         return 1

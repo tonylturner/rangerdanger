@@ -55,7 +55,8 @@ function Start-SetupRange([string]$Api, [string]$Package, [int]$BudgetSec = 600)
             $lastPhase = $status.phase
         }
         if ((Test-SetupRangeSettled $status) -and $status.error) { throw "The range did not start: $($status.error)" }
-        if (Test-RangeReady $status $target) {
+        if ($status -and $status.phase -ceq 'ready' -and $status.package -ceq $target) {
+            Assert-ContaindProtection $status
             return $status.package
         }
         Start-Sleep -Seconds 3

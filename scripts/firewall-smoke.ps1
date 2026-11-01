@@ -164,8 +164,8 @@ function Invoke-PolicyApply($name) {
         $resp = Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
                   -ContentType 'application/json' `
                   -Body (@{ config = $name } | ConvertTo-Json -Compress) `
-                  -TimeoutSec 30 -ErrorAction Stop
-        Wait-ContaindProtection $resp
+                  -TimeoutSec 60 -ErrorAction Stop
+        Assert-ContaindProtection $resp
         OK "applied: $($resp | ConvertTo-Json -Compress)"
     } catch {
         Err "apply $name failed: $_"

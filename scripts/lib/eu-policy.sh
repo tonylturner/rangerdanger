@@ -24,6 +24,9 @@ eu_wait_protection() {
     fail "containd commit did not become protecting"
     return 1
   }
+  eu_mark_protection_ready
+}
+eu_mark_protection_ready() {
   # Readiness, not commit acknowledgement, starts loss-detection budgets.
   # shellcheck disable=SC2034 # consumed by the delivery-loss gates
   EU_READY_MS=$(eu_now_ms) || return
@@ -288,7 +291,7 @@ eu_apply_named() {
   local name="$1" response active source
   # shellcheck disable=SC2034 # ownership is read by eu-cleanup.sh
   state_touched=1
-  if ! eu_api_post "/api/firewall/apply" "{\"config\":\"$name\"}"; then
+  if ! eu_api_post "/api/firewall/apply" "{\"config\":\"$name\"}" 60; then
     fail "apply named $name failed"
     return 1
   fi
@@ -301,7 +304,8 @@ eu_apply_named() {
     fail "apply named $name reported policy import warnings: $response"
     return 1
   fi
-  eu_wait_protection "$response" || return 1
+  eu_require_backend_protection "$response" || return 1
+  eu_mark_protection_ready || return 1
   if ! eu_api_get "/api/firewall/active"; then
     fail "cannot read active policy after applying $name"
     return 1

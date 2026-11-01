@@ -85,5 +85,22 @@ class ReadinessTests(unittest.TestCase):
             self.wait([protection("unknown")])
 
 
+class BackendReceiptTests(unittest.TestCase):
+    def test_protecting_receipt_is_returned_without_reads(self):
+        receipt = {"applyId": "opaque-revision-not-a-sequence", "protection": "protecting"}
+        self.assertIs(MODULE.require_backend_protection({"containd": receipt}), receipt)
+
+    def test_missing_malformed_or_degraded_receipts_fail(self):
+        for response in (None, [], {}, {"applyId": "id", "protection": "protecting"},
+                         {"containd": None}, {"containd": {"protection": "protecting"}},
+                         {"containd": {"applyId": "", "protection": "protecting"}}):
+            with self.subTest(response=response), self.assertRaises(ValueError):
+                MODULE.require_backend_protection(response)
+        for state in ("pending", "degraded", "failed", "disabled", "unknown", "Protecting", None):
+            with self.subTest(state=state), self.assertRaisesRegex(ValueError, "logging unavailable"):
+                MODULE.require_backend_protection({"containd": {
+                    "applyId": "id", "protection": state, "warning": "logging unavailable"}})
+
+
 if __name__ == "__main__":
     unittest.main()

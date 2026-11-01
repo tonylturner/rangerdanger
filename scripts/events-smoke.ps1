@@ -159,8 +159,8 @@ Note "gate 1: L4 firewall.rule.hit event flow"
 try {
     $resp = Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
         -ContentType 'application/json' -Body '{"config":"improved"}' `
-        -TimeoutSec 30 -ErrorAction Stop
-    Wait-ContaindProtection $resp
+        -TimeoutSec 60 -ErrorAction Stop
+    Assert-ContaindProtection $resp
     OK "apply improved: $($resp | ConvertTo-Json -Compress)"
 } catch {
     Err "apply improved failed: $_"
@@ -385,8 +385,8 @@ if (-not $nfqAlive) {
         try {
             $resp = Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
                 -ContentType 'application/json' -Body '{"config":"improved"}' `
-                -TimeoutSec 30 -ErrorAction Stop
-            Wait-ContaindProtection $resp
+                -TimeoutSec 60 -ErrorAction Stop
+            Assert-ContaindProtection $resp
         } catch { Err "policy apply failed: $_"; exit 1 }
 
         $dpiBoundaryRaw = docker exec rangerdanger-firewall date -u +%s%N
@@ -435,8 +435,8 @@ if (-not $nfqAlive) {
         try {
             $resp = Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
                 -ContentType 'application/json' -Body '{"config":"weak"}' `
-                -TimeoutSec 30 -ErrorAction Stop
-            Wait-ContaindProtection $resp
+                -TimeoutSec 60 -ErrorAction Stop
+            Assert-ContaindProtection $resp
         } catch { Err "policy apply failed: $_"; exit 1 }
         & {
             $ErrorActionPreference = 'SilentlyContinue'

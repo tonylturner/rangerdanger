@@ -83,14 +83,18 @@ t_expect_no_out "waited for operator" "G9 does not wait for a recovery that cann
 # shellcheck source-path=SCRIPTDIR source=../../lib/eu-policy.sh
 . "$T_REPO/scripts/lib/eu-policy.sh"
 eu_wait_protection() { EU_READY_MS=1000; EU_READY_EPOCH=1760529600500000000; }
+eu_mark_protection_ready() { EU_READY_MS=1000; EU_READY_EPOCH=1760529600500000000; }
 test_manual_policy() {
   eu_commit_manual_policy "$@" && eu_manual_policy_readback "$@"
 }
+NAMED_STATE=protecting
+NAMED_READS=0
 eu_api_post() {
   HTTP_STATUS=200
-  API_BODY='{"status":"applied"}'
+  API_BODY=$(jq -nc --arg state "$NAMED_STATE" '{status:"applied",containd:{applyId:"named-id",protection:$state}}')
 }
 eu_api_get() {
+  NAMED_READS=$((NAMED_READS + 1))
   API_BODY="$ACTIVE_READBACK"
 }
 ACTIVE_READBACK='{"active_config":"improved","policy_source":"manual-custom"}'
@@ -105,6 +109,14 @@ t_expect_fails 0 "named restore confirms hardened reference attribution with no 
 ACTIVE_READBACK='{"active_config":"weak","policy_source":"weak"}'
 t_run eu_apply_named weak
 t_expect_fails 0 "weak restore confirms weak attribution with no plan"
+
+for NAMED_STATE in degraded pending failed disabled; do
+  before="$NAMED_READS"
+  t_run eu_apply_named weak
+  t_expect_eq "$T_STATUS" 1 "named apply fails on its own $NAMED_STATE receipt"
+  t_expect_eq "$NAMED_READS" "$before" "failed receipt cannot borrow identity from a later read"
+done
+NAMED_STATE=protecting
 
 # The real manual helper must never call a backend mutation or flush sessions.
 MANUAL_INPUT="$TMP_DIR/manual-input.json"

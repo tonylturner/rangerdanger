@@ -23,7 +23,7 @@ eu_plan_case() {
   [ "$HTTP_STATUS" = 200 ] || return 1
   printf '%s' "$API_BODY" | jq -e -L "$oracle" --slurpfile golden "$golden" \
     'include "plan-gate"; plan_applied($golden[0])' || return 1
-  eu_wait_protection "$API_BODY" || return 1
+  eu_require_backend_protection "$API_BODY" || return 1
   eu_api_post /api/firewall/validation-report '{}' 90 || return 1
   [ "$HTTP_STATUS" = 200 ] || return 1
   printf '%s' "$API_BODY" | jq -e -L "$oracle" --slurpfile golden "$golden" \

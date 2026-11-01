@@ -197,6 +197,42 @@ class LifecycleTests(unittest.TestCase):
                     self.assertEqual(lifecycle.execute.call_count, 1)
                     self.assertEqual(summary["unverified"], 1)
 
+    def test_us_named_apply_requires_its_own_receipt_before_readback_or_canary(self):
+        for state in ("protecting", "degraded", "pending", "failed", "missing"):
+            with self.subTest(state=state):
+                response = {"containd": {"applyId": "named-id", "protection": state}}
+                if state == "missing":
+                    response = {}
+                lifecycle = worker.Lifecycle(worker.US, "http://fixture", Path("unused"))
+                with patch.object(worker, "request", side_effect=[
+                        response, {"active_config": "weak"}]) as request, \
+                        patch.object(lifecycle, "canary") as canary:
+                    if state == "protecting":
+                        lifecycle.policy("weak")
+                        self.assertEqual(request.call_count, 2)
+                        canary.assert_called_once_with(True)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "not protecting"):
+                            lifecycle.policy("weak")
+                        self.assertEqual(request.call_count, 1)
+                        canary.assert_not_called()
+
+    def test_preflight_requires_same_status_receipt(self):
+        for state in ("protecting", "degraded", "pending", "failed", "missing"):
+            with self.subTest(state=state):
+                status = {"package": eu.EU, "phase": "ready",
+                          "containd": {"applyId": "range-id", "protection": state}}
+                if state == "missing":
+                    del status["containd"]
+                with patch.object(worker.shutil, "which", return_value="/fixture"), \
+                        patch.object(worker, "request", side_effect=[{}, status]) as request:
+                    if state == "protecting":
+                        worker.preflight(eu.EU, "http://fixture")
+                    else:
+                        with self.assertRaisesRegex(ValueError, "not protecting"):
+                            worker.preflight(eu.EU, "http://fixture")
+                    self.assertEqual(request.call_count, 2)
+
     def test_preflight_rejects_wrong_package_without_mutations(self):
         with patch.object(worker.shutil, "which", return_value="/fixture"), \
                 patch.object(worker, "request", side_effect=[

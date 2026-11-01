@@ -201,18 +201,16 @@ apply_policy() {
   local name="$1"
   note "applying policy: $name"
   local resp
-  resp=$(curl -fsS -X POST -H 'Content-Type: application/json' \
+  resp=$(curl --max-time 60 -fsS -X POST -H 'Content-Type: application/json' \
               -d "{\"config\":\"$name\"}" "$API/api/firewall/apply" 2>&1) \
       || { err "apply $name failed: $resp"; return 1; }
-  printf '%s' "$resp" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/containd_readiness.py" || {
+  printf '%s' "$resp" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/containd_readiness.py" --backend-receipt || {
     err "apply $name did not become protecting"; return 1;
   }
   ok "applied: $resp"
 
-  # Poll the canary instead of fixed-sleeping. The API can report the
-  # new active_config before nft rules and NFQUEUE consumers have
-  # reconciled — that's the race that caused intermittent first-run
-  # failures when the dataplane was probed during the gap.
+  # Keep the independent traffic oracle after the backend readiness receipt:
+  # protecting proves installation and logging, not this policy's verdict.
   local expected_canary
   case "$name" in
     weak|baseline)     expected_canary=allow ;;

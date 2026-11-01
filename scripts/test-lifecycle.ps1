@@ -44,6 +44,7 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
+. "$PSScriptRoot/lib/containd-readiness.ps1"
 
 $script:Pass = 0
 $script:Fail = 0
@@ -89,8 +90,9 @@ function AssertUp {
     # The range setup started, through the backend.
     try {
         $range = Invoke-RestMethod -Uri "http://localhost:8088/api/range" -TimeoutSec 10 -ErrorAction Stop
+        Assert-ContaindProtection $range
         if ($range.phase -eq 'ready') { Ok "range ready ($($range.package))" } else { Bad "range not ready ($($range | ConvertTo-Json -Compress))" }
-    } catch { Bad "range not ready (GET /api/range failed)" }
+    } catch { Bad "range not ready: $_" }
 
     # Every service of the platform and the range should be in state
     # 'running'. Label-only Compose calls run from an empty directory: from
@@ -119,7 +121,8 @@ function AssertExecute {
     foreach ($cfg in 'weak','improved') {
         try {
             $r = Invoke-RestMethod -Method Post -Uri "http://localhost:8088/api/firewall/apply" `
-                -ContentType 'application/json' -Body "{`"config`":`"$cfg`"}" -TimeoutSec 15 -ErrorAction Stop
+                -ContentType 'application/json' -Body "{`"config`":`"$cfg`"}" -TimeoutSec 60 -ErrorAction Stop
+            Assert-ContaindProtection $r
             # A 200 carrying warnings = containd committed the policy but the
             # kernel rejected the ruleset. On Windows this is the missing
             # CONFIG_NFT_QUEUE case: the "queue num" DPI rules fail and, nft
@@ -132,12 +135,13 @@ function AssertExecute {
             } else {
                 Ok "firewall apply ($cfg)"
             }
-        } catch { Bad "firewall apply ($cfg) - Lab 2.2/2.3/2.4 would not work" }
+        } catch { Bad "firewall apply ($cfg) - Lab 2.2/2.3/2.4 would not work: $_" }
     }
     try {
-        $resp = Invoke-RestMethod -Method Post -Uri "http://localhost:8088/api/workshop/reset" -TimeoutSec 15 -ErrorAction Stop
+        $resp = Invoke-RestMethod -Method Post -Uri "http://localhost:8088/api/workshop/reset" -TimeoutSec 60 -ErrorAction Stop
+        Assert-ContaindProtection $resp
         if ($resp.success -eq $true) { Ok "workshop reset" } else { Bad "workshop reset (success != true)" }
-    } catch { Bad "workshop reset (request failed)" }
+    } catch { Bad "workshop reset failed: $_" }
 }
 
 function AssertTeardown {

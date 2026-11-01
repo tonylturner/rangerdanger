@@ -141,10 +141,18 @@ eu_assert_device_state_response() {
     return 1
   fi
 }
+# Consume the committing route response, never infer an identity from a GET.
+eu_require_backend_protection() {
+  printf '%s' "$1" | python3 "$SCRIPT_DIR/lib/containd_readiness.py" --backend-receipt || {
+    fail "backend apply receipt is not protecting"
+    return 1
+  }
+}
+
 # Resolve authored step IDs from the served curriculum; execution stays index-based.
 # Never retry an execution: a second POST is a second physical operation.
 eu_execute_step() {
-  local step="$1" label="$2" index scenario="${3:-}"
+  local step="$1" label="$2" index action_type scenario="${3:-}"
   if [ -z "$scenario" ]; then
     fail "$label requires an explicit served scenario"
     return 1
@@ -160,7 +168,9 @@ eu_execute_step() {
     fail "$label cannot resolve executable step $step"
     return 1
   }
-  if ! eu_api_post "/api/scenarios/$scenario/steps/$index/execute" '{}'; then
+  action_type=$(printf '%s' "$API_BODY" | jq -er --argjson index "$index" \
+    '.steps | fromjson | .[$index].action.type') || return
+  if ! eu_api_post "/api/scenarios/$scenario/steps/$index/execute" '{}' 60; then
     fail "$label returned no parseable execution result"
     return 1
   fi
@@ -170,6 +180,9 @@ eu_execute_step() {
   ' >/dev/null 2>&1; then
     fail "$label step execution failed: HTTP $HTTP_STATUS $API_BODY"
     return 1
+  fi
+  if [ "$action_type" = firewall ]; then
+    eu_require_backend_protection "$API_BODY" || return
   fi
   pass "$label executed through scenario step $step"
 }
@@ -489,11 +502,12 @@ eu_reset_all() {
   local settled
   # shellcheck disable=SC2034 # ownership is read by eu-cleanup.sh
   state_touched=1
-  eu_api_post /api/workshop/reset '{}' || return
+  eu_api_post /api/workshop/reset '{}' 60 || return
   if [ "$HTTP_STATUS" != 200 ] || ! printf '%s' "$API_BODY" | jq -e \
     '.actions | length >= 7 and all(.[]; .success == true)' >/dev/null; then
     fail "EU reset failed: HTTP $HTTP_STATUS $API_BODY"; return 1
   fi
+  eu_require_backend_protection "$API_BODY" || return
   eu_settle_for_gi 30 "reset" || return
   settled=$(eu_utc) || return
   eu_interrogate_since "$settled" 40 "reset CC recovery" || return

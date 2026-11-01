@@ -104,13 +104,8 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
-# Dataplane canary — same design as firewall-smoke.sh and
-# lab-commands-smoke.sh. /api/firewall/apply returns once containd has
-# committed the config, but nft rules and the nflog/NFQUEUE consumers
-# reconcile asynchronously after that, so a fixed sleep after apply is
-# a race. Poll the canary until the verdict matches the policy we just
-# applied instead. The canary proves the drop rules are live; whether
-# the nflog consumer came back after the commit is gate 1's job.
+# Traffic canary remains independent evidence after the backend's protecting
+# receipt. It proves the policy's traffic verdict, not just control-plane readiness.
 canary_tcp() {
   if docker exec rangerdanger-kali timeout 1 bash -c \
       'exec 3<>/dev/tcp/10.30.30.20/502' >/dev/null 2>&1; then
@@ -134,11 +129,11 @@ wait_for_dataplane() {
 # dataplane to reconcile. Records ok/err; returns non-zero on failure.
 apply_policy() {
   local name="$1" resp expected_canary
-  resp=$(curl -fsS -m 30 -X POST "$API/api/firewall/apply" \
+  resp=$(curl -fsS -m 60 -X POST "$API/api/firewall/apply" \
     -H 'Content-Type: application/json' \
     -d "{\"config\":\"$name\"}" 2>&1) \
     || { err "apply $name failed: $resp"; return 1; }
-  printf '%s' "$resp" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/containd_readiness.py" || {
+  printf '%s' "$resp" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/containd_readiness.py" --backend-receipt || {
     err "apply $name did not become protecting"; return 1;
   }
   case "$name" in

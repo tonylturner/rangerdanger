@@ -68,12 +68,12 @@ apply_policy() {
   local name="$1"
   [ -z "$name" ] && return 0
   local resp
-  resp=$(curl --max-time 10 -fsS -X POST -H 'Content-Type: application/json' \
+  resp=$(curl --max-time 60 -fsS -X POST -H 'Content-Type: application/json' \
     -d "{\"config\":\"$name\"}" "$API/api/firewall/apply" 2>&1) || {
     err "policy apply ($name) failed: $resp"
     exit 1
   }
-  printf '%s' "$resp" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/containd_readiness.py" || {
+  printf '%s' "$resp" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/containd_readiness.py" --backend-receipt || {
     err "apply $name did not become protecting"; return 1;
   }
   local active

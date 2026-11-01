@@ -150,6 +150,7 @@ try {
 
     # --- range --------------------------------------------------------------
     # Every assertion below is about the US range.
+    . "$RootDir/scripts/lib/range.ps1"
     Note "range"
     try {
         $range = Invoke-RestMethod -Uri 'http://localhost:8088/api/range' -TimeoutSec 5 -ErrorAction Stop
@@ -157,7 +158,7 @@ try {
         Err "GET /api/range failed: $_"
         exit 1
     }
-    if ($range.package -eq 'us-dnp3-substation' -and $range.phase -eq 'ready') {
+    if (Test-RangeReady $range 'us-dnp3-substation') {
         OK "range us-dnp3-substation ready"
     } else {
         Err "range is not us-dnp3-substation ready: $($range | ConvertTo-Json -Compress)"
