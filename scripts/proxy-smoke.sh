@@ -54,7 +54,9 @@ if ! docker exec rangerdanger-vendor-jump readlink /etc/nginx/sites-enabled/defa
 else
   checks=$((checks + 1))
 fi
-if ! docker exec rangerdanger-kali curl -fsS --max-time 10 http://10.20.20.10:80/ \
+# Probe the portal site on the jump host itself: the Kali path to :80 is a
+# policy verdict (US weak allows it, EU weak does not), not a site check.
+if ! docker exec rangerdanger-vendor-jump curl -fsS --max-time 10 http://127.0.0.1:80/ \
     >"$logs/portal.html" ||
     ! grep -q 'Vendor Remote Access Portal' "$logs/portal.html"; then
   echo "FAIL vendor portal :80"

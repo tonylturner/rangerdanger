@@ -19,6 +19,24 @@ spec.loader.exec_module(extract)
 
 
 class SmokeLoopTests(unittest.TestCase):
+    def test_exit_cleanup_restores_weak_only_after_verified_range_preflight(self):
+        source = (ROOT / "scripts/lab-commands-smoke.sh").read_text()
+        cleanup = source.split("cleanup() {", 1)[1].split("\n}", 1)[0]
+        for live, restore_rc, status, expected in ((0, 0, 1, 1), (1, 0, 1, 1),
+                                                    (1, 1, 1, 1), (1, 1, 0, 1), (1, 0, 0, 0)):
+            with self.subTest(live=live, restore_rc=restore_rc), tempfile.TemporaryDirectory() as directory:
+                matrix = Path(directory) / "matrix"
+                matrix.touch()
+                script = (
+                    f"matrix={shlex.quote(str(matrix))}\nlive_started={live}\n"
+                    f'apply_policy() {{ echo "restore:$1"; return {restore_rc}; }}\n'
+                    "cleanup() {" + cleanup + f"\n}}\ntrap cleanup EXIT\nexit {status}\n")
+                result = subprocess.run(["bash", "-c", script],
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertEqual(result.stdout, "restore:weak\n" if live else "")
+                self.assertFalse(matrix.exists())
+
     def test_matrix_loop_survives_children_that_read_stdin(self):
         # docker exec children inherited the matrix on stdin and swallowed it:
         # the live gate ran 2 of 77 rows. Run the real loop with stdin-eating stubs.
@@ -57,7 +75,7 @@ class ExtractTests(unittest.TestCase):
             "    dnp3poll -a 2 \\\n      10.40.40.21:20000\n"
             "    export config > /tmp/policy.json\n")
         self.assertEqual([c for c, _ in commands], [
-            "show audit", "shell # leave CLI",
+            "show audit",
             "dnp3poll -a 2 10.40.40.21:20000",
             "export config > /tmp/policy.json"])
 
@@ -330,6 +348,24 @@ class ExtractTests(unittest.TestCase):
             [sys.executable, "-c", fixture], {"entry": "shell", "command": "echo evidence"}, 2)
         self.assertEqual(result.returncode, 0)
         self.assertIn("evidence", result.stdout)
+
+    def test_staged_transition_drains_stderr_and_fails_without_shell_marker(self):
+        fixture = (
+            "import sys\n"
+            "assert sys.stdin.readline().strip() == 'shell'\n"
+            "sys.stderr.write('diagnostic\\n' * 20000); sys.stderr.flush()\n"
+            "print('__RD_SHELL_READY__', flush=True)\n"
+            "assert sys.stdin.readline().strip() == 'echo evidence'\n"
+            "print('evidence', flush=True)\n")
+        result = extract.run_staged_shell(
+            [sys.executable, "-c", fixture], {"entry": "shell", "command": "echo evidence"}, 2)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "diagnostic\n" * 20000)
+        result = extract.run_staged_shell(
+            [sys.executable, "-c", "print('CLI failed')"],
+            {"entry": "shell", "command": "must not execute"}, 2)
+        self.assertEqual(result.returncode, 125)
+        self.assertIn("documented shell transition failed", result.stderr)
 
     def test_no_ack_requires_weak_state_change_and_denied_state_preservation(self):
         row = {"scenario": "fixture", "step": 1, "command": "dnp3cmd fixture -no-ack"}

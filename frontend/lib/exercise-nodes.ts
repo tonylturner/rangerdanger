@@ -1,6 +1,7 @@
 // Resolve exercise nodes from scenario metadata or the active package binding.
 
 import type { CurriculumBinding } from "./api";
+import commandGrammar from "./command-grammar.json";
 
 export const NODE_LABELS: Record<string, string> = {
   "fw-1":              "Firewall",
@@ -48,4 +49,16 @@ export function getExerciseNodes(scenarioId: string, scenarioNodes?: string[], c
 // Infer which node a step's CLI commands should run on from description text.
 export function inferNodeFromDescription(desc: string, curriculum?: CurriculumBinding): string | null {
   return curriculum?.nodeInference.find((n) => desc.includes(n.ip) || new RegExp(n.pattern, "i").test(desc))?.node ?? null;
+}
+
+// Source markers use node IDs or the short names already used by US labs.
+// Ignore unrelated "from/on/via" prose rather than clearing the last source.
+const SOURCE_NODES: Record<string, string> = commandGrammar.sources;
+
+export function commandSourceMarker(text: string): string | undefined {
+  let source: string | undefined;
+  for (const match of text.matchAll(new RegExp(commandGrammar.marker, "gi"))) {
+    source = SOURCE_NODES[match[1].toLowerCase()] ?? source;
+  }
+  return source;
 }

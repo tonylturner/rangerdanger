@@ -14,8 +14,8 @@ name: Smoke
 #   6. the workshop test-suite reports no step/reset failures
 #
 # The US smoke job catches startup regressions and lab-doc rot. The separate
-# EU job runs its package gate on the iec104 branch without sharing a Docker
-# daemon with the US range.
+# EU job runs its package and command gates on main/PRs in an isolated job,
+# without sharing a Docker daemon with the US range.
 #
 # Budget: ~9–12 min on a GitHub-hosted runner. ~6 min for the build
 # (no cache pull), ~2 min for boot, ~3 min for the matrix probes
@@ -386,8 +386,16 @@ jobs:
           echo "$range" | jq -e '.package == "eu-iec104-substation" and .phase == "ready"' >/dev/null \
             || { echo "::error::range is not eu-iec104-substation ready"; exit 1; }
 
+      - name: Install EU command inventory dependency
+        run: python3 -m pip install --quiet pyyaml
+
       - name: EU IEC104 smoke gate
         run: ./scripts/eu-iec104-smoke.sh
+
+      - name: EU reviewed lab commands smoke
+        run: ./scripts/lab-commands-smoke.sh eu-iec104-substation
+        env:
+          LAB_CMD_LOG_DIR: /tmp/eu-lab-commands
 
       - name: Collect range logs and EU gate evidence
         if: always()
@@ -408,6 +416,7 @@ jobs:
           path: |
             /tmp/logs/
             /tmp/eu-gate-evidence/
+            /tmp/eu-lab-commands/
           if-no-files-found: warn
           retention-days: 7
 

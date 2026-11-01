@@ -55,7 +55,7 @@ steps:
   title: Verify access to containd
   expected_config: weak
   description: |
-    Open containd through its portal link (local HTTP 9080); lab credentials are containd / containd. Alternatively use **fw-1**, enter `containd cli`, then `show running-config`. Retain weak as rollback before edits.
+    Open containd through the portal's `/containd/` link; lab credentials are containd / containd. Alternatively use **fw-1**, enter `containd cli`, then `show running-config`. Retain weak as rollback before edits.
 
     :::hint Do not move management
     Management is out of band. Do not add teaching-to-management allows, routing exceptions or new host ports to make a test pass.
@@ -67,8 +67,8 @@ steps:
   description: |
     From **Kali** prove weak access before changing policy:
 
-        nmap -p 2404 10.30.30.20 --max-retries 1 -T4
-        nmap -p 502 10.40.40.20 --max-retries 1 -T4
+        nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4
+        nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4
 
     Use the eng-ws and vendor-jump terminal tabs to probe field TCP/502 too. Record actual sources; successful access now is the exposure you must remove, not authorized control.
 
@@ -152,17 +152,17 @@ steps:
   description: |
     Preserve PCAP and the UTC commit boundary. Keep `deny-unauthorized-iec104` after the CC allow: it includes the CC zone, TCP/2404, DENY and `log: true`. If the allow is missing, new CC→RTU sessions hit this explicit logged deny rather than the silent default drop. A custom policy must keep equivalent logged coverage for this lesson.
 
-    Compare the **Control Centre** link/quality, **Network Map** CC→RTU conduit and **Live DPI Events** tuple/rule. A missing CC allow can leave the old session healthy because conntrack survives commit. Force a fresh session after every commit with the portal operator API (from a host terminal):
+    Compare the **Control Centre** link/quality, **Network Map** CC→RTU conduit and **Live DPI Events** tuple/rule. A missing CC allow can leave the old session healthy because conntrack survives commit. Force a fresh session after every commit with the portal operator API. From the host terminal:
 
         curl -fsS -X POST http://localhost:8088/api/operator/reconnect
 
-    Or in the **cc-1 terminal**, use its management listener:
+    Or from the **cc-1 terminal**, use its management listener:
 
         wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect
 
     A 202 queues the actual connection close; normal reconnect runs at the inventory-configured interval (currently 2 s), followed by connect GI. A 409 means reconnect pending or a command in flight; 503 means the link is already down and retrying. Do not blindly repeat. If testing CR-22, expect the CC link/conduit down, last values retained with IV/NT `link_lost`, and a logged CC→RTU deny. Restore the exported known-good policy, wait for reconnect/GI and inspect every inventory observation. Field truth may still show a healthy supplied feeder: observation loss is not supply loss. No trip/reset is needed to repair communications.
 
-    Exact firewall session retirement remains an instructor diagnostic, not the normal fresh-session action: deleting conntrack under an allowed policy does not reliably close the old TCP connection. With a silent blackhole, detection can take configured t3+t1 (currently about 35 s). See [established sessions](/knowledge#eu-established-sessions).
+    Exact firewall session retirement remains an instructor diagnostic, not the normal fresh-session action: the session-kill API revokes the exact tuple in both directions for 60 seconds by default, with TCP resets signalled on subsequent matching packets. A fresh source port still meets the active policy. With a silent blackhole, detection can take configured t3+t1 (currently about 35 s). See [established sessions](/knowledge#eu-established-sessions).
 
     :::hint A timeout is a specific result
     Strict active probes count only connection timeout as denied. Connection refused means the packet reached a host; a missing tool or failed container exec is missing evidence, never a pass. A logged SYN deny cannot reveal the denied command payload.
@@ -200,9 +200,11 @@ steps:
     3. Now request **two lower steps**, waiting for completed feedback after each, to exercise automatic correction next. Watch IOA 1301 go transient, then settle at each adjacent tap. One step can remain inside the band and would not prove automatic correction. See [step telemetry](/knowledge#eu-iec104-step-telemetry).
     4. Return to **auto**: `oltc-1-mode` → `auto`. Wait for the configured 30 s sustained demand, then the 2 s motion for each correction; IOA 2403 reports configured delay, not its countdown. Automatic control now issues PLC-originated Modbus requests toward the operating band, not necessarily the exact starting tap under the daily profile. Confirm that PLC request, its motion completion and the solved revision, and that the historian ingests the advancing tap.
 
-    From **Kali**, read the historian; from **eng-ws**, retrieve the PLC login page:
+    From the **Kali terminal**, read the historian:
 
         curl -fsS --max-time 3 http://10.70.70.40:8080/api/points
+
+    From the **eng-ws terminal**, retrieve the PLC login page:
 
         curl -fsS --max-time 3 http://10.30.30.30:8080/login
 
@@ -254,9 +256,9 @@ steps:
 
     From **Kali**:
 
-        nmap -p 2404 10.30.30.20 --max-retries 1 -T4
-        nmap -p 502 10.40.40.20 --max-retries 1 -T4
-        nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4
+        nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4
+        nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4
+        nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4
 
     :::hint Diagnose a gap honestly
     A deferred plan can leave a sampled path open. Correct the plan/rules or record the gap; do not label it passed because the policy is called custom or improved. Connection refused is reached, not denied.

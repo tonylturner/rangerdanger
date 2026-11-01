@@ -199,7 +199,7 @@ Any indented line that begins with one of these tools becomes a
 
 `nmap`, `mbpoll`, `dnp3poll`, `dnp3cmd`, `curl`, `tshark`,
 `tcpdump`, `nc`, `telnet`, `ssh`, `wget`, `ls`, `grep`, `cat`,
-`docker`.
+`docker`, `iec104cmd`, `timeout`.
 
 Continuation lines with trailing backslash get joined automatically.
 
@@ -215,14 +215,23 @@ description: |
         | python3 -m json.tool
 ```
 
-The Run button targets the step's `node`, or falls back to prose
-inference (look for "from the kali terminal", "on the firewall", etc.).
-For multi-source steps, use **per-section "From X terminal" headers**
-above each command - the runner picks the nearest one walking up.
+The Run button targets the nearest preceding source marker, then the step's
+`node`, then prose inference, curriculum primary and the first exercise node.
+Use **per-section "From the X terminal" headers** above commands. Markers
+are case-insensitive `From`, `On` or `Via`, optional `the`, then a node ID
+or short name (Kali, vendor-jump, eng-ws, RTAC, RTU, CC, firewall, historian,
+OpenPLC or HMI). Markdown bold/backticks are allowed around the name.
+Unrelated prose does not clear the marker; a later recognized marker replaces
+it. Hints and track blocks inherit the surrounding source, but markers inside
+them remain local. Dynamic plan descriptions follow the same rule.
+Use **From the host terminal:** for host-side commands: these are copy-only,
+with no Run button. Switch back with another source marker before container
+commands. Avoid combining two source headers above two separate commands.
 
-The lab-commands smoke test (`./scripts/lab-commands-smoke.sh`)
-extracts these the same way and runs each. If a command in your
-lab YAML doesn't run cleanly, CI fails.
+The US lab-commands smoke test (`./scripts/lab-commands-smoke.sh`)
+also prefers source headers, but maintains a separate reviewed command
+inventory. Check its extraction tests and expectations as well as frontend
+routing tests when changing US recipes.
 
 The gate keeps `pipefail`, but drains terminal `| head -N` pipelines with
 `sed -n '1,Np'`: visible lines are unchanged and an early closed pipe cannot
@@ -431,6 +440,53 @@ to surface saved data, add a parser case to `splitDescription` and a
 renderer in `frontend/components/scenario-description-blocks.tsx`,
 then document it here.
 
+## Reviewed command smoke inventory
+
+Every new or changed scenario in **any** package must update its smoke contracts
+in the same change. CI's offline guard discovers package.yml files, follows their
+scenario/topology declarations, cross-checks manifest container identity, and
+rejects missing scenarios (including zero-command scenarios), missing or stale
+commands, changed dispatch/policy metadata, missing oracles and unreviewed skips.
+It never connects to the range.
+
+```sh
+python3 scripts/lib/lab-commands-extract.py --guard
+python3 scripts/lib/lab-commands-extract.py <package-id> --repin
+python3 scripts/lib/lab-commands-extract.py <package-id> --matrix
+```
+
+Repin preserves only exact-key oracles/reasons. Review the diff in
+`scripts/lab-commands-expectations*.json`: every RUN needs a semantic oracle;
+every SKIP needs a specific reviewed reason. Fill new null entries, inspect
+removed entries and container/policy changes, then rerun the guard. Do not
+lower counts or copy an unrelated oracle to make it green. The US file keeps
+its original name; other packages use `lab-commands-expectations-<package>.json`.
+
+The parser shares command/source-marker grammar with the UI. Use explicit
+`From <node>`, `On <node>` or `via <node>` prose before commands in multi-source
+steps. Host commands are copy-only, not silently dispatched to a container.
+Appliance CLI examples use the firewall CLI mechanism, never node exec.
+Tools outside the backend exec allowlist remain copy-only; do not expand the
+allowlist to accommodate wrappers. Frontend parity tests check the same pins.
+Interactive/manual examples still need reviewed SKIP contracts.
+
+Live smoke mutates policy and devices: run it **only on a disposable stack**;
+never point it at a student workshop. Both host entry points accept a package.
+The orchestrator owns live acceptance, including Windows acceptance.
+
+```powershell
+./scripts/lab-commands-smoke.ps1 -Package eu-iec104-substation
+```
+
+The PowerShell entry point delegates verdicts and cleanup to the same Python
+worker, rather than accepting timeouts or nonzero exits as success. Python 3
+with PyYAML is required on both hosts. EU execution also requires Bash, curl,
+jq and python3 in that Bash environment (for example Git Bash configured with
+those tools on Windows), because it reuses the existing EU reset/policy helpers
+instead of maintaining a separate Windows mutation sequence. Evidence includes
+both streams, exec responses, positive controls, device audit cursors and a
+summary. Weak is restored on failure as well as success.
+
 ## Authoring checklist
 
 Before opening a PR with a new or modified lab:
@@ -445,7 +501,7 @@ Before opening a PR with a new or modified lab:
    ./scripts/firewall-smoke.sh
    ```
 4. **Update `lab-definitions/substation-segmentation.yml`** if you added a new container the lab needs.
-5. **Update `EXERCISE_NODE_MAP`** in [`frontend/lib/exercise-nodes.ts`](../frontend/lib/exercise-nodes.ts) so the in-app terminal tabs and node UI shortcuts surface the right hosts.
+5. **Update the package curriculum `nodes.yml`** so terminal tabs and source inference surface the right hosts.
 6. **Update `CHANGELOG.md`** under `[Unreleased]` for any user-visible change.
 
 ## Patterns that work well

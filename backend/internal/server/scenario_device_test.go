@@ -144,7 +144,7 @@ func TestEUSessionCutPrimitive(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			stub, fw := newUpstreamStub(t, map[string]stubResponse{
 				"GET /api/v1/conntrack?limit=5000": {test.status, test.inventory},
-				"POST /api/v1/conntrack/kill":      {200, `{"status":"deleted"}`},
+				"POST /api/v1/conntrack/kill":      {200, conntrackKillFixture},
 			})
 			s := rangeServer(euGeneration(t, containd.NewClient(fw.URL), nil), "custom")
 			result := executeAuthoredStep(t, s, seedEUScenario(t, s), "cut-session")
@@ -152,12 +152,31 @@ func TestEUSessionCutPrimitive(t *testing.T) {
 				t.Fatalf("cut = %+v", result)
 			}
 			if test.success {
+				if len(result.Results) != 1 || !strings.Contains(result.Results[0].Detail, "exact tuple revoked in both directions for 60 seconds") {
+					t.Fatalf("cut result = %+v", result)
+				}
 				want := `{"proto":"tcp","src":"10.60.60.20","dst":"10.30.30.20","sport":40312,"dport":2404}`
 				if !reflect.DeepEqual(stub.requests, []string{"GET /api/v1/conntrack?limit=5000", "POST /api/v1/conntrack/kill"}) || !reflect.DeepEqual(stub.bodies, []string{"", want}) {
 					t.Fatalf("kill bodies = %q", stub.bodies)
 				}
 			} else if !reflect.DeepEqual(stub.requests, []string{"GET /api/v1/conntrack?limit=5000"}) {
 				t.Fatalf("refused lookup still killed: %q", stub.bodies)
+			}
+		})
+	}
+}
+
+func TestEUSessionCutPartialFailure(t *testing.T) {
+	for _, field := range []string{"conntrackDeleted", "revocationInstalled"} {
+		t.Run(field, func(t *testing.T) {
+			_, fw := newUpstreamStub(t, map[string]stubResponse{
+				"GET /api/v1/conntrack?limit=5000": {200, conntrackFixture},
+				"POST /api/v1/conntrack/kill":      {200, strings.Replace(conntrackKillFixture, `"`+field+`":true`, `"`+field+`":false`, 1)},
+			})
+			s := rangeServer(euGeneration(t, containd.NewClient(fw.URL), nil), "custom")
+			result := executeAuthoredStep(t, s, seedEUScenario(t, s), "cut-session")
+			if result.Success || len(result.Results) != 1 || !strings.Contains(result.Results[0].Detail, "failed") {
+				t.Fatalf("partial session cut = %+v", result)
 			}
 		})
 	}

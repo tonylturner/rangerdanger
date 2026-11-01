@@ -386,8 +386,8 @@ Verify-Archive arm64 $ARM64_TAGS
 # Bundle the WSL2 kernel asset for Windows students on offline /
 # air-gapped laptops. setup.ps1 -FromTarballs picks up
 # rangerdanger-wsl2-kernel + .sha256 from here automatically; without
-# them, the kernel install step needs internet. Graceful skip if the
-# asset isn't yet built for $Version (CI builds it on tag push).
+# them, offline setup cannot remediate a missing kernel feature. Both
+# assets are required; a partial bundle must never report Done.
 Banner "Bundle WSL2 kernel asset (Windows offline support)"
 $ghOwnerRepo = if ($env:GH_OWNER_REPO) { $env:GH_OWNER_REPO } else { "tonylturner/rangerdanger" }
 $kernelUrl = if ($Version -eq 'latest') {
@@ -405,7 +405,10 @@ try {
     if ($head.StatusCode -ne 200) { throw "HTTP $($head.StatusCode)" }
     $kernelPublished = $true
 } catch {
-    # A release without this optional asset still makes a valid SSD bundle.
+    if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
+        Die "Required WSL2 kernel asset is absent (HTTP 404) for $Version. Wait for build-wsl-kernel.yml to publish it, then re-stage. Bundle incomplete; do not distribute."
+    }
+    Die "WSL2 kernel availability request failed (not confirmed absent): $_. Bundle incomplete; check the connection/release and re-stage; do not distribute."
 }
 
 if ($kernelPublished) {
@@ -468,13 +471,6 @@ if ($kernelPublished) {
     } finally {
         $ProgressPreference = $previousProgress
     }
-} else {
-    Warn "rangerdanger-wsl2-kernel not yet published for release $Version."
-    Warn "  (.github/workflows/build-wsl-kernel.yml builds the kernel on tag push."
-    Warn "   If you are staging before that workflow has run, re-run stage-ssd.ps1 after the"
-    Warn "   kernel asset attaches to the release, OR manually drop rangerdanger-wsl2-kernel"
-    Warn "   + .sha256 into $OutDir.)"
-    Warn "  Without the kernel, Windows students on this SSD lose ICS DPI on Labs 2.3 / 2.3-bonus."
 }
 
 Banner "Write README"

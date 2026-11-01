@@ -83,9 +83,9 @@ steps:
     Switch to **fw-1**'s terminal. Capture while the generator runs:
 
         mkdir -p /data/captures
-        tcpdump -i any -nn 'not host 127.0.0.1' -G 30 -W 1 -w /data/captures/baseline.pcap
+        tcpdump -i any -nn 'not host 127.0.0.1' -G 12 -W 1 -w /data/captures/baseline.pcap
 
-    Wait for capture completion. The Linux any interface needs no promiscuous mode; the one-file limit is the expected stop, not a failure. Keep the PCAP before any reset.
+    Wait for capture completion. The Linux any interface needs no promiscuous mode. The capture writes one 12-second file; the one-file rotation limit is the expected stop. RTU cyclic reports arrive every two seconds while traffic runs, closing the rotation inside Run’s 30-second budget. Keep the PCAP before any reset.
 
     :::hint Capture scope
     Management UI traffic is out of band. Capture shows cross-zone teaching traffic, not all dependencies. Never infer same-subnet isolation from an empty firewall capture. [Capture reference](/knowledge#eu-tool-tcpdump).
@@ -159,9 +159,9 @@ steps:
   description: |
     From **Kali** (10.10.10.50), actively probe the dormant paths:
 
-        nmap -p 2404 10.30.30.20 --max-retries 1 -T4
+        nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4
         iec104cmd 10.30.30.20 gi --json
-        nmap -p 502 10.40.40.20 --max-retries 1 -T4
+        nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4
         mbpoll -m tcp -a 1 -t 3 -0 -r 0 -c 11 -1 10.40.40.20
 
     Weak policy permits both. A completed GI proves a protocol operation, not command authority; an input-register read is not a write.

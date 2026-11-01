@@ -29,7 +29,7 @@ steps:
   description: |
     Optional bonus, weak active. From **Kali** prove the first hop:
 
-        nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4
+        nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4
 
     Record reachability on RDP and VNC. This TCP probe runs headless; an allowed remote-access path is the exposure, not proof of a successful login. The next step represents the credential compromise from the vendor's network position.
 
@@ -127,12 +127,12 @@ steps:
   description: |
     Retest each hop independently. From **Kali**:
 
-        nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4
+        nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4
 
     With `restrict-enterprise-to-vendor` selected, both ports time out or show
     filtered. Deferred means reachable. No graphical client is required.
 
-    From the still-available **vendor-jump-1 terminal tab**, repeat the identical field write:
+    From the **vendor-jump-1 terminal tab** (still available), repeat the identical field write:
 
         mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
 

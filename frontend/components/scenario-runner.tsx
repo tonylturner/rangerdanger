@@ -164,9 +164,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     clearProgress(scope, scenario.id);
   };
 
-  const handleAutoRun = async (cmd: string, runId: string, stepDesc: string) => {
+  const handleAutoRun = async (cmd: string, runId: string, stepDesc: string, sourceNode?: string) => {
     const step = scenario.steps[currentStep];
-    const nodeId = step?.node
+    const nodeId = sourceNode
+      || step?.node
       || inferNodeFromDescription(stepDesc, binding)
       || (binding?.nodeMap[scenario.id]?.primary)
       || exerciseNodes[0];

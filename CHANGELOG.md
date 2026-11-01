@@ -8,6 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- EU lab command smoke with reviewed semantic oracles and an offline
+  all-package command inventory guard. PowerShell now uses the same reviewed
+  contracts and verdicts.
 - Lab 1.3 readiness now adjusts Lab 1.4 role capacity, action effort and draft eligibility in both packages, with a default-budget comparison toggle and visible exclusion reasons.
 - EU Improved policy enables containd IEC 104 inspection with three
   monitor-only rules on the control-centre conduit. The L4 source pin
@@ -25,11 +28,33 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Lab Run buttons honor per-command source terminals and keep host commands
+  and tools the backend cannot run copy-only. The EU baseline capture again
+  rotates after 12 seconds of RTU cyclic traffic.
+- EU lab port probes skip host discovery, so a filtered ping no longer hides
+  an open port. `iec104cmd` reports why a connection failed (timeout or
+  refused).
+- US assessment and planning prose describes the shipped DNP3 function-code
+  detection, not object-group inspection. The L4 source pin enforces; DPI
+  detects and logs.
+- The EU firewall lesson points to the portal's `/containd/` link without
+  confusing it with the separate host-loopback port.
+- EU readiness evidence labels the firewall's local image ID accurately,
+  rather than calling it an image digest.
+- Session kills now report containd's deletion and revocation outcomes,
+  including partial failures; EU lessons describe the default 60-second
+  exact-tuple revocation and fresh-source-port reconnection semantics.
 - The embedded containd console checks in the smoke scripts (shell and
   PowerShell) support containd 0.1.36's Turbopack UI bundle, including
   on-demand chunks and stylesheets.
 - containd recovery and enforcement health details are kept in apply
   results, and plans reject ICS vocabulary that containd does not support.
+- Fix Windows kernel remediation to preserve Unicode configuration, honor
+  no-change dry runs, bound transfers/shutdown and refuse incompatible ARM64
+  installation.
+- Require verified WSL kernel assets in full SSD bundles, preserve configured
+  roots in PowerShell-generated delta recipes, and correct Windows preflight
+  checks and setup guidance.
 
 ### Security
 

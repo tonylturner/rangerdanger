@@ -6,7 +6,8 @@ RangerDanger ICS DPI dataplane works on Windows + Docker Desktop.
 .DESCRIPTION
 Microsoft's stock WSL2 kernel does not enable CONFIG_NFT_QUEUE, which
 means nft rules containing "queue num <N>" silently fail to load and
-the lab's ICS DPI enforcement falls flat. This script:
+DPI detection and logging are unavailable. The L4 source pin enforces;
+DPI detects and logs. This script:
 
   1. Detects whether the running Docker Desktop is using the WSL2
      backend (versus Hyper-V or no Docker).
@@ -35,9 +36,9 @@ and runs wsl --shutdown so WSL2 picks up the change. Idempotent if no
 prior install detected.
 
 .PARAMETER DryRun
-Walk through the install path (download, sha256, merge .wslconfig)
-but do NOT actually write .wslconfig or run wsl --shutdown. Prints
-what would happen.
+Plan the install or restore without downloads, probes, file writes or
+wsl --shutdown. Local input and configuration may be read. Prints what
+would happen; downloaded checksums and kernel support are not verified.
 
 .PARAMETER Yes
 Skip the confirmation prompt before wsl --shutdown.
@@ -271,6 +272,16 @@ function Write-ProbeUnknown($probe) {
     Warn "CONFIG_NFT_QUEUE support is UNKNOWN, not missing."
 }
 
+# .wslconfig is data, not PS 5.1 source. Use BOM-free UTF-8, never the
+# shell's ANSI default or lossy ASCII. ReadAllText detects Unicode BOMs;
+# invalid BOM-free UTF-8 fails closed rather than corrupting user content.
+function Get-WslConfigText {
+    [IO.File]::ReadAllText($Managed.WslConfig, (New-Object Text.UTF8Encoding($false, $true)))
+}
+function Write-WslConfigText([string]$Content) {
+    [IO.File]::WriteAllText($Managed.WslConfig, $Content, (New-Object Text.UTF8Encoding $false))
+}
+
 # --- INI-aware merge for .wslconfig ------------------------------------
 # Reads .wslconfig (or starts fresh if missing), and either updates or
 # inserts kernel=<path> inside the [wsl2] section. Preserves every
@@ -278,7 +289,7 @@ function Write-ProbeUnknown($probe) {
 # so the caller can decide whether to write it.
 function Get-WslConfigMerged($newKernel) {
     $original = if (Test-Path $Managed.WslConfig) {
-        Get-Content $Managed.WslConfig -Raw
+        Get-WslConfigText
     } else { "" }
 
     # Normalize trailing newline so our edits are predictable.
@@ -365,7 +376,7 @@ function Invoke-DownloadVerified($url, $sha256Url, $expectedSha256, $outPath) {
     $ProgressPreference = 'SilentlyContinue'
     Say "Downloading kernel: $url"
     try {
-        Invoke-WebRequest -Uri $url -OutFile $outPath -UseBasicParsing -ErrorAction Stop
+        Invoke-WebRequest -Uri $url -OutFile $outPath -UseBasicParsing -TimeoutSec 600 -ErrorAction Stop
     } catch {
         Die 12 "Download failed: $_"
     }
@@ -385,7 +396,7 @@ function Invoke-DownloadVerified($url, $sha256Url, $expectedSha256, $outPath) {
         # do for the kernel binary itself.
         $shaTemp = [System.IO.Path]::GetTempFileName()
         try {
-            Invoke-WebRequest -Uri $sha256Url -OutFile $shaTemp -UseBasicParsing -ErrorAction Stop
+            Invoke-WebRequest -Uri $sha256Url -OutFile $shaTemp -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
             $shaRaw = Get-Content $shaTemp -Raw
         } catch {
             Die 12 "sha256 fetch failed: $_"
@@ -415,8 +426,10 @@ function Invoke-DownloadVerified($url, $sha256Url, $expectedSha256, $outPath) {
 # --- Restart sequence --------------------------------------------------
 function Invoke-WslShutdown {
     Say "Running wsl --shutdown (stops all WSL2 distros + the Docker Desktop VM)..."
-    & wsl.exe --shutdown
-    if ($LASTEXITCODE -ne 0) { Warn "wsl --shutdown exited $LASTEXITCODE (continuing anyway)" }
+    $run = Invoke-NativeBounded 'wsl.exe' @('--shutdown') 60
+    if (-not $run -or $run.TimedOut -or $run.ExitCode -ne 0) {
+        Die 1 "wsl --shutdown failed or exceeded 60s. Configuration may already be updated. Restart WSL and Docker Desktop manually, then re-run -Test. $($run.StdErr)"
+    }
 }
 
 # Budget is wall-clock: each probe is bounded (Get-DockerInfoBounded), so a
@@ -452,6 +465,10 @@ function Wait-DockerReconnect($maxSecs = 120) {
 }
 
 # --- Mode: -Test --------------------------------------------------------
+if ($Test -and $DryRun) {
+    Say "DRY RUN: would probe nft queue support. No changes made."
+    exit 0
+}
 if ($Test) {
     Banner "WSL2 kernel feature probe"
     $env_ = Test-WindowsWsl2Backend
@@ -483,6 +500,10 @@ if ($Test) {
 # --- Mode: -Restore ----------------------------------------------------
 if ($Restore) {
     Banner "Restoring stock WSL2 kernel"
+    if ($DryRun) {
+        Say "DRY RUN: would restore configuration, remove the managed kernel and restart WSL. No changes made."
+        exit 0
+    }
     if (Test-Path $Managed.WslConfigBak) {
         Copy-Item -Path $Managed.WslConfigBak -Destination $Managed.WslConfig -Force
         Say "Restored $($Managed.WslConfig) from $($Managed.WslConfigBak)"
@@ -493,23 +514,19 @@ if ($Restore) {
         # section header (which we also added) and whitespace, delete
         # the file entirely so we leave $env:USERPROFILE\.wslconfig
         # exactly as the user would have it on a fresh Windows.
-        $current = Get-Content $Managed.WslConfig -Raw
+        $current = Get-WslConfigText
         $stripped = $current -replace "(?m)^kernel\s*=\s*$([regex]::Escape($Managed.WslConfigKernelValue))\s*\r?\n?", ""
         if ($stripped -eq $current) {
             Warn "No managed kernel= entry found in $($Managed.WslConfig); nothing to remove."
         } else {
-            # Test whether the residual contains any non-empty,
-            # non-comment, non-section-header line. If not, the file
-            # had nothing in it except our addition.
-            $meaningful = $stripped -split "`r?`n" | Where-Object {
-                $t = $_.Trim()
-                $t -ne "" -and -not $t.StartsWith("#") -and -not $t.StartsWith(";") -and -not ($t -match '^\[.+\]$')
-            }
-            if (-not $meaningful) {
+            # Only remove a file containing our empty section. Comments and
+            # other section headers are user content too; keep them verbatim.
+            $residual = $stripped -replace '(?m)^\s*\[wsl2\]\s*$', ''
+            if (-not $residual.Trim()) {
                 Remove-Item $Managed.WslConfig -Force
                 Say "Removed $($Managed.WslConfig) (no other config in it)"
             } else {
-                Set-Content -Path $Managed.WslConfig -Value $stripped -NoNewline -Encoding ascii
+                Write-WslConfigText $stripped
                 Say "Removed managed kernel= line from $($Managed.WslConfig); preserved your other [wsl2] keys"
             }
         }
@@ -530,27 +547,74 @@ if ($Restore) {
 # --- Default mode: install ---------------------------------------------
 Banner "RangerDanger WSL2 kernel install"
 
-$env_ = Test-WindowsWsl2Backend
-if (-not $env_.Supported) {
-    Say "Skipping kernel install: $($env_.Reason)"
-    exit 2
-}
-Say "Docker kernel: $($env_.Kernel)"
+if (-not $DryRun) {
+    $env_ = Test-WindowsWsl2Backend
+    if (-not $env_.Supported) {
+        Say "Skipping kernel install: $($env_.Reason)"
+        exit 2
+    }
+    Say "Docker kernel: $($env_.Kernel)"
 
-if (-not $Force) {
-    $probe = Test-NftQueueSupported
-    if ($probe.Result -eq 'Supported') {
-        Say "nft queue rule already applies via $($probe.ProbeSource) -- nothing to do."
-        Say "(Use -Force to install anyway.)"
-        exit 0
+    if (-not $Force) {
+        $probe = Test-NftQueueSupported
+        if ($probe.Result -eq 'Supported') {
+            Say "nft queue rule already applies via $($probe.ProbeSource) -- nothing to do."
+            Say "(Use -Force to install anyway.)"
+            exit 0
+        }
+        if ($probe.Result -eq 'Unknown') {
+            Write-ProbeUnknown $probe
+            Warn "Nothing was changed. Re-run after the lab images are loaded or pulled,"
+            Warn "or pass -Force to install without probing."
+            exit 13
+        }
+        Warn "nft queue rule fails on the current kernel. Proceeding with install."
     }
-    if ($probe.Result -eq 'Unknown') {
-        Write-ProbeUnknown $probe
-        Warn "Nothing was changed. Re-run after the lab images are loaded or pulled,"
-        Warn "or pass -Force to install without probing."
-        exit 13
+
+    $architecture = Get-DockerInfoBounded '{{.Architecture}}' 30
+    if ($architecture -notin @('amd64', 'x86_64')) {
+        Die 12 "Kernel remediation requires x86_64; Docker architecture is '$architecture'. No ARM64 kernel asset is published. Use a host with working queue support; no kernel was installed."
     }
-    Warn "nft queue rule fails on the current kernel. Proceeding with install."
+}
+
+# Plan the .wslconfig merge.
+$merge = Get-WslConfigMerged $Managed.WslConfigKernelValue
+if ($merge.ExistingKernel -and $merge.ExistingKernel -ne $Managed.WslConfigKernelValue) {
+    if (-not $Force) {
+        Warn "$($Managed.WslConfig) already has a kernel= pointing at:"
+        Warn "  $($merge.ExistingKernel)"
+        Warn "Refusing to overwrite a foreign kernel pointer. Re-run with -Force to back it up to:"
+        Warn "  $($Managed.WslConfigBakFg)"
+        Warn "and replace it with ours."
+        exit 11
+    }
+} elseif ($merge.ExistingKernel -eq $Managed.WslConfigKernelValue) {
+    Say ".wslconfig already points at our managed kernel."
+}
+
+# Confirm with the user unless -Yes.
+Banner "About to:"
+Write-Host "  0. Acquire and verify the kernel, then stage it under $($Managed.KernelDir)"
+Write-Host "  1. Write $($Managed.WslConfig) (backup at $($Managed.WslConfigBak))"
+Write-Host "     Setting kernel = $($Managed.WslConfigKernelValue)"
+Write-Host "  2. Run 'wsl --shutdown' (will stop the Docker Desktop VM and any other WSL2 distros you have running)"
+Write-Host "  3. Wait for Docker Desktop to reconnect"
+Write-Host "  4. Re-probe the nft queue rule to confirm the fix worked"
+Write-Host ""
+if ($DryRun) {
+    Say "DRY RUN: would acquire the kernel, write .wslconfig, then run 'wsl --shutdown', then poll. No changes made."
+    Write-Host ""
+    Write-Host "--- merged .wslconfig that WOULD be written ---"
+    Write-Host $merge.Merged
+    Write-Host "--- end ---"
+    exit 0
+}
+if (-not $Yes) {
+    $ans = Read-Host "Continue? [y/N]"
+    if ($ans -notmatch '^(y|yes)$') {
+        Say "Aborted by user. No changes made."
+        exit 10
+    }
 }
 
 # Acquire the kernel binary.
@@ -581,48 +645,19 @@ if ($KernelPath) {
 } else {
     $url = if ($KernelUrl) { $KernelUrl } else { Get-ReleaseAssetUrl $OwnerRepo $ReleaseTag $Managed.KernelFile }
     $shaUrl = if ($KernelUrl) { "" } else { Get-ReleaseAssetUrl $OwnerRepo $ReleaseTag $Managed.Sha256File }
-    Invoke-DownloadVerified $url $shaUrl $ExpectedSha256 $Managed.KernelTarget
+    $download = [IO.Path]::GetTempFileName()
+    try {
+        Invoke-DownloadVerified $url $shaUrl $ExpectedSha256 $download
+        if (-not (Test-Path $Managed.KernelDir)) { New-Item -ItemType Directory -Path $Managed.KernelDir -Force | Out-Null }
+        Copy-Item -LiteralPath $download -Destination $Managed.KernelTarget -Force
+    } finally {
+        Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue
+    }
 }
 
-# Plan the .wslconfig merge.
-$merge = Get-WslConfigMerged $Managed.WslConfigKernelValue
 if ($merge.ExistingKernel -and $merge.ExistingKernel -ne $Managed.WslConfigKernelValue) {
-    if (-not $Force) {
-        Warn "$($Managed.WslConfig) already has a kernel= pointing at:"
-        Warn "  $($merge.ExistingKernel)"
-        Warn "Refusing to overwrite a foreign kernel pointer. Re-run with -Force to back it up to:"
-        Warn "  $($Managed.WslConfigBakFg)"
-        Warn "and replace it with ours."
-        exit 11
-    }
     Copy-Item -Path $Managed.WslConfig -Destination $Managed.WslConfigBakFg -Force
     Say "Backed up foreign kernel= configuration to $($Managed.WslConfigBakFg)"
-} elseif ($merge.ExistingKernel -eq $Managed.WslConfigKernelValue) {
-    Say ".wslconfig already points at our managed kernel."
-}
-
-# Confirm with the user unless -Yes.
-Banner "About to:"
-Write-Host "  1. Write $($Managed.WslConfig) (backup at $($Managed.WslConfigBak))"
-Write-Host "     Setting kernel = $($Managed.WslConfigKernelValue)"
-Write-Host "  2. Run 'wsl --shutdown' (will stop the Docker Desktop VM and any other WSL2 distros you have running)"
-Write-Host "  3. Wait for Docker Desktop to reconnect"
-Write-Host "  4. Re-probe the nft queue rule to confirm the fix worked"
-Write-Host ""
-if ($DryRun) {
-    Say "DRY RUN: would write .wslconfig, then run 'wsl --shutdown', then poll. No changes made."
-    Write-Host ""
-    Write-Host "--- merged .wslconfig that WOULD be written ---"
-    Write-Host $merge.Merged
-    Write-Host "--- end ---"
-    exit 0
-}
-if (-not $Yes) {
-    $ans = Read-Host "Continue? [y/N]"
-    if ($ans -notmatch '^(y|yes)$') {
-        Say "Aborted by user. No changes made."
-        exit 10
-    }
 }
 
 # Write .wslconfig (with backup).
@@ -630,7 +665,7 @@ if (Test-Path $Managed.WslConfig) {
     Copy-Item -Path $Managed.WslConfig -Destination $Managed.WslConfigBak -Force
     Say "Backed up existing $($Managed.WslConfig) to $($Managed.WslConfigBak)"
 }
-Set-Content -Path $Managed.WslConfig -Value $merge.Merged -NoNewline -Encoding ascii
+Write-WslConfigText $merge.Merged
 Say "Wrote $($Managed.WslConfig)"
 
 # Restart.

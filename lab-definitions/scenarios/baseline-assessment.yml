@@ -348,8 +348,10 @@ steps:
       | Flow | Source → Destination | Protocol | Rule |
       |------|---------------------|----------|------|
       | **A. GPS → field NTP** | `10.30.30.50` → `10.40.40.{20,21,22,23}` | UDP 123 | **Preserve** - `ALLOW`, pin source to `10.30.30.50` |
-      | **E. RTAC → field DNP3** | `10.30.30.20` → `10.40.40.{20,21,22,23}` | TCP 20000 | **Preserve** - `ALLOW`, pin source to `10.30.30.20`, apply ICS DPI (object groups) |
+      | **E. RTAC → field DNP3** | `10.30.30.20` → `10.40.40.{20,21,22,23}` | TCP 20000 | **Preserve** - `ALLOW`, pin source to `10.30.30.20`, apply ICS DPI (function codes) |
       | **E. RTAC → field Modbus** | `10.30.30.20` → `10.40.40.{20,21,22,23}` | TCP 502 | **Preserve** - `ALLOW`, pin source to `10.30.30.20`, apply ICS DPI (function codes) |
+
+      The L4 source pin enforces; DPI detects and logs.
 
       > **Why the RTAC's source IP is `10.30.30.20`, not `10.40.40.10`:** the RTAC is multi-homed (it also has a field_net interface at `10.40.40.10` for realism), but host-level routing on the RTAC deliberately sends all field-bound traffic through the OT Ops firewall. The wire-visible source is the OT Ops interface.
 

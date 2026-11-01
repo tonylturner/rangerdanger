@@ -134,6 +134,9 @@ function Write-KernelMissing {
 # bundled kernel binary in the tarball directory. Online installs download
 # from the release matching $Version. Offline installs never download.
 function Install-LabKernel {
+    if ($arch -ne 'amd64') {
+        Die "Kernel remediation is unavailable on ARM64: the published WSL2 kernel is x86_64 only. No kernel was installed. Use a host whose kernel already supports nft queue rules."
+    }
     Banner "Installing WSL2 kernel"
     # Splat as a HASHTABLE, not an array. PowerShell array-splatting does not
     # reliably bind "-Name value" pairs to a called script's parameters: e.g.
@@ -352,7 +355,7 @@ Re-run with -SkipFirewallGate to bring the stack up anyway for diagnosis.
 }
 
 
-# OpenPLC is US-only. Like setup.sh this is diagnostic, not a lifecycle gate.
+# OpenPLC is used by both US and EU packages. Like setup.sh this is diagnostic, not a lifecycle gate.
 $openplcOk = $false
 for ($i = 0; $i -lt 8; $i++) {
     $run = Invoke-DockerBounded @('inspect', '-f', '{{.State.Status}}', 'rangerdanger-openplc') 5
@@ -362,7 +365,7 @@ for ($i = 0; $i -lt 8; $i++) {
     Start-Sleep -Seconds 2
 }
 if ($openplcOk) { Say 'OpenPLC container is running' }
-else { Warn 'OpenPLC is not running. For the US protection-logic lab check docker logs rangerdanger-openplc.' }
+else { Warn 'OpenPLC is not running. Check docker logs rangerdanger-openplc.' }
 Banner 'RangerDanger is up'
 @"
   Web UI:        http://localhost:8088

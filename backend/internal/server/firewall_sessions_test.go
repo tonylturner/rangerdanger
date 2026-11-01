@@ -1,11 +1,16 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 )
+
+const conntrackKillFixture = `{"scope":"connection","matched":1,"deleted":1,"conntrackDeleted":true,"revocationInstalled":true,"blockedUntil":"2026-10-31T12:01:00Z","closure":"TCP resets on next matching packet"}`
 
 const conntrackFixture = `[
 	{"proto":"tcp","state":"ESTABLISHED","src":"10.60.60.20","dst":"10.30.30.20","sport":"40312","dport":"2404","timeoutSecs":431999},
@@ -83,7 +88,7 @@ func TestFirewallSessionKill(t *testing.T) {
 		code       int
 		want       string
 	}{
-		{"deleted", tuple, &stubResponse{http.StatusOK, `{"status":"deleted"}`}, http.StatusOK, `{"status":"deleted"}`},
+		{"deleted", tuple, &stubResponse{http.StatusOK, conntrackKillFixture}, http.StatusOK, strings.TrimSuffix(conntrackKillFixture, "}") + `,"status":"deleted"}`},
 		{"not found", tuple, &stubResponse{http.StatusBadGateway, `{"error":"engine conntrack delete status 500: {\"error\":\"conntrack delete: not found\"}"}`},
 			http.StatusNotFound, `{"detail":"conntrack entry not found: {\"error\":\"engine conntrack delete status 500: {\\\"error\\\":\\\"conntrack delete: not found\\\"}\"}","error":"no conntrack entry tcp 10.10.10.50:51000 to 10.30.30.20:2404"}`},
 		{"other failure", tuple, &stubResponse{http.StatusNotImplemented, `{"error":"conntrack delete not supported"}`},
@@ -113,6 +118,37 @@ func TestFirewallSessionKill(t *testing.T) {
 			}
 			if test.upstream != nil && (len(stub.bodies) != 1 || stub.bodies[0] != tuple) {
 				t.Errorf("containd kill bodies = %q, want the exact tuple", stub.bodies)
+			}
+		})
+	}
+}
+
+func TestFirewallSessionKillPartialFailure(t *testing.T) {
+	for _, test := range []struct {
+		name, body, wantErr string
+	}{
+		{"deletion false", strings.Replace(conntrackKillFixture, `"conntrackDeleted":true`, `"conntrackDeleted":false`, 1), "conntrack deletion failed"},
+		{"delete error", strings.Replace(conntrackKillFixture, `"deleted":1`, `"deleted":0,"deleteError":"permission denied"`, 1), "permission denied"},
+		{"revocation false", strings.Replace(conntrackKillFixture, `"revocationInstalled":true`, `"revocationInstalled":false`, 1), "session revocation failed"},
+		{"revocation error", strings.Replace(conntrackKillFixture, `"revocationInstalled":true`, `"revocationInstalled":true,"revocationError":"unavailable"`, 1), "unavailable"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, fw := newUpstreamStub(t, map[string]stubResponse{
+				"POST /api/v1/conntrack/kill": {http.StatusOK, test.body},
+			})
+			s := rangeServer(usGeneration(containd.NewClient(fw.URL)), "weak")
+			rec := callRoute(s, s.handleFirewallSessionKill, http.MethodPost, "/api/firewall/sessions/kill", "/api/firewall/sessions/kill",
+				`{"proto":"tcp","src":"10.10.10.50","dst":"10.30.30.20","sport":51000,"dport":2404}`)
+			var got sessionKillResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			var want containd.SessionKillResult
+			if err := json.Unmarshal([]byte(test.body), &want); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != http.StatusBadGateway || got.Status != "failed" || !strings.Contains(got.Error, test.wantErr) || !reflect.DeepEqual(got.SessionKillResult, &want) {
+				t.Fatalf("kill = %d %s; want failed with all upstream result fields", rec.Code, rec.Body)
 			}
 		})
 	}

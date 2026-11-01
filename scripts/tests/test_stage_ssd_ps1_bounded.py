@@ -292,7 +292,7 @@ $start=$source.IndexOf('$kernelPublished =')
 $end=$source.IndexOf('Banner "Write ')
 $failed=$false
 try { Invoke-Expression $source.Substring($start, $end-$start) } catch { $failed=$true }
-if ($failed -ne ($env:MODE -in @('kernel-timeout', 'checksum-timeout'))) { throw 'HTTP failure outcome changed' }
+if ($failed -ne ($env:MODE -in @('kernel-timeout', 'checksum-timeout') -or ($env:STAGER -eq 'stage-ssd.ps1' -and $env:MODE -eq 'head-timeout'))) { throw 'HTTP failure outcome changed' }
 if ($ProgressPreference -ne 'Continue') { throw 'progress preference leaked' }
 $files=@(Get-ChildItem -LiteralPath $OutDir -File)
 if ($files.Count -ne $(if ($env:MODE -eq 'ok') {2} else {0})) { throw 'unverified kernel/checksum left behind' }
