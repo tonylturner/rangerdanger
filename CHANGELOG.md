@@ -33,6 +33,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wait until containd reports the committed policy as protecting. Apply,
   reset and range status responses include the apply id and protection state;
   a configuration changed elsewhere returns HTTP 409 and is never retried.
+  Installers and smokes require a protecting receipt.
 - A commit re-evaluates established connections on their next packet. Labs,
   gates G6, G7 and G11 and the Traffic Matrix now treat a retained Sessions
   entry as connection-tracking state, not proof that traffic passes; session
