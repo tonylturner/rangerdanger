@@ -22,12 +22,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Canned and compiled firewall policies use containd schema 0.1.10, so the
+  authored rule order is the enforced order. Labs teach first-match terminal
+  decisions.
 - RangerDanger now requires containd 0.1.36. Source mode builds the
   firewall from the containd `v0.1.36` tag, and containd migrates its stored
   schema one way to 0.1.9.
 
 ### Fixed
 
+- EU firewall gates trace ordered nftables admission chains and keep the
+  ephemeral-port guard. Manual policy evaluation treats RATE_LIMIT and TAG as
+  non-terminal and refuses unsupported viaForwards selectors.
 - Lab Run buttons honor per-command source terminals and keep host commands
   and tools the backend cannot run copy-only. The EU baseline capture again
   rotates after 12 seconds of RTU cyclic traffic.
