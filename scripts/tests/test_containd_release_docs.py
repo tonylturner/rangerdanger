@@ -7,6 +7,17 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ContaindReleaseDocsTests(unittest.TestCase):
+    def test_overviews_state_floor_and_one_way_storage_migration(self):
+        for path in ("README.md", "docs/architecture.md"):
+            text = " ".join((ROOT / path).read_text().split())
+            with self.subTest(path=path):
+                for phrase in ("requires containd 0.1.37 or later", "stop the lab",
+                               "back up", "one-way", "0.1.10",
+                               "containd 0.1.36 cannot read"):
+                    self.assertIn(phrase, text)
+        text = (ROOT / "docs/architecture.md").read_text()
+        self.assertIn("containd `v0.1.37` git ref", text)
+
     def test_upgrade_guides_require_matching_full_storage_and_image(self):
         for path in ("RELEASING.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
             text = " ".join((ROOT / path).read_text().split())
@@ -16,12 +27,12 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                                "pre-upgrade", "stop the lab", "older tag",
                                "RangerDanger owns"):
                     self.assertIn(phrase.lower(), text.lower())
-                self.assertRegex(text, r"requires containd 0\.1\.36 or later")
-                self.assertRegex(text, r"schema.{0,60}0\.1\.9")
-                self.assertRegex(text, r"0\.1\.35 and earlier cannot read")
+                self.assertRegex(text, r"requires containd 0\.1\.37 or later")
+                self.assertRegex(text, r"schema.{0,60}0\.1\.10")
+                self.assertRegex(text, r"0\.1\.36 and earlier cannot read")
         workshop = " ".join((ROOT / "docs/workshop-ssd.md").read_text().split()).lower()
-        for phrase in ("requires containd 0.1.36 or later", "schema migrates one-way to 0.1.9",
-                       "0.1.35 and earlier cannot read", "--include-upstream --include containd",
+        for phrase in ("requires containd 0.1.37 or later", "schema migrates one-way to 0.1.10",
+                       "0.1.36 and earlier cannot read", "--include-upstream --include containd",
                        "record the saved image identity", "matching pre-upgrade data",
                        "for arch in amd64 arm64", "docker load -i",
                        "delta-${arch}.tar", "id={{.id}} os={{.os}} arch={{.architecture}}",
@@ -30,7 +41,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
 
     def test_api_health_distinguishes_liveness_and_operational_diagnostics(self):
         text = (ROOT / "docs/api-spec.md").read_text()
-        self.assertIn("containd 0.1.36 minimum", text)
+        self.assertIn("containd 0.1.37 minimum", text)
         for phrase in ("liveness and diagnostics", "not forwarding readiness",
                        "ipv4Forwarding", "managementBinding.state",
                        "/api/v1/system/management-reservation",
@@ -77,5 +88,5 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                        "both must succeed", "no legacy `/config/import` fallback",
                        "NIC `device` bindings", "running configuration",
                        "seed readiness", "adoption after a backend restart",
-                       "0.1.36 prerelease"):
+                       "0.1.37 prerelease"):
             self.assertIn(phrase, text)
