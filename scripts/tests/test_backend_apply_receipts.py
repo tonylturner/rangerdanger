@@ -92,7 +92,7 @@ curl() {
             printf '%s' "$RESPONSE" ;;
         *api/workshop/reset*)
             printf 'reset\n' >> "$CALLS"
-            printf '%s' "$RESPONSE" ;;
+            printf '%s' "$RESET_RESPONSE" ;;
         *) exit 98 ;;
     esac
 }
@@ -104,16 +104,43 @@ curl() {
             for tool in ("sed", "grep"):
                 (tools / tool).symlink_to(shutil.which(tool))
             calls = Path(tmp) / "calls"
-            result = subprocess.run(
-                [shutil.which("bash"), "-c", script], text=True, capture_output=True, timeout=15,
-                env={**os.environ, "PATH": str(tools), "REPO": str(ROOT), "CALLS": str(calls),
-                     "RESPONSE": json.dumps(response("protecting"), separators=(",", ":"))})
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            requests = calls.read_text().splitlines()
-            self.assertEqual(len(requests), 3)
-            self.assertIn('{"config":"weak"}', requests[0])
-            self.assertIn('{"config":"improved"}', requests[1])
-            self.assertEqual(requests[2], "reset")
+            # Mirror the real handler's sorted top-level keys. Keep a successful
+            # nested action and protecting receipt even when the reset fails.
+            reset = json.dumps({
+                "actions": [{"action": "Apply weak firewall baseline",
+                             "success": True, "detail": "weak config applied"}],
+                "containd": response("protecting")["containd"],
+                "success": True,
+            }, separators=(",", ":"))
+            fixtures = [
+                ("success", reset, True),
+                ("partial-reset", reset.removesuffix('true}') + 'false}', False),
+                ("string-success", reset.removesuffix('true}') + '"true"}', False),
+                ("missing-success", reset.removesuffix(',"success":true}') + '}', False),
+                ("truncated", reset[:-1], False),
+                ("trailing-garbage", reset + "garbage", False),
+                ("malformed", "not-json", False),
+                ("empty", "", False),
+            ]
+            for name, body, expected in fixtures:
+                with self.subTest(name=name):
+                    calls.unlink(missing_ok=True)
+                    result = subprocess.run(
+                        [shutil.which("bash"), "-c", script],
+                        text=True, capture_output=True, timeout=15,
+                        env={**os.environ, "PATH": str(tools), "REPO": str(ROOT),
+                             "CALLS": str(calls), "RESET_RESPONSE": body,
+                             "RESPONSE": json.dumps(response("protecting"),
+                                                    separators=(",", ":"))})
+                    self.assertEqual(result.returncode, 0 if expected else 1,
+                                     result.stdout + result.stderr)
+                    if not expected:
+                        self.assertIn("/api/workshop/reset reported non-success", result.stderr)
+                    requests = calls.read_text().splitlines()
+                    self.assertEqual(len(requests), 3)
+                    self.assertIn('{"config":"weak"}', requests[0])
+                    self.assertIn('{"config":"improved"}', requests[1])
+                    self.assertEqual(requests[2], "reset")
 
     def test_shell_range_ready_consumes_same_status(self):
         script = r'''

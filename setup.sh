@@ -709,15 +709,13 @@ else
     if [ -n "$reset_resp" ] && range_has_protection "$reset_resp"; then
         reset_protection_ok=1
     fi
-    # Read the TOP-LEVEL "success", not a substring: the response embeds a
-    # per-action array whose entries each carry their own "success":true, so a
-    # naive grep false-passes even when the overall reset failed. Parse with
-    # python3 (present on the workshop hosts); fall back to the grep otherwise.
-    if command -v python3 >/dev/null 2>&1; then
-        reset_ok=$(echo "$reset_resp" | python3 -c 'import json,sys
-try: sys.stdout.write("1" if json.load(sys.stdin).get("success") is True else "0")
-except Exception: sys.stdout.write("0")' 2>/dev/null)
-    elif echo "$reset_resp" | grep -q '"success":true'; then reset_ok=1; else reset_ok=0; fi
+    # Match only the backend's compact reset envelope, not arbitrary JSON.
+    # TestInstallerReceiptEncoding pins actions/containd/success order and the
+    # final top-level boolean. Nested action successes cannot match this suffix.
+    case "$reset_resp" in
+        '{"actions":['*'],"containd":{'*'},"success":true}') reset_ok=1 ;;
+        *) reset_ok=0 ;;
+    esac
     if [ "$reset_ok" != "1" ] || [ "$reset_protection_ok" != "1" ]; then
         warn "  /api/workshop/reset reported non-success or returned no protecting containd receipt — students hitting Reset Lab will see partial state"
         fw_fail=1

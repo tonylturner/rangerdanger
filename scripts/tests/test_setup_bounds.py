@@ -410,10 +410,10 @@ curl() {
                 case "$PROTECTION" in
                     empty) : ;;
                     missing) printf '{"success":true}' ;;
-                    *) printf '{"success":true,"containd":{"applyId":"reset-id","protection":"%s"}}' "$PROTECTION" ;;
+                    *) printf '{"actions":[],"containd":{"applyId":"reset-id","protection":"%s"},"success":true}' "$PROTECTION" ;;
                 esac
             else
-                printf '{"success":true,"containd":{"applyId":"reset-id","protection":"protecting"}}'
+                printf '{"actions":[],"containd":{"applyId":"reset-id","protection":"protecting"},"success":true}'
             fi
             ;;
         *) exit 92 ;;
