@@ -1,0 +1,69 @@
+# Reviewed semantics that Compose/nginx/manifest cannot express. Citations are
+# repository paths plus stable symbols or line numbers, never external sources.
+schema: 1
+edges:
+  - from: backend
+    to: dockerd
+    compact_label: Docker SDK · socket
+    label: Docker SDK via /var/run/docker.sock
+    packages: [us, eu]
+    views: [overview, request]
+    source: backend/internal/orchestrator/orchestrator.go:New
+  - from: backend
+    to: firewall
+    compact_label: JWT REST · management
+    label: JWT REST · policy / PCAP / events
+    packages: [us, eu]
+    views: [overview, request]
+    source: backend/internal/containd/client.go:send
+  - from: backend
+    to: terminals
+    compact_label: Docker exec
+    label: WebSocket terminal · Docker exec
+    packages: [us, eu]
+    views: [request]
+    source: backend/internal/server/terminal.go:connectTerminal
+  - from: backend
+    to: range
+    label: POST /api/range · lifecycle start, routes, seed policy
+    packages: [us, eu]
+    views: [compose]
+    source: backend/internal/lifecycle/transition.go:157
+  - from: rtac_sim@ot_ops_net
+    to: field_net
+    compact_label: Pinned field route
+    label: Kernel-pinned field route via firewall
+    packages: [us]
+    views: [overview]
+    source: scripts/rtac-harden.sh:93
+  - from: rtac_sim@physics_net
+    to: opendss_sim@physics_net
+    compact_label: HTTP push
+    label: HTTP push · /api/update-state
+    packages: [us]
+    views: [overview, request]
+    source: services/rtac-sim/main.go:132
+
+# Presentation only: colours have no networking or policy meaning.
+zone_styles:
+  enterprise_net: {fill: "#fff7ed", stroke: "#c2410c"}
+  vendor_net: {fill: "#faf5ff", stroke: "#9333ea"}
+  ot_ops_net: {fill: "#f0f9ff", stroke: "#0284c7"}
+  station_net: {fill: "#f0f9ff", stroke: "#0284c7"}
+  field_net: {fill: "#f0fdf4", stroke: "#16a34a"}
+  mgmt_net: {fill: "#f1f5f9", stroke: "#64748b"}
+  physics_net: {fill: "#fffbeb", stroke: "#d97706"}
+  process_net: {fill: "#fffbeb", stroke: "#d97706"}
+  control_centre_net: {fill: "#eef2ff", stroke: "#4f46e5"}
+  ops_dmz_net: {fill: "#fdf2f8", stroke: "#db2777"}
+  desk_corp_net: {fill: "#fff7ed", stroke: "#c2410c"}
+  desk_vendor_net: {fill: "#faf5ff", stroke: "#9333ea"}
+  desk_eng_net: {fill: "#faf5ff", stroke: "#9333ea"}
+
+# Invisible ordering constraints keep the six EU teaching zones in three
+# columns. They describe presentation only, never connectivity or traffic.
+zone_columns:
+  eu:
+    - [enterprise_net, station_net]
+    - [vendor_net, field_net]
+    - [control_centre_net, ops_dmz_net]

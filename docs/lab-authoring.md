@@ -180,8 +180,13 @@ commands run from the firewall but the prose talks about other
 hosts). The UI also infers a node from prose keywords if `node`
 isn't set; explicit is more reliable.
 
-Valid values are node IDs from
-[`lab-definitions/substation-segmentation.yml`](../lab-definitions/substation-segmentation.yml):
+Valid values are node IDs from the active package's declared topology,
+with executable services resolved through its manifest. Follow `topology`
+in `lab-definitions/packages/<id>/package.yml`: US points to
+[`lab-definitions/substation-segmentation.yml`](../lab-definitions/substation-segmentation.yml),
+while EU owns
+[`topology.yml`](../lab-definitions/packages/eu-iec104-substation/topology.yml).
+The following are **US** node IDs:
 `fw-1`, `kali-1`, `vendor-jump-1`, `eng-ws-1`, `corp-ws-1`,
 `hmi-1`, `rtac-1`, `openplc-1`, `historian-1`, `gps-1`, `relay-1`,
 `recloser-1`, `regulator-1`, `capbank-1`.
@@ -194,12 +199,23 @@ as React components.
 
 ### Command blocks
 
-Any indented line that begins with one of these tools becomes a
-**command block** with copy + Run buttons:
+An indented line beginning with one of these tools followed by whitespace
+becomes a **command block** with a copy button:
 
 `nmap`, `mbpoll`, `dnp3poll`, `dnp3cmd`, `curl`, `tshark`,
 `tcpdump`, `nc`, `telnet`, `ssh`, `wget`, `ls`, `grep`, `cat`,
-`docker`, `iec104cmd`, `timeout`.
+`docker`, `iec104cmd`.
+
+Recognition and execution are separate grammars in
+[`frontend/lib/command-grammar.json`](../frontend/lib/command-grammar.json).
+Only its `run` subset (`nmap`, `mbpoll`, `dnp3poll`, `dnp3cmd`, `iec104cmd`,
+`curl`, `tshark`, `tcpdump`, `nc`, `wget`, `ls`, `cat`) is eligible for Run,
+with a source node resolved in the active package. `ssh`, `telnet`, `grep`
+and `docker` are copy-only. The `cli` grammar recognizes containd appliance
+commands as copy-only blocks; the separate `copy` grammar covers interactive
+remote-desktop clients and `sshpass`. `timeout` is not a recognized command
+prefix. The backend exec allowlist is a separate server-side check, not a
+promise that every recognized command can Run.
 
 Continuation lines with trailing backslash get joined automatically.
 
@@ -500,7 +516,7 @@ Before opening a PR with a new or modified lab:
    ```sh
    ./scripts/firewall-smoke.sh
    ```
-4. **Update `lab-definitions/substation-segmentation.yml`** if you added a new container the lab needs.
+4. **Update the package's declared topology and manifest** if you added a new container the lab needs. For US the topology is `lab-definitions/substation-segmentation.yml`; EU owns `lab-definitions/packages/eu-iec104-substation/topology.yml`.
 5. **Update the package curriculum `nodes.yml`** so terminal tabs and source inference surface the right hosts.
 6. **Update `CHANGELOG.md`** under `[Unreleased]` for any user-visible change.
 

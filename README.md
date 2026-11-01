@@ -9,7 +9,7 @@
   <a href="https://github.com/tonylturner/rangerdanger/releases"><img src="https://img.shields.io/github/v/release/tonylturner/rangerdanger?include_prereleases&sort=semver" alt="Release"></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0"></a>
   <a href="https://go.dev"><img src="https://img.shields.io/github/go-mod/go-version/tonylturner/rangerdanger?filename=backend%2Fgo.mod&logo=go&logoColor=white" alt="Go"></a>
-  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-15-000000?logo=next.js&logoColor=white" alt="Next.js"></a>
+  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white" alt="Next.js"></a>
   <a href="https://docs.docker.com/compose"><img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker"></a>
   <a href="https://github.com/tonylturner/containd"><img src="https://img.shields.io/badge/containd-NGFW-f97316" alt="containd"></a>
 </p>
@@ -23,7 +23,7 @@ RangerDanger teaches network segmentation by putting students inside a working e
 ## What you get
 
 - **Interactive topology map** at `/console`. IEC 62443 zone bands (Enterprise SL-1, DMZ SL-2, Supervisory SL-3, Field SL-2) with a live policy overlay that shows which conduits are allowed or blocked under the active firewall config. Click any node to inspect device state, open its web UI, or drop into a terminal. Drawers surface protocol details and live traffic context per node.
-- **Embedded container terminals**. xterm.js plus WebSocket exec into every lab container. No SSH client, no port forwards. Terminal state persists across navigation via a shared React context, and PTY size propagates so `stty` queries return the right values.
+- **Embedded container terminals**. xterm.js plus WebSocket exec into manifest-mapped topology nodes. No SSH client, no port forwards. Terminal state persists across navigation via a shared React context, and PTY size propagates so `stty` queries return the right values.
 - **Exercise runner** at `/exercises/[id]`. Each lab is a step-by-step walk-through with inline command blocks (one-click run), persistent per-exercise notes, and live state-reading validators that show green/red chips as students hit checkpoints. Apply Your Plan compiles selected actions on the backend; later checks compare results with the applied plan.
 - **Process view** at `/substation`. Live feeder state from the RTAC via the OpenDSS power-flow solver. Modbus FC5/FC6 writes and DNP3 CROB attacks measurably change breaker positions, regulator taps, voltages, and load energization within ~3 seconds. Customer-service tile shows how many customers and how much critical load (hospital, fire station) is currently energized.
 - **containd NGFW integration**. ICS-aware NGFW at the conduit. Modbus function-code filtering, DNP3 protocol awareness, IT-side DPI for TLS/SNI, HTTP, RDP. The L4 source pin enforces; DPI detects and logs. Students apply policy from the lab UI; containd's full web console is iframed at `/containd/` for direct inspection of rules, audit log, and session state.
@@ -107,16 +107,16 @@ cd rangerdanger
 
 Use `./stage-ssd.sh /Volumes/WORKSHOP_SSD vX.Y.Z` to populate the SSD. The version argument selects the image tags whatever the repo's `.env` says, and the helper verifies both archives against it before reporting success. GitHub releases carry the WSL2 kernel asset, not image tarballs, so students install from an instructor-staged bundle. Full install walkthrough including the offline path and common errors: [`docs/quickstart.md`](docs/quickstart.md). Workshop operators running multi-laptop classroom deployments: [`docs/workshop-ssd.md`](docs/workshop-ssd.md) covers initial staging, mid-workshop delta patches, and recovery.
 
-For an existing install, follow the [release update procedure](docs/quickstart.md#upgrading-to-v020). See the [v0.1.36 workshop errata](docs/v0.1.36-hotfix.md) for remaining application limits.
+For an existing install, follow the [release update procedure](docs/quickstart.md#upgrading-to-v020). See the [v0.1.36 workshop errata](docs/v0.1.36-hotfix.md) for historical release-specific errata.
 
 Once the stack is up:
 
 | | URL | Credentials |
 |---|---|---|
 | **RangerDanger UI** | http://localhost:8088 | - |
-| containd Web UI | http://localhost:9080 | containd / containd |
+| containd Web UI | http://localhost:8088/containd/ | containd / containd |
 | containd SSH | `ssh -p 2222 containd@localhost` | containd / containd |
-| FUXA HMI | http://localhost:8088/apps/fuxa-hmi/ | - |
+| FUXA HMI (US only) | http://localhost:8088/apps/fuxa-hmi/ | - |
 | OpenPLC | http://localhost:8088/apps/openplc/ | openplc / openplc |
 
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises) and start with **Lab 1.2**.
@@ -158,7 +158,7 @@ Insert into the table above when ready, with similar inline captions.
 RangerDanger is designed for instructors and security teams who need reviewable lab content, offline classroom delivery, and hands-on segmentation work that students can validate themselves.
 
 - **Fully open and auditable.** Apache 2.0 source for the backend (Go), frontend (TypeScript), simulators, and lab content. No closed binaries, no behavior that can't be inspected in the repo. Suitable for organizations whose security posture requires source review before a tool runs on student laptops.
-- **Source-controlled lab content.** Every exercise lives as YAML in [`lab-definitions/scenarios/`](lab-definitions/scenarios/). Forkable, diff-reviewable, instructor-customizable: replace the substation scenario with a water-treatment or manufacturing variant, retune the labor-budget model in Lab 1.4, or rewrite the validators against your own state machine.
+- **Source-controlled lab content.** Exercises live as YAML in the active package's declared scenarios directory: US uses [`lab-definitions/scenarios/`](lab-definitions/scenarios/); EU uses [`lab-definitions/packages/eu-iec104-substation/scenarios/`](lab-definitions/packages/eu-iec104-substation/scenarios/). Forkable, diff-reviewable, instructor-customizable: replace the substation scenario with a water-treatment or manufacturing variant, retune the labor-budget model in Lab 1.4, or rewrite the validators against your own state machine.
 - **Offline / SSD workshop-ready.** [`stage-ssd.sh`](stage-ssd.sh) stages the bundle an offline classroom needs and proves it: every image must resolve and save, and the archived first-party tags must match the bundle's `.version`. OpenPLC is amd64-only upstream, so the arm64 archive cross-includes its amd64 image. The two architecture archives are written one after the other, so never ship the output of a run that failed. [`setup.sh --from-tarballs`](setup.sh) brings the stack up with no network. Patch tooling ([`stage-ssd-delta.sh`](stage-ssd-delta.sh)) compares image digests between releases and includes changed images. `--include <image>` is additive: it force-adds a named image whose digest was unchanged; it does not exclude changed images. A delta is small only when few images differ between the two releases (v0.1.31 to v0.1.32 had 15 changed images and measured 8.1 GB). Delta rollback parks images behind overwritten mutable tags under `:before-<new version>`; deleting those tags forfeits rollback for those images.
 - **Segmentation and DPI-policy focused.** The firewall is the protagonist. Every lab walks toward a least-privilege containd policy with ICS DPI; the topology console shows policy state in real time; validators read active policy and audit log alongside simulator state.
 - **Physics-backed.** Attacks have measurable kinetic consequences via the OpenDSS power-flow solver. Modbus FC5/FC6 writes and DNP3 CROB commands change breaker positions, regulator taps, voltages, and load energization within ~3 seconds, surfaced in the substation process view.
@@ -184,80 +184,86 @@ Most OT segmentation labs hand students a PDF workbook, a Wireshark capture, and
 
 A Next.js dashboard fronts a Go + Gin backend that orchestrates Docker containers, talks to containd over REST, and runs the scenario validators. Field-device simulators implement Modbus TCP + DNP3 TCP + REST against shared state, with OpenDSS providing feeder physics. The US package has four teaching zones plus management and physics; isolated platform-owned bridges deliver the student desktops without a management NIC. Teaching inter-zone traffic transits the containd firewall; the US RTAC-to-field path is kernel-pinned via `rtac-harden.sh` so the multi-homed RTAC can't bypass policy.
 
+The generated overview below shows the **US package**. Services appear once in their primary teaching zone; dotted desktop links are delivery bridges. See the detailed diagrams for both packages.
+
+<!-- BEGIN GENERATED: overview -->
 ```mermaid
-flowchart LR
-    Browser([Student browser])
-
-    subgraph Mgmt["mgmt_net · 10.99.99.0/24 · lan3"]
-        Proxy[nginx proxy]
-        Backend["Backend<br/>Go + Gin"]
-        Frontend["Frontend<br/>Next.js 15"]
+%%{init: {"flowchart": {"nodeSpacing": 22, "rankSpacing": 45, "padding": 10}}}%%
+flowchart TB
+    subgraph n_overview_zone_platform_105afc123b["Platform · management<br/>10.99.99.0/24 · lan3"]
+    direction TB
+    n_overview_backend_82688e5de7["backend"]
+    n_overview_frontend_bc72e9f36e["frontend · Next.js 16"]
+    n_overview_proxy_36dc8972f0["proxy"]
     end
-
-    subgraph FW["containd NGFW · all 4 teaching zones + mgmt"]
-        Containd["Web UI · SSH · ICS DPI<br/>nft engine"]
+    subgraph n_overview_zone_field_net_a57fab3daf["Field Device Zone ·<br/>10.40.40.0/24 · lan2"]
+    direction TB
+    n_overview_capbank_sim_7f36449b79["capbank_sim"]
+    n_overview_recloser_sim_b20cff107b["recloser_sim"]
+    n_overview_regulator_sim_c735f24179["regulator_sim"]
+    n_overview_relay_sim_1b5f9d8159["relay_sim"]
+    n_overview_capbank_sim_7f36449b79 ~~~ n_overview_recloser_sim_b20cff107b
+    n_overview_recloser_sim_b20cff107b ~~~ n_overview_regulator_sim_c735f24179
+    n_overview_regulator_sim_c735f24179 ~~~ n_overview_relay_sim_1b5f9d8159
     end
-
-    subgraph Ent["enterprise_net · 10.10.10.0/24 · wan"]
-        Kali[kali · attacker]
-        CorpWS[corp-ws]
+    subgraph n_overview_zone_enterprise_net_6f13584f70["Enterprise Zone ·<br/>10.10.10.0/24 · wan"]
+    direction TB
+    n_overview_corp_ws_b3a8da2870["corp_ws"]
+    n_overview_kali_ef35dbcf25["kali"]
+    n_overview_corp_ws_b3a8da2870 ~~~ n_overview_kali_ef35dbcf25
     end
-
-    subgraph Vendor["vendor_net · 10.20.20.0/24 · dmz"]
-        VJump[vendor-jump · RDP/VNC/SSH]
-        EngWS[eng-ws · webtop]
+    subgraph n_overview_zone_vendor_net_10dbb7aebe["Vendor / Engineering Zone ·<br/>10.20.20.0/24 · dmz"]
+    direction TB
+    n_overview_eng_workstation_98493649dc["eng_workstation"]
+    n_overview_vendor_jump_52013698df["vendor_jump"]
+    n_overview_eng_workstation_98493649dc ~~~ n_overview_vendor_jump_52013698df
     end
-
-    subgraph OT["ot_ops_net · 10.30.30.0/24 · lan1"]
-        RTAC["RTAC<br/>10.30.30.20"]
-        FUXA[FUXA HMI]
-        OpenPLC[OpenPLC]
-        Hist[historian]
-        GPS[gps clock]
+    subgraph n_overview_zone_ot_ops_net_01097360f9["OT Operations Zone ·<br/>10.30.30.0/24 · lan1"]
+    direction TB
+    n_overview_fuxa_hmi_c2772b5611["fuxa_hmi"]
+    n_overview_gps_sim_8b175dc219["gps_sim"]
+    n_overview_historian_sim_f3a44c7589["historian_sim"]
+    n_overview_openplc_9b5c6f2535["openplc"]
+    n_overview_rtac_sim_96a7a5b0c6["rtac_sim"]
+    n_overview_fuxa_hmi_c2772b5611 ~~~ n_overview_gps_sim_8b175dc219
+    n_overview_gps_sim_8b175dc219 ~~~ n_overview_historian_sim_f3a44c7589
+    n_overview_historian_sim_f3a44c7589 ~~~ n_overview_openplc_9b5c6f2535
+    n_overview_openplc_9b5c6f2535 ~~~ n_overview_rtac_sim_96a7a5b0c6
     end
-
-    subgraph Field["field_net · 10.40.40.0/24 · lan2"]
-        Relay[relay]
-        Recl[recloser]
-        Reg[regulator]
-        CapB[capbank]
+    subgraph n_overview_zone_physics_net_7425e81995["Physics ·<br/>10.50.50.0/24"]
+    direction TB
+    n_overview_opendss_sim_cbba1e0964["opendss_sim"]
     end
-
-    OpenDSS["OpenDSS solver<br/>physics_net · not firewalled"]
-
-    Browser --> Proxy
-    Proxy --> Backend
-    Proxy --> Frontend
-    Proxy -. iframe .-> Containd
-    Proxy -. desk_corp_net · 10.98.1.0/28 .-> CorpWS
-    Proxy -. desk_vendor_net · 10.98.2.0/28 .-> VJump
-    Proxy -. desk_eng_net · 10.98.3.0/28 .-> EngWS
-
-    Backend -. Docker SDK .-> Mgmt
-    Backend -. JWT REST .-> Containd
-
-    Ent <==> Containd
-    Vendor <==> Containd
-    OT <==> Containd
-    Field <==> Containd
-
-    RTAC -. kernel-pinned via firewall .-> Field
-    RTAC -. HTTP push .-> OpenDSS
-
-    classDef zoneEnt fill:#7c2d12,stroke:#fbbf24,color:#fef3c7
-    classDef zoneVen fill:#581c87,stroke:#c084fc,color:#f3e8ff
-    classDef zoneOT  fill:#0c4a6e,stroke:#7dd3fc,color:#e0f2fe
-    classDef zoneFld fill:#14532d,stroke:#86efac,color:#dcfce7
-    classDef zoneMgt fill:#1e293b,stroke:#94a3b8,color:#e2e8f0
-    classDef zoneFW  fill:#9a3412,stroke:#fb923c,color:#fff7ed
-
-    class Ent zoneEnt
-    class Vendor zoneVen
-    class OT zoneOT
-    class Field zoneFld
-    class Mgmt zoneMgt
-    class FW zoneFW
+    n_overview_firewall_d4f06fc78a["containd · firewall"]
+    n_overview_dockerd_7619ae3dee["Docker daemon"]
+    n_overview_browser_65218e3e32["Browser"]
+    n_overview_browser_65218e3e32 -->|"portal · loopback 8088"| n_overview_proxy_36dc8972f0
+    n_overview_zone_platform_105afc123b ---|"lan3"| n_overview_firewall_d4f06fc78a
+    n_overview_firewall_d4f06fc78a ---|"wan"| n_overview_zone_enterprise_net_6f13584f70
+    n_overview_firewall_d4f06fc78a ---|"dmz"| n_overview_zone_vendor_net_10dbb7aebe
+    n_overview_firewall_d4f06fc78a ---|"lan1"| n_overview_zone_ot_ops_net_01097360f9
+    n_overview_firewall_d4f06fc78a ---|"lan2"| n_overview_zone_field_net_a57fab3daf
+    n_overview_proxy_36dc8972f0 -->|"API"| n_overview_backend_82688e5de7
+    n_overview_proxy_36dc8972f0 -.->|"10.98.1.0/28"| n_overview_corp_ws_b3a8da2870
+    n_overview_proxy_36dc8972f0 -.->|"10.98.3.0/28"| n_overview_eng_workstation_98493649dc
+    n_overview_proxy_36dc8972f0 -->|"UI"| n_overview_frontend_bc72e9f36e
+    n_overview_proxy_36dc8972f0 -.->|"10.98.2.0/28"| n_overview_vendor_jump_52013698df
+    %% source: backend/internal/orchestrator/orchestrator.go:New
+    n_overview_backend_82688e5de7 -.->|"Docker SDK · socket"| n_overview_dockerd_7619ae3dee
+    %% source: backend/internal/containd/client.go:send
+    n_overview_backend_82688e5de7 -.->|"JWT REST · management"| n_overview_firewall_d4f06fc78a
+    %% source: scripts/rtac-harden.sh:93
+    n_overview_rtac_sim_96a7a5b0c6 -.->|"Pinned field route"| n_overview_zone_field_net_a57fab3daf
+    %% source: services/rtac-sim/main.go:132
+    n_overview_rtac_sim_96a7a5b0c6 -.->|"HTTP push"| n_overview_opendss_sim_cbba1e0964
+    style n_overview_zone_platform_105afc123b fill:#f1f5f9,stroke:#64748b,color:#172033
+    style n_overview_zone_field_net_a57fab3daf fill:#f0fdf4,stroke:#16a34a,color:#172033
+    style n_overview_zone_enterprise_net_6f13584f70 fill:#fff7ed,stroke:#c2410c,color:#172033
+    style n_overview_zone_vendor_net_10dbb7aebe fill:#faf5ff,stroke:#9333ea,color:#172033
+    style n_overview_zone_ot_ops_net_01097360f9 fill:#f0f9ff,stroke:#0284c7,color:#172033
+    style n_overview_zone_physics_net_7425e81995 fill:#fffbeb,stroke:#d97706,color:#172033
 ```
+<!-- END GENERATED: overview -->
 
 Full breakdown including node IPs, service interactions, the RTAC kernel-pinning compensating control, and a deeper Docker-architecture diagram: [`docs/architecture.md`](docs/architecture.md) and [`docs/architecture-diagram.md`](docs/architecture-diagram.md).
 

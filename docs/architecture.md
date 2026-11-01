@@ -23,15 +23,16 @@ This compensating control is why the hardened `substation-improved.json` source-
 
 ## Node inventory
 
-| Node | Container | Zone(s) | IP | Role |
+| Node | Compose service | Zone(s) | IP | Role |
 |------|-----------|---------|-----|------|
 | Corporate workstation | `corp_ws` | enterprise + desk_corp | 10.10.10.10 | Generic IT workstation |
 | Kali attacker | `kali` | enterprise | 10.10.10.50 | Offense tooling: nmap, mbpoll, dnp3poll, dnp3cmd, pymodbus |
 | Vendor jump box | `vendor_jump` | vendor + desk_vendor | 10.20.20.10 | Vendor remote access |
 | Engineering workstation | `eng_workstation` | vendor + desk_eng | 10.20.20.20 | Ubuntu MATE desktop with Wireshark, tshark, mbpoll, dnp3 tools |
-| FUXA HMI | `fuxa_hmi` | ot_ops | 10.30.30.10 | Operator HMI (SCADA) |
+| FUXA HMI | `fuxa_hmi` | ot_ops + mgmt | 10.30.30.10 | Operator HMI (SCADA) |
+| HMI poller | `hmi_poller` | shares FUXA's network namespace | shares FUXA's IPs | Periodic Modbus reads from the RTAC |
 | RTAC | `rtac_sim` | ot_ops + field + physics + mgmt | 10.30.30.20 (also 10.40.40.10 on field_net pinned via the OT-Ops firewall, 10.50.50.10 on physics_net for OpenDSS polling, 10.99.99.20 on mgmt_net so the backend can reach it) | Supervisory controller / protocol broker |
-| OpenPLC | `openplc` | ot_ops | 10.30.30.30 | Substation automation PLC (Modbus client of the RTAC) |
+| OpenPLC | `openplc` | ot_ops + mgmt | 10.30.30.30 | Substation automation PLC (Modbus client of the RTAC) |
 | Historian | `historian_sim` | ot_ops | 10.30.30.40 | Data historian polling the RTAC |
 | GPS clock | `gps_sim` | ot_ops | 10.30.30.50 | Time source for SOE timestamping |
 | Relay | `relay_sim` | field | 10.40.40.20 | Feeder breaker with trip/close/lockout |
@@ -39,12 +40,14 @@ This compensating control is why the hardened `substation-improved.json` source-
 | Regulator | `regulator_sim` | field | 10.40.40.22 | Load tap changer (±16 positions) |
 | Capacitor bank | `capbank_sim` | field | 10.40.40.23 | Var support |
 | OpenDSS | `opendss_sim` | physics | 10.50.50.20 | Feeder physics engine |
-| Firewall | `firewall` | all (incl. mgmt) | .2 on each zone | containd NGFW |
+| Firewall | `firewall` | teaching zones + mgmt (not physics) | .2 on each attached subnet | containd NGFW |
 | Backend | `backend` | mgmt | 10.99.99.10 | RangerDanger API |
 | Frontend | `frontend` | mgmt | 10.99.99.11 | Next.js UI |
 | Proxy | `proxy` | mgmt + all delivery bridges | 10.99.99.3 | Nginx reverse proxy to all node UIs |
 
 Backend and frontend attach only to `mgmt_net` (10.99.99.0/24).
+Compose service keys are not container names: for example, `backend` runs
+as `rangerdanger-backend` and `firewall` as `rangerdanger-firewall`.
 The proxy retains its management leg and also attaches to three internal,
 platform-owned delivery bridges. Each desktop keeps its teaching-zone leg
 and replaces its management leg with exactly one delivery leg:
@@ -108,7 +111,7 @@ Internal packages:
 
 ### Frontend (Next.js + TypeScript)
 
-Next.js 15 app at `frontend/app/` with dark-themed shadcn-style UI.
+Next.js 16 app at `frontend/app/` with dark-themed shadcn-style UI.
 
 Top-level pages:
 
@@ -174,22 +177,28 @@ DNP3 outstation addresses (the five that expose DNP3): relay=1, recloser=2, regu
 
 ### Containd NGFW
 
-[containd](https://github.com/tonylturner/containd) is pulled as a container image (`ghcr.io/tonylturner/containd:latest`) and configured via JSON policy files in `lab-definitions/firewall/`. RangerDanger doesn't modify containd source - only configuration.
+[containd](https://github.com/tonylturner/containd) is pulled as
+`ghcr.io/tonylturner/containd:latest` in release mode. Source mode builds
+`rangerdanger-firewall` from the containd `v0.1.36` git ref (or the
+`CONTAIND_SOURCE` override). Policies are declared by each package's
+`package.yml`: US uses `lab-definitions/firewall/`, EU uses
+`lab-definitions/packages/eu-iec104-substation/firewall/`.
+RangerDanger doesn't modify containd source - only configuration.
 
 Capabilities used:
 
 - Zone-based firewall with nftables backend
-- ICS DPI - Modbus function code filtering, DNP3 protocol awareness
+- ICS DPI - Modbus function-code and DNP3 protocol detection and logging
 - IT DPI - DNS, TLS/SNI, HTTP, SSH, RDP, SMB visibility
 - Web UI on :8080, SSH console on :2222
 - REST API at `/api/v1/*` for policy, status, events, PCAP management
 - SSE events stream
 - Linux shell mode (`CONTAIND_SSH_SHELL_MODE=linux`) giving students a real bash shell with `tcpdump` and standard Linux tools
 
-Two firewall configs ship with the lab:
+Two US reference firewall configs ship with the lab:
 
 - **substation-weak.json** - Intentionally permissive baseline; enterprise and vendor zones have broad access to OT and field devices on Modbus/DNP3/HTTP. Enables attack success in exercises 2-4.
-- **substation-improved.json** - Hardened policy. Enterprise denied all ICS access. Vendor restricted to SSH/HTTPS only. Only the RTAC (source-pinned to `10.30.30.20`, the OT-Ops leg the firewall actually sees) can reach field devices on Modbus/DNP3/HTTP. ICS DPI rules limit Modbus to function codes 1-6. GPS time sync pinned to `10.30.30.50`.
+- **substation-improved.json** - Hardened policy. Enterprise denied all ICS access. Vendor restricted to SSH/HTTPS only. Only the RTAC (source-pinned to `10.30.30.20`, the OT-Ops leg the firewall actually sees) can reach field devices on Modbus/DNP3/HTTP. The authored Modbus DPI predicate is function codes 1-6, not proof of function-code-level denial. The L4 source pin enforces; DPI detects and logs. GPS time sync pinned to `10.30.30.50`.
 
 ## Data flow
 
@@ -229,7 +238,13 @@ Outcome: the firewall sees every RTAC→field flow with source IP `10.30.30.20` 
 
 ### Traffic generator
 
-`POST /api/traffic/generate` spawns containerized `docker exec` commands that send realistic OT traffic from every relevant source - Modbus reads from RTAC to field devices, Modbus reads from HMI and historian to RTAC, NTP from GPS to field devices, HTTP from eng-ws to RTAC and OpenPLC, and so on. This produces the baseline traffic that exercise 0 captures and analyzes. Attack traffic is deliberately excluded from the generator - only normal operational flows.
+`POST /api/traffic/generate` runs only the active package recipe's
+scenario traffic through Docker exec. For US, this includes engineering/vendor
+HTTP requests and engineering Modbus and DNP3 field reads, including
+exposures available under Weak and denied under Hardened. The autonomous
+simulator baseline (such as RTAC field polling and HMI/historian RTAC reads)
+runs independently; stopping the generator does not stop it. Lab 1.2
+(Baseline Traffic Analysis) captures these conversations.
 
 ### PCAP capture
 
@@ -246,6 +261,7 @@ Backend-read variables (`backend/internal/config`):
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `RANGERDANGER_HTTP_PORT` | 8080 | Backend listen port |
+| `RANGERDANGER_ALLOWED_ORIGINS` | `["*"]` | Allowed origins for backend WebSocket upgrades |
 | `RANGERDANGER_DB_PATH` | `backend/data/rangerdanger.db` (the in-container deployment overrides this to `/data/rangerdanger.db` via the platform Compose file) | SQLite path |
 | `RANGERDANGER_LAB_DEFINITIONS_PATH` | `lab-definitions` | YAML source directory |
 | `RANGERDANGER_ROOT` | none; the platform Compose files refuse to start without it (`setup.sh` writes it to `.env`) | Installation root: Compose project directory for ranges, mounted read-only at the same path |
@@ -267,4 +283,11 @@ Variables read by the **containd container itself** (not the backend) and set in
 
 ## Security notes
 
-Lab networks are internal-only by default. Only the nginx proxy, containd web UI, and containd SSH bind to host ports. Containers run with minimal privileges except where simulators require `NET_ADMIN` for gateway manipulation. Default credentials are for lab use only and must not be exposed to production systems or untrusted networks.
+Lab networks use private Docker bridge subnets; teaching, management and
+US physics bridges are not marked `internal: true`. The EU process bridge
+and the platform's desktop-delivery bridges are explicitly internal.
+Only the nginx proxy and
+containd's HTTP, HTTPS and SSH endpoints publish host ports, all bound to
+`127.0.0.1`. Containers run with minimal privileges except where simulators
+require `NET_ADMIN` for gateway manipulation. Default credentials are for
+lab use only and must not be exposed to production systems or untrusted networks.

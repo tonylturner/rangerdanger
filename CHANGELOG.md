@@ -25,6 +25,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Canned and compiled firewall policies use containd schema 0.1.10, so the
   authored rule order is the enforced order. Labs teach first-match terminal
   decisions.
+- Architecture diagrams now generate from package wiring and proxy routes, with CI drift checks; README and architecture guidance reflect both packages.
 - RangerDanger now requires containd 0.1.36. Source mode builds the
   firewall from the containd `v0.1.36` tag, and containd migrates its stored
   schema one way to 0.1.9.

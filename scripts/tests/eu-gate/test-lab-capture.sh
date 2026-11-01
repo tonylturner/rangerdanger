@@ -11,7 +11,8 @@ with open(sys.argv[1]) as source:
 step = next(s for s in scenario['steps'] if s['id'] == 'capture-traffic-at-the-firewall')
 print(next(line.strip() for line in step['description'].splitlines() if line.strip().startswith('tcpdump ')))
 PY
-)
+) || { echo "cannot read the student capture command" >&2; exit 1; }
+[ -n "$STUDENT_COMMAND" ] || { echo "empty student capture command" >&2; exit 1; }
 eu_lab_wait_traffic_quiescent() { :; }
 # shellcheck disable=SC2034 # response global read by eu_lab_wait_capture
 eu_api_post() { HTTP_STATUS=200; }
