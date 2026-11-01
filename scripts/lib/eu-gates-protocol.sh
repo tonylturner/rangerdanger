@@ -27,14 +27,15 @@ eu_gate_G2() {
 }
 
 eu_gate_G3() {
-  local before_noop_revision after_noop_revision
+  local before_noop_revision after_noop_revision capture_stats="$TMP_DIR/G3-tcpdump.log"
   CAPTURE_PATH="/tmp/eu-iec104-smoke-$$.pcap"
   CAPTURE_PID_FILE="/tmp/eu-iec104-smoke-$$.tcpdump.pid"
   CAPTURE_LOG="/tmp/eu-iec104-smoke-$$.tcpdump.log"
   # shellcheck disable=SC2034
   capture_running=1
+  # Keep the measured ring settings in sync with eu_window_start.
   if ! docker exec "$FW" sh -c "rm -f '$CAPTURE_PATH' '$CAPTURE_PID_FILE' '$CAPTURE_LOG'; \
-    tcpdump --immediate-mode -i any -s 0 -U -w '$CAPTURE_PATH' 'tcp port 2404 or tcp port 502' \
+    tcpdump --immediate-mode -i any -s 2048 -B 8192 -U -w '$CAPTURE_PATH' 'tcp port 2404 or tcp port 502' \
       >'$CAPTURE_LOG' 2>&1 & echo \$! > '$CAPTURE_PID_FILE'"; then
     fail "G3 could not start tcpdump for both protocol hops"
   else
@@ -85,6 +86,11 @@ eu_gate_G3() {
   eu_stop_capture || true
   if [ -n "$CAPTURE_PID" ]; then
     if docker cp "$FW:$CAPTURE_PATH" "$TMP_DIR/eu-iec104-gate.pcap" >/dev/null 2>"$TMP_DIR/docker-cp.err"; then
+      if docker exec "$FW" cat "$CAPTURE_LOG" >"$capture_stats" 2>"$TMP_DIR/G3-tcpdump-log.err"; then
+        eu_check_capture_integrity "$TMP_DIR/eu-iec104-gate.pcap" "$capture_stats" G3 || true
+      else
+        fail "G3 tcpdump statistics unavailable: $(cat "$TMP_DIR/G3-tcpdump-log.err")"
+      fi
       eu_decode_capture
     else
       fail "G3 could not retrieve firewall capture: $(cat "$TMP_DIR/docker-cp.err")"

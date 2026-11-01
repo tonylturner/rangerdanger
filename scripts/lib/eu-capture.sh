@@ -28,6 +28,83 @@ eu_stop_capture() {
   fail "owned tcpdump process $CAPTURE_PID did not stop after SIGINT"
   return 1
 }
+
+eu_check_capture_integrity() {
+  local pcap="$1" stats="$2" label="$3" drop_count pcap_error
+  if [ ! -r "$stats" ] || ! drop_count=$(awk '
+    /^[[:space:]]*[0-9]+ packets captured[[:space:]]*$/ { captured++ }
+    /^[[:space:]]*[0-9]+ packets received by filter[[:space:]]*$/ { received++ }
+    /^[[:space:]]*[0-9]+ packets dropped by kernel[[:space:]]*$/ {
+      dropped++
+      drop_count = $1
+    }
+    END {
+      if (captured != 1 || received != 1 || dropped != 1) exit 1
+      print drop_count
+    }
+  ' "$stats"); then
+    fail "$label tcpdump packet statistics are missing or incomplete"
+    return 1
+  fi
+  if [ "$drop_count" -gt 0 ]; then
+    fail "$label tcpdump reports $drop_count packets dropped by kernel"
+    return 1
+  fi
+  if ! pcap_error=$(python3 - "$pcap" 2>&1 <<'PY'
+import struct
+import sys
+
+path = sys.argv[1]
+formats = {
+    b"\xd4\xc3\xb2\xa1": "<",
+    b"\xa1\xb2\xc3\xd4": ">",
+    b"\x4d\x3c\xb2\xa1": "<",
+    b"\xa1\xb2\x3c\x4d": ">",
+}
+try:
+    capture = open(path, "rb")
+except OSError as exc:
+    raise SystemExit(f"cannot read pcap: {exc}")
+with capture:
+    header = capture.read(24)
+    if len(header) < 24:
+        raise SystemExit("incomplete pcap global header")
+    endian = formats.get(header[:4])
+    if endian is None:
+        raise SystemExit("unsupported pcap format")
+
+    records = 0
+    while True:
+        record = capture.read(16)
+        if not record:
+            break
+        if len(record) < 16:
+            raise SystemExit(f"incomplete pcap record header after record {records}")
+        included, original = struct.unpack_from(endian + "II", record, 8)
+        records += 1
+        if included < original:
+            raise SystemExit(
+                f"truncated record {records}: incl_len {included} < orig_len {original}"
+            )
+        if included > original:
+            raise SystemExit(
+                f"invalid record {records}: incl_len {included} > orig_len {original}"
+            )
+        remaining = included
+        while remaining > 0:
+            packet_data = capture.read(min(65536, remaining))
+            if not packet_data:
+                raise SystemExit(f"incomplete packet data in record {records}")
+            remaining -= len(packet_data)
+print(f"{records} complete record(s)")
+PY
+  ); then
+    fail "$label packet capture is invalid: $pcap_error"
+    return 1
+  fi
+  pass "$label capture has zero kernel drops and complete pcap records ($pcap_error)"
+}
+
 # eu_iec104_command_filter CA IOA SE: CC-to-RTU frames carrying a C_DC_NA_1
 # (TypeID 46) activation for the breaker command with S/E = SE. The # layer
 # operator binds the fields to one ASDU, so a segment carrying several APDUs
@@ -130,23 +207,34 @@ eu_window_start() {
   platform=$(docker image inspect -f '{{.Os}}/{{.Architecture}}' "$image") || return
   # Reuse the already-running image, without pulling/tagging it. Sharing the
   # RTU namespace is necessary to observe its same-subnet PLC polls too.
+  # Measured on tcpdump 4.99.7/libpcap 1.11.0: this pair gives 3,913 2,144-byte
+  # frames in 4 KiB TPACKET_V2 blocks (15.28 MiB); 2 KiB fits MTU-1500 SLL/SLL2.
   if ! docker run -d --platform "$platform" --name "$CAPTURE_HOST" --network "container:$peer" \
-    --cap-add NET_RAW --entrypoint tcpdump "$image" --immediate-mode -i any -s 0 -U -w "$CAPTURE_PATH" \
+    --cap-add NET_RAW --entrypoint tcpdump "$image" --immediate-mode -i any -s 2048 -B 8192 -U -w "$CAPTURE_PATH" \
     'tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081' >"$TMP_DIR/$label-capture.id"; then
     fail "$label cannot start owned capture container"; return 1
   fi
   sleep 1
 }
 eu_window_finish() {
-  local label="$1"
+  local label="$1" stats
+  stats="$TMP_DIR/$label-tcpdump.log"
   eu_stop_capture || return
   docker cp "$CAPTURE_HOST:$CAPTURE_PATH" "$TMP_DIR/$label.pcap" >/dev/null || {
     fail "$label cannot retrieve attempt capture"; return 1;
   }
+  if ! docker logs "$CAPTURE_HOST" >"$stats" 2>"$TMP_DIR/$label-tcpdump-log.err"; then
+    fail "$label cannot retrieve tcpdump statistics: $(cat "$TMP_DIR/$label-tcpdump-log.err")"
+    docker rm "$CAPTURE_HOST" >/dev/null || return
+    CAPTURE_HOST=""
+    CAPTURE_PATH="" CAPTURE_PID_FILE="" CAPTURE_LOG="" CAPTURE_PID=""
+    return 1
+  fi
   docker rm "$CAPTURE_HOST" >/dev/null || return
   CAPTURE_HOST=""
   # shellcheck disable=SC2034 # shared with capture teardown
   CAPTURE_PATH="" CAPTURE_PID_FILE="" CAPTURE_LOG="" CAPTURE_PID=""
+  eu_check_capture_integrity "$TMP_DIR/$label.pcap" "$stats" "$label"
 }
 
 # Poll requests, not CC/GI refreshes, measure the independent RTU scheduler.
