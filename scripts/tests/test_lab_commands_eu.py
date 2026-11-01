@@ -57,6 +57,23 @@ class EUOracleTests(unittest.TestCase):
         self.assertFalse(eu.semantic("registers", out.replace("[5]: 5", "")))
         self.assertFalse(eu.semantic("registers", "Connected successfully"))
 
+    def test_registers_accept_mbpoll_signed_annotations_without_losing_completeness(self):
+        lines = [
+            "[0]: \t2", "[1]: \t1", "[2]: \t1", "[3]: \t16903",
+            "[4]: \t45050 (-20486)", "[5]: \t16801", "[6]: \t22093",
+            "[7]: \t0", "[8]: \t1", "[9]: \t37382 (-28154)", "[10]: \t26260",
+        ]
+        out = "-- Polling slave 1...\n" + "\n".join(lines) + "\n"
+        self.assertTrue(eu.semantic("registers", out))
+        for bad in (
+                out.replace(lines[4], ""),
+                out.replace(lines[4], "[4]: \t45050 (invalid)"),
+                out.replace(lines[4], "[4]: \t45050 (-20486) trailing garbage"),
+                out + lines[4],
+                "\n".join(lines[:4] + [lines[5], lines[4]] + lines[6:])):
+            with self.subTest(output=bad):
+                self.assertFalse(eu.semantic("registers", bad))
+
     def test_statistics_and_historian_need_data(self):
         self.assertTrue(eu.semantic("io-stat", "| 0.000 <> 12.000 | 4 | 500 |"))
         self.assertFalse(eu.semantic("io-stat", "| 0.000 <> 12.000 | 0 | 0 |"))
