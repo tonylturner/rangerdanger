@@ -159,9 +159,9 @@ steps:
   description: |
     From **Kali** (10.10.10.50), actively probe the dormant paths:
 
-        nmap -p 2404 10.30.30.20 --max-retries 1 -T4
+        nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4
         iec104cmd 10.30.30.20 gi --json
-        nmap -p 502 10.40.40.20 --max-retries 1 -T4
+        nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4
         mbpoll -m tcp -a 1 -t 3 -0 -r 0 -c 11 -1 10.40.40.20
 
     Weak policy permits both. A completed GI proves a protocol operation, not command authority; an input-register read is not a write.

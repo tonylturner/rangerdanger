@@ -19,6 +19,32 @@ worker = importlib.import_module("lab_commands_smoke")
 
 
 class EUOracleTests(unittest.TestCase):
+    def test_all_eu_port_probes_skip_discovery_and_require_port_evidence(self):
+        rows = [r for r in worker.extract(package_id=eu.EU)
+                if r["command"].startswith("nmap ")]
+        data = json.loads((ROOT / "scripts/lab-commands-expectations-eu-iec104-substation.json").read_text())
+        self.assertEqual(len(rows), 9)
+        for row in rows:
+            with self.subTest(command=worker.gate.key(row)):
+                self.assertRegex(row["command"], r"^nmap -Pn -p [\d,]+ \S+ --max-retries 1 -T4$")
+                oracle = data["commands"][worker.gate.key(row)]["oracle"]
+                down = "Note: Host seems down\nNmap done: 0 hosts up"
+                self.assertFalse(worker.gate.verdict(oracle, 0, down, "", control=True))
+                ports = row["command"].split()[3].split(",")
+                def output(state):
+                    return "\n".join(f"{port}/tcp {state}" for port in ports)
+                denied = oracle["intent"] == "deny"
+                self.assertTrue(worker.gate.verdict(
+                    oracle, 0, output("filtered" if denied else "open"), "", control=True))
+                self.assertFalse(worker.gate.verdict(
+                    oracle, 0, output("open" if denied else "filtered"), "", control=True))
+                self.assertFalse(worker.gate.verdict(
+                    oracle, 0, output("closed"), "", control=True))
+                if denied:
+                    control = {"intent": "read", "match": oracle["control_match"]}
+                    self.assertTrue(worker.gate.verdict(control, 0, output("open"), ""))
+                    self.assertFalse(worker.gate.verdict(control, 0, output("filtered"), ""))
+
     def test_gi_requires_completed_one_shot_not_connection_or_failure(self):
         self.assertTrue(eu.semantic("gi", '{"event":"result","op":"gi","status":"ok"}'))
         for out in ('{"event":"connected"}', '{"event":"result","op":"gi","status":"failed"}',
