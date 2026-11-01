@@ -7,7 +7,6 @@
 set -euo pipefail
 API="${RANGERDANGER_API:-http://localhost:8088}"
 PROBE_TIMEOUT="${LAB_CMD_TIMEOUT:-10}"
-SETTLE_SECS="${SETTLE_SECS:-2}"
 target="${1:-}"
 if [ "$target" = eu-iec104-substation ]; then
   exec python3 scripts/lib/lab_commands_smoke.py "$target"
@@ -69,10 +68,13 @@ apply_policy() {
   local name="$1"
   [ -z "$name" ] && return 0
   local resp
-  resp=$(curl --max-time 10 -fsS -X POST -H 'Content-Type: application/json' \
+  resp=$(curl --max-time 60 -fsS -X POST -H 'Content-Type: application/json' \
     -d "{\"config\":\"$name\"}" "$API/api/firewall/apply" 2>&1) || {
     err "policy apply ($name) failed: $resp"
     exit 1
+  }
+  printf '%s' "$resp" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/containd_readiness.py" --backend-receipt || {
+    err "apply $name did not become protecting"; return 1;
   }
   local active
   active=$(curl --max-time 10 -fsS "$API/api/firewall/active" 2>&1) || {
@@ -88,7 +90,7 @@ apply_policy() {
   case "$name" in
     weak|baseline)     expected_canary=allow ;;
     improved|hardened) expected_canary=deny  ;;
-    *) sleep "$SETTLE_SECS"; return 0 ;;
+    *) err "unsupported policy $name"; return 1 ;;
   esac
   if ! wait_for_dataplane "$expected_canary" 15; then
     err "dataplane never reconciled to $name (canary kali->rtac:502 still wrong after 15s)"

@@ -19,6 +19,7 @@ case "$1" in
     [ "$HTTP_STATUS" = 200 ]
     printf '%s\n' "$API_BODY" >"$4"
     ;;
+  # Separate fresh SYN/GI admission proof; not needed to enforce a DENY.
   reconnect-check)
     shape=$(eu_station_shape)
     eu_wait_for_operator "($shape) and .link.state == \"started\"

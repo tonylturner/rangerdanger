@@ -114,7 +114,8 @@ prepare_stack
 # Every assertion below is about the US range.
 note "range"
 range=$(curl -fsS "$API/api/range") || { err "GET /api/range failed"; exit 1; }
-if [ "$(echo "$range" | jq -r '.package + " " + .phase')" = "us-dnp3-substation ready" ]; then
+if echo "$range" | jq -e '.package == "us-dnp3-substation" and .phase == "ready"' >/dev/null \
+  && printf '%s' "$range" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/containd_readiness.py" --backend-receipt; then
   ok "range us-dnp3-substation ready"
 else
   err "range is not us-dnp3-substation ready: $(echo "$range" | jq -c '{package, phase, error}')"

@@ -3,7 +3,8 @@
 # Loaded by eu-iec104-smoke.sh; sourcing only defines helpers/gates.
 
 # Closing rows are history, both before a gate owns a connection and when
-# selecting its live kill target. Unknown states remain live (fail closed).
+# selecting its non-closing diagnostic tuple. Unknown states remain eligible
+# (fail closed). A conntrack entry is not proof of traffic delivery.
 # shellcheck disable=SC2016
 EU_SESSION_JQ_DEFS='
   def closing: .state as $state
@@ -55,7 +56,7 @@ eu_session_tuple() {
     }
   count=$(printf '%s' "$matches" | jq 'length') || count=""
   if [ "$count" != "1" ]; then
-    printf 'expected exactly one live session tuple for %s -> %s tcp/%s, found %s\n' \
+    printf 'expected exactly one non-closing session tuple for %s -> %s tcp/%s, found %s\n' \
       "$src" "$dst" "$dport" "${count:-unparsable}" >&2
     return 1
   fi
@@ -113,7 +114,7 @@ eu_wait_session_history_drained() {
     }
     live=$(printf '%s' "$rows" | jq -c 'map(select(.closing | not))')
     if [ "$live" != "[]" ]; then
-      fail "$label found live $src -> $dst tcp/$dport conntrack rows that no gate step owns: $live"
+      fail "$label found unowned non-closing $src -> $dst tcp/$dport conntrack rows that no gate step owns: $live"
       return 1
     fi
     if [ "$rows" = "[]" ]; then

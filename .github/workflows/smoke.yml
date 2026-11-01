@@ -128,7 +128,9 @@ jobs:
           done <<<"$ids"
           docker image inspect "${image_list[@]}" > build/smoke-receipts/images.json
           # Source mode builds the firewall locally; record the image it runs.
-          docker image inspect "$(docker inspect --format '{{.Image}}' rangerdanger-firewall)" > build/smoke-receipts/containd.json
+          if image=$(docker inspect --format '{{.Image}}' rangerdanger-firewall 2>/dev/null); then
+            docker image inspect "$image" > build/smoke-receipts/containd.json
+          fi
           curl -fsS --max-time 10 http://localhost:8088/api/build > build/smoke-receipts/api-build.json
           curl -fsS --max-time 10 http://localhost:8088/api/firewall/active > build/smoke-receipts/firewall-active.json
 

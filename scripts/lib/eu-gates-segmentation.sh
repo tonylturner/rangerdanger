@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Firewall denial, exact-session cuts, CC recovery and plan proof (G4-G10, G28).
+# Firewall denial, commit-only established-connection loss, CC recovery and plan proof (G4-G10, G28).
 # Loaded by eu-iec104-smoke.sh; sourcing only defines helpers/gates.
 
 # Inventory identity, not a hard-coded point count or a vacuous all([]).
@@ -23,7 +23,7 @@ eu_plan_case() {
   [ "$HTTP_STATUS" = 200 ] || return 1
   printf '%s' "$API_BODY" | jq -e -L "$oracle" --slurpfile golden "$golden" \
     'include "plan-gate"; plan_applied($golden[0])' || return 1
-  sleep 3
+  eu_require_backend_protection "$API_BODY" || return 1
   eu_api_post /api/firewall/validation-report '{}' 90 || return 1
   [ "$HTTP_STATUS" = 200 ] || return 1
   printf '%s' "$API_BODY" | jq -e -L "$oracle" --slurpfile golden "$golden" \
@@ -45,7 +45,7 @@ eu_gate_G28() {
   return "$result"
 }
 
-# Silent conntrack deletion is detected by TESTFR idle + response timeout.
+# A silent policy drop is detected by TESTFR idle + response timeout.
 eu_cc_loss_deadline() {
   jq -er '.timers.t1_s + .timers.t3_s + (.reconnect_interval_ms / 1000 | ceil) + 10' "$PACKAGE/protocols/points.json"
 }
@@ -80,9 +80,6 @@ eu_gate_G5() {
 }
 
 eu_gate_G6() {
-  local g6_kill_verified=0
-  # §13 requires exactly one Kali tuple once the monitor runs, so it starts only
-  # after earlier Kali sessions (the G4 one-shot's TIME_WAIT) have expired.
   if ! eu_wait_session_history_drained 10.10.10.50 "$RTU_IP" 2404 "G6 Kali session baseline"; then
     fail "G6 monitor not started without a clean Kali-to-RTU session baseline"
     return
@@ -91,31 +88,24 @@ eu_gate_G6() {
     fail "G6 could not start a weak-policy persistent monitor"
     return
   fi
-  if eu_g6_cut_monitor_session; then
-    g6_kill_verified=1
-  fi
-  if [ "$g6_kill_verified" -eq 1 ]; then
-    eu_run_kali_gi G6-reconnect 2 || true
-  else
-    fail "G6 reconnect denial was not tested because the established-session kill was unverified"
-  fi
+  eu_g6_commit_monitor_loss || return
+  # Independent fresh SYN/GI admission check, not a prerequisite for enforcement.
+  eu_run_kali_gi G6-reconnect 2 || true
 }
 
-# G6 body: the established monitor survives improved, then its exact tuple is
-# killed and it must exit 3 with no later ASDU.
-eu_g6_cut_monitor_session() {
-  local asdus_before kali_tuple asdu_observation_valid=1 kill_started_ms kill_epoch
-  if eu_monitor_wait_event connected 15 && eu_monitor_wait_event gi_complete 15; then
-    pass "G6 monitor connected and completed GI under weak"
-  else
+# A retained ESTABLISHED conntrack row is diagnostic, never delivery evidence.
+eu_g6_commit_monitor_loss() {
+  local kali_tuple ready_ms ready_epoch deadline result=0
+  deadline=$(eu_cc_loss_deadline) || return
+  if ! eu_monitor_wait_event connected 15 || ! eu_monitor_wait_event gi_complete 15; then
     fail "G6 monitor failed to establish its IEC104 session"
-  fi
-  if ! eu_monitor_asdu_count; then
-    fail "G6 monitor ASDU JSON could not be parsed"
     return 1
   fi
-  asdus_before=$MONITOR_ASDUS
-  eu_apply_named improved || return 1
+  eu_monitor_asdu_count || return
+  if [ "$MONITOR_ASDUS" -eq 0 ]; then
+    fail "G6 monitor has no pre-commit ASDU delivery"
+    return 1
+  fi
   if ! eu_monitor_read || [ "$MONITOR_LINES" -eq 0 ] \
     || ! printf '%s\n' "$MONITOR_BODY" | jq -s -e --arg peer "$RTU_IP:2404" '
       [.[] | select(.event == "connected")] as $connected
@@ -127,72 +117,71 @@ eu_g6_cut_monitor_session() {
   fi
   if ! eu_read_sessions 2404 10.10.10.50 \
     || ! eu_session_tuple "$SESSION_BODY" 10.10.10.50 "$RTU_IP" 2404; then
-    fail "G6 session lookup did not yield exactly one Kali-to-RTU tuple"
+    fail "G6 session lookup did not yield exactly one Kali-to-RTU tuple before commit"
     return 1
   fi
   kali_tuple="$SESSION_TUPLE"
-  pass "G6 non-empty dport 2404 session list contains the monitor's exact Kali tuple"
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    sleep 1
-    if ! eu_monitor_asdu_count; then
-      asdu_observation_valid=0
-      break
-    fi
-  done
-  if [ "$asdu_observation_valid" -eq 1 ] && [ "${MONITOR_ASDUS:-0}" -gt "$asdus_before" ]; then
-    pass "G6 established IEC104 session continued receiving ASDUs for 10s after improved apply"
+  printf '%s\n' "$kali_tuple" >"$TMP_DIR/G6-before-tuple.json"
+  eu_window_start G6 || return
+  if eu_apply_named improved; then
+    ready_ms="$EU_READY_MS" ready_epoch="$EU_READY_EPOCH"
+    eu_monitor_finish 3 "$deadline" "$ready_ms" \
+      && eu_monitor_no_asdu_after "$ready_epoch" || result=1
   else
-    fail "G6 established monitor received no new ASDUs during the 10s observation"
+    result=1
   fi
-  kill_started_ms=$(eu_now_ms) || kill_started_ms=""
-  kill_epoch=$(eu_epoch_ns) || kill_epoch=""
-  if ! [[ "$kill_started_ms" =~ ^[0-9]+$ ]] || [ -z "$kill_epoch" ]; then
-    fail "G6 could not timestamp conntrack kill"
+  eu_window_finish G6 || result=1
+  return "$result"
+}
+
+# Shared CC-loss oracle for G7 and the bad-change lesson: snapshot and capture
+# before committing; prove delivery loss on a timer-derived readiness deadline.
+eu_cc_commit_loss() {
+  local policy="$1" label="$2" before shape deadline ready_ms result=0
+  deadline=$(eu_cc_loss_deadline) || return
+  shape=$(eu_station_shape) || return
+  eu_get_operator || { fail "$label operator state unavailable before commit"; return 1; }
+  before="$API_BODY"
+  if ! printf '%s' "$before" | jq -e '.link.state == "started"' >/dev/null; then
+    fail "$label requires an established CC link before commit: $before"
     return 1
   fi
-  eu_kill_tuple "$kali_tuple" \
-    && eu_monitor_finish 3 30 "$kill_started_ms" \
-    && eu_monitor_no_asdu_after "$kill_epoch"
+  if ! eu_read_sessions 2404 "$CC_IP" \
+    || ! eu_session_tuple "$SESSION_BODY" "$CC_IP" "$RTU_IP" 2404; then
+    fail "$label session lookup did not yield exactly one CC-to-RTU tuple before commit"
+    return 1
+  fi
+  printf '%s\n' "$SESSION_TUPLE" >"$TMP_DIR/$label-before-tuple.json"
+  printf '%s\n' "$before" >"$TMP_DIR/$label-before-state.json"
+  eu_window_start "$label" || return
+  if eu_commit_manual_policy "$policy" "$label"; then
+    ready_ms="$EU_READY_MS"
+    if ! eu_check_nft_chain "$label-custom" || ! eu_wait_for_operator \
+      "($shape) and .link.state != \"started\" and all(.points[]; .quality.iv and .quality.nt and .stale_reason == \"link_lost\")" \
+      "$deadline" "$label commit-only CC loss with every inventory point link_lost" "$ready_ms"; then
+      result=1
+    fi
+  else
+    result=1
+  fi
+  eu_window_finish "$label" || result=1
+  if [ "$result" -eq 0 ]; then
+    eu_manual_policy_readback "$policy" "$label" || result=1
+  fi
+  [ "$result" -eq 0 ] || return 1
+  pass "$label commit alone stopped CC delivery; all points IV+NT link_lost (no session kill)"
 }
 
 eu_gate_G7() {
-  local before_g7 g7_policy g7_kill_started_ms deadline shape
-  deadline=$(eu_cc_loss_deadline) || return
-  shape=$(eu_station_shape) || return
+  local policy="$TMP_DIR/improved-without-cc.json"
   g7_loss_verified=0
-  if ! eu_get_operator; then
-    fail "G7 operator state unavailable before restrictive policy"
-    return
-  fi
-  before_g7="$API_BODY"
-  if ! printf '%s' "$before_g7" | jq -e '.link.state == "started"' >/dev/null 2>&1; then
-    fail "G7 operator link state was not started before applying the CC restriction: $before_g7"
-    return
-  fi
-  g7_policy="$TMP_DIR/improved-without-cc.json"
-  eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$CC_IP" "$RTU_IP" 2404 "$g7_policy" || return
-  if eu_policy_has_no_ephemeral_allow "$g7_policy"; then
-    pass "G7 custom policy has only explicit-monitor IEC104 ICS and no ephemeral destination-port allow"
-  else
+  eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$CC_IP" "$RTU_IP" 2404 "$policy" || return
+  if ! eu_policy_has_no_ephemeral_allow "$policy"; then
     fail "G7 custom policy has invalid/non-monitor IEC104 ICS, unbounded TCP allow, or ephemeral-port allow"
+    return 1
   fi
-  eu_commit_manual_policy "$g7_policy" "G7 improved minus CC allow" || return
-  eu_check_nft_chain G7-custom || true
-  if ! eu_read_sessions 2404 "$CC_IP" \
-    || ! eu_session_tuple "$SESSION_BODY" "$CC_IP" "$RTU_IP" 2404; then
-    fail "G7 session lookup did not yield exactly one CC-to-RTU tuple"
-    return
-  fi
-  pass "G7 exact established CC tuple exists before kill"
-  g7_kill_started_ms=$(eu_now_ms) || g7_kill_started_ms=""
-  if ! [[ "$g7_kill_started_ms" =~ ^[0-9]+$ ]]; then
-    fail "G7 cannot establish monotonic timeout before conntrack kill"
-  elif eu_kill_tuple "$SESSION_TUPLE" && eu_wait_for_operator \
-    "($shape) and .link.state != \"started\" and all(.points[]; .quality.iv and .quality.nt and .stale_reason == \"link_lost\")" \
-    "$deadline" "G7 CC link loss with every inventory point link_lost" "$g7_kill_started_ms"; then
-    g7_loss_verified=1
-    pass "G7 CC link is not started and all points are IV+NT link_lost"
-  fi
+  eu_cc_commit_loss "$policy" G7 || return
+  g7_loss_verified=1
 }
 
 # The same isolation assertion covers autonomous regulation and local faults.

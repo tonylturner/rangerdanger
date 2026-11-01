@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # fixture globals consumed by sourced gate functions
 # Range evidence uses the VM clock even during network cuts and service pauses.
 # shellcheck disable=SC2329 # stubs invoked by sourced helpers
 # shellcheck source-path=SCRIPTDIR source=lib.sh
@@ -101,11 +102,11 @@ t_expect_eq "$(tail -n 1 "$TMP_DIR/api-paths")" \
   "historian query has no host-clock upper bound"
 
 # G11 compares capture timestamps, which also originate in the VM kernel.
-eu_apply_named() { :; }
+eu_apply_named() { EU_READY_MS=1000; EU_READY_EPOCH=$(eu_epoch_ns); }
 eu_wait_for_baseline() { :; }
 eu_make_custom_policy() { :; }
 eu_policy_has_no_ephemeral_allow() { return 0; }
-eu_commit_manual_policy() { :; }
+eu_commit_manual_policy() { EU_READY_MS=1000; }
 eu_check_nft_chain() { :; }
 # shellcheck disable=SC2034 # consumed by G11 in eu-gates-resilience.sh
 eu_read_sessions() { SESSION_BODY='{}'; }
@@ -128,15 +129,16 @@ t_expect_out 'deny cutoff: 1760529600123456789' "G5 DENY freshness uses range na
 MONITOR_ASDUS=0
 eu_monitor_wait_event() { :; }
 eu_monitor_asdu_count() { MONITOR_ASDUS=$((MONITOR_ASDUS + 1)); }
-# shellcheck disable=SC2034 # consumed by eu_g6_cut_monitor_session
+# shellcheck disable=SC2034 # consumed by eu_g6_commit_monitor_loss
 eu_monitor_read() {
   MONITOR_LINES=1
   MONITOR_BODY="{\"event\":\"connected\",\"local\":null,\"peer\":\"$RTU_IP:2404\"}"
 }
+eu_window_finish() { :; }
 eu_monitor_finish() { :; }
 eu_monitor_no_asdu_after() { printf 'ASDU cutoff: %s\n' "$1"; }
-t_run eu_g6_cut_monitor_session
-t_expect_eq "$T_STATUS" 0 "G6 completes the established-session cut with range time"
+t_run eu_g6_commit_monitor_loss
+t_expect_eq "$T_STATUS" 0 "G6 completes commit-only established-session loss with range time"
 t_expect_out 'ASDU cutoff: 1760529600123456789' "G6 ASDU cutoff uses range nanoseconds"
 
 # The scan injector is stubbed: never start Docker resources or trace a process.

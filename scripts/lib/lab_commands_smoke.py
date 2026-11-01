@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 
+from containd_readiness import require_backend_protection
 from lab_commands_eu import EU, EUAdapter, request
 from lab_commands_inventory import ROOT, US, extract, packages
 
@@ -53,7 +54,8 @@ class Lifecycle:
         if self.eu:
             self.eu.helper("policy", name)
         else:
-            request(self.api, "/api/firewall/apply", {"config": name})
+            receipt = request(self.api, "/api/firewall/apply", {"config": name})
+            require_backend_protection(receipt)
             active = request(self.api, "/api/firewall/active")
             if active.get("active_config") != name:
                 raise ValueError(f"policy apply failed: expected {name}, got {active}")
@@ -81,6 +83,7 @@ def preflight(package_id, api):
     status = request(api, "/api/range")
     if status.get("package") != package_id or status.get("phase") != "ready":
         raise ValueError(f"refusing wrong/non-ready range: expected {package_id}, got {status}")
+    require_backend_protection(status)
 
 
 def run(package_id, target, api, directory, timeout):

@@ -21,6 +21,7 @@ REPORT_STATUS=200
 RESTORE_FAIL=0
 LEAK_PLAN=0
 sleep() { :; }
+eu_mark_protection_ready() { :; }
 docker() { return 99; }
 curl() { return 99; }
 
@@ -65,7 +66,7 @@ eu_api_post() {
       if ! jq -ne --argjson sent "$2" --argjson want "$request" '$sent == $want' >/dev/null; then
         return 99
       fi
-      API_BODY=$(jq -c '{applied:true,warnings:[],plan:.}' "$file")
+      API_BODY=$(jq -c '{applied:true,warnings:[],plan:.,containd:{applyId:"plan-id",protection:"protecting"}}' "$file")
       HTTP_STATUS="$APPLY_STATUS"
       ;;
     /api/firewall/validation-report)
@@ -76,7 +77,7 @@ eu_api_post() {
     /api/firewall/apply)
       CALLS="$CALLS named:$2"
       [ "$RESTORE_FAIL" -eq 0 ] || return 1
-      API_BODY='{"warnings":[]}'
+      API_BODY='{"warnings":[],"containd":{"applyId":"named-id","protection":"protecting"}}'
       # shellcheck disable=SC2034 # read by the real eu_apply_named
       HTTP_STATUS=200
       ;;
@@ -151,6 +152,13 @@ done
 MUTATION='if has("acceptance") then .acceptance.preventionGaps |= .[1:] else . end'
 run_plan_gate
 t_expect_eq "$T_STATUS" 1 "missing partial prevention gap fails exact equality"
+MUTATION='if has("plan") then .containd.protection="degraded" else . end'
+run_plan_gate
+t_expect_eq "$T_STATUS" 1 "degraded plan receipt fails despite a faithful plan"
+t_expect_eq "${CALLS##* named:}" '{"config":"weak"} active' "degraded plan still restores named weak"
+MUTATION='if has("plan") then del(.containd) else . end'
+run_plan_gate
+t_expect_eq "$T_STATUS" 1 "missing plan receipt cannot borrow a later apply identity"
 MUTATION="."
 for APPLY_STATUS in 422 500; do
   run_plan_gate

@@ -45,6 +45,8 @@ phase(){ printf "\n%s== %s ==%s\n" "$B" "$*" "$X"; }
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO" || { echo "cannot cd to repo root"; exit 2; }
+# shellcheck source=lib/range.sh
+. "$REPO/scripts/lib/range.sh"
 COMPOSE_FILE="$REPO/docker-compose.release.yml"
 MARKER="$REPO/.setup-binfmt-amd64"
 PROJECTS=(rangerdanger-platform rangerdanger)
@@ -86,7 +88,7 @@ assert_up() {
     # The range setup started, through the backend.
     local range
     range=$(curl -fsS --max-time 10 http://localhost:8088/api/range 2>/dev/null || true)
-    if echo "$range" | grep -Eq '"phase"[[:space:]]*:[[:space:]]*"ready"'; then
+    if echo "$range" | grep -Eq '"phase"[[:space:]]*:[[:space:]]*"ready"' && range_has_protection "$range"; then
         ok "range ready ($(echo "$range" | sed -nE 's/.*"package"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p'))"
     else no "range not ready (GET /api/range: ${range:-<none>})"; fi
 
@@ -119,25 +121,25 @@ assert_execute() {
     for cfg in weak improved; do
         # Capture the body: a 200 with warnings on 'improved' means the kernel
         # rejected the DPI ruleset and the hardened policy silently rolled back.
-        apply_resp=$(curl -fsS --max-time 15 -X POST -H 'Content-Type: application/json' \
+        apply_resp=$(curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' \
             -d "{\"config\":\"$cfg\"}" http://localhost:8088/api/firewall/apply 2>/dev/null) || apply_resp=""
         if [ -z "$apply_resp" ]; then
             no "firewall apply ($cfg) — Lab 2.2/2.3/2.4 would not work"
         elif [ "$cfg" = "improved" ] && echo "$apply_resp" | grep -qE 'nft apply failed|queue num|NFT_QUEUE'; then
             no "firewall apply (improved) returned warnings — hardened policy NOT enforcing (host kernel missing nfnetlink_queue/CONFIG_NFT_QUEUE)"
-        else
+        elif range_has_protection "$apply_resp"; then
             ok "firewall apply ($cfg)"
+        else
+            no "firewall apply ($cfg) is not protecting: $apply_resp"
         fi
     done
     # Top-level success, not a substring (per-action entries each carry their own).
     local resp reset_ok=0
-    resp=$(curl -fsS --max-time 15 -X POST http://localhost:8088/api/workshop/reset 2>/dev/null || true)
-    if command -v python3 >/dev/null 2>&1; then
-        reset_ok=$(echo "$resp" | python3 -c 'import json,sys
+    resp=$(curl -fsS --max-time 60 -X POST http://localhost:8088/api/workshop/reset 2>/dev/null || true)
+    reset_ok=$(echo "$resp" | python3 -c 'import json,sys
 try: sys.stdout.write("1" if json.load(sys.stdin).get("success") is True else "0")
 except Exception: sys.stdout.write("0")' 2>/dev/null)
-    elif echo "$resp" | grep -q '"success":true'; then reset_ok=1; fi
-    if [ "$reset_ok" = "1" ]; then ok "workshop reset"; else no "workshop reset top-level success != true (got: ${resp:-<none>})"; fi
+    if [ "$reset_ok" = "1" ] && range_has_protection "$resp"; then ok "workshop reset"; else no "workshop reset not successful/protecting (got: ${resp:-<none>})"; fi
 }
 
 assert_teardown() {

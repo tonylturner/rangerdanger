@@ -28,12 +28,13 @@ weak
 all devices and process" "EXIT restores weak and the ordered multi-device reset"
 t_expect_out "cleanup ended on weak policy + device reset" "restoration is verified and reported"
 
+RECEIPT_STATE=protecting
 eu_utc() { printf '2026-10-15T12:00:00Z\n'; }
 eu_api_post() {
   case "$1" in
     /api/workshop/reset)
       HTTP_STATUS=200
-      API_BODY='{"actions":[{"success":true},{"success":true},{"success":true},{"success":true},{"success":true},{"success":true},{"success":true}]}' ;;
+      API_BODY='{"containd":{"applyId":"reset-id","protection":"'"$RECEIPT_STATE"'"},"actions":[{"success":true},{"success":true},{"success":true},{"success":true},{"success":true},{"success":true},{"success":true}]}' ;;
     /api/operator/gi)
       # shellcheck disable=SC2034 # consumed by the sourced GI helper
       HTTP_STATUS=202
@@ -61,4 +62,9 @@ t_expect_fails 1 "a GI started before settling cannot pass recovery"
 OPERATOR=$(printf '%s' "$OPERATOR" | jq -c '.link.gi.started_at = "2026-10-15T12:00:00.2Z" | .points[0].quality.sb = true')
 t_run eu_reset_all
 t_expect_fails 1 "reset preserves full GOOD quality requirements"
+for RECEIPT_STATE in degraded pending failed disabled; do
+  t_run eu_reset_all
+  t_expect_eq "$T_STATUS" 1 "reset fails on $RECEIPT_STATE even with seven successful actions"
+  t_expect_out "$RECEIPT_STATE" "reset failure retains the observed receipt"
+done
 t_finish

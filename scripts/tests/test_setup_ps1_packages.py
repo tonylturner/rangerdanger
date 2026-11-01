@@ -128,7 +128,7 @@ function Invoke-SetupDocker($DockerArgs, $TimeoutSec) {
         self.assertEqual(set(json.loads(result.stdout)), {8088, 9080, 2222})
 
     def test_health_and_range_requests_are_bounded_and_fail_closed(self):
-        for scenario in ("ready", "default", "failed", "preflight-failed", "conflict", "wrong-then-ready", "unknown-then-ready", "timeout", "bad-post", "wrong-post"):
+        for scenario in ("ready", "default", "degraded", "missing-receipt", "failed", "preflight-failed", "conflict", "wrong-then-ready", "unknown-then-ready", "timeout", "bad-post", "wrong-post"):
             with self.subTest(scenario=scenario):
                 result = powershell(LOAD_PACKAGE + """
 class RangeConflict : System.Exception {
@@ -161,7 +161,10 @@ function Get-RangeStatus($Api) {
         return [pscustomobject]@{phase='ready';package='us'}
     }
     if ($env:SCENARIO -eq 'unknown-then-ready' -and $script:gets -eq 1) { return $null }
-    return [pscustomobject]@{phase='ready';package='eu'}
+    $status = [pscustomobject]@{phase='ready';package='eu';containd=@{applyId='start-id';protection='protecting'}}
+    if ($env:SCENARIO -eq 'degraded') { $status.containd.protection = 'degraded' }
+    if ($env:SCENARIO -eq 'missing-receipt') { $status.containd = $null }
+    return $status
 }
 Wait-SetupHealth 'http://fixture' 1
 $failed = $false
@@ -169,7 +172,7 @@ $package = if ($env:SCENARIO -eq 'default') { '' } else { 'eu' }
 $budget = if ($env:SCENARIO -eq 'timeout') { 0 } else { 1 }
 try { $result = Start-SetupRange 'http://fixture' $package $budget }
 catch { $failed = $true }
-$expectedFailure = $env:SCENARIO -in @('failed','preflight-failed','conflict','timeout','bad-post','wrong-post')
+$expectedFailure = $env:SCENARIO -in @('degraded','missing-receipt','failed','preflight-failed','conflict','timeout','bad-post','wrong-post')
 if ($failed -ne $expectedFailure) { throw 'incorrect range result' }
 if (-not $failed -and $result -ne 'eu') { throw 'wrong package accepted' }
 if ($env:SCENARIO -eq 'conflict' -and $script:posts -ne 3) { throw 'lost retry' }
