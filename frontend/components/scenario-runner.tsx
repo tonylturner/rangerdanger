@@ -274,9 +274,6 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     try {
       const result = await validateScenario(scenario.id);
       setValidation(result);
-      if (result.outcome === "PASS") {
-        setCompletedStepIds(new Set(scenario.steps.map((s) => s.id)));
-      }
     } catch {
       setValidation(null);
     } finally {
