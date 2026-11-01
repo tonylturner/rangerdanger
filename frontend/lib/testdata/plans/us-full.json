@@ -398,7 +398,7 @@
       "filter": {}
     },
     "routing": {},
-    "schema_version": "0.1.0",
+    "schema_version": "0.1.10",
     "services": {
       "syslog": {
         "forwarders": [],
