@@ -11,10 +11,11 @@ import (
 // Include the compiler model as well as the public DTO (which omits Plan).
 func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// Captured from the resolved monolithic curricula before the directory cutover.
-	// Snapshots were updated for intentional catalog prose and unused presentation-data removal, readiness-driven budgets, and per-command source headers.
+	// Snapshots include intentional catalog/first-match prose, presentation-data
+	// removal, readiness-driven budgets, and per-command source headers.
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "1283db69bebb3f6604575c8b0b5e031b12925d978f8b5bc7c6ebb0c454367a74",
-		"eu-iec104-substation": "8daa13994e7798b0075bc4a0a3bb3586ff427758fbb931757b1b9163723d831d",
+		"us-dnp3-substation":   "7895e352d829d2c78c7e446075517868944a046a36f7ad63410d1e499c9f2b92",
+		"eu-iec104-substation": "c1faa31996c152d6503ed80d9fc7b9b239145b6542844d974c6f34b3a95881dc",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

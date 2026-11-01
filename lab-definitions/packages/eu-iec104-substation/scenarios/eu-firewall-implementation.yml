@@ -105,7 +105,7 @@ steps:
     :::
 
     :::hint Order matters
-    Pinned allows must precede any broad deny. A permissive rule above your pin defeats the boundary.
+    Place operational exceptions before overlapping diagnostic denies. Remove broad Weak allows when closing an exposure: a source-pinned allow alone does not restrict other sources.
     :::
 - id: implement-rules
   title: Phase 3 - Create minimal required rules
@@ -128,7 +128,7 @@ steps:
     :::
 
     :::technical
-    Author these six intents with source and destination pins in containd. Keep historian read 8080 separate from CC ingest 8081. Engineering PLC web is 10.20.20.20 only. Do not grant the vendor zone field control or enterprise access to RTU. Commit, then read back running configuration.
+    Author these six intents with source and destination pins in containd. Keep historian read 8080 separate from CC ingest 8081. Engineering PLC web is 10.20.20.20 only. Do not grant the vendor zone field control or enterprise access to RTU. The first matching enforcing terminal rule decides; monitor rules never decide. Put the CC allow before `deny-unauthorized-iec104`, RTU and PLC Modbus allows before `deny-unauthorized-modbus`, CC ingest before `deny-unauthorized-historian-ingest`, and engineering web before `deny-unauthorized-plc-web`. If recreating the CC allow, insert or move it before its deny. Review configured order and shadow warnings before commit, then inspect running order. Commit, then read back running configuration.
     :::
 
     :::hint No semantic enforcement claim

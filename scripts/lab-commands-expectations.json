@@ -382,7 +382,7 @@
       "entry": "",
       "action": "SKIP",
       "oracle": null,
-      "reason": "manual policy editing/mutation; not automated"
+      "reason": "Manual mutation; not automated. First-match review: deletion preserves survivor order; keep required RTAC exceptions before diagnostic denies."
     },
     "firewall-implementation|4|delete firewall rule enterprise-to-field-weak|1": {
       "container": "rangerdanger-firewall",
@@ -391,7 +391,7 @@
       "entry": "",
       "action": "SKIP",
       "oracle": null,
-      "reason": "manual policy editing/mutation; not automated"
+      "reason": "Manual mutation; not automated. First-match review: deletion preserves survivor order; keep required RTAC exceptions before diagnostic denies."
     },
     "firewall-implementation|4|delete firewall rule vendor-to-ot-weak|1": {
       "container": "rangerdanger-firewall",
@@ -400,7 +400,7 @@
       "entry": "",
       "action": "SKIP",
       "oracle": null,
-      "reason": "manual policy editing/mutation; not automated"
+      "reason": "Manual mutation; not automated. First-match review: deletion preserves survivor order; keep required RTAC exceptions before diagnostic denies."
     },
     "firewall-implementation|4|delete firewall rule vendor-to-field-weak|1": {
       "container": "rangerdanger-firewall",
@@ -409,7 +409,7 @@
       "entry": "",
       "action": "SKIP",
       "oracle": null,
-      "reason": "manual policy editing/mutation; not automated"
+      "reason": "Manual mutation; not automated. First-match review: deletion preserves survivor order; keep required RTAC exceptions before diagnostic denies."
     },
     "firewall-implementation|4|delete firewall rule ot-to-field-broad|1": {
       "container": "rangerdanger-firewall",
@@ -418,7 +418,7 @@
       "entry": "",
       "action": "SKIP",
       "oracle": null,
-      "reason": "manual policy editing/mutation; not automated"
+      "reason": "Manual mutation; not automated. First-match review: deletion preserves survivor order; keep required RTAC exceptions before diagnostic denies."
     },
     "firewall-implementation|4|show diff|1": {
       "container": "rangerdanger-firewall",
@@ -439,7 +439,7 @@
       "entry": "",
       "action": "SKIP",
       "oracle": null,
-      "reason": "manual policy editing/mutation; not automated"
+      "reason": "Manual mutation; not automated. First-match review: deletion preserves survivor order; keep required RTAC exceptions before diagnostic denies."
     },
     "firewall-implementation|4|mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20|1": {
       "container": "rangerdanger-kali",

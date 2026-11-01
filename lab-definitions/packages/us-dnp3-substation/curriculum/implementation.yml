@@ -14,6 +14,7 @@ phases:
 
     :::technical
     For a plan, use the compiled rule order without adding broad allows.
+    The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
     For manual work, use Hardened as the judging target. With
     `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
     access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900

@@ -1,4 +1,4 @@
-Default-deny means that a flow not matched by an allow rule is denied. It makes least-privilege segmentation enforceable, but the way a firewall reaches that final decision differs by implementation. Do not infer the behavior from a product label or from seeing several deny rules: identify the effective fallback for the policy path being reviewed.
+Default-deny drops traffic when no enforcing terminal rule matches. An earlier matching DENY also takes precedence over a later ALLOW. It makes least-privilege segmentation enforceable, but the way a firewall reaches that final decision differs by implementation. Do not infer the behavior from a product label or from seeing several deny rules: identify the effective fallback for the policy path being reviewed.
 
 ### Two policy patterns
 

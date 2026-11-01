@@ -835,6 +835,55 @@ class CommandContracts(unittest.TestCase):
         self.assertIn("Re-run with `-c 6` to also see `[6]` (`recloser_shot_count`) at `1`", text)
 
 
+class FirstMatchContracts(unittest.TestCase):
+    def test_knowledge_teaches_terminal_order_not_allow_wins(self):
+        eu = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        us = ROOT / "lab-definitions/packages/us-dnp3-substation"
+        text = (eu / "knowledge/eu-containd-policy-enforcement.md").read_text()
+        for phrase in ("first matching enforcing terminal rule in listed order decides",
+                       "monitor rules never decide", "Rule IDs do not set priority",
+                       "`RATE_LIMIT` meters and `TAG` labels",
+                       "`firewall.defaultAction: DENY`",
+                       "The L4 source pin enforces; DPI detects and logs."):
+            self.assertIn(phrase, text)
+        self.assertNotIn("compiler emits `ALLOW` entries before `DENY`", text)
+        text = (eu / "knowledge/eu-default-deny.md").read_text()
+        self.assertIn("An earlier matching DENY also takes precedence over a later ALLOW", text)
+        text = (us / "knowledge/default-deny.md").read_text()
+        self.assertIn("first matching enforcing terminal rule decides", text)
+        self.assertIn("Hardened removes or narrows broad allows", text)
+        self.assertNotIn("broad ALLOW rules over the top", text)
+
+    def test_scenario_and_curriculum_both_teach_concrete_placement(self):
+        for package, path in (("us-dnp3-substation", SCENARIOS / "firewall-implementation.yml"),
+                              ("eu-iec104-substation", ROOT / "lab-definitions/packages/"
+                               "eu-iec104-substation/scenarios/eu-firewall-implementation.yml")):
+            base = ROOT / "lab-definitions/packages" / package
+            texts = [path.read_text(), (base / "curriculum/implementation.yml").read_text()]
+            for text in texts:
+                self.assertIn("first matching enforcing terminal rule decides", text)
+                self.assertIn("monitor rules never decide", text)
+                self.assertIn("Review configured order and shadow warnings before commit", text)
+                if package.startswith("us-"):
+                    self.assertIn("Keep RTAC field exceptions before `deny-ot-to-field-direct`", text)
+                    self.assertIn("Rule IDs do not set priority", text)
+                else:
+                    for phrase in ("CC allow before `deny-unauthorized-iec104`",
+                                   "Modbus allows before `deny-unauthorized-modbus`",
+                                   "CC ingest before `deny-unauthorized-historian-ingest`",
+                                   "engineering web before `deny-unauthorized-plc-web`",
+                                   "If recreating the CC allow, insert or move it before its deny",
+                                   "Review configured order and shadow warnings before commit"):
+                        self.assertIn(phrase, text)
+
+    def test_planner_selection_order_does_not_set_priority(self):
+        for path in (SCENARIOS / "remediation-planning.yml",
+                     ROOT / "lab-definitions/packages/eu-iec104-substation/"
+                     "scenarios/eu-remediation-planning.yml"):
+            self.assertIn("Selection order does not set rule order; compilation uses authored slots.",
+                          path.read_text())
+
+
 class ChangeManagementContracts(unittest.TestCase):
     def test_configuration_rollback_requires_candidate_review_commit_and_verification(self):
         text = (ROOT / "lab-definitions/packages/us-dnp3-substation/knowledge/"
