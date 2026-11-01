@@ -5,8 +5,10 @@
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-OPEN_FIELD='{"devices":{"breaker-1":{"position":"open","protection_tripped":false,"revision":36}},"process":{"buses":{"s1":{"live":false}},"devices":{"feeder-breaker":{"delivered":true,"solved_revision":36}}}}'
-RESTORED_FIELD='{"devices":{"breaker-1":{"position":"closed","protection_tripped":false,"revision":37}},"process":{"devices":{"feeder-breaker":{"delivered":true,"solved_revision":37}}}}'
+OPEN_FIELD='{"devices":{"breaker-1":{"position":"open","protection_tripped":false,"revision":36}},"process":{"truth_stale":false,"solved_at":"2026-10-26T12:00:02Z","buses":{"s1":{"live":false}},"devices":{"feeder-breaker":{"delivered":true,"solved_revision":36}}}}'
+RESTORED_FIELD='{"devices":{"breaker-1":{"position":"closed","protection_tripped":false,"revision":37}},"process":{"truth_stale":false,"buses":{"s1":{"live":true}},"devices":{"feeder-breaker":{"delivered":true,"solved_revision":37}}}}'
+BASELINE_FIELD=$(printf '%s' "$RESTORED_FIELD" | jq -c \
+  '.devices["breaker-1"].revision = 35 | .process.devices["feeder-breaker"].solved_revision = 35')
 FIELD_WAITS=0
 ATTACK_PREDICATE=""
 DENIED_EXIT=2
@@ -22,7 +24,16 @@ G22_JOURNAL=""
 G22_JOURNAL_CALLS=0
 G22_CLOCK=0
 eu_lab_step() { EVENTS="$EVENTS step:$2"; }
-eu_lab_exec() { :; }
+eu_lab_exec() { API_BODY='{"exit_code":0,"stdout":"","stderr":""}'; }
+# Capture and evidence have dedicated real-decoder/reducer tests. These stubs
+# isolate the original G22/G24 assertion tests and must never reach Docker.
+eu_window_start() { :; }
+eu_window_finish() { :; }
+eu_g22_capture_chain() { :; }
+# shellcheck disable=SC2034 # consumed by the sourced G22 walk
+eu_lab_g22_event() { G22_TIME="2026-10-26T12:00:01Z"; }
+eu_lab_g22_write_evidence() { :; }
+eu_save_evidence() { :; }
 eu_api_post() {
   case "$1" in
     /api/workshop/nodes/*) EVENTS="$EVENTS deny" ;;
@@ -45,6 +56,7 @@ eu_assert_unchanged_breaker() {
 }
 eu_wait_for_operator() {
   READY_EXPR="$1"
+  WAIT_BODY="$G22_STATE"
 }
 eu_api_get() {
   EVENTS="$EVENTS get:$1"
@@ -72,17 +84,20 @@ eu_wait_for_field() {
   local field
   FIELD_WAITS=$((FIELD_WAITS + 1))
   case "$FIELD_WAITS" in
-    1)
+    1) field="$BASELINE_FIELD" ;;
+    2)
       ATTACK_PREDICATE="$1"
       field="$OPEN_FIELD"
       ;;
-    2) field="$RESTORED_FIELD" ;;
+    3) field="$RESTORED_FIELD" ;;
     *)
       fail "unexpected G22 field wait $FIELD_WAITS"
       return 1
       ;;
   esac
-  if ! printf '%s' "$field" | jq -e "$1" >/dev/null; then
+  # shellcheck disable=SC2034 # consumed by the sourced G22 walk
+  WAIT_BODY="$field"
+  if ! printf '%s' "$field" | jq -e "$EU_JQ_DEFS $1" >/dev/null; then
     fail "G22 field assertion rejected its expected state"
     return 1
   fi
@@ -129,9 +144,9 @@ for DENIED_EXIT in 2 1; do
   READY_EXPR=""
   t_run eu_lab_hardening_walk eu-hardening-configurations
   t_expect_eq "$T_STATUS" 0 "G22 accepts hardened retest denial with exit $DENIED_EXIT"
-  t_expect_eq "$FIELD_WAITS" 2 "G22 leaves its separate restore assertion in place"
+  t_expect_eq "$FIELD_WAITS" 3 "G22 adds a baseline and leaves its separate restore assertion in place"
   t_expect_eq "$UNCHANGED_CALLS" 1 "G22 walk still proves the breaker was unchanged"
-  t_expect_eq "$RECONNECT_CALLS" 1 "G22 walk verifies the CC before the hardened retest"
+  t_expect_eq "$RECONNECT_CALLS" 2 "G22 walk verifies the CC before and after the hardened retest"
   t_expect_no_out "protection_tripped" "G22 open assertion does not constrain protection state"
 
   UNCHANGED_CALLS=0
@@ -263,19 +278,19 @@ DENIED_RESPONSE=""
 
 STALE_FIELD=$(printf '%s' "$OPEN_FIELD" | jq -c \
   '.process.devices["feeder-breaker"].solved_revision = 35')
-t_run jq -e "$ATTACK_PREDICATE" <<<"$STALE_FIELD"
+t_run jq -e "$EU_JQ_DEFS $ATTACK_PREDICATE" <<<"$STALE_FIELD"
 t_expect_eq "$T_STATUS" 1 "G22 rejects an undelivered stale solver revision"
 UNDELIVERED_FIELD=$(printf '%s' "$OPEN_FIELD" | jq -c \
   '.process.devices["feeder-breaker"].delivered = false')
-t_run jq -e "$ATTACK_PREDICATE" <<<"$UNDELIVERED_FIELD"
+t_run jq -e "$EU_JQ_DEFS $ATTACK_PREDICATE" <<<"$UNDELIVERED_FIELD"
 t_expect_eq "$T_STATUS" 1 "G22 requires the solver result to be delivered"
 POSITION_CLOSED=$(printf '%s' "$OPEN_FIELD" | jq -c \
   '.devices["breaker-1"].position = "closed"')
-t_run jq -e "$ATTACK_PREDICATE" <<<"$POSITION_CLOSED"
+t_run jq -e "$EU_JQ_DEFS $ATTACK_PREDICATE" <<<"$POSITION_CLOSED"
 t_expect_eq "$T_STATUS" 1 "G22 requires the breaker to be open"
 SECTION_LIVE=$(printf '%s' "$OPEN_FIELD" | jq -c \
   '.process.buses.s1.live = true')
-t_run jq -e "$ATTACK_PREDICATE" <<<"$SECTION_LIVE"
+t_run jq -e "$EU_JQ_DEFS $ATTACK_PREDICATE" <<<"$SECTION_LIVE"
 t_expect_eq "$T_STATUS" 1 "G22 requires the section to be out"
 
 NMAP_STDOUT=""
