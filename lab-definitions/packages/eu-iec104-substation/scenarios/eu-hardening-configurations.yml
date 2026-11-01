@@ -139,7 +139,7 @@ steps:
   title: Validate
   expected_config: hardened
   description: |
-    Before Validate, force a fresh CC connection with `POST /api/operator/reconnect` (no body; see [operator API](/knowledge#eu-rtu-control-centre-apis)). Wait for `link.since` strictly later than the policy commit, matched GI completion on that connection and every inventory point non-null and GOOD received since GI start. Interrogate station on an old established session is not post-commit proof. If the link stays down, compare Network Map and the logged CC→RTU TCP/2404 deny in Live DPI Events; restore the missing CC allow, not the breaker.
+    Before Validate, force a fresh CC connection with `POST /api/operator/reconnect` (no body; see [operator API](/knowledge#eu-rtu-control-centre-apis)). Wait for `link.since` strictly later than the policy commit, matched GI completion on that connection and every inventory point non-null and GOOD received since GI start. Post-commit delivery on an existing connection tests the current policy, but this separate fresh-link check proves handshake admission and DPI inspection from SYN. If the link stays down, compare Network Map and the logged CC→RTU TCP/2404 deny in Live DPI Events; restore the missing CC allow, not the breaker.
 
     Run Validate with the intended applied plan or reference active. It also requires restored breaker and fresh section supply, active strict foreign-source negative probes and absence of foreign breaker operations only when this plan denies
     the Kali→RTU path. When it allows that path, retain the visible command

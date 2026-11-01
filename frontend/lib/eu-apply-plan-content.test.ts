@@ -82,5 +82,9 @@ it("retains EU CR-22 and post-commit reconnect for every plan", () => {
     for (const expected of ["CR-22", "accidentally omits CC→RTU", "POST http://localhost:8088/api/operator/reconnect", "link.since", "PLC-originated", "GI"]) {
       expect(text).toContain(expected);
     }
+    expect(text).toContain("A missing CC allow stops established traffic on its next packet after commit");
+    expect(text).toContain("fresh-handshake admission and DPI inspection from SYN");
+    expect(text).toContain("Traffic no longer admitted stops without session deletion");
+    expect(text).not.toMatch(/conntrack survives commit|instructor must cut|does not revoke an established/);
   }
 });

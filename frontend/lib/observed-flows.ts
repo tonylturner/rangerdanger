@@ -78,7 +78,7 @@ export function createFlowContext(graph: LabGraph, inputs: FlowInputs, now = Dat
         if (!src || !dst) { reason = "Missing endpoint address"; break; }
         const session = inputs.sessions.sessions.find((s) => s.proto.toLowerCase() === b.transport && s.src === src && s.dst === dst && s.dport === flow.port);
         if (session) {
-          status = "active"; reason = `Session present (${session.state ?? "state unknown"}); not application success or policy authorization`;
+          status = "unknown"; reason = `Conntrack entry present (${session.state ?? "state unknown"}); traffic may already be blocked; not application success or policy authorization`;
         } else if (inputs.sessions.sessions.some((s) => s.proto.toLowerCase() === b.transport && s.src === src && s.dst === dst && s.dport === null)) {
           reason = "Incomplete session tuple; destination port unknown";
         } else if (inputs.sessions.count >= 5000) {

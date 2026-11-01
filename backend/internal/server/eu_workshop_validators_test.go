@@ -435,12 +435,21 @@ func TestEUNegativeProbesDoNotUseConnectionWindow(t *testing.T) {
 }
 
 func TestEUPostCommitVisibility(t *testing.T) {
+	t.Run("fresh handshake is a separate inspection requirement", func(t *testing.T) {
+		ev := passingEUWorkshop(t, euWorkshopSlots[1])
+		ev.cc.Link.Since = ev.policyAt.Add(-time.Second)
+		check := euWorkshopFreshLink(ev)
+		if check.Status != "fail" || !strings.Contains(check.Detail, "Delivery on an existing session tests current policy") ||
+			!strings.Contains(check.Detail, "fresh-handshake admission or DPI inspection from SYN") {
+			t.Fatalf("fresh-link rationale = %+v", check)
+		}
+	})
 	for _, slot := range []string{euWorkshopSlots[1], euWorkshopSlots[2]} {
 		for _, tc := range []struct {
 			name   string
 			mutate func(*euWorkshopEvidence)
 		}{
-			{"stale session despite new GI", func(ev *euWorkshopEvidence) { ev.cc.Link.Since = ev.policyAt.Add(-time.Second) }},
+			{"pre-commit handshake despite post-commit GI", func(ev *euWorkshopEvidence) { ev.cc.Link.Since = ev.policyAt.Add(-time.Second) }},
 			{"session at commit", func(ev *euWorkshopEvidence) { ev.cc.Link.Since = ev.policyAt }},
 			{"missing session time", func(ev *euWorkshopEvidence) { ev.cc.Link.Since = time.Time{} }},
 			{"no GI", func(ev *euWorkshopEvidence) { ev.journal.Entries = nil }},

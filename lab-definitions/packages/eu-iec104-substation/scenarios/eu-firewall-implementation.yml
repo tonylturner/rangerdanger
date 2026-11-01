@@ -73,7 +73,7 @@ steps:
     Use the eng-ws and vendor-jump terminal tabs to probe field TCP/502 too. Record actual sources; successful access now is the exposure you must remove, not authorized control.
 
     :::hint Fresh attempts
-    Start new connections for each comparison. A retained established connection is not a new-policy test. [Conntrack](/knowledge#eu-established-sessions).
+    Start new connections for each handshake comparison. A commit also re-evaluates established traffic on its next packet; a retained conntrack entry is not proof of delivery. [Conntrack](/knowledge#eu-established-sessions).
     :::
   action:
     type: probe
@@ -152,7 +152,7 @@ steps:
   description: |
     Preserve PCAP and the UTC commit boundary. Keep `deny-unauthorized-iec104` after the CC allow: it includes the CC zone, TCP/2404, DENY and `log: true`. If the allow is missing, new CC→RTU sessions hit this explicit logged deny rather than the silent default drop. A custom policy must keep equivalent logged coverage for this lesson.
 
-    Compare the **Control Centre** link/quality, **Network Map** CC→RTU conduit and **Live DPI Events** tuple/rule. A missing CC allow can leave the old session healthy because conntrack survives commit. Force a fresh session after every commit with the portal operator API. From the host terminal:
+    Compare the **Control Centre** link/quality, **Network Map** CC→RTU conduit and **Live DPI Events** tuple/rule. A missing CC allow stops established traffic on its next packet after commit. Sessions may still retain the conntrack entry, which is not delivery proof. Separately check fresh-handshake admission and DPI inspection from SYN: force a fresh session after every commit with the portal operator API. From the host terminal:
 
         curl -fsS -X POST http://localhost:8088/api/operator/reconnect
 
@@ -162,7 +162,7 @@ steps:
 
     A 202 queues the actual connection close; normal reconnect runs at the inventory-configured interval (currently 2 s), followed by connect GI. A 409 means reconnect pending or a command in flight; 503 means the link is already down and retrying. Do not blindly repeat. If testing CR-22, expect the CC link/conduit down, last values retained with IV/NT `link_lost`, and a logged CC→RTU deny. Restore the exported known-good policy, wait for reconnect/GI and inspect every inventory observation. Field truth may still show a healthy supplied feeder: observation loss is not supply loss. No trip/reset is needed to repair communications.
 
-    Exact firewall session retirement remains an instructor diagnostic, not the normal fresh-session action: the session-kill API revokes the exact tuple in both directions for 60 seconds by default, with TCP resets signalled on subsequent matching packets. A fresh source port still meets the active policy. With a silent blackhole, detection can take configured t3+t1 (currently about 35 s). See [established sessions](/knowledge#eu-established-sessions).
+    Exact firewall session retirement is an optional diagnostic to clear a retained entry or force a fresh handshake for DPI inspection from SYN, not a prerequisite for enforcing a committed DENY: the session-kill API revokes the exact tuple in both directions for 60 seconds by default, with TCP resets signalled on subsequent matching packets. A fresh source port still meets the active policy. With a silent blackhole, detection can take configured t3+t1 (currently about 35 s). See [established sessions](/knowledge#eu-established-sessions).
 
     :::hint A timeout is a specific result
     Strict active probes count only connection timeout as denied. Connection refused means the packet reached a host; a missing tool or failed container exec is missing evidence, never a pass. A logged SYN deny cannot reveal the denied command payload.
@@ -213,7 +213,7 @@ steps:
     :::
 
     :::hint Instructor-supervised F2 visibility check
-    Save the policy and UTC window before temporarily over-restricting RTU→F2 Modbus. Removing an allow alone does not revoke an established L4 session; the instructor must cut the affected session to test reconnect denial. F2's four last values must remain visible with IV/NT and device_unreachable while other devices stay GOOD and the IEC 104 link stays started. This is observation loss, not proof that F2 opened. Restore the named F2 destination, request a new GI and retain all inventory points non-null and GOOD received since that GI start. Keep the loss, healthy-peer and recovery evidence for Lab 2.4. Do not issue an F2 supervisory command or reset its protection to repair communications.
+    Save the policy and UTC window before temporarily over-restricting RTU→F2 Modbus. A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic no longer admitted stops without session deletion. Sessions may retain the conntrack entry until timeout; its presence is not proof of delivery. Observe loss after commit and allow for protocol failure detection. F2's four last values must remain visible with IV/NT and device_unreachable while other devices stay GOOD and the IEC 104 link stays started. This is observation loss, not proof that F2 opened. Restore the named F2 destination, request a new GI and retain all inventory points non-null and GOOD received since that GI start. Keep the loss, healthy-peer and recovery evidence for Lab 2.4. Do not issue an F2 supervisory command or reset its protection to repair communications.
     :::
 
     All ten authorized TCP rows must remain reachable for every plan. The report
