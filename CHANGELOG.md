@@ -8,6 +8,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Release gates that prove the attack-to-consequence chain end to end. In
+  the EU, one capture ties Kali's IEC 104 command to the RTU's Modbus write
+  to the breaker, records the control centre's view at attack time, and
+  keeps a correlated evidence record. In the US, Kali trips the feeder
+  breaker over DNP3, a fresh solve shows the outage, the feeder recovers,
+  and the identical command times out under Hardened.
+- A simulator API isolation gate for both packages: every simulator,
+  solver, device and management API is probed from each student host under
+  Weak and Improved, with positive controls before and after.
+- A US RTAC gate that checks the RTAC's effective forwarding, firewall and
+  route settings and proves traffic cannot transit the RTAC between legs.
 - EU lab command smoke with reviewed semantic oracles and an offline
   all-package command inventory guard. PowerShell now uses the same reviewed
   contracts and verdicts.
