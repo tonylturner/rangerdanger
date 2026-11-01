@@ -44,6 +44,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - EU firewall gates trace ordered nftables admission chains and keep the
   ephemeral-port guard. Manual policy evaluation treats RATE_LIMIT and TAG as
   non-terminal and refuses unsupported viaForwards selectors.
+- Lab text and the segmentation view no longer claim an achieved IEC 62443
+  security level or function-code filtering. The badge shows the design
+  target and whether the segmentation criteria are met, have a gap or are
+  not assessed.
+- A validator PASS no longer ticks every exercise step. Completed, skipped
+  and validated are separate, and survive refresh, lab reset, package switch
+  and a second validation attempt.
+- The recloser lesson gives the correct cause: auto-reclose restores only
+  after an injected fault; a remote trip stays open until someone closes it.
+- The Physical System view is labelled as simulation truth that SCADA does
+  not see, and the RTAC polling label no longer implies a firewall path.
 - Lab Run buttons honor per-command source terminals and keep host commands
   and tools the backend cannot run copy-only. The EU baseline capture again
   rotates after 12 seconds of RTU cyclic traffic.

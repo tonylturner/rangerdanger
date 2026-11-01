@@ -34,7 +34,9 @@ import { CompiledPlanSummary } from "./compiled-plan-summary";
 import {
   clearProgress,
   loadProgress,
+  loadValidation,
   saveProgress,
+  saveValidation,
 } from "../lib/scenario-runner-storage";
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import { isRangeNotReady, logLineFor } from "../lib/range";
@@ -70,9 +72,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [saved] = useState(() => loadProgress(scope, scenario));
   const [currentStep, setCurrentStep] = useState(0);
   const [completedStepIds, setCompletedStepIds] = useState<Set<string>>(() => new Set(saved.completedStepIds));
+  const [skippedStepIds, setSkippedStepIds] = useState<Set<string>>(() => new Set(saved.skippedStepIds));
   const [notes, setNotes] = useState<string>(saved.notes);
   const [showSummary, setShowSummary] = useState(false);
-  const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [validation, setValidation] = useState<ValidationResult | null>(() => loadValidation(scope, scenario.id));
+  const [validationError, setValidationError] = useState(false);
   const [validating, setValidating] = useState(false);
   // US RTAC reads only for the US operator view; other packages show
   // their own operator status (RunnerOperatorStatus).
@@ -149,17 +153,17 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
   // Persist to curriculum storage on change
   useEffect(() => {
-    saveProgress(scope, scenario.id, { completedStepIds: [...completedStepIds], notes, cmdLog });
-  }, [scope, completedStepIds, notes, cmdLog, scenario.id]);
+    saveProgress(scope, scenario.id, { completedStepIds: [...completedStepIds], skippedStepIds: [...skippedStepIds], notes, cmdLog });
+  }, [scope, completedStepIds, skippedStepIds, notes, cmdLog, scenario.id]);
 
   const resetProgress = () => {
-    if (!window.confirm("Reset all exercise progress? This clears completed steps, notes, and command log.")) return;
+    if (!window.confirm("Reset all exercise progress? This clears completed/skipped steps, notes, and command log. The last validation remains as a historical result.")) return;
     setCompletedStepIds(new Set());
+    setSkippedStepIds(new Set());
     setNotes("");
     setCurrentStep(0);
     setShowSummary(false);
     setCmdLog([]);
-    setValidation(null);
     setStepResult(null);
     clearProgress(scope, scenario.id);
   };
@@ -271,14 +275,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
   const handleValidate = async () => {
     setValidating(true);
+    setValidationError(false);
     try {
       const result = await validateScenario(scenario.id);
+      saveValidation(scope, result);
       setValidation(result);
-      if (result.outcome === "PASS") {
-        setCompletedStepIds(new Set(scenario.steps.map((s) => s.id)));
-      }
     } catch {
-      setValidation(null);
+      setValidationError(true);
     } finally {
       setValidating(false);
     }
@@ -326,10 +329,20 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
   const markStepDone = (idx: number) => {
     const stepId = scenario.steps[idx]?.id;
-    if (stepId !== undefined) setCompletedStepIds((prev) => new Set([...prev, stepId]));
+    if (stepId !== undefined) {
+      setCompletedStepIds((prev) => new Set([...prev, stepId]));
+      setSkippedStepIds((prev) => new Set([...prev].filter((id) => id !== stepId)));
+    }
     if (idx < scenario.steps.length - 1) {
       setCurrentStep(idx + 1);
     }
+  };
+
+  const skipStep = () => {
+    const stepId = scenario.steps[currentStep]?.id;
+    if (stepId === undefined) return;
+    setSkippedStepIds((prev) => new Set([...prev, stepId]));
+    if (currentStep < scenario.steps.length - 1) setCurrentStep(currentStep + 1);
   };
 
   const step = scenario.steps[currentStep];
@@ -358,7 +371,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {completedStepIds.size > 0 && (
+          {(completedStepIds.size > 0 || skippedStepIds.size > 0) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -440,6 +453,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         </div>
         <span className="text-[10px] text-slate-500 shrink-0">
           {completedStepIds.size}/{scenario.steps.length} steps marked complete
+          {skippedStepIds.size > 0 && ` · ${skippedStepIds.size} skipped`}
         </span>
       </div>
       <p className="text-[10px] text-slate-600">
@@ -454,6 +468,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         <ExerciseSummary
           scenario={scenario}
           completedStepIds={completedStepIds}
+          skippedStepIds={skippedStepIds}
           notes={notes}
           activeConfig={activeConfig}
         />
@@ -464,6 +479,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         <StepNavigator
           scenario={scenario}
           completedStepIds={completedStepIds}
+          skippedStepIds={skippedStepIds}
           currentStep={currentStep}
           setCurrentStep={setCurrentStep}
           setStepResult={setStepResult}
@@ -478,6 +494,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 Step {currentStep + 1}: {step?.title}
               </h3>
               <div className="flex items-center gap-2">
+                {!stepDone && !skippedStepIds.has(step?.id) && (
+                  <button onClick={skipStep} className="rounded-sm border border-slate-700 px-2 py-1 text-[10px] text-slate-400 hover:text-slate-200">
+                    Skip Step
+                  </button>
+                )}
                 {hasAction && !stepDone && (
                   <button
                     onClick={() => handleExecuteStep(currentStep)}
@@ -814,12 +835,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               <span className={`text-sm font-bold ${
                 validation.outcome === "PASS" ? "text-green-400" : validation.outcome === "FAIL" ? "text-red-400" : "text-yellow-400"
               }`}>
-                {validation.outcome}
+                Last: {validation.outcome}
               </span>
             )}
           </div>
           )}
 
+          {showValidate && validationError && (
+            <p role="alert" className="text-xs text-red-400">Validation request failed. The last recorded result, if any, is unchanged.</p>
+          )}
           {showValidate && validation && (
             <div className={`rounded-lg border p-3 ${
               validation.outcome === "PASS"
@@ -828,6 +852,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 ? "border-red-700 bg-red-950/40"
                 : "border-yellow-700 bg-yellow-950/40"
             }`}>
+              <p className="mb-2 text-[10px] text-slate-400">
+                Last validation: {validation.outcome} · {validation.timestamp}. Historical result, not proof of current lab state or step completion.
+              </p>
               <div className="space-y-1">
                 {validation.checks.map((check, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs">

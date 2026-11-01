@@ -944,5 +944,34 @@ class ChangeManagementContracts(unittest.TestCase):
         self.assertNotIn("is the proposed policy", text)
 
 
+class AuditTeachingContracts(unittest.TestCase):
+    def test_sl_targets_do_not_certify_policy_or_dpi_filtering(self):
+        paths = sorted(SCENARIOS.glob("*.yml"))
+        for package in ("us-dnp3-substation", "eu-iec104-substation"):
+            paths.extend((ROOT / "lab-definitions/packages" / package / "knowledge").glob("*.md"))
+        removed = ("roughly SL-1", "approaches SL-3", "must enforce the higher SL",
+                   "enforcing SL-3 controls", "Modbus function codes are filtered",
+                   "Target SL-3 · MET", "Conduit achieves SL-", "function code filtering")
+        for path in paths:
+            text = " ".join(path.read_text().split())
+            for claim in removed:
+                with self.subTest(path=path, claim=claim):
+                    self.assertNotIn(claim, text)
+        text = scenario("segmentation-requirements")["steps"][0]["description"]
+        # The optional hint is authored in the first requirements step.
+        self.assertIn("not an IEC 62443 SL assessment", text)
+        self.assertIn("The L4 source pin enforces; DPI detects and logs.", text)
+        self.assertIn("NOT ASSESSED", text)
+
+    def test_remote_trip_and_fault_recovery_are_distinct(self):
+        text = " ".join(scenario("hardening-configurations")["steps"][1]["description"].split())
+        self.assertNotIn("recoverable flicker", text)
+        self.assertIn("remote trip itself stays open until someone closes it", text)
+        self.assertIn("even with auto-reclose enabled", text)
+        self.assertIn("automatic restoration attempts after an injected fault", text)
+        knowledge = (ROOT / "lab-definitions/packages/us-dnp3-substation/knowledge/reclosers.md").read_text()
+        self.assertIn("Only an injected fault starts the automatic reclose sequence", knowledge)
+
+
 if __name__ == "__main__":
     unittest.main()

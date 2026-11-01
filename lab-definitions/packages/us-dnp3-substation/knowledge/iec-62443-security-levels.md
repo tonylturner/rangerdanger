@@ -31,6 +31,6 @@ A distribution substation field device zone might get SL-T of 3 because compromi
 
 ### How This Connects to the Lab
 
-The conduit connecting two zones must enforce the higher SL. If the enterprise zone is SL-1 and the field device zone is SL-3, the firewall rules between them must enforce SL-3 controls. That means more than simple port filtering. You need protocol-aware inspection, logging, and potentially application-layer authentication.
+Conduit requirements come from risk assessment and the security needs of the connected zones, not an automatic maximum of two zone labels. The map's illustrative SL numbers are design targets, not measured capability or achievement.
 
-In the lab, the **weak policy** provides roughly SL-1 conduit security: traffic flows freely with no protocol inspection. The **hardened policy** approaches SL-3: cross-zone traffic is restricted to specific source-destination pairs, Modbus function codes are filtered, and DNP3 command traffic is limited to the RTAC.
+The **weak policy** and **hardened policy** demonstrate different segmentation choices. Neither establishes an achieved Security Level. The hardened reference restricts cross-zone source/destination pairs and source-pins field access to the RTAC. The L4 source pin enforces; DPI detects and logs. A policy label or a range PASS is not an IEC 62443 SL assessment.
