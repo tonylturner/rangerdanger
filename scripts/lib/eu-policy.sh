@@ -468,7 +468,13 @@ eu_make_custom_policy() {
     | if ($matches | length) != 1 then
         error("expected exactly one pinned allow, found \(($matches | length))")
       else
-        .firewall.rules |= map(select(target($src; $dst; $port) | not))
+        .firewall.rules |= map(
+          if target($src; $dst; $port) then
+            # A pinned allow may also serve healthy peers; keep their grant
+            # in its original first-match position.
+            .destinations |= map(select(. != $dst and . != ($dst + "/32")))
+            | select(.destinations | length > 0)
+          else . end)
       end
   ' "$source_file" >"$output" 2>"$TMP_DIR/jq.err" || {
     fail "cannot derive custom policy removing exactly $src -> $dst tcp/$port: $(cat "$TMP_DIR/jq.err")"
