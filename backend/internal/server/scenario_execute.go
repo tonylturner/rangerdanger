@@ -13,22 +13,27 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 // StepExecutionResult is the response from executing a scenario step action.
 type StepExecutionResult struct {
-	StepIndex  int                `json:"step_index"`
-	StepTitle  string             `json:"step_title"`
-	ActionType string             `json:"action_type"`
-	Success    bool               `json:"success"`
-	Results    []StepActionResult `json:"results"`
-	Timestamp  string             `json:"timestamp"`
+	Containd   *containd.ApplyReceipt `json:"containd,omitempty"`
+	StepIndex  int                    `json:"step_index"`
+	StepTitle  string                 `json:"step_title"`
+	ActionType string                 `json:"action_type"`
+	Success    bool                   `json:"success"`
+	Results    []StepActionResult     `json:"results"`
+	Timestamp  string                 `json:"timestamp"`
 }
 
 // StepActionResult is the result of a single action within a step.
 type StepActionResult struct {
+	Containd   *containd.ApplyReceipt `json:"containd,omitempty"`
+	applyError error
+
 	Action   string   `json:"action"`
 	Success  bool     `json:"success"`
 	Blocked  bool     `json:"-"`
@@ -128,7 +133,18 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		}
 	}
 
+	var receipt *containd.ApplyReceipt
+	for _, result := range results {
+		if result.Containd != nil {
+			receipt = result.Containd
+		}
+		if result.applyError != nil {
+			writeApplyError(c, result.applyError, &containd.ApplyResult{Receipt: receipt}, gin.H{"success": false, "results": results, "step_index": stepIdx, "step_title": step.Title, "action_type": step.Action.Type, "timestamp": time.Now().UTC().Format(time.RFC3339)})
+			return
+		}
+	}
 	c.JSON(http.StatusOK, StepExecutionResult{
+		Containd:   receipt,
 		StepIndex:  stepIdx,
 		StepTitle:  step.Title,
 		ActionType: step.Action.Type,
@@ -192,15 +208,21 @@ func (s *Server) executeRTACCommand(ctx context.Context, gen *lifecycle.Generati
 
 // executeFirewallAction applies a firewall configuration.
 func (s *Server) executeFirewallAction(ctx context.Context, gen *lifecycle.Generation, configName string) StepActionResult {
-	warnings, err := s.applyFirewallConfigInternal(ctx, gen, configName)
+	applied, err := s.applyFirewallConfigInternal(ctx, gen, configName)
 	if err != nil {
+		var receipt *containd.ApplyReceipt
+		if applied != nil {
+			receipt = applied.Receipt
+		}
 		return StepActionResult{
+			Containd: receipt, applyError: err,
 			Action:  "Apply firewall: " + configName,
 			Success: false,
 			Detail:  err.Error(),
 		}
 	}
 
+	warnings := applied.Warnings
 	label := configName
 	if recipe, err := recipeFor(gen); err == nil {
 		label = recipe.policyLabel(configName)
@@ -213,6 +235,7 @@ func (s *Server) executeFirewallAction(ctx context.Context, gen *lifecycle.Gener
 		detail += " (warnings: " + strings.Join(warnings, "; ") + ")"
 	}
 	return StepActionResult{
+		Containd: applied.Receipt,
 		Action:   "Apply firewall: " + configName,
 		Success:  true,
 		Detail:   detail,

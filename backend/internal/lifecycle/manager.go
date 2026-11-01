@@ -93,13 +93,15 @@ func (o Options) validate() error {
 
 // Status is the public view of the lifecycle (GET /api/range).
 type Status struct {
-	Generation uint64        `json:"generation"`
-	Phase      Phase         `json:"phase"`
-	Package    string        `json:"package"`
-	Target     string        `json:"target"` // only in preflight
-	Mode       manifest.Mode `json:"mode"`
-	Error      string        `json:"error"`
-	UpdatedAt  *time.Time    `json:"updated_at"`
+	Containd   *containd.ApplyReceipt `json:"containd,omitempty"`
+	Generation uint64                 `json:"generation"`
+	Phase      Phase                  `json:"phase"`
+	Package    string                 `json:"package"`
+	Target     string                 `json:"target"` // only in preflight
+	Mode       manifest.Mode          `json:"mode"`
+	Error      string                 `json:"error"`
+	Code       string                 `json:"code,omitempty"`
+	UpdatedAt  *time.Time             `json:"updated_at"`
 }
 
 // Manager runs the range lifecycle. Exactly one transition or reconcile
@@ -152,11 +154,13 @@ func closedChan() chan struct{} {
 func statusOf(rec Record) Status {
 	updated := rec.UpdatedAt
 	return Status{
+		Containd:   rec.Containd,
 		Generation: rec.Generation,
 		Phase:      rec.Phase,
 		Package:    rec.Package,
 		Mode:       rec.Mode,
 		Error:      rec.Error,
+		Code:       rec.Code,
 		UpdatedAt:  &updated,
 	}
 }
@@ -165,7 +169,13 @@ func statusOf(rec Record) Status {
 func (m *Manager) Status() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.status
+	status := m.status
+	if m.current != nil {
+		if receipt := m.current.Containd().LastApply(); receipt != nil {
+			status.Containd = receipt
+		}
+	}
+	return status
 }
 
 // ActivePackage is the package the backend serves: the recorded package,
@@ -232,6 +242,7 @@ func (m *Manager) Request(packageID string) (Status, error) {
 	m.status.Phase = PhasePreflight
 	m.status.Target = pkg.ID
 	m.status.Error = ""
+	m.status.Code = ""
 	m.status.UpdatedAt = &now
 	m.launchLocked(func() { m.transition(pkg, previous) })
 	return m.status, nil

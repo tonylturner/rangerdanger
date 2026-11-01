@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tturner/rangerdanger/backend/internal/config"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/containd/containdtest"
 )
 
 // firewall_apply_test exercises the HTTP handlers (handleFirewallApply
@@ -45,10 +46,11 @@ type fakeContaindCounters struct {
 func fakeContaind(t *testing.T, candidateStatus, commitStatus int) (*httptest.Server, *fakeContaindCounters) {
 	t.Helper()
 	c := &fakeContaindCounters{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	running := []byte(`{"interfaces":[{"name":"lan3","device":"eth8"}]}`)
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/config":
-			io.WriteString(w, `{"interfaces":[{"name":"lan3","device":"eth8"}]}`)
+			w.Write(running)
 		case "/api/v1/config/candidate":
 			body, _ := io.ReadAll(r.Body)
 			c.lastCandidate = body
@@ -56,6 +58,9 @@ func fakeContaind(t *testing.T, candidateStatus, commitStatus int) (*httptest.Se
 			w.WriteHeader(candidateStatus)
 		case "/api/v1/config/commit":
 			atomic.AddInt32(&c.commitCount, 1)
+			if commitStatus >= 200 && commitStatus < 300 {
+				running = c.lastCandidate
+			}
 			w.WriteHeader(commitStatus)
 		case "/api/v1/config/import":
 			atomic.AddInt32(&c.importCount, 1)
@@ -208,7 +213,7 @@ func TestHandleFirewallApply_BadJSON(t *testing.T) {
 
 func TestHandleFirewallApply_PropagatesContaindFailure(t *testing.T) {
 	// A candidate failure must propagate without a legacy import.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(srv.Close)

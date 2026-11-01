@@ -56,7 +56,8 @@ Status body:
 
 ```json
 {"generation": 3, "phase": "ready", "package": "us-dnp3-substation", "target": "",
- "mode": "release", "error": "", "updated_at": "2026-10-09T14:30:00Z"}
+ "mode": "release", "error": "", "updated_at": "2026-10-09T14:30:00Z",
+ "containd": {"applyId": "opaque-apply-id", "protection": "protecting"}}
 ```
 
 | Field | Meaning |
@@ -68,14 +69,16 @@ Status body:
 | `mode` | `source` or `release`: which Compose file of the package runs (`RANGERDANGER_MODE`). |
 | `error` | Why the last switch failed. A failed preflight leaves the phase where it was (for example `ready`, with the old range still serving) and sets `error`; a failure from `stopping` on removes the attempted range and sets phase `failed`. The previous package is not restored automatically; retry or switch. |
 | `updated_at` | When the status last changed; `null` in phase `none`. |
+| `containd` | Last backend apply receipt (below), omitted before any known apply. Failure retains its observed state. |
+| `code` | Optional machine-readable failure code, including `containd_config_conflict` for an asynchronous seed conflict. |
 
 A switch runs these phases, one switch at a time:
 
 1. `preflight` (old range untouched and still served): the package exists, its manifest loads, `docker compose config` succeeds for the mode's Compose file, every image it needs is already present locally (nothing is pulled or built), and its proxy routes and default firewall policy exist.
 2. `stopping`: in-flight range-bound work drains, then the old range is removed by its Compose project label together with its anonymous volumes (`down -v`; range models declare no named volumes), and the removal is verified: no container or network with the label, and none of the volumes its containers mounted, remains.
 3. `starting`: `compose up --wait` with no build and no pull (healthchecks have 300 s).
-4. `configuring`: the package's proxy routes are installed (`nginx -t`, then reload; a rejected file is rolled back), the firewall is waited for, and the package's default policy is imported. Every range start imports it, so a student's policy does not survive a switch.
-5. `ready`.
+4. `configuring`: the package's proxy routes are installed (`nginx -t`, then reload; a rejected file is rolled back), the firewall is waited for, and the package's default policy is imported and its runtime protection readiness is awaited. Every range start imports it, so a student's policy does not survive a switch.
+5. `ready` only after the committed application is `protecting` or `degraded` (with a warning).
 
 On backend start, a range recorded as `ready` is adopted when every container of its manifest exists and the proxy runs its routes (no restart, no policy import); otherwise the phase becomes `failed` with `range missing: ...`. A switch that was cut short (`stopping`, `starting`, `configuring`) is torn down and recorded as `failed` with `interrupted during <phase>`.
 
@@ -89,8 +92,8 @@ The workshop endpoints operate on the serving range, with nodes from the topolog
 | `GET` | `/workshop/status` | Status of all workshop nodes |
 | `GET` | `/workshop/nodes/:nodeId/terminal` | WebSocket terminal to a node (see Terminals) |
 | `POST` | `/workshop/nodes/:nodeId/exec` | Run a one-shot command on a node. Body: `{"command": "...", "timeout_sec": 30}`. The first token of `command` must be in the backend allowlist: `nmap, mbpoll, dnp3poll, dnp3cmd, iec104cmd, curl, tshark, tcpdump, nc, ping, traceroute, wget, cat, ls, ip, ss, netstat` - anything else returns `403 {"error":"command not allowed"}`. On success returns `{"stdout", "stderr", "exit_code", "duration_ms"}`. |
-| `POST` | `/workshop/reset` | Reset substation state (clear lockouts, restore voltage, re-enable reclose, etc.) and restore the package's default firewall policy. Returns `{"success","actions":[{"action","success","detail"}]}`. A failed action returns `502` for truth-backed resets (EU); US returns `200` even with `success:false`. Always inspect `success` and the per-action results, not HTTP status alone. |
-| `POST` | `/workshop/test-suite` | Run all exercise validators programmatically |
+| `POST` | `/workshop/reset` | Reset substation state (clear lockouts, restore voltage, re-enable reclose, etc.) and restore the package's default firewall policy. Returns `{"success","actions":[{"action","success","detail"}]}`. A failed action returns `502` for truth-backed resets (EU); US returns `200` even with `success:false` for non-firewall action failures. Firewall conflicts return `409`; other firewall apply/readiness failures return `502` for both packages. Includes the `containd` receipt when an apply was observed. Always inspect `success` and the per-action results, not HTTP status alone. |
+| `POST` | `/workshop/test-suite` | Run all exercise validators programmatically. Includes the last apply's `containd` receipt; an apply conflict or readiness failure stops the suite without retrying the edit. |
 
 For `eu-iec104-substation`, `POST /workshop/reset` runs process `reset`, then device `reset` for the OLTC, RMU2, RMU1, breaker and F2 breaker, then GPS `reset_offset`, and waits up to 5 s until every process device reports `solved_revision == revision` at or after its post-reset revision. The PLC is not reset and historian data is kept. Shared firewall-baseline and cleanup steps follow.
 
@@ -315,9 +318,9 @@ Direct operations against the containd NGFW.
 | `POST` | `/firewall/sessions/kill` | Delete the exact original-direction tuple. Strict JSON body: `{"proto":"tcp","src":"10.20.20.10","dst":"10.40.40.21","sport":40000,"dport":502}`; `proto` is `tcp` or `udp`, addresses are IPv4 and ports are 1..65535 (`400` otherwise). Returns `200` with `status:"deleted"` and containd closure diagnostics; missing entry is `404`, partial failure `502` with `status:"failed"` and diagnostics. Other upstream failures return `502`, or `504` on timeout. |
 | `GET` | `/firewall/active` | Active policy identity: `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan"\|"manual-custom"}` for the workshop policies. When the source is `plan`, also returns `plan: {label, actionIds, packageId, revision, policyHash, appliedAt}`; otherwise `plan` is omitted. `manual-custom` means the range's policy observer detected a divergent containd commit outside the backend. A new range starts on its package's default policy, with source `weak` or `hardened-reference` for those named defaults (empty for other default names). |
 | `GET` | `/firewall/compare` | Diff between weak and improved configs |
-| `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`). Returns `{"status":"applied","active_config":"weak"\|"improved"}` and includes `"warnings": [...]` when containd returned any. Sets server-side `policy_source` to `"weak"` (for weak) or `"hardened-reference"` (for improved). |
+| `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`). Returns `{"status":"applied","active_config":"weak"\|"improved","containd":<receipt>}` and includes `"warnings": [...]` when containd returned any. Sets server-side `policy_source` to `"weak"` (for weak) or `"hardened-reference"` (for improved). |
 | `POST` | `/plan/compile` | Compile selected catalog actions without applying them. Body: `{"packageId":string,"revision":int,"actionIds":string[]}` (max 64 KiB; unknown fields rejected). Returns `{packageId, revision, label, actions, rules, expectations, policyHash, config}`; see below. `409` for a package/revision mismatch with the active range; `400` for malformed requests or unknown action IDs. |
-| `POST` | `/firewall/apply-plan` | Same request as compile. Compiles, lints, checks management safety, imports into containd and verifies the running firewall hash. Returns `200 {"applied":true,"warnings":string[],"plan":<compile response>}` and records `active_config=custom`, `policy_source=plan` and provenance. `409`/`400` as for compile; `422 {"error":string,"warnings":string[]}` for compilation, lint, safety, import or running-hash verification failures. Warnings are returned even on success. |
+| `POST` | `/firewall/apply-plan` | Same request as compile. Compiles, lints, checks management safety, imports into containd and verifies the running firewall hash. Returns `200 {"applied":true,"warnings":string[],"plan":<compile response>,"containd":<receipt>}` and records `active_config=custom`, `policy_source=plan` and provenance. `409`/`400` as for compile; `422 {"error":string,"warnings":string[]}` for compilation, lint or safety failures; upstream apply/readiness and running-hash verification failures return `502` (with `warnings` and any observed receipt). Warnings are returned even on success. |
 | `POST` | `/firewall/validation-report` | No request body. Runs the segmentation validation matrix against the currently active policy and captures a short PCAP without applying a policy. Returns `markdown`, `summary` (`authorized_pass`, `authorized_total`, `unauthorized_pass`, `unauthorized_total`, `skipped`, `result`), `planProof`, `acceptance`, `active_config`, `policy_source`, `pcap_path`, `policy_hash`, `window_start`, `window_end` and `policy_stable`. `summary.result` follows Hardened acceptance, not plan proof. |
 
 `/api/firewall/health` includes containd's `ipv4Forwarding` (`enabled`, `disabled`, `unknown`)
@@ -348,8 +351,66 @@ Policy applies use only `POST /api/v1/config/candidate` followed by
 `POST /api/v1/config/commit`; both must succeed. There is no legacy
 `/config/import` fallback. Before staging, the backend copies appliance-owned
 NIC `device` bindings from the running configuration by logical interface name.
-The backend enforces the containd 0.1.36 minimum at seed readiness and range
-adoption after a backend restart; a 0.1.36 prerelease is below that floor.
+The backend enforces the containd 0.1.37 minimum at seed readiness and range
+adoption after a backend restart; a 0.1.37 prerelease is below that floor.
+Schema 0.1.10 migration is one-way: back up before upgrading; 0.1.36 cannot
+read a migrated store.
+
+### Apply revisions and readiness receipts
+
+The running-config GET's `X-Containd-Revision` header is sent unchanged as
+`X-Containd-If-Revision` on the candidate POST. The candidate response's
+revision header is then sent on commit. These are opaque strings, not JSON
+fields. An upstream `412` returns backend `409` with:
+
+```json
+{"error":"containd configuration changed since it was read; review it and apply again","code":"containd_config_conflict"}
+```
+
+Existing route context fields are retained. There is no automatic retry,
+revision refresh or forced stale edit. Upstream `400`/`428` are backend
+integration errors returned as `502`, retaining upstream status and body.
+`POST /range` is asynchronous: its already-issued `202` cannot become a
+`409`; a seed conflict instead sets phase `failed`, the same `code`, and
+an explanatory `error` in `GET /range`.
+
+A successful commit's `RuntimeApplyResponse` identifies its `applyId` but is
+not a readiness certificate. Every backend-owned apply waits up to 30 seconds
+(capped by the request deadline), polling `/api/v1/dataplane/protection`
+every 500 ms. Both `applyId` and `installedApplyId` must match the commit and
+state must be `protecting`. Matching readiness in the commit response itself
+is also accepted. `degraded` is applied-with-warning, not full lab readiness.
+`failed`/`disabled` fail immediately with component reasons. A replacement
+application is superseded; timeout retains the last observation. None of
+these failures causes a recommit.
+
+Named apply, plan apply, workshop reset, workshop test-suite, and scenario
+steps that apply policy include this top-level receipt (the last commit when
+there are several):
+
+```json
+{"containd":{"applyId":"opaque-commit-apply-id","protection":"protecting"}}
+```
+
+For degraded readiness the same object is:
+
+```json
+{"containd":{"applyId":"opaque-commit-apply-id","protection":"degraded","warning":"containd protection degraded: rule-hit logging unavailable"}}
+```
+
+`warning` is omitted otherwise. Scenario firewall action results also carry
+the receipt. Readiness failures return `502` with `containd` containing the
+commit identity and last observed state, plus `observation` with protection
+telemetry and component reasons. No receipt is invented when no commit
+identity was received. Range status exposes the last backend apply receipt;
+lifecycle configuration reaches `ready` only after the same readiness wait.
+Gates must require `containd.protection == "protecting"`; degraded is a gate
+failure, even though the backend apply succeeded.
+
+The transparent containd UI proxy preserves upstream revision headers,
+statuses and response bodies; it does not wrap manual UI commits in the
+backend receipt format or synthesize revisions. UI clients remain responsible
+for their native containd revision/readiness contract.
 
 The compile response's `label` is `weak`, `partial` or `hardened`.
 `actions` lists `{id, kind, chosen}` in catalog order (`kind` is `enforce`,

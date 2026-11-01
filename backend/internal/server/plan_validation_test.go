@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/containd/containdtest"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
@@ -52,7 +52,7 @@ func TestPartialPlanProofVersusAcceptance(t *testing.T) {
 func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 	gen := usGeneration(nil)
 	var data []byte
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/config" {
 			t.Errorf("unexpected %s", r.URL.Path)
 		}
@@ -174,7 +174,7 @@ func TestPlanConduitDeniesFollowSelectedRules(t *testing.T) {
 
 func TestEUPlanHandlers(t *testing.T) {
 	running := []byte(`{"interfaces":[{"name":"lan3","device":"eth8"}]}`)
-	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fake := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/config/candidate":
 			running, _ = io.ReadAll(r.Body)
@@ -225,7 +225,7 @@ func TestUSExecutorAllowsDeferredExposure(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/config" {
 			w.Write(compiled.Config)
 			return
@@ -263,7 +263,7 @@ func TestRunningNewConnectionDoesNotMatchEstablishedReturn(t *testing.T) {
 
 func TestUSRegisteredValidatorsJudgeRulesNotLabels(t *testing.T) {
 	var data []byte
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(data) }))
+	upstream := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(data) }))
 	defer upstream.Close()
 	s := newTestServer(t, upstream.URL)
 	gen := s.rng.(*fakeRange).gen

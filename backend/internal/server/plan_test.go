@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/containd/containdtest"
 )
 
 func planRequest(s *Server, ids ...string) any {
@@ -21,7 +21,7 @@ func planRequest(s *Server, ids ...string) any {
 func TestPlanHandlersAndProvenance(t *testing.T) {
 	running := []byte(`{"interfaces":[{"name":"lan3","device":"eth8"}]}`)
 	failCommit, mismatch := false, false
-	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fake := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/config/candidate":
 			running, _ = io.ReadAll(r.Body)
@@ -111,7 +111,7 @@ func TestPlanHandlersAndProvenance(t *testing.T) {
 	for _, mode := range []string{"import", "hash"} {
 		failCommit, mismatch = mode == "import", mode == "hash"
 		rec, body := invoke(s, s.handleFirewallApplyPlan, "POST", "/api/firewall/apply-plan", planRequest(s))
-		if rec.Code != 422 || body["warnings"] == nil || s.planProvenance != nil {
+		if rec.Code != 502 || body["warnings"] == nil || s.planProvenance != nil {
 			t.Fatalf("%s: %d %s", mode, rec.Code, rec.Body)
 		}
 	}

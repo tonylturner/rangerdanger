@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/tturner/rangerdanger/backend/internal/containd/containdtest"
 )
 
 func TestMergeApplianceBindings(t *testing.T) {
@@ -36,7 +37,7 @@ func TestMergeApplianceBindings(t *testing.T) {
 
 func TestImportPreservesBindingsAndOrder(t *testing.T) {
 	var calls []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
 		switch r.URL.Path {
 		case "/api/v1/config":
@@ -62,7 +63,7 @@ func TestImportPreservesBindingsAndOrder(t *testing.T) {
 func TestImportFailsClosedWithoutRunningConfig(t *testing.T) {
 	for _, body := range []string{"invalid", "", "null", "[]", `{"interfaces":{}}`} {
 		t.Run(body, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodGet {
 					t.Error("staged without running config")
 				}

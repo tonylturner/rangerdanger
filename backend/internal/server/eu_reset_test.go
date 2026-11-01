@@ -39,9 +39,13 @@ func TestEUWorkshopReset(t *testing.T) {
 		"/rmu-2/api/sim/actions", "/rmu-1/api/sim/actions",
 		"/breaker-1/api/sim/actions", "/f2-breaker/api/sim/actions", "/gps-1/api/command",
 	}
-	for _, failed := range append([]string{""}, order...) {
+	for _, failed := range append([]string{"", "firewall-conflict"}, order...) {
 		t.Run("failure="+failed, func(t *testing.T) {
-			fw, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
+			candidateStatus := http.StatusOK
+			if failed == "firewall-conflict" {
+				candidateStatus = http.StatusPreconditionFailed
+			}
+			fw, counters := fakeContaind(t, candidateStatus, http.StatusOK)
 			var mu sync.Mutex
 			var requests []string
 			var bodies []string
@@ -93,8 +97,10 @@ func TestEUWorkshopReset(t *testing.T) {
 			s.orchestrator = &orchestrator.Orchestrator{}
 			rec := callRoute(s, s.handleWorkshopReset, http.MethodPost, "/api/workshop/reset", "/api/workshop/reset", "")
 			var result struct {
-				Success bool          `json:"success"`
-				Actions []resetAction `json:"actions"`
+				Success  bool                   `json:"success"`
+				Containd *containd.ApplyReceipt `json:"containd"`
+				Code     string                 `json:"code"`
+				Actions  []resetAction          `json:"actions"`
 			}
 			if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 				t.Fatal(err)
@@ -102,6 +108,9 @@ func TestEUWorkshopReset(t *testing.T) {
 			wantCode := http.StatusOK
 			if failed != "" {
 				wantCode = http.StatusBadGateway
+			}
+			if failed == "firewall-conflict" {
+				wantCode = http.StatusConflict
 			}
 			if rec.Code != wantCode || result.Success != (failed == "") || len(result.Actions) != 9 {
 				t.Fatalf("reset = %d %s", rec.Code, rec.Body)
@@ -111,8 +120,12 @@ func TestEUWorkshopReset(t *testing.T) {
 				result.Actions[8].Action != "Apply weak firewall baseline" {
 				t.Fatalf("ordered truth reset must precede housekeeping: %s", rec.Body)
 			}
-			if counters.commitCount != 1 || s.activeConfig != "weak" {
-				t.Errorf("baseline commits = %d, active = %s", counters.commitCount, s.activeConfig)
+			if failed == "firewall-conflict" {
+				if counters.commitCount != 0 || counters.candidateCount != 1 || s.activeConfig != "improved" || result.Code != containd.ConfigConflictCode {
+					t.Fatalf("conflict not preserved: %s", rec.Body)
+				}
+			} else if counters.commitCount != 1 || s.activeConfig != "weak" || result.Containd == nil || result.Containd.Protection != "protecting" || result.Containd.ApplyID == "" {
+				t.Errorf("baseline commits = %d, active = %s, receipt=%+v", counters.commitCount, s.activeConfig, result.Containd)
 			}
 			mu.Lock()
 			defer mu.Unlock()
