@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate checked Mermaid regions without Docker, network access or rendering.
+"""Generate checked architecture regions without Docker or network access.
 
 Compose is the wiring/build authority; package pointers supply teaching names,
 manifest supplies node identity/endpoints, nginx supplies browser routes. Only
@@ -9,6 +9,7 @@ non-declarative semantics live in the reviewed overlay. Run from any directory.
 import argparse
 from collections import defaultdict
 import hashlib
+import html
 import json
 from pathlib import Path
 import re
@@ -20,7 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 REGIONS = {
     "README.md": ("overview",),
     "docs/architecture-diagram.md": (
-        "compose-us", "compose-eu", "network-us", "network-eu", "request-flow",
+        "compose-us", "compose-eu", "network-us", "wiring-us",
+        "network-eu", "wiring-eu", "request-flow",
     ),
 }
 MARKER = re.compile(r"<!-- (BEGIN|END) GENERATED: ([\w-]+) -->")
@@ -302,35 +304,42 @@ def primary_network(package, key):
     return "mgmt_net" if "mgmt_net" in networks else next(iter(networks))
 
 
-def overview_graph(root, package, overlay, next_major):
+def zone_name(package, key):
+    return package.zones.get(key, {}).get(
+        "name", "Management" if key == "mgmt_net" else key.removesuffix("_net").title())
+
+
+def zone_graph(root, package, overlay, next_major, *, overview=False):
     lines = chart("TB")
-    node = lambda key: ident("overview", key)
+    prefix = ("overview",) if overview else (package.short, "network")
+    node = lambda key: ident(*prefix, key)
     groups = {}
     assignments = defaultdict(list)
     for key, service in sorted(package.services.items()):
         if key == "firewall" or service.get("network_mode"):
             continue
-        network = "platform" if key in package.platform["source"]["services"] else primary_network(package, key)
+        network = ("platform" if overview and key in package.platform["source"]["services"]
+                   else primary_network(package, key))
         assignments[network].append(key)
     firewall_nics = package.services["firewall"]["networks"]
     for key, members in assignments.items():
-        group = groups[key] = ident("overview", "zone", key)
+        group = groups[key] = ident(*prefix, "zone", key)
         if key == "platform":
             subnet = package.networks["mgmt_net"]["ipam"]["config"][0]["subnet"]
             title = f"Platform · management\n{subnet} · {firewall_nics['mgmt_net']['interface_name']}"
         else:
             subnet = package.networks[key]["ipam"]["config"][0]["subnet"]
-            name = package.zones.get(key, {}).get("name", key.removesuffix("_net").title())
+            name = zone_name(package, key)
             iface = firewall_nics.get(key, {}).get("interface_name")
             title = f"{name} ·\n{subnet}" + (f" · {iface}" if iface else "")
         lines.append(f'    subgraph {group}["{label(title)}"]')
         lines.append("    direction TB")
         for service in members:
-            text = service
+            text = service if overview else service_label(package, service)
             if service == "frontend":
                 text += f" · Next.js {next_major}"
             lines.append(box(node(service), text))
-        if key != "platform":
+        if key not in ("platform", "mgmt_net"):
             for first, second in zip(members, members[1:]):
                 lines.append(f"    {node(first)} ~~~ {node(second)}")
         lines.append("    end")
@@ -338,7 +347,7 @@ def overview_graph(root, package, overlay, next_major):
               box(node("dockerd"), "Docker daemon"), box(node("browser"), "Browser")]
     lines.append(edge(node("browser"), node("proxy"), "portal · loopback 8088"))
     for network, nic in firewall_nics.items():
-        group = groups["platform"] if network == "mgmt_net" else groups[network]
+        group = groups["platform"] if overview and network == "mgmt_net" else groups[network]
         # Undirected attachments follow the reading order, avoiding a feedback
         # arc around the entire overview for the management connection.
         first, second = (group, node("firewall")) if network == "mgmt_net" else (node("firewall"), group)
@@ -365,44 +374,57 @@ def overview_graph(root, package, overlay, next_major):
         return groups[key] if key in groups else node(key)
     lines += overlay_edges(overlay, package, "overview", resolve, compact=True)
     styles(lines, overlay, {("mgmt_net" if k == "platform" else k): v for k, v in groups.items()})
+    if not overview:
+        for column in overlay["zone_columns"].get(package.short, []):
+            for first, second in zip(column, column[1:]):
+                lines.append(f"    {groups[first]} ~~~ {groups[second]}")
     return fenced(lines)
 
 
-def network_graph(package, overlay):
-    lines = chart()
-    node = lambda key: ident(package.short, "service", key)
-    groups = {}
-    single = defaultdict(list)
-    multiple = []
-    for key, service in sorted(package.services.items()):
-        if service.get("network_mode"):
-            continue
-        networks = service.get("networks", {})
-        if len(networks) == 1:
-            single[next(iter(networks))].append(key)
-        else:
-            multiple.append(key)
+def shared_network_notes(package):
+    """Summarize secondary networks by primary zone, never by device edge."""
+    lines = ["**Shared-network notes** (secondary NICs are listed in the table):", ""]
     for key, network in sorted(package.networks.items()):
-        group = groups[key] = ident(package.short, "network", key)
+        if key != "mgmt_net" and (key in package.platform["source"]["networks"]
+                                 or key in package.zones or key in package.services["firewall"]["networks"]
+                                 or package.manifest_networks.get(key, {}).get("delivery")):
+            continue
+        zones = set()
+        for service, spec in package.services.items():
+            if service != "firewall" and key in spec.get("networks", {}):
+                primary = primary_network(package, service)
+                zones.add(zone_name(package, primary))
         subnet = network["ipam"]["config"][0]["subnet"]
-        title = f"{key} · {subnet}" + (" · internal" if network.get("internal") else "")
-        lines.append(f'    subgraph {group}["{label(title)}"]')
-        # Every network has an explicit attachment point, even with no single-
-        # homed services (EU field/process and the desktop delivery bridges).
-        lines.append(f'    {ident(package.short, "bus", key)}((" "))')
-        for service in single[key]:
-            address = package.services[service]["networks"][key]["ipv4_address"]
-            lines.append(box(node(service), service_label(package, service) + "\n" + address))
-        lines.append("    end")
-    for service in multiple:
-        lines.append(box(node(service), service_label(package, service)))
-        for key, nic in package.services[service]["networks"].items():
-            text = nic["ipv4_address"]
-            if nic.get("interface_name"):
-                text += " · " + nic["interface_name"]
-            lines.append(edge(node(service), groups[key], text, "---"))
-    styles(lines, overlay, groups)
-    return fenced(lines)
+        purpose = "out-of-band management" if key == "mgmt_net" else "no firewall attachment"
+        lines.append(f"- `{key}` · `{subnet}`: {purpose}; spans {', '.join(sorted(zones))}.")
+    return "\n".join(lines)
+
+
+def markdown_cell(value):
+    return html.escape(str(value), quote=False).replace("|", "&#124;").replace("\n", "<br/>")
+
+
+def wiring_table(package):
+    networks = sorted(package.networks)
+    row = lambda cells: "| " + " | ".join(markdown_cell(c) for c in cells) + " |"
+    lines = [
+        "One row per service. Namespace-sharing services have no independent NIC; "
+        "— means no independent attachment. Cells show IP · interface where pinned.",
+        "",
+        row(["Service", *networks]),
+        row(["---"] * (len(networks) + 1)),
+    ]
+    for key, spec in sorted(package.services.items()):
+        name = key
+        if spec.get("network_mode"):
+            name += " (shares " + spec["network_mode"].removeprefix("service:") + " namespace)"
+        cells = []
+        for network in networks:
+            nic = spec.get("networks", {}).get(network)
+            cells.append(nic["ipv4_address"] + (" · " + nic["interface_name"] if nic.get("interface_name") else "")
+                         if nic else "—")
+        lines.append(row([name, *cells]))
+    return "\n".join(lines)
 
 
 def route_summary(paths):
@@ -465,11 +487,14 @@ def render(root):
     by_short = {p.short: p for p in packages}
     next_version = json.loads((root / "frontend/package.json").read_text(encoding="utf-8"))["dependencies"]["next"]
     inventory = json.loads((root / ".github/release-images.json").read_text(encoding="utf-8"))["images"]
-    overview = overview_graph(root, by_short["us"], overlay, next_version.split(".")[0])
+    next_major = next_version.split(".")[0]
+    overview = zone_graph(root, by_short["us"], overlay, next_major, overview=True)
     result = {"overview": overview}
     for package in packages:
         result[f"compose-{package.short}"] = compose_graph(package, overlay)
-        result[f"network-{package.short}"] = network_graph(package, overlay)
+        result[f"network-{package.short}"] = (zone_graph(root, package, overlay, next_major)
+                                            + "\n\n" + shared_network_notes(package))
+        result[f"wiring-{package.short}"] = wiring_table(package)
     # Keep inventory prose within a checked region too: never a second hardcoded count.
     targets = sum(i["dockerfile"] == "services/Dockerfile" for i in inventory)
     amd64 = sorted(i["image"] for i in inventory if i["platforms"] == ["linux/amd64"])

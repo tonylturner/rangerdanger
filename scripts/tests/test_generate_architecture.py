@@ -61,8 +61,8 @@ class ArchitectureTests(unittest.TestCase):
         self.assertIn("10.98.1.0/28", self.rendered["network-us"])
         # The EU range does not use corporate delivery, but its platform proxy
         # still has that NIC. Do not erase real wiring from the complete graph.
-        self.assertIn("desk_corp_net", self.rendered["network-eu"])
-        self.assertNotIn("corp_ws", self.rendered["network-eu"])
+        self.assertIn("desk_corp_net", self.rendered["wiring-eu"])
+        self.assertNotIn("corp_ws", self.rendered["wiring-eu"])
 
     def test_overview_has_one_service_per_primary_zone_and_logical_edges(self):
         node = lambda key: architecture.ident("overview", key)
@@ -82,17 +82,26 @@ class ArchitectureTests(unittest.TestCase):
         for package in self.packages:
             graph = self.rendered[f"network-{package.short}"]
             self.assertNotIn("same ", graph)
+            self.assertNotIn("((", graph)
+            self.assertNotIn("bus_", graph)
             for key, spec in package.services.items():
                 if spec.get("network_mode"):
-                    self.assertNotIn(architecture.ident(package.short, "service", key), graph)
+                    self.assertNotIn(architecture.ident(package.short, "network", key), graph)
                     continue
-                node = architecture.ident(package.short, "service", key)
+                node = architecture.ident(package.short, "network", key)
                 self.assertEqual(graph.count(node + '["'), 1, key)
-                if len(spec["networks"]) > 1:
-                    for network, nic in spec["networks"].items():
-                        text = nic["ipv4_address"] + (" · " + nic["interface_name"] if nic.get("interface_name") else "")
-                        self.assertIn(architecture.edge(node, architecture.ident(package.short, "network", network), text, "---"), graph)
+                for nic in spec.get("networks", {}).values():
+                    self.assertNotIn(nic["ipv4_address"], graph)
             self.assertLessEqual(len(re.findall(r'^    \w+(?:\["|\(\()', graph, re.M)), 30)
+            # Only firewall attachments and desktop delivery are network edges,
+            # never an additional edge per secondary NIC.
+            self.assertEqual(graph.count(' ---|"'), len(package.services["firewall"]["networks"]))
+            for network, nic in package.services["firewall"]["networks"].items():
+                group = architecture.ident(package.short, "network", "zone", network)
+                first, second = ((group, architecture.ident(package.short, "network", "firewall"))
+                                 if network == "mgmt_net" else
+                                 (architecture.ident(package.short, "network", "firewall"), group))
+                self.assertIn(architecture.edge(first, second, nic["interface_name"], "---"), graph)
         self.assertNotIn("same ", self.rendered["overview"])
         for key, spec in self.us.services.items():
             if not spec.get("network_mode"):
@@ -115,10 +124,10 @@ class ArchitectureTests(unittest.TestCase):
             for key, service in package.services.items():
                 if service.get("network_mode"):
                     continue
-                networks = service["networks"]
-                expected = (architecture.ident(package.short, "network", next(iter(networks)))
-                            if len(networks) == 1 else None)
-                self.assertEqual(actual[architecture.ident(package.short, "service", key)], expected)
+                expected = (None if key == "firewall" else
+                            architecture.ident(package.short, "network", "zone",
+                                               architecture.primary_network(package, key)))
+                self.assertEqual(actual[architecture.ident(package.short, "network", key)], expected)
         actual = placements(self.rendered["overview"])
         for key, service in self.us.services.items():
             if key == "firewall" or service.get("network_mode"):
@@ -127,6 +136,90 @@ class ArchitectureTests(unittest.TestCase):
                        else architecture.primary_network(self.us, key))
             self.assertEqual(actual[architecture.ident("overview", key)],
                              architecture.ident("overview", "zone", network))
+
+    def test_wiring_tables_cover_every_service_and_nic_once(self):
+        for package in self.packages:
+            table = self.rendered[f"wiring-{package.short}"]
+            rows = [[cell.strip() for cell in line.strip("| ").split("|")]
+                    for line in table.splitlines() if line.startswith("|")]
+            networks = sorted(package.networks)
+            self.assertEqual(rows[0], ["Service", *networks])
+            self.assertEqual(len(rows[2:]), len(package.services))
+            count = 0
+            for cells, (key, spec) in zip(rows[2:], sorted(package.services.items())):
+                self.assertEqual(len(cells), len(networks) + 1)
+                self.assertEqual(cells[0].split(" ")[0], key)
+                for network, actual in zip(networks, cells[1:]):
+                    nic = spec.get("networks", {}).get(network)
+                    if nic:
+                        count += 1
+                        expected = nic["ipv4_address"]
+                        if nic.get("interface_name"):
+                            expected += " · " + nic["interface_name"]
+                        self.assertEqual(actual, expected)
+                    else:
+                        self.assertEqual(actual, "—")
+                if spec.get("network_mode"):
+                    self.assertIn("shares fuxa_hmi namespace", cells[0])
+            self.assertEqual(count, sum(len(s.get("networks", {})) for s in package.services.values()))
+
+    def test_shared_network_notes_are_generated_not_device_edges(self):
+        for package in self.packages:
+            graph = self.rendered[f"network-{package.short}"]
+            self.assertIn("`mgmt_net` · `10.99.99.0/24`: out-of-band management", graph)
+            network = "process_net" if package.short == "eu" else "physics_net"
+            subnet = package.networks[network]["ipam"]["config"][0]["subnet"]
+            self.assertIn(f"`{network}` · `{subnet}`: no firewall attachment", graph)
+            if package.short == "eu":
+                self.assertNotIn(architecture.ident(package.short, "network", "zone", network) + '["', graph)
+        self.assertEqual(architecture.markdown_cell('x|y\n<z>'), "x&#124;y<br/>&lt;z&gt;")
+        for column in self.overlay["zone_columns"]["eu"]:
+            for first, second in zip(column, column[1:]):
+                self.assertIn(
+                    architecture.ident("eu", "network", "zone", first) + " ~~~ "
+                    + architecture.ident("eu", "network", "zone", second),
+                    self.rendered["network-eu"])
+
+    def test_wiring_regions_are_required_and_checked_without_writing(self):
+        for name in ("wiring-us", "wiring-eu"):
+            with self.subTest(region=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.fixture(root)
+                path = root / "docs/architecture-diagram.md"
+                original = path.read_text()
+                begin = f"<!-- BEGIN GENERATED: {name} -->"
+                path.write_text(original.replace(begin, begin + "\nstale"))
+                before = path.read_bytes()
+                stderr = io.StringIO()
+                with redirect_stderr(stderr):
+                    self.assertEqual(architecture.generate(root, check=True), 1)
+                self.assertIn(f"docs/architecture-diagram.md: {name}", stderr.getvalue())
+                self.assertEqual(path.read_bytes(), before)
+                self.assertEqual(architecture.generate(root), 0)
+                self.assertEqual(architecture.generate(root, check=True), 0)
+                start = original.index(begin)
+                end = original.index(f"<!-- END GENERATED: {name} -->", start) + len(
+                    f"<!-- END GENERATED: {name} -->")
+                path.write_text(original[:start] + original[end:])
+                with self.assertRaisesRegex(ValueError, f"missing/unbalanced generated regions: {name}"):
+                    architecture.generate(root, check=True)
+
+    def test_nic_mutation_reports_wiring_drift_without_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            address = self.eu.services["rmu_1"]["networks"]["process_net"]["ipv4_address"]
+            octets = address.split(".")
+            changed = ".".join(octets[:-1] + [str(int(octets[-1]) + 1)])
+            for mode in ("source", "release"):
+                path = root / self.eu.directory.relative_to(ROOT) / f"compose.{mode}.yml"
+                path.write_text(path.read_text().replace(address, changed))
+            before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            result = subprocess.run([sys.executable, str(root / "scripts/generate_architecture.py"), "--check"],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("wiring-eu", result.stderr)
+            self.assertEqual(before, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
 
     def test_route_summary_limits_prefixes_and_counts_all_hidden_locations(self):
         paths = {"/apps/a/", "/apps/b/", "/apps/c/", "/apps/d/",
