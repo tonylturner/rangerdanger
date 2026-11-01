@@ -5,12 +5,41 @@ import ipaddress
 import json
 from pathlib import Path
 import re
+import struct
 import subprocess
 import time
 import uuid
 
 from scenario import HERE
 from process_utils import run
+
+
+def reject_truncated_packets(path):
+    """Reject a classic pcap record that did not capture its full frame."""
+    byte_orders = {
+        b"\xd4\xc3\xb2\xa1": "<",
+        b"\xa1\xb2\xc3\xd4": ">",
+        b"\x4d\x3c\xb2\xa1": "<",
+        b"\xa1\xb2\x3c\x4d": ">",
+    }
+    with Path(path).open("rb") as capture:
+        header = capture.read(24)
+        if len(header) != 24 or header[:4] not in byte_orders:
+            raise RuntimeError("capture has an invalid pcap header")
+        byte_order = byte_orders[header[:4]]
+        packet_number = 0
+        while record := capture.read(16):
+            packet_number += 1
+            if len(record) != 16:
+                raise RuntimeError(f"capture packet {packet_number} has a truncated pcap record header")
+            _, _, incl_len, orig_len = struct.unpack(byte_order + "IIII", record)
+            if incl_len < orig_len:
+                raise RuntimeError(
+                    f"capture packet {packet_number} is truncated: "
+                    f"incl_len {incl_len} < orig_len {orig_len}"
+                )
+            if len(capture.read(incl_len)) != incl_len:
+                raise RuntimeError(f"capture packet {packet_number} has truncated packet data")
 
 
 def unused_subnet(networks):
@@ -99,7 +128,7 @@ class Docker:
             "create", "--name", self.prefix + "-capture", "--label", self.label,
             "--network", "container:" + namespace, "--cap-drop", "ALL",
             "--cap-add", "NET_RAW", tools,
-            "--immediate-mode", "-B", "65536", "-i", "eth0", "-p", "-s", "0",
+            "--immediate-mode", "-B", "262144", "-i", "eth0", "-p", "-s", "2048",
             "-U", "-w", "/tmp/capture.pcap",
             "tcp", "port", "2404", *(["or", "tcp", "port", "502"] if modbus else []),
         ).strip()
@@ -129,6 +158,7 @@ class Docker:
             raise RuntimeError("capture missing, empty or dropped packets")
         if (self.out / "capture.pcap").stat().st_size <= 24:
             raise RuntimeError("empty pcap")
+        reject_truncated_packets(self.out / "capture.pcap")
 
     def helper_image(self):
         tag = self.prefix + "-capture:test"

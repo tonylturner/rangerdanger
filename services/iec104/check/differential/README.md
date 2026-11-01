@@ -272,11 +272,14 @@ All time-tagged scenario types (30/31) already have comparator CP56 layouts.
 Each side runs serially on the same unused subnet. Every creation carries
 an unpredictable owner label; cleanup selects only that exact label, even
 after failures. Capture shares the endpoint network namespace, listens on
-`eth0`, uses full snaplen, immediate delivery and packet flushing, and
-confirms readiness before connecting. Empty/dropped captures, missing
-sessions and failed processes fail the run.
-The capture helper reserves a 64 MiB packet ring: full-snaplen immediate
-mode otherwise has too few kernel slots for the sequence-wrap burst.
+`eth0`, uses a 2048-byte snaplen, immediate delivery and packet flushing, and
+confirms readiness before connecting. The 256 MiB packet ring measures
+`frame_size=2128 × frame_nr=126145` (268,436,560 bytes) with Alpine 3.22's
+tcpdump/libpcap, enough for more than 65,600 packets. This snaplen fits a
+complete MTU-1500 Ethernet frame while avoiding the 65 KiB TPACKET_V2 frame
+size selected by full snaplen. Empty captures, kernel drops, truncated pcap
+records (`incl_len < orig_len`), missing sessions and failed processes fail
+the run.
 
 Evidence includes pcap, tcpdump statistics, command/exit/deadline records,
 image IDs, materialized baseline, scenario/point-map/harness hashes, fixture,
