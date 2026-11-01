@@ -57,6 +57,8 @@ jobs:
           python-version: "3.12"
       - name: Install capture decoder and JSON tools
         run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tshark jq
+      - name: Install YAML test dependency
+        run: python3 -m pip install pyyaml
       - name: Test EU gates without a range
         run: bash scripts/tests/eu-gate/run.sh
 
