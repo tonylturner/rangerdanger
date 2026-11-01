@@ -12,10 +12,11 @@ import (
 func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// Captured from the resolved monolithic curricula before the directory cutover.
 	// Snapshots include intentional catalog/first-match prose, presentation-data
-	// removal, readiness-driven budgets, and per-command source headers.
+	// removal, readiness-driven budgets, per-command source headers, and EU
+	// probes without host discovery.
 	for id, want := range map[string]string{
 		"us-dnp3-substation":   "7895e352d829d2c78c7e446075517868944a046a36f7ad63410d1e499c9f2b92",
-		"eu-iec104-substation": "c1faa31996c152d6503ed80d9fc7b9b239145b6542844d974c6f34b3a95881dc",
+		"eu-iec104-substation": "a0123c9587b20d83c9e26ea3970d217c5ae5c95ad73353def5c352af0c78647c",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

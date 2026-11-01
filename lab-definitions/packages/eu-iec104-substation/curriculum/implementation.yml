@@ -100,9 +100,9 @@ phases:
 
     From **Kali**:
 
-        nmap -p 2404 10.30.30.20 --max-retries 1 -T4
-        nmap -p 502 10.40.40.20 --max-retries 1 -T4
-        nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4
+        nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4
+        nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4
+        nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4
 
     :::hint Diagnose a gap honestly
     A deferred plan can leave a sampled path open. Correct the plan/rules or record the gap; do not label it passed because the policy is called custom or improved. Connection refused is reached, not denied.

@@ -147,7 +147,7 @@ describe("authored description → Run → node exec", () => {
     const tree = renderStep(authoredScenario("eu-vendor-rdp-compromise"), "re-attempt-the-pivot", EU);
     try {
       fireEvent.click(tree.getAllByRole("button", { name: "Run" })[0]);
-      await waitFor(() => expect(exec).toHaveBeenCalledWith("kali-1", "nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4", 30));
+      await waitFor(() => expect(exec).toHaveBeenCalledWith("kali-1", "nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4", 30));
       await waitFor(() => expect(tree.queryByRole("button", { name: "Running..." })).toBeNull());
       fireEvent.click(tree.getAllByRole("button", { name: "Run" })[1]);
       await waitFor(() => expect(exec).toHaveBeenCalledWith("vendor-jump-1", "mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1", 30));

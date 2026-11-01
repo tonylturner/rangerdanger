@@ -23,7 +23,8 @@ def semantic(kind, stdout):
     if not kind or kind == "pcap-filter":
         return True  # empty filters mean NOT OBSERVED; the PCAP is decoded separately
     if kind == "registers":
-        values = re.findall(r"^\s*\[(\d+)\]:\s*(-?\d+)\s*$", stdout, re.M)
+        values = re.findall(
+            r"^\s*\[(\d+)\]:[ \t]*(-?\d+)(?:[ \t]+\(-?\d+\))?[ \t]*$", stdout, re.M)
         return [int(index) for index, _ in values] == list(range(11))
     if kind == "io-stat":
         rows = re.findall(r"^\|\s*\d+(?:\.\d+)?\s*<>\s*\d+(?:\.\d+)?\s*\|\s*(\d+)", stdout, re.M)

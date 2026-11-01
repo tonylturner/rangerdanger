@@ -19,6 +19,32 @@ worker = importlib.import_module("lab_commands_smoke")
 
 
 class EUOracleTests(unittest.TestCase):
+    def test_all_eu_port_probes_skip_discovery_and_require_port_evidence(self):
+        rows = [r for r in worker.extract(package_id=eu.EU)
+                if r["command"].startswith("nmap ")]
+        data = json.loads((ROOT / "scripts/lab-commands-expectations-eu-iec104-substation.json").read_text())
+        self.assertEqual(len(rows), 9)
+        for row in rows:
+            with self.subTest(command=worker.gate.key(row)):
+                self.assertRegex(row["command"], r"^nmap -Pn -p [\d,]+ \S+ --max-retries 1 -T4$")
+                oracle = data["commands"][worker.gate.key(row)]["oracle"]
+                down = "Note: Host seems down\nNmap done: 0 hosts up"
+                self.assertFalse(worker.gate.verdict(oracle, 0, down, "", control=True))
+                ports = row["command"].split()[3].split(",")
+                def output(state):
+                    return "\n".join(f"{port}/tcp {state}" for port in ports)
+                denied = oracle["intent"] == "deny"
+                self.assertTrue(worker.gate.verdict(
+                    oracle, 0, output("filtered" if denied else "open"), "", control=True))
+                self.assertFalse(worker.gate.verdict(
+                    oracle, 0, output("open" if denied else "filtered"), "", control=True))
+                self.assertFalse(worker.gate.verdict(
+                    oracle, 0, output("closed"), "", control=True))
+                if denied:
+                    control = {"intent": "read", "match": oracle["control_match"]}
+                    self.assertTrue(worker.gate.verdict(control, 0, output("open"), ""))
+                    self.assertFalse(worker.gate.verdict(control, 0, output("filtered"), ""))
+
     def test_gi_requires_completed_one_shot_not_connection_or_failure(self):
         self.assertTrue(eu.semantic("gi", '{"event":"result","op":"gi","status":"ok"}'))
         for out in ('{"event":"connected"}', '{"event":"result","op":"gi","status":"failed"}',
@@ -31,12 +57,58 @@ class EUOracleTests(unittest.TestCase):
         self.assertFalse(eu.semantic("registers", out.replace("[5]: 5", "")))
         self.assertFalse(eu.semantic("registers", "Connected successfully"))
 
+    def test_registers_accept_mbpoll_signed_annotations_without_losing_completeness(self):
+        lines = [
+            "[0]: \t2", "[1]: \t1", "[2]: \t1", "[3]: \t16903",
+            "[4]: \t45050 (-20486)", "[5]: \t16801", "[6]: \t22093",
+            "[7]: \t0", "[8]: \t1", "[9]: \t37382 (-28154)", "[10]: \t26260",
+        ]
+        out = "-- Polling slave 1...\n" + "\n".join(lines) + "\n"
+        self.assertTrue(eu.semantic("registers", out))
+        for bad in (
+                out.replace(lines[4], ""),
+                out.replace(lines[4], "[4]: \t45050 (invalid)"),
+                out.replace(lines[4], "[4]: \t45050 (-20486) trailing garbage"),
+                out + lines[4],
+                "\n".join(lines[:4] + [lines[5], lines[4]] + lines[6:])):
+            with self.subTest(output=bad):
+                self.assertFalse(eu.semantic("registers", bad))
+
     def test_statistics_and_historian_need_data(self):
         self.assertTrue(eu.semantic("io-stat", "| 0.000 <> 12.000 | 4 | 500 |"))
         self.assertFalse(eu.semantic("io-stat", "| 0.000 <> 12.000 | 0 | 0 |"))
         self.assertFalse(eu.semantic("historian", "[]"))
         self.assertTrue(eu.semantic("historian", '[{"id":"point","ioa":1001,"last":{"value":"closed"}}]'))
         self.assertFalse(eu.semantic("reconnect", '{"trigger":"operator"}'))
+
+    def test_io_statistics_contract_matches_tshark_and_requires_frames(self):
+        data = json.loads((ROOT / "scripts/lab-commands-expectations-eu-iec104-substation.json").read_text())
+        oracle = next(row["oracle"] for key, row in data["commands"].items()
+                      if "|tshark " in key and " -z io,stat," in key)
+        self.assertEqual(oracle["semantic"], "io-stat")
+        for output, expected in (
+                ("| IO Statistics |\n| 0.0 <> 10.9 | 8 | 900 |", True),
+                ("| IO Statistics |\n| 0.0 <> 10.9 | 0 | 0 |", False),
+                ("| IO Statistics |\n", False),
+                ("| I/O Statistics |\n| 0.0 <> 10.9 | 8 | 900 |", False)):
+            with self.subTest(output=output):
+                passed = (worker.gate.verdict(oracle, 0, output, "")
+                          and eu.semantic(oracle["semantic"], output))
+                self.assertEqual(passed, expected)
+
+    def test_iec104_deny_contract_requires_timeout_not_refusal_or_bare_failure(self):
+        data = json.loads((ROOT / "scripts/lab-commands-expectations-eu-iec104-substation.json").read_text())
+        oracle = next(row["oracle"] for key, row in data["commands"].items()
+                      if key.startswith("eu-hardening-configurations|5|iec104cmd "))
+        for diagnostic, expected in (
+                ("connect failed: dial tcp 10.30.30.20:2404: i/o timeout", True),
+                ("connect failed: dial tcp 10.30.30.20:2404: connect: connection refused", False),
+                ("connect failed", False)):
+            with self.subTest(diagnostic=diagnostic):
+                self.assertEqual(
+                    worker.gate.verdict(oracle, 2, "", diagnostic, control=True), expected)
+        self.assertFalse(worker.gate.verdict(
+            oracle, 2, "", "connect failed: i/o timeout", control=False))
 
     def audit(self, allowed):
         before = {"generation": 2, "latest_seq": 5, "oldest_seq": 1, "entries": []}
