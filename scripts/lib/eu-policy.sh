@@ -17,12 +17,30 @@ print(message + "." + signature)
 ') || return 1
   [ -n "$FW_TOKEN" ]
 }
+eu_wait_protection() {
+  [ -n "${FW_TOKEN:-}" ] || eu_make_firewall_token || return 1
+  printf '%s' "$1" | python3 "$SCRIPT_DIR/lib/containd_readiness.py" \
+    --container "$FW" --token "$FW_TOKEN" || {
+    fail "containd commit did not become protecting"
+    return 1
+  }
+  # Readiness, not commit acknowledgement, starts loss-detection budgets.
+  # shellcheck disable=SC2034 # consumed by the delivery-loss gates
+  EU_READY_MS=$(eu_now_ms) || return
+  # shellcheck disable=SC2034 # consumed by the monitor ASDU oracle
+  EU_READY_EPOCH=$(eu_epoch_ns) || return
+}
+eu_revision_header() {
+  awk 'tolower($0) ~ /^x-containd-revision:/ {
+    sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print
+  }' "$1"
+}
 eu_firewall_config() {
   local output status
-  output=$(docker exec "$FW" curl -sS -w '\n%{http_code}' \
+  output=$(docker exec "$FW" curl -sS --max-time 15 -D /dev/stderr -w '\n%{http_code}' \
     -H "Authorization: Bearer $FW_TOKEN" \
-    http://127.0.0.1:8080/api/v1/config 2>"$TMP_DIR/fw-curl.err") || {
-      printf 'containd running config read failed: %s\n' "$(cat "$TMP_DIR/fw-curl.err")" >&2
+    http://127.0.0.1:8080/api/v1/config 2>"$TMP_DIR/fw-config.headers") || {
+      printf 'containd running config read failed: %s\n' "$(cat "$TMP_DIR/fw-config.headers")" >&2
       return 1
     }
   status="${output##*$'\n'}"
@@ -283,6 +301,7 @@ eu_apply_named() {
     fail "apply named $name reported policy import warnings: $response"
     return 1
   fi
+  eu_wait_protection "$response" || return 1
   if ! eu_api_get "/api/firewall/active"; then
     fail "cannot read active policy after applying $name"
     return 1
@@ -308,7 +327,8 @@ eu_normalize_firewall_rules() {
     then del(.ics.readOnly) else . end)' "$@"
 }
 eu_commit_manual_policy() {
-  local policy="$1" label="$2" response status warnings active running effective expected_file actual_file i
+  local policy="$1" label="$2" response status warnings running
+  local revision
   local candidate_file="$TMP_DIR/manual-candidate.json" headers_file="$TMP_DIR/manual-commit.headers"
   # shellcheck disable=SC2034 # ownership is read by eu-cleanup.sh
   state_touched=1
@@ -318,6 +338,8 @@ eu_commit_manual_policy() {
     fail "cannot read appliance bindings before staging manual policy $label"
     return 1
   }
+  revision=$(eu_revision_header "$TMP_DIR/fw-config.headers")
+  [ -n "$revision" ] || { fail "running config has no revision header"; return 1; }
   jq --argjson running "$running" '
       def string_or_null: type == "string" or type == "null";
       (if $running.interfaces == null then [] else $running.interfaces end) as $interfaces
@@ -340,8 +362,8 @@ eu_commit_manual_policy() {
     fail "cannot merge appliance bindings and enable dataplane enforcement for manual policy $label"
     return 1
   }
-  response=$(docker exec -i "$FW" curl -sS --max-time 15 -w '\n%{http_code}' \
-    -X POST -H "Authorization: Bearer $FW_TOKEN" -H 'Content-Type: application/json' \
+  response=$(docker exec -i "$FW" curl -sS --max-time 15 -D /dev/stderr -w '\n%{http_code}' \
+    -H "X-Containd-If-Revision: $revision" -X POST -H "Authorization: Bearer $FW_TOKEN" -H 'Content-Type: application/json' \
     --data-binary @- http://127.0.0.1:8080/api/v1/config/candidate \
     <"$candidate_file" 2>"$TMP_DIR/manual-candidate.err") || {
     fail "stage manual policy $label failed: $(cat "$TMP_DIR/manual-candidate.err")"
@@ -349,12 +371,15 @@ eu_commit_manual_policy() {
   }
   status="${response##*$'\n'}"
   response="${response%$'\n'*}"
-  if [ "$status" != 200 ] && [ "$status" != 201 ] && [ "$status" != 204 ]; then
+  if [ "$status" != 200 ]; then
     fail "stage manual policy $label returned HTTP $status: $response"
     return 1
   fi
+  revision=$(eu_revision_header "$TMP_DIR/manual-candidate.err")
+  [ -n "$revision" ] || { fail "candidate response has no revision header"; return 1; }
   # Headers go through the container's stderr, not a host path inside it.
   response=$(docker exec "$FW" curl -sS --max-time 15 -w '\n%{http_code}' -D /dev/stderr \
+    -H "X-Containd-If-Revision: $revision" \
     -X POST -H "Authorization: Bearer $FW_TOKEN" -H 'Content-Type: application/json' \
     http://127.0.0.1:8080/api/v1/config/commit 2>"$headers_file") || {
     fail "commit manual policy $label failed: $(cat "$headers_file")"
@@ -362,7 +387,7 @@ eu_commit_manual_policy() {
   }
   status="${response##*$'\n'}"
   response="${response%$'\n'*}"
-  if [ "$status" != 200 ] && [ "$status" != 204 ]; then
+  if [ "$status" != 200 ]; then
     fail "commit manual policy $label returned HTTP $status: $response"
     return 1
   fi
@@ -377,6 +402,14 @@ eu_commit_manual_policy() {
     fail "commit manual policy $label reported policy import warnings: $warnings"
     return 1
   fi
+  eu_wait_protection "$response" || return 1
+  pass "$label committed and protecting without warnings"
+}
+
+# Observer attribution is checked after timing-sensitive delivery evidence;
+# its independent grace/tick must not consume the policy-loss deadline.
+eu_manual_policy_readback() {
+  local policy="$1" label="$2" active effective expected_file actual_file i
   # policy_observer.go: observerGracePeriod=5s, observerInterval=5s.
   # Fifteen one-second waits cover grace + tick with five seconds of margin.
   for ((i = 0; i <= 15; i++)); do
@@ -411,7 +444,7 @@ eu_commit_manual_policy() {
     return 1
   }
   if ! cmp -s "$expected_file" "$actual_file"; then
-    fail "containd effective firewall rules differ from custom $label before session kill"
+    fail "containd effective firewall rules differ from custom $label before accepting delivery evidence"
     return 1
   fi
   pass "$label manually committed without warnings, observed as manual-custom and effective rules read back exactly"

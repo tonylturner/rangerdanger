@@ -71,7 +71,7 @@ CALLS=""
 FAIL_VALIDATION=0
 eu_reset_all() { CALLS="$CALLS reset"; }
 eu_apply_named() { CALLS="$CALLS policy:$1"; }
-eu_commit_manual_policy() { CALLS="$CALLS bad-policy"; }
+eu_cc_commit_loss() { CALLS="$CALLS commit-only-loss"; }
 eu_lab_reconnect_cc() { CALLS="$CALLS reconnect"; }
 eu_lab_wait_good_cc() { CALLS="$CALLS good"; }
 eu_wait_for_operator() { CALLS="$CALLS lost"; }
@@ -91,7 +91,7 @@ for slot in eu-firewall-implementation eu-hardening-configurations; do
   t_run eu_lab_bad_change "$slot" prepare
   t_expect_eq "$T_STATUS" 0 "$slot grades bad change FAIL and restoration PASS"
   t_expect_eq "$CALLS" \
-    " reset policy:improved reconnect bad-policy close lost validate:FAIL:$slot policy:improved good prepare:$slot validate:PASS:$slot policy:weak reset" \
+    " reset policy:improved reconnect commit-only-loss validate:FAIL:$slot policy:improved good prepare:$slot validate:PASS:$slot policy:weak reset" \
     "bad-change proof and recovery are ordered and cleaned up"
 done
 # shellcheck disable=SC2034 # consumed by the sourced visibility assertion
@@ -103,6 +103,6 @@ FAIL_VALIDATION=1
 t_run eu_lab_bad_change eu-firewall-implementation prepare
 t_expect_eq "$T_STATUS" 1 "failure to prove bad-change FAIL stops recovery claims"
 t_expect_eq "$CALLS" \
-  " reset policy:improved reconnect bad-policy close lost validate:FAIL:eu-firewall-implementation policy:weak reset" \
+  " reset policy:improved reconnect commit-only-loss validate:FAIL:eu-firewall-implementation policy:weak reset" \
   "failed proof still restores weak and resets without claiming PASS"
 t_finish

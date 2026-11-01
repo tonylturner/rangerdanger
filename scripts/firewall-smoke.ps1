@@ -18,10 +18,6 @@ weak | improved | both. Default: both.
 .PARAMETER ProbeTimeoutSec
 Seconds per probe. Default: 3.
 
-.PARAMETER SettleSecs
-Wait after apply for nft reconcile (only used when canary polling does
-not apply -- weak/improved hit the canary path). Default: 3.
-
 .PARAMETER RefusedThresholdMs
 Threshold for fast-fail vs slow-timeout disambiguation. Refused TCP
 (RST received) typically completes within tens of ms. Firewall drop
@@ -37,11 +33,11 @@ param(
     [ValidateSet('weak','improved','both')]
     [string]$Targets = 'both',
     [int]$ProbeTimeoutSec = $(if ($env:PROBE_TIMEOUT) { [int]$env:PROBE_TIMEOUT } else { 3 }),
-    [int]$SettleSecs     = $(if ($env:SETTLE_SECS)   { [int]$env:SETTLE_SECS   } else { 3 }),
     [int]$RefusedThresholdMs = $(if ($env:REFUSED_THRESHOLD_MS) { [int]$env:REFUSED_THRESHOLD_MS } else { 500 })
 )
 
 $ErrorActionPreference = "Continue"
+. (Join-Path $PSScriptRoot 'lib/containd-readiness.ps1')
 
 $Api = if ($env:RANGERDANGER_API) { $env:RANGERDANGER_API } else { 'http://localhost:8088' }
 
@@ -169,6 +165,7 @@ function Invoke-PolicyApply($name) {
                   -ContentType 'application/json' `
                   -Body (@{ config = $name } | ConvertTo-Json -Compress) `
                   -TimeoutSec 30 -ErrorAction Stop
+        Wait-ContaindProtection $resp
         OK "applied: $($resp | ConvertTo-Json -Compress)"
     } catch {
         Err "apply $name failed: $_"
@@ -180,7 +177,7 @@ function Invoke-PolicyApply($name) {
         'baseline' { 'allow' }
         'improved' { 'deny' }
         'hardened' { 'deny' }
-        default    { Start-Sleep -Seconds $SettleSecs; return $true }
+        default    { Err "unsupported policy $name"; return $false }
     }
     if (Wait-ForDataplane $expectedCanary 15) {
         OK "dataplane reconciled to $name"
@@ -316,12 +313,7 @@ $Listeners = @(
     @{ hp='10.20.20.10:22';    label='vendor-jump SSH' }
 )
 # Apply weak briefly so listener probes can traverse zones.
-try {
-    Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
-        -ContentType 'application/json' -Body '{"config":"weak"}' `
-        -TimeoutSec 10 -ErrorAction Stop | Out-Null
-} catch { }
-Start-Sleep -Seconds 2
+if (-not (Invoke-PolicyApply 'weak')) { exit 1 }
 
 foreach ($l in $Listeners) {
     $host_, $port = $l.hp -split ':', 2

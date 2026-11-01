@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 
+from containd_readiness import docker_reader, wait_ready
 from lab_commands_eu import EU, EUAdapter, request
 from lab_commands_inventory import ROOT, US, extract, packages
 
@@ -53,7 +54,8 @@ class Lifecycle:
         if self.eu:
             self.eu.helper("policy", name)
         else:
-            request(self.api, "/api/firewall/apply", {"config": name})
+            receipt = request(self.api, "/api/firewall/apply", {"config": name})
+            wait_ready(receipt, docker_reader("rangerdanger-firewall"))
             active = request(self.api, "/api/firewall/active")
             if active.get("active_config") != name:
                 raise ValueError(f"policy apply failed: expected {name}, got {active}")

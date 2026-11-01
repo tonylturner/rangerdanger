@@ -146,12 +146,12 @@ EU IEC104 gate plan (no Docker or backend access):
   G3  Open/close/no-op/lockout, both-hop capture, TypeID 46 select/execute and Modbus FC6 decode
   G4  Kali GI succeeds under weak
   G5  Improved Kali connect fails; fresh DENY; CC stays started (physical denial only)
-  G6  Earlier Kali conntrack rows drain; established Kali monitor survives improved, exact tuple kill, exits 3, no later ASDUs, reconnect fails
-  G7  Remove CC allow; read back; kill exact tuple; CC points link_lost
+  G6  Earlier Kali conntrack rows drain; commit alone stops established Kali monitor, exits 3, no later ASDUs, reconnect fails
+  G7  Snapshot CC tuple; remove CC allow; commit alone makes CC points link_lost
   G8  Fault/trip changes truth and solver while CC cache stays unchanged (needs G7)
   G9  Restore improved; CC reconnect/GI and truth converge (needs G7)
   G10 Reset to closed-breaker + supply state, then eu-validation-evidence validator PASS
-  G11 Remove RTU-to-breaker allow; exact Modbus kill; stale/reset/recover
+  G11 Snapshot/capture RTU-to-breaker; commit alone stops Modbus; stale/reset/recover
   G12 OpenDSS pause yields measurement_invalid only; unpause recovers
   G13 RTU pause, process fault/breaker reset each awaiting its first_solve, CC link loss, new connection + GI, audit
   G15 RMU switching, local/earth/live-live interlocks, S1 restore and S2 FPI

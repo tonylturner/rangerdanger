@@ -138,6 +138,9 @@ apply_policy() {
     -H 'Content-Type: application/json' \
     -d "{\"config\":\"$name\"}" 2>&1) \
     || { err "apply $name failed: $resp"; return 1; }
+  printf '%s' "$resp" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/containd_readiness.py" || {
+    err "apply $name did not become protecting"; return 1;
+  }
   case "$name" in
     weak)     expected_canary=allow ;;
     improved) expected_canary=deny ;;
@@ -426,7 +429,7 @@ elif ! docker exec rangerdanger-rtac-sim which dnp3cmd >/dev/null 2>&1; then
 else
   # Make sure the hardened policy (with the DNP3 FC allowlist) is active -
   # gate 1 applied improved, but re-assert in case a later gate changed it.
-  apply_policy improved || true
+  apply_policy improved || exit 1
 
   # Fire a DNP3 Direct Operate (FC5) from the RTAC to the relay and check
   # the fresh decoded DPI event. Restore the relay afterwards.
@@ -451,7 +454,7 @@ else
   # Restore the baseline before cleaning up the flow record, then close
   # the relay after the dataplane has returned to weak.
   # Ending on weak also matches the lab default that gate 1 moved away from.
-  apply_policy weak || true
+  apply_policy weak || exit 1
   docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close >/dev/null 2>&1 || true
   # Report cleanup only on failure so the summary does not count an
   # implicit pass. A breaker left open de-energizes the feeder for later gates.

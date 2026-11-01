@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # fixture globals consumed by sourced gate functions
 # G11/G12 own their healthy baseline even after a failed gate. G8/G9 still
 # require G7's verified disconnect to attribute their cache/recovery evidence.
 # shellcheck source-path=SCRIPTDIR source=lib.sh
@@ -32,9 +33,14 @@ eu_wait_for_baseline() {
   fi
   pass "$1 (stub)"
 }
+# Pre-commit snapshots are offline too; no call may fall through to curl.
+eu_get_operator() { API_BODY='{"link":{"state":"started"}}'; }
+eu_read_sessions() { SESSION_BODY='{}'; }
+eu_session_tuple() { SESSION_TUPLE='[]'; }
+eu_window_start() { :; }
 # The held G7/G11 readback comparison fails as it did in run 1.
 eu_commit_manual_policy() {
-  fail "containd effective firewall rules differ from custom $2 before session kill"
+  fail "containd effective firewall rules differ from custom $2 before accepting delivery evidence"
   return 1
 }
 gate() {
@@ -76,6 +82,10 @@ t_expect_no_out "waited for operator" "G9 does not wait for a recovery that cann
 # Exercise the real named apply readback after the gate-level stubs above.
 # shellcheck source-path=SCRIPTDIR source=../../lib/eu-policy.sh
 . "$T_REPO/scripts/lib/eu-policy.sh"
+eu_wait_protection() { EU_READY_MS=1000; EU_READY_EPOCH=1760529600500000000; }
+test_manual_policy() {
+  eu_commit_manual_policy "$@" && eu_manual_policy_readback "$@"
+}
 eu_api_post() {
   HTTP_STATUS=200
   API_BODY='{"status":"applied"}'
@@ -117,11 +127,11 @@ manual_fixture_reset() {
   FW_TOKEN=fixture-admin
   RUNNING_STATUS=200
   RUNNING_RC=0
-  CANDIDATE_STATUS=201
-  COMMIT_STATUS=204
+  CANDIDATE_STATUS=200
+  COMMIT_STATUS=200
   CANDIDATE_RC=0
   COMMIT_RC=0
-  COMMIT_HEADERS=$'HTTP/1.1 204 No Content\r\nX-Containd-Warnings: \t\r\n\r\n'
+  COMMIT_HEADERS=$'HTTP/1.1 200 OK\r\nX-Containd-Warnings: \t\r\n\r\n'
   ACTIVE_CALLS=0
   ACTIVE_AFTER=11
   SLEEPS=0
@@ -133,16 +143,20 @@ docker() {
   printf '%s\n' "$*" >>"$TMP_DIR/manual-docker-args"
   case "$*" in
     "exec -i $FW curl "*"/api/v1/config/candidate")
+      case "$*" in *"X-Containd-If-Revision: opaque/running=="*) ;; *) return 98 ;; esac
+      printf 'X-Containd-Revision: opaque/candidate==\r\n' >&2
       printf 'candidate\n' >>"$DOCKER_LOG"
       cat >"$STAGED_INPUT"
       printf '{"status":"staged"}\n%s' "$CANDIDATE_STATUS"
       return "$CANDIDATE_RC" ;;
     "exec $FW curl "*"/api/v1/config/commit")
+      case "$*" in *"X-Containd-If-Revision: opaque/candidate=="*) ;; *) return 98 ;; esac
       printf 'commit\n' >>"$DOCKER_LOG"
       printf '%s' "$COMMIT_HEADERS" >&2
       printf '{"status":"committed"}\n%s' "$COMMIT_STATUS"
       return "$COMMIT_RC" ;;
     "exec $FW curl "*"/api/v1/config")
+      printf 'X-Containd-Revision: opaque/running==\r\n' >&2
       if grep -qx commit "$DOCKER_LOG"; then
         printf 'readback\n' >>"$DOCKER_LOG"
         cat "$EFFECTIVE_INPUT"
@@ -175,7 +189,7 @@ sleep() {
   SLEEPS=$((SLEEPS + 1))
 }
 manual_fixture_reset
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 0 "manual commit converges after grace plus tick"
 t_expect_fails 0 "manual commit has no warning, backend mutation or session flush"
 t_expect_eq "$(cat "$DOCKER_LOG")" "$(printf 'bindings\ncandidate\ncommit\nreadback')" \
@@ -207,7 +221,7 @@ for running_failure in transport http malformed null interfaces false-interfaces
     false-interfaces) printf '{"interfaces":false,"firewall":{"rules":[]}}' >"$RUNNING_INPUT" ;;
     device) printf '{"interfaces":[{"name":"mgmt","device":42}],"firewall":{"rules":[]}}' >"$RUNNING_INPUT" ;;
   esac
-  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_run test_manual_policy "$MANUAL_INPUT" fixture
   t_expect_eq "$T_STATUS" 1 "running binding read/decode failure stops manual commit: $running_failure"
   t_expect_fails 1 "running binding failure reports a gate failure: $running_failure"
   t_expect_eq "$(cat "$DOCKER_LOG")" bindings \
@@ -218,7 +232,7 @@ for running_failure in transport http malformed null interfaces false-interfaces
 done
 manual_fixture_reset
 RUNNING_STATUS=503
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_out "cannot read appliance bindings before staging manual policy fixture" \
   "running-config read failure explains why manual staging stopped"
 
@@ -228,7 +242,7 @@ for interfaces_patch in 'del(.interfaces)' '.interfaces = null' \
   jq "$interfaces_patch" "$RUNNING_INPUT" >"$TMP_DIR/running-mutated.json"
   cp "$TMP_DIR/running-mutated.json" "$RUNNING_INPUT"
   ACTIVE_AFTER=0
-  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_run test_manual_policy "$MANUAL_INPUT" fixture
   t_expect_eq "$T_STATUS" 0 "running bindings follow backend decoding: $interfaces_patch"
   t_run jq -e '.interfaces[0] | has("device") | not' "$STAGED_INPUT"
   t_expect_eq "$T_STATUS" 0 "missing or last-empty binding removes document device: $interfaces_patch"
@@ -239,19 +253,23 @@ for mutation in 'del(.dataplane)' '.dataplane = null' '.dataplane = "invalid"' \
   manual_fixture_reset
   jq "$mutation" "$MANUAL_INPUT" >"$TMP_DIR/mutated-policy.json"
   ACTIVE_AFTER=0
-  t_run eu_commit_manual_policy "$TMP_DIR/mutated-policy.json" fixture
+  t_run test_manual_policy "$TMP_DIR/mutated-policy.json" fixture
   t_expect_eq "$T_STATUS" 0 "manual commit handles enforcement injection: $mutation"
   t_run jq -e '.dataplane.enforcement == true' "$STAGED_INPUT"
   t_expect_eq "$T_STATUS" 0 "staged enforcement is enabled: $mutation"
 done
 
-for stage_status in 200 204; do
+for stage_status in 200 201 204; do
   manual_fixture_reset
   CANDIDATE_STATUS="$stage_status"
   COMMIT_STATUS=200
   ACTIVE_AFTER=0
-  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
-  t_expect_eq "$T_STATUS" 0 "backend-supported candidate $stage_status and commit 200 succeed"
+  t_run test_manual_policy "$MANUAL_INPUT" fixture
+  if [ "$stage_status" = 200 ]; then
+    t_expect_eq "$T_STATUS" 0 "documented candidate 200 and commit 200 succeed"
+  else
+    t_expect_eq "$T_STATUS" 1 "undocumented candidate $stage_status is rejected"
+  fi
 done
 
 for warning_headers in \
@@ -259,7 +277,7 @@ for warning_headers in \
   $'x-containd-warnings: \t\r\nx-CoNtAiNd-WaRnInGs:routing failed\r\n'; do
   manual_fixture_reset
   COMMIT_HEADERS="$warning_headers"
-  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_run test_manual_policy "$MANUAL_INPUT" fixture
   t_expect_eq "$T_STATUS" 1 "commit rejects repeated or mixed-case nonempty warning headers"
   t_expect_out "reported policy import warnings" "commit warning failure is explicit"
   t_expect_eq "$ACTIVE_CALLS" 0 "warnings prevent claiming observed success"
@@ -267,52 +285,52 @@ done
 
 manual_fixture_reset
 CANDIDATE_STATUS=422
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 1 "rejected candidate fails"
 t_expect_eq "$(cat "$DOCKER_LOG")" "$(printf 'bindings\ncandidate')" \
   "rejected candidate is never committed"
 manual_fixture_reset
 COMMIT_STATUS=500
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 1 "rejected commit fails"
 t_expect_eq "$ACTIVE_CALLS" 0 "rejected commit cannot poll toward success"
 for transport in candidate commit; do
   manual_fixture_reset
   if [ "$transport" = candidate ]; then CANDIDATE_RC=7; else COMMIT_RC=7; fi
-  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_run test_manual_policy "$MANUAL_INPUT" fixture
   t_expect_eq "$T_STATUS" 1 "$transport transport failure propagates"
 done
 manual_fixture_reset
 GET_RC=1
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 1 "active-policy read failure propagates"
 manual_fixture_reset
 ACTIVE_AFTER=99
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 1 "observer non-convergence fails"
 t_expect_eq "$SLEEPS" 15 "observer wait has a fifteen-second sleep budget"
 t_expect_eq "$ACTIVE_CALLS" 16 "observer polling is bounded including its initial read"
 manual_fixture_reset
 ACTIVE_AFTER=0
 FINAL_READBACK='{"active_config":"improved","policy_source":"manual-custom"}'
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 1 "manual source alone cannot satisfy custom active configuration"
 manual_fixture_reset
 ACTIVE_AFTER=0
 FINAL_READBACK='{"active_config":"custom","policy_source":"manual-custom","plan":{}}'
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 1 "manual observation must clear plan provenance"
 
 manual_fixture_reset
 ACTIVE_AFTER=0
 jq '.firewall.rules[].ics = {}' "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 0 "empty ICS readback equals absent policy ICS"
 t_expect_fails 0 "empty ICS readback does not report a gate failure"
 manual_fixture_reset
 ACTIVE_AFTER=0
 jq '.firewall.rules[].ics = {}' "$EFFECTIVE_INPUT" >"$MANUAL_INPUT"
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 0 "empty policy ICS equals absent readback ICS"
 
 for ics_value in '{"enabled":true}' null '[]' false; do
@@ -320,18 +338,18 @@ for ics_value in '{"enabled":true}' null '[]' false; do
   ACTIVE_AFTER=0
   jq --argjson ics "$ics_value" '.firewall.rules[].ics = $ics' \
     "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
-  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_run test_manual_policy "$MANUAL_INPUT" fixture
   t_expect_eq "$T_STATUS" 1 "readback ICS other than an empty object still differs: $ics_value"
-  t_expect_out "before session kill" "ICS mismatch fails before tuple kills: $ics_value"
+  t_expect_out "before accepting delivery evidence" "ICS mismatch fails before tuple kills: $ics_value"
 done
 
 manual_fixture_reset
 ACTIVE_AFTER=0
 jq '.firewall.rules[0] |= (.ics = {} | .id = "unexpected-rule")' \
   "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 1 "changed rule field still fails despite empty ICS normalization"
-t_expect_out "before session kill" "effective readback failure retains its ordering diagnostic"
+t_expect_out "before accepting delivery evidence" "effective readback failure retains its ordering diagnostic"
 
 manual_fixture_reset
 ACTIVE_AFTER=0
@@ -339,7 +357,7 @@ jq --slurpfile monitors "$T_FIXTURES/monitor-rules.json" \
   '.firewall.rules += $monitors[0]' "$EFFECTIVE_INPUT" >"$MANUAL_INPUT"
 jq '(.firewall.rules[] | select(.ics.mode == "monitor") | .ics.readOnly) = false' \
   "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
-t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_run test_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 0 "documented readOnly:false no-op may be echoed on monitor IEC104 predicates"
 for mutation in \
   'del(.firewall.rules[-1].ics.negative)' \
@@ -353,9 +371,22 @@ for mutation in \
   '.firewall.rules[-1].ics.mode="enforce"' \
   '.firewall.rules[-1].ics.unknownDefault=false'; do
   jq "$mutation" "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
-  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_run test_manual_policy "$MANUAL_INPUT" fixture
   t_expect_eq "$T_STATUS" 1 "monitor readback retains all meaningful/undocumented fields: $mutation"
-  t_expect_out "before session kill" "predicate mismatch stops before any session cut"
+  t_expect_out "before accepting delivery evidence" "predicate mismatch stops before any session cut"
+done
+
+for endpoint in candidate commit; do
+  for code in 412 428 400; do
+    manual_fixture_reset
+    ACTIVE_AFTER=0
+    if [ "$endpoint" = candidate ]; then CANDIDATE_STATUS="$code"; else COMMIT_STATUS="$code"; fi
+    t_run test_manual_policy "$MANUAL_INPUT" fixture
+    t_expect_eq "$T_STATUS" 1 "$endpoint HTTP $code fails without retry"
+    t_expect_out "HTTP $code:" "precondition failure surfaces upstream status and body"
+    if [ "$endpoint" = candidate ]; then expected=$(printf 'bindings\ncandidate'); else expected=$(printf 'bindings\ncandidate\ncommit'); fi
+    t_expect_eq "$(cat "$DOCKER_LOG")" "$expected" "no reread, retry, or forced write after $endpoint HTTP $code"
+  done
 done
 
 t_finish

@@ -21,6 +21,7 @@ REPORT_STATUS=200
 RESTORE_FAIL=0
 LEAK_PLAN=0
 sleep() { :; }
+eu_wait_protection() { :; }
 docker() { return 99; }
 curl() { return 99; }
 

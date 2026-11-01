@@ -179,6 +179,7 @@ t_field_command() {
     *) return 99 ;;
   esac
 }
+eu_shadow_wait_health() { :; }
 eu_shadow_get() {
   CALLS="$CALLS get:$1"
   case "$1" in
