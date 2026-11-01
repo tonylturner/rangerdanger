@@ -44,6 +44,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - EU firewall gates trace ordered nftables admission chains and keep the
   ephemeral-port guard. Manual policy evaluation treats RATE_LIMIT and TAG as
   non-terminal and refuses unsupported viaForwards selectors.
+- The containd portal's proxy upload cap is now 10 MB instead of 1 MiB, with a RangerDanger-specific JSON error for larger uploads; containd's own limits remain unchanged.
 - Lab Run buttons honor per-command source terminals and keep host commands
   and tools the backend cannot run copy-only. The EU baseline capture again
   rotates after 12 seconds of RTU cyclic traffic.
