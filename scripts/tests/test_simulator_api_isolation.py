@@ -23,6 +23,22 @@ US = "us-dnp3-substation"
 EU = "eu-iec104-substation"
 NOW = 1793534400.0
 
+# Linux /proc/net/tcp{,6} LISTEN rows, including OpenPLC's internal control port.
+LOOPBACK_ROWS = (
+    ("127.0.0.1", 43628,
+     " 0: 0100007F:AA6C 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 12345 1\n"),
+    ("127.42.0.9", 4567,
+     " 1: 09002A7F:11D7 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 12346 1\n"),
+    ("::1", 4567,
+     " 2: 00000000000000000000000001000000:11D7 00000000000000000000000000000000:0000"
+     " 0A 00000000:00000000 00:00000000 00000000 0 0 12347 1\n"),
+    ("::ffff:127.42.0.9", 4567,
+     " 3: 0000000000000000FFFF000009002A7F:11D7 00000000000000000000000000000000:0000"
+     " 0A 00000000:00000000 00:00000000 00000000 0 0 12348 1\n"),
+    ("127.0.0.11", 4567,
+     " 4: 0B00007F:11D7 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 12349 1\n"),
+)
+
 
 def iso(seconds=0):
     return g3.datetime.fromtimestamp(NOW + seconds, timezone.utc).isoformat()
@@ -317,6 +333,56 @@ class ControlTests(unittest.TestCase):
                 g3.check_listeners(cat, "feeder_breaker",
                                    f" 0: {host}:1F90 0:0 0A\n 1: 1428280A:01F6 0:0 0A\n")
 
+    def test_loopback_kernel_rows_are_outside_the_catalogue(self):
+        for package in (US, EU):
+            cat = g3.load_inventory(package)
+            known = FakeTransport(cat, package).exec("rangerdanger-openplc", ["cat"])
+            service = "openplc" if package == US else "openplc_eu"
+            for address, port, row in LOOPBACK_ROWS:
+                with self.subTest(package=package, address=address):
+                    self.assertEqual(g3.listener_ports(row),
+                                     [(str(g3.ipaddress.ip_address(address)), port)])
+                    g3.check_listeners(cat, service, known + row)
+
+    def test_unknown_loopback_port_moving_to_wildcard_fails(self):
+        cat = g3.load_inventory(US)
+        known = FakeTransport(cat, US).exec("rangerdanger-openplc", ["cat"])
+        for row in (
+            " 0: 00000000:AA6C 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 1 1\n",
+            " 0: 00000000000000000000000000000000:AA6C 00000000000000000000000000000000:0000"
+            " 0A 00000000:00000000 00:00000000 00000000 0 0 1 1\n",
+            " 0: 1E1E1E0A:AA6C 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 1 1\n",
+            " 0: 0000000000000000FFFF00001E1E1E0A:AA6C 00000000000000000000000000000000:0000"
+            " 0A 00000000:00000000 00:00000000 00000000 0 0 1 1\n",
+        ):
+            with self.subTest(row=row), self.assertRaisesRegex(ValueError, "unclassified listener"):
+                g3.check_listeners(cat, "openplc", known + row)
+
+    def test_loopback_cannot_satisfy_required_external_listener(self):
+        cat = g3.load_inventory(EU)
+        for _, _, row in LOOPBACK_ROWS:
+            with self.subTest(row=row), self.assertRaisesRegex(ValueError, "missing listener"):
+                g3.check_listeners(cat, "control_centre",
+                                   row.replace(":AA6C", ":1F90").replace(":11D7", ":1F90"))
+
+    def test_each_external_alias_must_be_listening_not_merely_its_port(self):
+        cat = g3.load_inventory(US)
+        raw = " 0: 1E1E1E0A:1F90 0:0 0A\n 1: 1E1E1E0A:01F6 0:0 0A\n"
+        with self.assertRaisesRegex(ValueError, "missing listener"):
+            g3.check_listeners(cat, "openplc", raw)
+
+    def test_classified_wildcards_cover_all_catalogued_aliases(self):
+        for host in ("00000000", "00000000000000000000000000000000"):
+            with self.subTest(host=host):
+                raw = f" 0: {host}:1F90 0:0 0A\n 1: {host}:01F6 0:0 0A\n"
+                g3.check_listeners(g3.load_inventory(US), "openplc", raw)
+
+    def test_mapped_nonloopback_is_the_same_classified_ipv4_alias(self):
+        row = (" 0: 0000000000000000FFFF00001563630A:1F90"
+               " 00000000000000000000000000000000:0000 0A"
+               " 00000000:00000000 00:00000000 00000000 0 0 12350 1\n")
+        g3.check_listeners(g3.load_inventory(EU), "control_centre", row)
+
 
 class FakeTransport:
     def __init__(self, cat, package):
@@ -379,6 +445,32 @@ class OrchestrationTests(unittest.TestCase):
         self.evidence = g3.Evidence(self.temp.name, US)
         self.io = FakeTransport(self.cat, US)
         self.gate = g3.Gate(US, self.cat, self.io, self.evidence)
+
+    def test_loopback_evidence_is_saved_before_any_catalogue_failure(self):
+        original = self.io.exec
+        container = self.gate.container("openplc")
+        unknown = " 0: 00000000:AA6C 00000000:0000 0A\n"
+        for fails in (False, True):
+            with self.subTest(fails=fails):
+                def execute(target, argv, **kwargs):
+                    raw = original(target, argv, **kwargs)
+                    if target == container and argv[0] == "cat":
+                        raw += (unknown if fails else "") + "".join(r for _, _, r in LOOPBACK_ROWS)
+                    return raw
+
+                self.io.exec = execute
+                if fails:
+                    with self.assertRaisesRegex(ValueError, "unclassified listener"):
+                        self.gate.controls("weak", "before")
+                else:
+                    self.gate.controls("weak", "before")
+                saved = json.loads((Path(self.temp.name) / "G3.json").read_text())
+                events = [e for e in saved["events"] if e["kind"] == "loopback-listener"]
+                count = len(LOOPBACK_ROWS)
+                self.assertEqual(len(events), count * (2 if fails else 1))
+                self.assertEqual([(e["container"], e["address"], e["port"]) for e in events[-count:]],
+                                 [(container, str(g3.ipaddress.ip_address(host)), port)
+                                  for host, port, _ in LOOPBACK_ROWS])
 
     def test_full_both_packages_order_controls_cleanup_and_counts(self):
         for package in (US, EU):

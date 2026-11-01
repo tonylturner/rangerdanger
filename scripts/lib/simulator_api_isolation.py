@@ -177,26 +177,37 @@ def listener_ports(raw):
     return result
 
 
-def check_listeners(cat, service, raw):
+def check_listeners(cat, service, raw, record_loopback=None):
+    """Catalogue the externally reachable surface; retain namespace-local evidence."""
     bound = listener_ports(raw)
     require(bound, f"no listeners: {service}")
+    external = []
+    # Record all loopbacks before validating any external listener, so an
+    # unclassified bind earlier in the proc tables cannot hide this evidence.
+    for host, port in bound:
+        address = ipaddress.ip_address(host)
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+            address = address.ipv4_mapped
+        if address.is_loopback:
+            if record_loopback is not None:
+                record_loopback(host, port)
+        else:
+            external.append((str(address), port))
     dest = [d for d in cat["destinations"] if d["service"] == service]
     exclusions = [d for d in cat["excluded_listeners"] if d["service"] == service]
     ports = {d["port"] for d in dest + exclusions}
     interfaces = {i["ipv4"] for s in cat["services"] if s["key"] == service for i in s["interfaces"]}
     allowed = {(d["host"], d["port"]) for d in dest}
     allowed.update((host, d["port"]) for host in interfaces for d in exclusions)
-    for host, port in bound:
-        # Docker's embedded DNS is not an application listener.
-        if host == "127.0.0.11":
-            continue
+    observed = set()
+    for host, port in external:
         require(port in ports, f"unclassified listener {service} {host}:{port}")
         aliases = interfaces if host in ("0.0.0.0", "::") else {host}
-        if host not in ("127.0.0.1", "::1"):
-            require(all((alias, port) in allowed for alias in aliases),
-                    f"unclassified listener alias {service} {host}:{port}")
-    require({d["port"] for d in dest} <= {port for _, port in bound},
-            f"missing listener: {service}")
+        observed.update((alias, port) for alias in aliases)
+        require(all((alias, port) in allowed for alias in aliases),
+                f"unclassified listener alias {service} {host}:{port}")
+    missing = {(d["host"], d["port"]) for d in dest} - observed
+    require(not missing, f"missing listener: {service}: {sorted(missing)}")
 
 
 def timestamp(value):
@@ -433,7 +444,10 @@ class Gate:
                     "student evidence extends beyond control window")
         for service in sorted({d["service"] for d in self.cat["destinations"]}):
             raw = self.io.exec(self.container(service), ["cat", "/proc/net/tcp", "/proc/net/tcp6"])
-            check_listeners(self.cat, service, raw)
+            check_listeners(self.cat, service, raw, record_loopback=lambda host, port:
+                            self.evidence.event("loopback-listener", service=service,
+                                                container=self.container(service),
+                                                address=host, port=port, policy=policy, stage=stage))
         for d in self.cat["destinations"]:
             self.peer_control(d)
         # Portal routes specifically exercise the proxy's management aliases,
