@@ -144,6 +144,26 @@ func validateVendorRDPCompromise(state map[string]any) []ValidationCheck {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
+const rtacValidationResponseLimit = 1 << 20
+
+func readRTACValidationJSON(resp *http.Response, result any) error {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("RTAC returned HTTP %d", resp.StatusCode)
+	}
+	// Read one extra byte so a valid JSON prefix cannot hide an oversized body.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, rtacValidationResponseLimit+1))
+	if err != nil {
+		return fmt.Errorf("RTAC returned HTTP %d: cannot read response: %w", resp.StatusCode, err)
+	}
+	if len(body) > rtacValidationResponseLimit {
+		return fmt.Errorf("RTAC returned HTTP %d: response exceeds %d bytes", resp.StatusCode, rtacValidationResponseLimit)
+	}
+	if err := json.Unmarshal(body, result); err != nil {
+		return fmt.Errorf("RTAC returned HTTP %d: invalid JSON response: %w", resp.StatusCode, err)
+	}
+	return nil
+}
+
 func (s *Server) fetchRTACState(ctx context.Context, gen *lifecycle.Generation) (map[string]any, error) {
 	rtac, err := rtacURL(gen)
 	if err != nil {
@@ -154,9 +174,8 @@ func (s *Server) fetchRTACState(ctx context.Context, gen *lifecycle.Generation) 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 	var result map[string]any
-	if err := json.Unmarshal(body, &result); err != nil {
+	if err := readRTACValidationJSON(resp, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -172,17 +191,10 @@ func (s *Server) fetchRTACAudit(ctx context.Context, gen *lifecycle.Generation) 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read RTAC audit: %w", err)
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("RTAC audit returned HTTP %d", resp.StatusCode)
-	}
 	var result struct {
 		Entries []map[string]any `json:"entries"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
+	if err := readRTACValidationJSON(resp, &result); err != nil {
 		return nil, err
 	}
 	return result.Entries, nil
