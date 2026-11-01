@@ -67,8 +67,8 @@ describe("Reset Progress", () => {
       Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
       vi.spyOn(window, "confirm").mockReturnValue(true);
       const client = new QueryClient();
-      saveProgress(scope, scenario.id, { completedStepIds: ["first", "second"], notes: "old", cmdLog: ["old"] });
-      saveProgress(scope, "another", { completedStepIds: ["kept"], notes: "keep", cmdLog: [] });
+      saveProgress(scope, scenario.id, { skippedStepIds: [], completedStepIds: ["first", "second"], notes: "old", cmdLog: ["old"] });
+      saveProgress(scope, "another", { skippedStepIds: [], completedStepIds: ["kept"], notes: "keep", cmdLog: [] });
       const tree = render(<QueryClientProvider client={client}><ScenarioRunner scenario={scenario} onExit={() => {}} /></QueryClientProvider>);
       const click = (label: string) => fireEvent.click(tree.getByRole("button", { name: label }));
       try {
@@ -82,7 +82,7 @@ describe("Reset Progress", () => {
         expect(tree.container.innerHTML).toContain("First instruction");
         expect(tree.queryByRole("button", { name: "Execute Step" })).toBeNull();
         expect((tree.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
-        expect(loadProgress(scope, scenario)).toEqual({ completedStepIds: [], notes: "", cmdLog: [] });
+        expect(loadProgress(scope, scenario)).toEqual({ skippedStepIds: [], completedStepIds: [], notes: "", cmdLog: [] });
         expect(loadProgress(scope, { id: "another", steps: [{ id: "kept", title: "", description: "" }] }).notes).toBe("keep");
         fireEvent.click(tree.getByRole("button", { name: /Mark Complete/ }));
         expect(tree.container.innerHTML).toContain("Second instruction");
@@ -213,7 +213,7 @@ describe("validation is separate from self-attested progress", () => {
   it.each(["us-dnp3-substation", "eu-iec104-substation"])("PASS preserves untouched steps in %s", async (packageId) => {
     scope.packageId = packageId;
     Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
-    saveProgress(scope, scenario.id, { completedStepIds: ["first"], notes: "kept", cmdLog: [] });
+    saveProgress(scope, scenario.id, { skippedStepIds: [], completedStepIds: ["first"], notes: "kept", cmdLog: [] });
     vi.spyOn(api, "validateScenario").mockResolvedValue({
       scenario_id: scenario.id, outcome: "PASS", timestamp: "2026-11-01T00:00:00Z",
       checks: [{ name: "Current state", status: "pass", detail: "Bounded check passed" }],
