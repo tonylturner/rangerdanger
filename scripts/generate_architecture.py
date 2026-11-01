@@ -294,6 +294,11 @@ def service_label(package, key):
 
 def primary_network(package, key):
     networks = package.services[key].get("networks", {})
+    non_management = [network for network in networks if network != "mgmt_net"]
+    # A process/physics service does not become management infrastructure
+    # merely because it also exposes an out-of-band management NIC.
+    if len(non_management) == 1 and non_management[0] not in package.services["firewall"]["networks"]:
+        return non_management[0]
     node = package.teaching_nodes.get(package.nodes.get(key, {}).get("node"), {})
     for network in node.get("networks", []):
         if network in networks and network in package.zones:
@@ -305,6 +310,8 @@ def primary_network(package, key):
 
 
 def zone_name(package, key):
+    if key not in package.zones and package.networks[key].get("internal"):
+        return key
     return package.zones.get(key, {}).get(
         "name", "Management" if key == "mgmt_net" else key.removesuffix("_net").title())
 
@@ -332,6 +339,8 @@ def zone_graph(root, package, overlay, next_major, *, overview=False):
             name = zone_name(package, key)
             iface = firewall_nics.get(key, {}).get("interface_name")
             title = f"{name} ·\n{subnet}" + (f" · {iface}" if iface else "")
+            if package.networks[key].get("internal"):
+                title += " · internal"
         lines.append(f'    subgraph {group}["{label(title)}"]')
         lines.append("    direction TB")
         for service in members:

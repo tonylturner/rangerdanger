@@ -159,8 +159,10 @@ services.
 ## Docker network wiring
 
 These are zone diagrams, not NIC diagrams: each service appears once in its
-primary zone (topology membership first, then its first teaching network,
-then management when attached; otherwise its first attached network).
+primary zone. A service whose only non-management network has no firewall
+attachment belongs in that process/physics zone. Otherwise, topology membership
+comes first, then its first teaching network, then management when attached,
+or its first attached network.
 Firewall attachments carry interface labels;
 dotted desktop links carry delivery subnets. Shared-network notes cover
 secondary management and process/physics membership without device-level
@@ -301,7 +303,6 @@ flowchart TB
     direction TB
     n_eu_network_backend_a19d9879b5["backend"]
     n_eu_network_frontend_e0fcd78f49["frontend · Next.js 16"]
-    n_eu_network_opendss_sim_b1129fcf3d["opendss_sim"]
     n_eu_network_proxy_e771b99392["proxy"]
     end
     subgraph n_eu_network_zone_control_centre_net_9f62be36c5["Control Centre Zone ·<br/>10.60.60.0/24 · lan4"]
@@ -342,6 +343,10 @@ flowchart TB
     direction TB
     n_eu_network_kali_2a53475315["kali"]
     end
+    subgraph n_eu_network_zone_process_net_1aa649e16e["process_net ·<br/>10.50.50.0/24 · internal"]
+    direction TB
+    n_eu_network_opendss_sim_b1129fcf3d["opendss_sim"]
+    end
     n_eu_network_firewall_671cc6210f["containd · firewall"]
     n_eu_network_dockerd_cf7eb1c031["Docker daemon"]
     n_eu_network_browser_78b3a5d1f1["Browser"]
@@ -368,6 +373,7 @@ flowchart TB
     style n_eu_network_zone_station_net_43c9bdb70e fill:#f0f9ff,stroke:#0284c7,color:#172033
     style n_eu_network_zone_ops_dmz_net_8f3ce0472f fill:#fdf2f8,stroke:#db2777,color:#172033
     style n_eu_network_zone_enterprise_net_6a371a968d fill:#fff7ed,stroke:#c2410c,color:#172033
+    style n_eu_network_zone_process_net_1aa649e16e fill:#fffbeb,stroke:#d97706,color:#172033
     n_eu_network_zone_enterprise_net_6a371a968d ~~~ n_eu_network_zone_station_net_43c9bdb70e
     n_eu_network_zone_vendor_net_872a260511 ~~~ n_eu_network_zone_field_net_68c90c6783
     n_eu_network_zone_control_centre_net_9f62be36c5 ~~~ n_eu_network_zone_ops_dmz_net_8f3ce0472f
@@ -375,8 +381,8 @@ flowchart TB
 
 **Shared-network notes** (secondary NICs are listed in the table):
 
-- `mgmt_net` · `10.99.99.0/24`: out-of-band management; spans Control Centre Zone, Field Device Zone, Management, Operations DMZ, Station Zone.
-- `process_net` · `10.50.50.0/24`: no firewall attachment; spans Field Device Zone, Management.
+- `mgmt_net` · `10.99.99.0/24`: out-of-band management; spans Control Centre Zone, Field Device Zone, Management, Operations DMZ, Station Zone, process_net.
+- `process_net` · `10.50.50.0/24`: no firewall attachment; spans Field Device Zone, process_net.
 <!-- END GENERATED: network-eu -->
 
 <!-- BEGIN GENERATED: wiring-eu -->

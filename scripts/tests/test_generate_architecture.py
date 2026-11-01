@@ -163,6 +163,32 @@ class ArchitectureTests(unittest.TestCase):
                     self.assertIn("shares fuxa_hmi namespace", cells[0])
             self.assertEqual(count, sum(len(s.get("networks", {})) for s in package.services.values()))
 
+    def test_sole_non_management_network_without_firewall_is_primary(self):
+        import re
+        for package, network in ((self.us, "physics_net"), (self.eu, "process_net")):
+            with self.subTest(package=package.short):
+                self.assertNotIn(network, package.services["firewall"]["networks"])
+                self.assertEqual(architecture.primary_network(package, "opendss_sim"), network)
+                # The rule holds with or without a secondary management NIC.
+                with patch.dict(package.services["opendss_sim"]["networks"],
+                                {"mgmt_net": package.services["backend"]["networks"]["mgmt_net"]}):
+                    self.assertEqual(architecture.primary_network(package, "opendss_sim"), network)
+                graph = self.rendered[f"network-{package.short}"]
+                group = architecture.ident(package.short, "network", "zone", network)
+                body = re.search(rf'    subgraph {group}\["(.*?)"\](.*?)    end', graph, re.S)
+                self.assertIsNotNone(body)
+                name = "Physics" if package.short == "us" else "process_net"
+                subnet = package.networks[network]["ipam"]["config"][0]["subnet"]
+                title = f"{name} ·<br/>{subnet}"
+                if package.networks[network].get("internal"):
+                    title += " · internal"
+                self.assertEqual(body[1], title)
+                self.assertIn(architecture.box(architecture.ident(package.short, "network", "opendss_sim"),
+                                               "opendss_sim"), body[2])
+                self.assertIn(f"`{network}` · `{subnet}`: no firewall attachment", graph)
+        self.assertEqual(architecture.primary_network(self.eu, "rmu_1"), "field_net")
+        self.assertEqual(architecture.primary_network(self.eu, "backend"), "mgmt_net")
+
     def test_shared_network_notes_are_generated_not_device_edges(self):
         for package in self.packages:
             graph = self.rendered[f"network-{package.short}"]
@@ -170,8 +196,6 @@ class ArchitectureTests(unittest.TestCase):
             network = "process_net" if package.short == "eu" else "physics_net"
             subnet = package.networks[network]["ipam"]["config"][0]["subnet"]
             self.assertIn(f"`{network}` · `{subnet}`: no firewall attachment", graph)
-            if package.short == "eu":
-                self.assertNotIn(architecture.ident(package.short, "network", "zone", network) + '["', graph)
         self.assertEqual(architecture.markdown_cell('x|y\n<z>'), "x&#124;y<br/>&lt;z&gt;")
         for column in self.overlay["zone_columns"]["eu"]:
             for first, second in zip(column, column[1:]):
