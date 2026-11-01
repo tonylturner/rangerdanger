@@ -10,6 +10,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -305,11 +306,38 @@ func TestOneShotGoldens(t *testing.T) {
 }
 
 func TestConnectFailureGolden(t *testing.T) {
-	for _, realTransport := range []bool{false, true} {
-		t.Run(fmt.Sprint(realTransport), func(t *testing.T) {
+	for _, jsonOutput := range []bool{false, true} {
+		t.Run(fmt.Sprint(jsonOutput), func(t *testing.T) {
 			rt := testRuntime()
 			addr := "127.0.0.1:2404"
-			if realTransport {
+			rt.dial = func(context.Context, string, iec.Options, iec.Handler) (link, error) {
+				return nil, errors.New("fixture refuses connection")
+			}
+			var out, errout bytes.Buffer
+			args := []string{addr, "gi"}
+			if jsonOutput {
+				args = append(args, "--json")
+			}
+			code := run(context.Background(), args, &out, &errout, rt)
+			want := logs("connecting to "+addr+" oa=1 ca=1", "connect failed: fixture refuses connection")
+			wantOut, wantErr := want, ""
+			if jsonOutput {
+				wantOut, wantErr = "", want
+			}
+			if code != 2 || out.String() != wantOut || errout.String() != wantErr {
+				t.Fatalf("exit=%d stdout=%q stderr=%q want stdout=%q stderr=%q", code, out.String(), errout.String(), wantOut, wantErr)
+			}
+		})
+	}
+}
+
+func TestConnectFailureCauses(t *testing.T) {
+	for _, reason := range []string{"timeout", "refused"} {
+		t.Run(reason, func(t *testing.T) {
+			rt := testRuntime()
+			addr := "192.0.2.1:2404"
+			deadline := time.Now().Add(time.Second)
+			if reason == "refused" {
 				l, err := net.Listen("tcp", "127.0.0.1:0")
 				if err != nil {
 					t.Fatal(err)
@@ -319,18 +347,38 @@ func TestConnectFailureGolden(t *testing.T) {
 					t.Fatal(err)
 				}
 			} else {
-				rt.dial = func(context.Context, string, iec.Options, iec.Handler) (link, error) {
-					return nil, errors.New("fixture refuses connection")
-				}
+				// A non-routable documentation address with an expired deadline
+				// exercises the real dial timeout without depending on host routing
+				// or sending traffic to an external blackhole.
+				deadline = time.Now().Add(-time.Second)
+			}
+			var dialErr error
+			dial := rt.dial
+			rt.dial = func(ctx context.Context, addr string, opts iec.Options, handler iec.Handler) (link, error) {
+				c, err := dial(ctx, addr, opts, handler)
+				dialErr = err
+				return c, err
 			}
 			var out, errout bytes.Buffer
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithDeadline(context.Background(), deadline)
 			defer cancel()
-			code := run(ctx, []string{addr, "gi", "--json"}, &out, &errout, rt)
-			want := logs("connecting to "+addr+" oa=1 ca=1", "connect failed")
+			code := run(ctx, []string{addr, "dc", "3001", "open", "-sbo", "--json"}, &out, &errout, rt)
+			if reason == "timeout" {
+				var netErr net.Error
+				if !errors.As(dialErr, &netErr) || !netErr.Timeout() {
+					t.Fatalf("expected real dial timeout, got %v", dialErr)
+				}
+			} else if !errors.Is(dialErr, syscall.ECONNREFUSED) {
+				t.Fatalf("expected real connection refusal, got %v", dialErr)
+			}
+			want := logs("connecting to "+addr+" oa=1 ca=1", fmt.Sprintf("connect failed: %v", dialErr))
 			if code != 2 || out.Len() != 0 || errout.String() != want {
 				t.Fatalf("exit=%d stdout=%q stderr=%q want=%q", code, out.String(), errout.String(), want)
 			}
+			if !strings.Contains(errout.String(), reason) {
+				t.Fatalf("diagnostic must name %s: %s", reason, errout.String())
+			}
+			t.Logf("diagnostic: %s", errout.String())
 		})
 	}
 }

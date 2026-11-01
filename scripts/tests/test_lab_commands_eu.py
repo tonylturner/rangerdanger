@@ -96,6 +96,20 @@ class EUOracleTests(unittest.TestCase):
                           and eu.semantic(oracle["semantic"], output))
                 self.assertEqual(passed, expected)
 
+    def test_iec104_deny_contract_requires_timeout_not_refusal_or_bare_failure(self):
+        data = json.loads((ROOT / "scripts/lab-commands-expectations-eu-iec104-substation.json").read_text())
+        oracle = next(row["oracle"] for key, row in data["commands"].items()
+                      if key.startswith("eu-hardening-configurations|5|iec104cmd "))
+        for diagnostic, expected in (
+                ("connect failed: dial tcp 10.30.30.20:2404: i/o timeout", True),
+                ("connect failed: dial tcp 10.30.30.20:2404: connect: connection refused", False),
+                ("connect failed", False)):
+            with self.subTest(diagnostic=diagnostic):
+                self.assertEqual(
+                    worker.gate.verdict(oracle, 2, "", diagnostic, control=True), expected)
+        self.assertFalse(worker.gate.verdict(
+            oracle, 2, "", "connect failed: i/o timeout", control=False))
+
     def audit(self, allowed):
         before = {"generation": 2, "latest_seq": 5, "oldest_seq": 1, "entries": []}
         initial = {"generation": 2, "revision": 4, "position": "closed"}
