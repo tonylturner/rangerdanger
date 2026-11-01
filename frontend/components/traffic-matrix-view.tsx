@@ -202,8 +202,8 @@ export function TrafficMatrixView({
             Traffic Matrix
           </div>
           <div className="mt-0.5 text-[11px] leading-snug text-slate-400">
-            {canGenerate ? "Configured host-to-host flows for this lab. Liveness reflects RTAC device comms and the scenario traffic generator."
-              : hasOperator ? "Autonomous baseline and manual exercise traffic. CC link and point quality infer liveness; sessions show transport presence only."
+            {hasOperator ? `Autonomous baseline and manual exercise traffic. CC link and point quality infer liveness; sessions show conntrack entries, not delivery; traffic may already be blocked.${canGenerate ? " The scenario traffic generator is separate." : ""}`
+              : canGenerate ? "Configured host-to-host flows for this lab. Liveness reflects RTAC device comms and the scenario traffic generator."
               : "Configured host-to-host flows for this package. Liveness reflects its declared observation providers."}
           </div>
         </div>

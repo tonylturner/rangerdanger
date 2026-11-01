@@ -36,7 +36,7 @@ Three checks that catch most default-deny misconfigurations:
 
 1. **Where is the implicit deny documented?** If it is vendor-implicit, link to the vendor's docs in your change record. If it is explicit, point at the rule by ID or line number.
 2. **What does a packet for an undocumented flow do?** Generate one and check the firewall log. If the log is silent, the firewall is probably allowing - implicit-deny vendors typically don't log implicit denies unless you turn it on (Palo Alto's interzone-default rule, for example, does not log by default).
-3. **What happens when you remove the last allow rule?** After removing the last effective grant, test a fresh connection; another matching allow or an established session can preserve access. Check listed rule order and the actual policy path rather than inferring a verdict from a deletion alone.
+3. **What happens when you remove the last allow rule?** After removing the last effective grant, test a fresh connection; only admission under the current policy can preserve access, for example through another matching allow. A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. Check listed rule order and the actual policy path rather than inferring a verdict from a deletion alone.
 
 ### What containd Does
 

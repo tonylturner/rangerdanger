@@ -217,7 +217,7 @@ Use [`stage-ssd-delta.sh`](#delta-staging) below.
 
 ### Pattern 3: containd update
 
-RangerDanger v0.2.0 requires containd 0.1.36 or later, including offline
+RangerDanger v0.2.0 requires containd 0.1.37 or later, including offline
 bundles. RangerDanger owns its client fixes for that contract; using an older
 containd image is not a compatibility path. Verify the staged build as well
 as its digest.
@@ -233,7 +233,7 @@ in a delta, force it with:
   --include-upstream --include containd
 ```
 
-For the containd 0.1.36 compatibility update, use both flags on every delta:
+For the containd 0.1.37 compatibility update, use both flags on every delta:
 unchanged upstream references can otherwise cause the mutable `latest` image
 to be omitted. Keep the two architecture archives with the release evidence.
 
@@ -259,12 +259,12 @@ saved image identity against the intended release before distributing. If
 the approved digest is not present locally, do not distribute the delta; the
 helper does not pin containd's mutable tag to a prior-stage digest.
 
-Before the first 0.1.36 start on each installed machine, stop the lab and
+Before the first 0.1.37 start on each installed machine, stop the lab and
 back up the complete firewall `/data` while quiescent. In the repo root
 (`RANGERDANGER_ROOT`), preserve `data/firewall/` for US and
 `data/eu-iec104-substation/firewall/` for EU, including both if installed.
 Keep all databases, journals, users and captures, not just a config export.
-The stored schema migrates one-way to 0.1.9, which containd 0.1.35 and earlier
+The stored schema migrates one-way to 0.1.10, which containd 0.1.36 and earlier
 cannot read.
 
 ## Delta staging
@@ -409,9 +409,9 @@ mutable tags overwritten by the delta are parked as `:before-<new version>`;
 deleting those parked tags forfeits rollback for those images.
 
 The complete repo backup must include both package firewall directories
-listed above. After the containd schema 0.1.9 migration, binary rollback
+listed above. After the containd schema 0.1.10 migration, binary rollback
 requires matching pre-upgrade data **and** the old image; an older tag alone
-is not enough because containd 0.1.35 and earlier cannot read the upgraded
+is not enough because containd 0.1.36 and earlier cannot read the upgraded
 store. Stop the lab and replace the migrated directories; never merge old
 database files into migrated storage. Restore the matching older RangerDanger
 release too when rolling back, then restart and verify operations. Importing

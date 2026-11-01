@@ -18,7 +18,7 @@ RangerDanger's package lint permits only explicit monitor ICS rules in EU import
 
 ### Stateful sessions and policy changes
 
-The compiled forwarding path accepts packets in established or related conntrack state before evaluating ordinary L4 rules for new traffic. Therefore, applying a new deny does not necessarily terminate a connection admitted under the previous policy. Test new connections separately from existing ones and identify the relevant five-tuple and policy-change time. [Established-session evidence](#eu-established-sessions) describes the range's bounded procedure; do not delete unrelated sessions or treat a surviving session as proof that the new rule failed.
+A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. Identify the relevant five-tuple and policy-change time. Test fresh-handshake admission separately from delivery on existing connections. [Established-session evidence](#eu-established-sessions) describes the range's bounded procedure and optional exact-tuple diagnostics; do not delete unrelated sessions. The L4 source pin enforces; DPI detects and logs.
 
 ### Firewall events are a separate evidence path
 
@@ -26,4 +26,4 @@ For a rule with logging enabled, containd adds an nftables log statement before 
 
 The improved EU policy explicitly logs selected denied cross-zone attempts, including unauthorized IEC 104 and Modbus connections. Logging is not automatic for every packet: an unmatched packet dropped by the default policy does not itself prove that a corresponding rule-hit event will be present. Conversely, a quiet event list is not proof that no traffic was blocked. Preserve the active policy, source and destination, service, test interval and event evidence together; keep missing events distinct from a demonstrated allow or deny. See [the evidence lifecycle](#eu-evidence-lifecycle) for retention and provenance limits.
 
-References: EU `firewall/weak.json` and `firewall/improved.json`; containd 0.1.37 `docs/mkdocs/policy-model.md` for rule order; containd v0.1.36 `docs/mkdocs/ics-dpi.md` and `dataplane-enforcement.md` for the existing session discussion; range event retrieval in `backend/internal/containd/events.go`.
+References: EU `firewall/weak.json` and `firewall/improved.json`; containd [v0.1.37 policy model](https://github.com/tonylturner/containd/blob/v0.1.37/docs/mkdocs/policy-model.md#established-connections-and-policy-changes) for rule order and established-connection re-evaluation; range event retrieval in `backend/internal/containd/events.go`.

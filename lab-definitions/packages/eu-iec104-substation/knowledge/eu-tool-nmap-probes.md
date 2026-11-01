@@ -48,6 +48,6 @@ Keep filtered results in the output; `--open` would hide precisely the negative 
 
 After a weak-policy RTU probe, use a bounded [GI check](#tool-iec104cmd). After a weak-policy field probe, use a read-only [mbpoll check](#eu-tool-mbpoll). After an allowed historian probe, perform the GET in [curl exports](#eu-tool-curl-exports). To show improved policy preserved operations, inspect fresh CC telemetry and the PLC/OLTC loop through the lab workflow; Kali cannot stand in for those authorized sources.
 
-Also distinguish a new scan connection from a monitor established before the policy change. Conntrack may preserve the latter. The [session article](#eu-established-sessions) explains why their outcomes can legitimately differ.
+Also distinguish a new scan handshake from delivery on a monitor established before the policy change. A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. The [session article](#eu-established-sessions) explains the separate evidence boundaries.
 
 Finally, this is a simulated, authorized range. These command budgets and known addresses are not permission to scan a real substation. Production discovery needs an asset-owner-approved method, timing and stop condition suited to the actual equipment.

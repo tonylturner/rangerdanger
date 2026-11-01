@@ -30,7 +30,7 @@ A stateful firewall can apply source, destination and service rules while tracki
 
 The EU reference policies use this kind of source- and service-based boundary. For example, the improved design permits the named Control Centre (CC) to reach the station RTU on IEC 104 TCP/2404 and the RTU to reach specified field devices on Modbus TCP/502. A permitted flow is not an ASDU/IOA allowlist or a Modbus read-only rule. See [port- and source-based rules](#eu-port-source-boundary) and [weak versus improved policy](#eu-policy-comparison) for the exact scope and remaining risk.
 
-Stateful rules also make timing relevant: a policy change that blocks new sessions does not necessarily terminate an already established one. Distinguish new-connection tests from existing-session behavior; see [conntrack and temporal proof](#eu-established-sessions).
+A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. Distinguish fresh-handshake tests from application-delivery evidence; see [conntrack and temporal proof](#eu-established-sessions).
 
 ### Layer 7: deep packet inspection
 

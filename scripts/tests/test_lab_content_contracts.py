@@ -883,6 +883,47 @@ class FirstMatchContracts(unittest.TestCase):
                           path.read_text())
 
 
+class EstablishedConnectionContracts(unittest.TestCase):
+    def test_knowledge_distinguishes_commit_enforcement_from_retained_state(self):
+        eu = ROOT / "lab-definitions/packages/eu-iec104-substation/knowledge"
+        for article in ("established-sessions", "telecontrol-deep-dive", "default-deny",
+                        "segmentation-approaches", "port-source-boundary",
+                        "tool-nmap-probes", "containd-policy-enforcement",
+                        "change-resource-plan", "policy-comparison"):
+            text = (eu / f"eu-{article}.md").read_text()
+            with self.subTest(article=article):
+                self.assertIn("re-evaluates established connections on their next packet", text)
+                self.assertIn("Sessions may still show the conntrack entry", text)
+                self.assertIn("an entry is not proof that traffic passes", text)
+        text = (eu / "eu-established-sessions.md").read_text()
+        for phrase in ("Session revocation is optional",
+                       "not needed to enforce a committed DENY",
+                       "checks handshake admission and inspection from SYN"):
+            self.assertIn(phrase, text)
+        text = (eu / "eu-containd-policy-enforcement.md").read_text()
+        self.assertIn("blob/v0.1.37/docs/mkdocs/policy-model.md"
+                      "#established-connections-and-policy-changes", text)
+        self.assertIn("The L4 source pin enforces; DPI detects and logs.", text)
+        text = (ROOT / "lab-definitions/packages/us-dnp3-substation/"
+                       "knowledge/default-deny.md").read_text()
+        self.assertIn("only admission under the current policy can preserve access", text)
+        self.assertNotIn("an established session can preserve access", text)
+
+    def test_f2_loss_needs_commit_not_session_deletion(self):
+        eu = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        for relative in ("scenarios/eu-firewall-implementation.yml",
+                         "curriculum/implementation.yml"):
+            text = (eu / relative).read_text()
+            with self.subTest(path=relative):
+                self.assertIn("Traffic no longer admitted stops without session deletion", text)
+                self.assertIn("Sessions may retain the conntrack entry until timeout", text)
+                self.assertIn("Observe loss after commit", text)
+                self.assertNotIn("instructor must cut", text)
+        text = (eu / "scenarios/eu-hardening-configurations.yml").read_text()
+        self.assertIn("Post-commit delivery on an existing connection tests the current policy", text)
+        self.assertIn("separate fresh-link check proves handshake admission", text)
+
+
 class ChangeManagementContracts(unittest.TestCase):
     def test_configuration_rollback_requires_candidate_review_commit_and_verification(self):
         text = (ROOT / "lab-definitions/packages/us-dnp3-substation/knowledge/"

@@ -154,13 +154,14 @@ describe("package flow liveness", () => {
     const session = { proto: "tcp", src: "10.60.60.20", dst: "10.30.30.20", sport: 40000, dport: 2404, state: "ESTABLISHED", timeout: 60 };
     const status = (sessions: typeof session[]) => createFlowContext(eu, { sessions: { sessions, count: sessions.length } }).observations["attacker-rtu"];
     expect(status([session]).status).toBe("idle");
-    expect(status([{ ...session, src: "10.10.10.50" }]).status).toBe("active");
+    expect(status([{ ...session, src: "10.10.10.50" }]).status).toBe("unknown");
+    expect(status([{ ...session, src: "10.10.10.50" }]).reason).toContain("Conntrack entry present (ESTABLISHED); traffic may already be blocked");
     expect(status([{ ...session, src: "10.10.10.50", proto: "udp" }]).status).toBe("idle");
     expect(status([{ ...session, src: "10.10.10.50", dst: "10.30.30.50" }]).status).toBe("idle");
     expect(status([{ ...session, src: "10.10.10.50", dport: 502 }]).status).toBe("idle");
     const partial = { ...session, src: "10.10.10.50", dport: null, state: null };
     expect(createFlowContext(eu, { sessions: { sessions: [partial], count: 1 } }).observations["attacker-rtu"].status).toBe("unknown");
-    expect(createFlowContext(eu, { sessions: { sessions: [{ ...partial, dport: 2404 }], count: 1 } }).observations["attacker-rtu"].status).toBe("active");
+    expect(createFlowContext(eu, { sessions: { sessions: [{ ...partial, dport: 2404 }], count: 1 } }).observations["attacker-rtu"].status).toBe("unknown");
     expect(createFlowContext(eu, { sessions: { sessions: Array(5000).fill(session), count: 5000 } }).observations["attacker-rtu"].status).toBe("unknown");
     expect(createFlowContext(eu, {}).observations["attacker-rtu"].status).toBe("unknown");
   });
