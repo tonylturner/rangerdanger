@@ -16,6 +16,7 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/models"
+	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
 )
 
 // receiptFirewall owns the complete wire contract rather than returning a
@@ -117,6 +118,67 @@ func TestApplyRoutesProtectionReceipts(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// The Python-free installer matches these compact bytes, not arbitrary JSON.
+// Exercise the real handlers so changing JSON rendering or receipt field order
+// cannot silently make a healthy install fail its readiness checks.
+func TestInstallerReceiptEncoding(t *testing.T) {
+	for _, state := range []string{"protecting", "degraded"} {
+		t.Run(state, func(t *testing.T) {
+			fw, commits := receiptFirewall(t, state)
+			s := newTestServer(t, fw.URL)
+			s.orchestrator = &orchestrator.Orchestrator{}
+			_, rtac := newUpstreamStub(t, map[string]stubResponse{
+				"POST /api/command/relay":     {200, `{"result":"executed"}`},
+				"POST /api/command/recloser":  {200, `{"result":"executed"}`},
+				"POST /api/command/regulator": {200, `{"result":"executed"}`},
+				"POST /api/command/capbank":   {200, `{"result":"executed"}`},
+			})
+			rng := s.rng.(*fakeRange)
+			for i, svc := range rng.gen.Manifest.Services {
+				for name := range svc.Endpoints {
+					rng.gen.Manifest.Services[i].Endpoints[name] = rtac.URL
+				}
+			}
+			want := `"containd":{"applyId":"route-apply","protection":"` + state + `"`
+			if state == "degraded" {
+				want += `,"warning":"containd protection degraded: rule-hit logging unavailable"`
+			}
+			want += `}`
+			assertEncoding := func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
+				if rec.Code != http.StatusOK || strings.Count(rec.Body.String(), want) != 1 {
+					t.Fatalf("installer receipt encoding changed: want %s in HTTP 200, got %d %s", want, rec.Code, rec.Body)
+				}
+			}
+			for _, policy := range []string{"weak", "improved"} {
+				t.Run("apply-"+policy, func(t *testing.T) {
+					rec, _ := invoke(s, s.handleFirewallApply, http.MethodPost, "/api/firewall/apply",
+						map[string]string{"config": policy})
+					assertEncoding(t, rec)
+				})
+			}
+			t.Run("reset", func(t *testing.T) {
+				rec, body := invoke(s, s.handleWorkshopReset, http.MethodPost, "/api/workshop/reset", nil)
+				assertEncoding(t, rec)
+				if body["success"] != true {
+					t.Fatalf("reset fixture failed: %s", rec.Body)
+				}
+			})
+			t.Run("range", func(t *testing.T) {
+				// The fake lifecycle manager returns a fixed Status; supply the
+				// last apply just as Manager.Status does in production.
+				rng.status.Containd = rng.gen.Containd().LastApply()
+				s.engine.GET("/api/range", s.handleGetRange)
+				rec, _ := rangeRequest(s, http.MethodGet, "/api/range", "")
+				assertEncoding(t, rec)
+			})
+			if commits.Load() != 3 {
+				t.Fatalf("commits = %d, want both named applies and reset", commits.Load())
+			}
+		})
 	}
 }
 

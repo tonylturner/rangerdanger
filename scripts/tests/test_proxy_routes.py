@@ -5,6 +5,7 @@ selection (exact, longest prefix, first regex) is modelled.
 """
 
 from pathlib import Path
+import json
 import re
 import unittest
 
@@ -173,6 +174,44 @@ class ProxyRoutesTests(unittest.TestCase):
                 self.assertEqual(location.pattern, "/containd/")
                 self.assertIn(("proxy_set_header", ["Host", "$http_host"], None), location.children)
                 self.assertNotIn(("proxy_set_header", ["Host", "$host"], None), location.children)
+
+    def test_upload_limit_is_only_on_the_containd_location(self):
+        # Walk every scope, including nested blocks: an inherited/global limit
+        # or a second location must not quietly widen the rest of the portal.
+        def limits(directives, scope=()):
+            found = []
+            for name, args, children in directives:
+                if name == "client_max_body_size":
+                    found.append((scope, args))
+                if children is not None:
+                    found.extend(limits(children, scope + ((name, tuple(args)),)))
+            return found
+
+        routes = ROOT / "lab-definitions/packages" / self.package / "nginx.routes.conf"
+        expected = [((("location", ("/containd/",)),), ["10m"])]
+        self.assertEqual(limits(parse(tokenize(routes.read_text()))), expected)
+        self.assertEqual(limits(self.server), expected)
+        self.assertEqual(limits(parse(tokenize(NGINX_CONFIG.read_text()))), [])
+
+    def test_upload_error_is_json_and_upstream_errors_are_not_intercepted(self):
+        location = select(self.locations, "/containd/api/v1/pcap/analyze")
+        self.assertEqual(find(location.children, "error_page"),
+                         [("error_page", ["413", "=", "@containd_upload_limit"], None)])
+        self.assertEqual(find(location.children, "proxy_intercept_errors"),
+                         [("proxy_intercept_errors", ["off"], None)])
+        handler, = [loc for loc in self.locations if loc.pattern == "@containd_upload_limit"]
+        self.assertEqual(handler.directive("default_type"), ["application/json"])
+        code, body = handler.directive("return")
+        self.assertEqual(code, "413")
+        self.assertEqual(json.loads(body), {
+            "code": "rangerdanger_proxy_upload_limit",
+            "error": "RangerDanger proxy upload limit is 10 MB; this file is larger. "
+                     "The limit is set by RangerDanger, not containd.",
+        })
+        for other in self.locations:
+            if other is not location:
+                self.assertFalse(find(other.children, "error_page"), other.pattern)
+        self.assertFalse(find(self.server, "error_page"))
 
     def test_openplc_map_link_uses_the_shipped_openplc_route(self):
         topology = (ROOT / "backend/internal/server/topology.go").read_text()
