@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import threading
@@ -11,9 +12,16 @@ from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-from .test_containd_ui_prefix import ROOT, TURBOPACK
+from .test_containd_ui_prefix import ROOT, TURBOPACK, probe
 from .test_setup_ps1_root import powershell
 from .test_smoke_ps1_probe import CLI, GOOD_CHUNK, PCAP, RUNTIME_SCRIPT, TICKET
+
+UPLOAD = "/containd/api/v1/pcap/analyze"
+UPLOAD_ERROR = {
+    "code": "rangerdanger_proxy_upload_limit",
+    "error": "RangerDanger proxy upload limit is 10 MB; this file is larger. "
+             "The limit is set by RangerDanger, not containd.",
+}
 
 
 @contextmanager
@@ -27,21 +35,87 @@ def portal(mode):
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        server_version = "nginx"
+        sys_version = ""
 
         def log_message(self, *args):
             pass
 
         def reply(self, status, mime, body, **headers):
             data = body.encode()
+            framing = "length"
+            if self.path == UPLOAD:
+                if mode in ("chunked", "boundary-chunked", "oversize-chunked", "bad-chunk"):
+                    framing = "chunked"
+                elif mode in ("close", "boundary-close", "oversize-close"):
+                    framing = "close"
+                elif mode == "truncated":
+                    framing = "truncated"
             self.close_connection = True
             self.send_response(status)
             self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(data)))
+            if framing == "chunked":
+                self.send_header("Transfer-Encoding", "chunked")
+            elif framing in ("length", "truncated"):
+                self.send_header("Content-Length", str(len(data) + (10 if framing == "truncated" else 0)))
             self.send_header("Connection", "close")
             for key, value in headers.items():
                 self.send_header(key, value)
             self.end_headers()
-            self.wfile.write(data)
+            if framing == "chunked":
+                if mode == "bad-chunk":
+                    self.wfile.write(b"not-hex\r\n")
+                else:
+                    for start in range(0, len(data), 4096):
+                        chunk = data[start:start + 4096]
+                        self.wfile.write(f"{len(chunk):x};fixture=1\r\n".encode() + chunk + b"\r\n")
+                    self.wfile.write(b"0\r\nX-Probe: trailer\r\n\r\n")
+            else:
+                self.wfile.write(data)
+
+        def upload_refusal(self):
+            body = dict(UPLOAD_ERROR)
+            if mode == "bare-limit":
+                self.reply(413, "text/html", "<html>413 Request Entity Too Large</html>")
+            elif mode == "upstream-limit":
+                self.reply(413, "application/json", '{"code":"body_too_large","error":"containd limit"}')
+            else:
+                if mode == "wrong-limit-code":
+                    body["code"] = "other"
+                elif mode == "wrong-limit-message":
+                    body["error"] = "Upload too large"
+                elif mode == "wrong-case-code":
+                    body["Code"] = body.pop("code")
+                elif mode == "array-limit":
+                    body = [body]
+                self.reply(413, "application/json", json.dumps(body))
+
+        def handle_expect_100(self):
+            if self.path == UPLOAD:
+                size = int(self.headers["Content-Length"])
+                threshold = (1 if mode == "small-limit" else 10) * 1024 * 1024
+                if size > threshold and mode not in ("no-limit", "late-limit"):
+                    seen.append(self.path)
+                    self.check_upload_headers()
+                    self.upload_refusal()
+                    return False
+            return super().handle_expect_100()
+
+        def check_upload_headers(self):
+            small = int(self.headers["Content-Length"]) == 2 * 1024 * 1024
+            expected_auth = "Bearer lab-token" if small else None
+            if self.headers.get("Authorization") != expected_auth:
+                errors.append("small upload lost session bearer or oversized upload sent one")
+            if self.headers.get("Cookie"):
+                errors.append("upload unexpectedly used ambient cookies")
+            if self.headers.get("Content-Type") != "multipart/form-data; boundary=rangerdanger-upload-probe":
+                errors.append("upload not multipart")
+            if self.headers.get("Expect") != "100-continue":
+                errors.append("upload must respect early refusal")
+            if self.headers.get("Accept-Encoding") != "identity":
+                errors.append("upload response must not be compressed")
+            if self.headers.get("Transfer-Encoding"):
+                errors.append("upload must declare full length")
 
         def do_GET(self):
             seen.append(self.path)
@@ -114,6 +188,69 @@ def portal(mode):
             seen.append(self.path)
             nonlocal next_ticket
             request = urlsplit(self.path)
+            if request.path == UPLOAD:
+                self.check_upload_headers()
+                size = int(self.headers["Content-Length"])
+                if size not in (2 * 1024 * 1024, 11 * 1024 * 1024):
+                    errors.append(f"unexpected upload size {size}")
+                # Consume in chunks; verify the generated multipart framing
+                # without keeping an entire upload in memory or on disk.
+                left, first, tail = size, b"", b""
+                while left:
+                    chunk = self.rfile.read(min(left, 65536))
+                    if not chunk:
+                        errors.append("incomplete upload body")
+                        break
+                    if not first:
+                        first = chunk[:256]
+                    tail = (tail + chunk)[-64:]
+                    left -= len(chunk)
+                if (not first.startswith(b"--rangerdanger-upload-probe\r\n")
+                        or b'name="file"; filename="probe.pcap"' not in first
+                        or not tail.endswith(b"\r\n--rangerdanger-upload-probe--\r\n")):
+                    errors.append("invalid multipart framing")
+                payload = first.split(b"\r\n\r\n", 1)[-1]
+                if not payload.startswith(bytes(64)):
+                    errors.append("capture must start with zeros, not classic PCAP magic")
+                if mode == "late-limit" and size > 10 * 1024 * 1024:
+                    self.upload_refusal()
+                elif size == 2 * 1024 * 1024:
+                    if mode == "small-502":
+                        self.reply(502, "text/html", "<html>Bad Gateway</html>")
+                    elif mode == "small-401":
+                        self.reply(401, "application/json", '{"error":"unauthorized"}')
+                    elif mode == "small-html":
+                        self.reply(400, "text/html", "<html>Invalid capture</html>")
+                    elif mode == "small-malformed":
+                        self.reply(400, "application/json", "not JSON")
+                    else:
+                        body = {"error": "Invalid or unsupported capture"}
+                        if mode == "small-with-code":
+                            body["code"] = "invalid_capture"
+                        elif mode == "small-proxy-code":
+                            body["code"] = UPLOAD_ERROR["code"]
+                        elif mode == "small-proxy-body":
+                            body = UPLOAD_ERROR
+                        elif mode == "small-missing-error":
+                            body = {}
+                        elif mode == "small-empty-error":
+                            body["error"] = " "
+                        elif mode == "small-wrong-error-type":
+                            body["error"] = ["invalid"]
+                        elif mode == "small-wrong-code-type":
+                            body["code"] = ["invalid"]
+                        elif mode == "small-array":
+                            body = [body]
+                        elif mode == "large-length":
+                            body = {"padding": "x" * 12000}
+                        elif mode.startswith("boundary-"):
+                            body = {"padding": "x" * (65536 - len(json.dumps({"padding": ""})))}
+                        elif mode.startswith("oversize-"):
+                            body = {"padding": "x" * 65536}
+                        self.reply(400, "application/json", json.dumps(body))
+                else:
+                    self.reply(401, "application/json", '{"error":"unauthorized"}')
+                return
             if request.path == TICKET:
                 if self.headers.get("Authorization") != "Bearer lab-token":
                     errors.append("Bearer credential missing on ticket issuance")
@@ -192,6 +329,7 @@ catch { Write-Output "FAIL: $_"; exit 1 }
                         expected += [
                             TICKET, CLI + "?ticket=fixture-ticket-2",
                             CLI + "?ticket=fixture-ticket-2", PCAP,
+                            UPLOAD, UPLOAD,
                         ]
                 self.assertEqual(seen, expected)
 
@@ -200,6 +338,90 @@ catch { Write-Output "FAIL: $_"; exit 1 }
 
     def test_native_python_session_and_browser_origin_upgrade(self):
         self.check_twin("python")
+
+    def check_upload_twin(self, twin):
+        for mode, message in (
+            ("ok", None),
+            ("late-limit", None),
+            ("small-with-code", None),
+            ("chunked", None),
+            ("close", None),
+            ("large-length", None),
+            ("boundary-length", None),
+            ("boundary-chunked", None),
+            ("boundary-close", None),
+            ("small-limit", "2 MiB upload expected 400"),
+            ("small-502", "got HTTP 502 text/html (bare nginx proxy)"),
+            ("small-401", "2 MiB upload expected 400"),
+            ("small-html", "2 MiB upload expected 400"),
+            ("small-malformed", "2 MiB upload expected 400"),
+            ("small-missing-error", None),
+            ("small-empty-error", None),
+            ("small-wrong-error-type", None),
+            ("small-wrong-code-type", None),
+            ("small-array", "2 MiB upload expected 400"),
+            ("small-proxy-code", "2 MiB upload expected 400"),
+            ("small-proxy-body", "2 MiB upload expected 400"),
+            ("no-limit", "11 MiB upload expected 413"),
+            ("bare-limit", "bare nginx proxy"),
+            ("upstream-limit", "containd/API or non-RangerDanger response"),
+            ("wrong-limit-code", "11 MiB upload expected 413"),
+            ("wrong-limit-message", "11 MiB upload expected 413"),
+            ("wrong-case-code", "11 MiB upload expected 413"),
+            ("array-limit", "11 MiB upload expected 413"),
+            ("oversize-length", "upload response body exceeds 64 KiB"),
+            ("oversize-chunked", "upload response body exceeds 64 KiB"),
+            ("oversize-close", "upload response body exceeds 64 KiB"),
+            ("bad-chunk", "invalid upload response length"),
+            ("truncated", "incomplete upload response body"),
+        ):
+            with self.subTest(twin=twin, mode=mode), portal(mode) as (origin, errors, seen, _closed):
+                if twin == "powershell":
+                    result = powershell(r"""
+$ErrorActionPreference = 'Stop'
+. "$env:REPO/scripts/lib/containd-ui-probe.ps1"
+try { Confirm-ContaindUploadLimits $env:ORIGIN 'lab-token'; exit 0 }
+catch { Write-Output "FAIL: $_"; exit 1 }
+""", ORIGIN=origin)
+                else:
+                    result = subprocess.run(
+                        [sys.executable, "-c",
+                         "import sys\nfrom scripts.tests.test_containd_ui_prefix import probe\n"
+                         "try:\n probe.check_upload_limits(sys.argv[1], 'lab-token')\n"
+                         "except probe.ProbeError as error:\n print(f'FAIL: {error}'); sys.exit(1)", origin],
+                        capture_output=True, text=True, timeout=30, check=False,
+                    )
+                output = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0 if message is None else 1, output)
+                if message:
+                    self.assertIn(message, output)
+                    excerpt, = re.findall(r"body_excerpt=([^\r\n]*)", output)
+                    self.assertLessEqual(len(excerpt), 300)
+                    if mode == "small-html":
+                        self.assertEqual(excerpt, "<html>Invalid capture</html>")
+                    if mode.startswith("oversize-"):
+                        self.assertEqual(len(excerpt), 300)
+                        self.assertTrue(excerpt.startswith('{"padding": "'))
+                    if mode == "small-proxy-code":
+                        self.assertIn(UPLOAD_ERROR["code"], excerpt)
+                else:
+                    self.assertIn("2 MiB upload -> HTTP 400", output)
+                    self.assertIn("11 MiB upload -> HTTP 413 (RangerDanger nginx proxy)", output)
+                early_failure = message is not None and (
+                    mode.startswith(("small-", "oversize-")) or mode in ("bad-chunk", "truncated")
+                )
+                self.assertEqual(seen, [UPLOAD] if early_failure else [UPLOAD, UPLOAD])
+                self.assertEqual(errors, [])
+
+    def test_native_python_upload_limits(self):
+        self.check_upload_twin("python")
+
+    def test_native_powershell_upload_limits(self):
+        self.check_upload_twin("powershell")
+
+    def test_upload_contract_matches_the_package_json(self):
+        self.assertEqual(probe.UPLOAD_LIMIT_CODE, UPLOAD_ERROR["code"])
+        self.assertEqual(probe.UPLOAD_LIMIT_ERROR, UPLOAD_ERROR["error"])
 
     def test_upgrade_without_ticket_is_rejected_even_with_bearer(self):
         with portal("ok") as (origin, errors, _seen, _closed):
