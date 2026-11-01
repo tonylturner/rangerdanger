@@ -223,8 +223,9 @@ eu_window_finish() {
   docker cp "$CAPTURE_HOST:$CAPTURE_PATH" "$TMP_DIR/$label.pcap" >/dev/null || {
     fail "$label cannot retrieve attempt capture"; return 1;
   }
-  if ! docker logs "$CAPTURE_HOST" >"$stats" 2>"$TMP_DIR/$label-tcpdump-log.err"; then
-    fail "$label cannot retrieve tcpdump statistics: $(cat "$TMP_DIR/$label-tcpdump-log.err")"
+  # tcpdump writes its statistics to stderr, which docker logs keeps separate.
+  if ! docker logs "$CAPTURE_HOST" >"$stats" 2>&1; then
+    fail "$label cannot retrieve tcpdump statistics: $(cat "$stats")"
     docker rm "$CAPTURE_HOST" >/dev/null || return
     CAPTURE_HOST=""
     CAPTURE_PATH="" CAPTURE_PID_FILE="" CAPTURE_LOG="" CAPTURE_PID=""

@@ -41,4 +41,17 @@ t_run eu_check_capture_integrity "$TMP_DIR/truncated.pcap" "$TMP_DIR/clean.stats
 t_expect_fails 1 "a record with incl_len below orig_len fails"
 t_expect_out "incl_len 4 < orig_len 8" "the truncated record lengths are reported"
 
+# A window container's tcpdump statistics arrive on docker logs' stderr.
+docker() {
+  case "$1" in
+    cp) make_pcap "$3" 4 4 ;;
+    logs) printf 'listening on any\n1 packets captured\n1 packets received by filter\n0 packets dropped by kernel\n' >&2 ;;
+  esac
+}
+# shellcheck disable=SC2034 # read by eu_window_finish
+capture_running=0 CAPTURE_HOST=rdtest-window CAPTURE_PATH=/tmp/window.pcap
+t_run eu_window_finish window
+t_expect_fails 0 "window statistics written to container stderr are read"
+t_expect_out "zero kernel drops" "the window capture reports integrity success"
+
 t_finish
