@@ -4,6 +4,7 @@
 import json
 from pathlib import Path
 import socket
+import struct
 import tempfile
 import time
 import subprocess
@@ -183,15 +184,16 @@ class OwnershipTests(unittest.TestCase):
                     docker.call("version")
             self.assertEqual(load(Path(directory) / "commands.json")[0]["returncode"], 7)
 
-    def test_capture_uses_immediate_delivery_full_snaplen_and_bounded_ring(self):
+    def test_capture_uses_immediate_delivery_mtu_snaplen_and_packet_count_ring(self):
         with tempfile.TemporaryDirectory() as directory:
             docker = Docker(directory, "unit")
             docker.call = Mock(side_effect=["owned", "", "listening on eth0"])
             docker.capture("endpoint", "tools", True)
             args = docker.call.call_args_list[0].args
             self.assertIn("--immediate-mode", args)
-            self.assertEqual(args[args.index("-B") + 1], "65536")
-            self.assertEqual(args[args.index("-s") + 1], "0")
+            self.assertEqual(args[args.index("-B") + 1], "262144")
+            self.assertEqual(args[args.index("-s") + 1], "2048")
+            self.assertIn("-U", args)
 
     def test_subnet_selection_rejects_overlapping_supernet(self):
         network = {"IPAM": {"Config": [{"Subnet": "172.29.0.0/16"}]}}
@@ -228,6 +230,28 @@ class OwnershipTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 docker.finish_capture("owned")
             self.assertTrue(any(call.args[0] == "cp" for call in docker.call.call_args_list))
+
+    def test_truncated_capture_record_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            docker = Docker(directory, "unit")
+            pcap = (
+                b"\xd4\xc3\xb2\xa1" + struct.pack("<HHIIII", 2, 4, 0, 0, 2048, 1)
+                + struct.pack("<IIII", 1, 0, 3, 4) + b"\x00\x01\x02"
+            )
+
+            def call(*args, **kwargs):
+                if args[0] == "wait":
+                    return "0"
+                if args[0] == "logs":
+                    return "1 packets captured\n0 packets dropped by kernel\n"
+                if args[0] == "cp":
+                    (Path(directory) / "capture.pcap").write_bytes(pcap)
+                return ""
+
+            docker.call = Mock(side_effect=call)
+            with self.assertRaisesRegex(
+                    RuntimeError, r"packet 1 is truncated: incl_len 3 < orig_len 4"):
+                docker.finish_capture("owned")
 
     def test_cleanup_failure_is_not_ignored(self):
         with tempfile.TemporaryDirectory() as directory:
