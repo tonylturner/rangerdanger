@@ -46,7 +46,7 @@ class ProxyProbeTests(unittest.TestCase):
     def test_proxy_probe_entry_points(self):
         source = (ROOT / "scripts/proxy-smoke.sh").read_text()
         for required in ("containd-ui-probe.py", ":3000/", "apps/vendor-jump/",
-                         "10.20.20.10:80/", "sites-enabled/default", "base + \"programs\""):
+                         "127.0.0.1:80/", "sites-enabled/default", "base + \"programs\""):
             self.assertIn(required, source)
         self.assertIn("RD-22, non-blocking", source)
         self.assertIn("grep -qx '/etc/nginx/sites-available/default'", source)
