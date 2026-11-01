@@ -28,6 +28,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Architecture diagrams now generate from package wiring and proxy routes, with CI drift checks; README and architecture guidance reflect both packages.
+
 - Lab Run buttons honor per-command source terminals and keep host commands
   and tools the backend cannot run copy-only. The EU baseline capture again
   rotates after 12 seconds of RTU cyclic traffic.
