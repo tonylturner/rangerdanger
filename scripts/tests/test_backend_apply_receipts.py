@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+import tempfile
 import unittest
 
 from .test_setup_ps1_root import powershell
@@ -20,10 +22,98 @@ def response(state):
 
 
 class BackendReceiptConsumers(unittest.TestCase):
-    def bash(self, script, state):
+    def bash(self, script, state=None, *, body=None):
         return subprocess.run(
             ["bash", "-c", script], text=True, capture_output=True, timeout=15,
-            env={**os.environ, "REPO": str(ROOT), "RESPONSE": json.dumps(response(state))})
+            env={**os.environ, "REPO": str(ROOT), "RESPONSE": body if body is not None
+                 else json.dumps(response(state), separators=(",", ":"))})
+
+    def test_shell_and_python_receipt_verdicts_agree(self):
+        fixtures = [
+            ("protecting", response("protecting"), True),
+            ("degraded", response("degraded"), False),
+            ("missing", response("missing"), False),
+            ("empty-applyId", {"containd": {"applyId": "", "protection": "protecting"}}, False),
+            ("native-response", {"status": "ok", "applyId": "route-id", "protection": {
+                "applyId": "route-id", "installedApplyId": "route-id", "state": "protecting",
+            }}, False),
+            ("nested-native-response", {"containd": {"applyId": "route-id", "protection": {
+                "applyId": "route-id", "installedApplyId": "route-id", "state": "protecting",
+            }}}, False),
+            ("unrelated-protection", {"applyId": "route-id", "protection": "protecting"}, False),
+            ("protecting-prefix", response("protecting-later"), False),
+            ("pending", response("pending"), False),
+            ("failed", response("failed"), False),
+            ("disabled", response("disabled"), False),
+            ("null-applyId", {"containd": {"applyId": None, "protection": "protecting"}}, False),
+            ("numeric-applyId", {"containd": {"applyId": 123, "protection": "protecting"}}, False),
+        ]
+        for apply_id in ('quote"id', "back\\slash", "line\nbreak", "unicode-\u2603"):
+            fixtures.append((apply_id, {"containd": {
+                "applyId": apply_id, "protection": "protecting",
+            }}, True))
+        for name, fixture, expected in fixtures:
+            with self.subTest(name=name):
+                body = json.dumps(fixture, separators=(",", ":"))
+                shell = self.bash(
+                    '. "$REPO/scripts/lib/range.sh"\nrange_has_protection "$RESPONSE"', body=body)
+                python = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts/lib/containd_readiness.py"),
+                     "--backend-receipt"],
+                    input=body, text=True, capture_output=True, timeout=15)
+                verdict = 0 if expected else 1
+                self.assertEqual(shell.returncode, verdict, shell.stdout + shell.stderr)
+                self.assertEqual(python.returncode, verdict, python.stdout + python.stderr)
+
+    def test_setup_receipt_paths_without_python_on_path(self):
+        source = (ROOT / "setup.sh").read_text()
+        start = source.index("RANGE_BODY='{}'")
+        end = source.index("# ─── OpenPLC readiness", start)
+        script = r'''
+set -euo pipefail
+if command -v python3 >/dev/null 2>&1; then exit 99; fi
+. "$REPO/scripts/lib/range.sh"
+say() { :; }
+warn() { printf '%s\n' "$*" >&2; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+sleep() { SECONDS=$((SECONDS + 600)); }
+API=http://fixture PACKAGE=fixture SKIP_FW_GATE=0
+curl() {
+    case "$*" in
+        *api/range*)
+            if [[ "$*" = *"-X POST"* ]]; then
+                printf '{"target":"fixture","phase":"preflight"}\n202'
+            else
+                printf '%s' "$RESPONSE"
+            fi ;;
+        *api/firewall/health*) return 0 ;;
+        *api/firewall/apply*)
+            printf '%s\n' "$*" >> "$CALLS"
+            printf '%s' "$RESPONSE" ;;
+        *api/workshop/reset*)
+            printf 'reset\n' >> "$CALLS"
+            printf '%s' "$RESPONSE" ;;
+        *) exit 98 ;;
+    esac
+}
+''' + source[start:end]
+        with tempfile.TemporaryDirectory() as tmp:
+            tools = Path(tmp) / "bin"
+            tools.mkdir()
+            # An allowlist avoids macOS's /usr/bin/python3 developer-tools shim.
+            for tool in ("sed", "grep"):
+                (tools / tool).symlink_to(shutil.which(tool))
+            calls = Path(tmp) / "calls"
+            result = subprocess.run(
+                [shutil.which("bash"), "-c", script], text=True, capture_output=True, timeout=15,
+                env={**os.environ, "PATH": str(tools), "REPO": str(ROOT), "CALLS": str(calls),
+                     "RESPONSE": json.dumps(response("protecting"), separators=(",", ":"))})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            requests = calls.read_text().splitlines()
+            self.assertEqual(len(requests), 3)
+            self.assertIn('{"config":"weak"}', requests[0])
+            self.assertIn('{"config":"improved"}', requests[1])
+            self.assertEqual(requests[2], "reset")
 
     def test_shell_range_ready_consumes_same_status(self):
         script = r'''
