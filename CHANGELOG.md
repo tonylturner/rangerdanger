@@ -31,6 +31,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Lab Run buttons honor per-command source terminals and keep host commands
   and tools the backend cannot run copy-only. The EU baseline capture again
   rotates after 12 seconds of RTU cyclic traffic.
+- EU lab port probes skip host discovery, so a filtered ping no longer hides
+  an open port. `iec104cmd` reports why a connection failed (timeout or
+  refused).
 - US assessment and planning prose describes the shipped DNP3 function-code
   detection, not object-group inspection. The L4 source pin enforces; DPI
   detects and logs.
