@@ -184,101 +184,84 @@ Most OT segmentation labs hand students a PDF workbook, a Wireshark capture, and
 
 A Next.js dashboard fronts a Go + Gin backend that orchestrates Docker containers, talks to containd over REST, and runs the scenario validators. Field-device simulators implement Modbus TCP + DNP3 TCP + REST against shared state, with OpenDSS providing feeder physics. The US package has four teaching zones plus management and physics; isolated platform-owned bridges deliver the student desktops without a management NIC. Teaching inter-zone traffic transits the containd firewall; the US RTAC-to-field path is kernel-pinned via `rtac-harden.sh` so the multi-homed RTAC can't bypass policy.
 
-The generated overview below shows the **US package**; NIC boxes repeat multi-homed services. See the detailed diagrams for both packages.
+The generated overview below shows the **US package**. Services appear once in their primary teaching zone; dotted desktop links are delivery bridges. See the detailed diagrams for both packages.
 
 <!-- BEGIN GENERATED: overview -->
 ```mermaid
-flowchart LR
-    subgraph n_us_network_desk_corp_net_9f767bb2d0["desk_corp_net · 10.98.1.0/28<br/>rangerdanger_desk_corp · internal"]
-    n_us_nic_desk_corp_net_corp_ws_4fcb4852dd["corp_ws · Corporate Workstation<br/>10.98.1.3"]
-    n_us_nic_desk_corp_net_proxy_751caa916e["proxy<br/>10.98.1.2"]
+%%{init: {"flowchart": {"nodeSpacing": 22, "rankSpacing": 45, "padding": 10}}}%%
+flowchart TB
+    subgraph n_overview_zone_platform_105afc123b["Platform · management<br/>10.99.99.0/24 · lan3"]
+    direction TB
+    n_overview_backend_82688e5de7["backend"]
+    n_overview_frontend_bc72e9f36e["frontend · Next.js 16"]
+    n_overview_proxy_36dc8972f0["proxy"]
     end
-    subgraph n_us_network_desk_eng_net_4283788807["desk_eng_net · 10.98.3.0/28<br/>rangerdanger_desk_eng · internal"]
-    n_us_nic_desk_eng_net_eng_workstation_05f4e74915["eng_workstation · Engineering Workstation<br/>10.98.3.3"]
-    n_us_nic_desk_eng_net_proxy_b68856c902["proxy<br/>10.98.3.2"]
+    subgraph n_overview_zone_field_net_a57fab3daf["Field Device Zone ·<br/>10.40.40.0/24 · lan2"]
+    direction TB
+    n_overview_capbank_sim_7f36449b79["capbank_sim"]
+    n_overview_recloser_sim_b20cff107b["recloser_sim"]
+    n_overview_regulator_sim_c735f24179["regulator_sim"]
+    n_overview_relay_sim_1b5f9d8159["relay_sim"]
+    n_overview_capbank_sim_7f36449b79 ~~~ n_overview_recloser_sim_b20cff107b
+    n_overview_recloser_sim_b20cff107b ~~~ n_overview_regulator_sim_c735f24179
+    n_overview_regulator_sim_c735f24179 ~~~ n_overview_relay_sim_1b5f9d8159
     end
-    subgraph n_us_network_desk_vendor_net_6bd70e9271["desk_vendor_net · 10.98.2.0/28<br/>rangerdanger_desk_vendor · internal"]
-    n_us_nic_desk_vendor_net_proxy_71d8b73b8c["proxy<br/>10.98.2.2"]
-    n_us_nic_desk_vendor_net_vendor_jump_c7c674d8fd["vendor_jump · Vendor Jump Box<br/>10.98.2.3"]
+    subgraph n_overview_zone_enterprise_net_6f13584f70["Enterprise Zone ·<br/>10.10.10.0/24 · wan"]
+    direction TB
+    n_overview_corp_ws_b3a8da2870["corp_ws"]
+    n_overview_kali_ef35dbcf25["kali"]
+    n_overview_corp_ws_b3a8da2870 ~~~ n_overview_kali_ef35dbcf25
     end
-    subgraph n_us_network_enterprise_net_2fcdd9caba["enterprise_net · 10.10.10.0/24<br/>rangerdanger_enterprise_net · Enterprise Zone"]
-    n_us_nic_enterprise_net_corp_ws_fbdd5ce6cc["corp_ws · Corporate Workstation<br/>10.10.10.10"]
-    n_us_nic_enterprise_net_firewall_d099a42e68["firewall · Containd Firewall<br/>10.10.10.2 · wan"]
-    n_us_nic_enterprise_net_kali_19f6bc4e54["kali · Kali Attacker<br/>10.10.10.50"]
+    subgraph n_overview_zone_vendor_net_10dbb7aebe["Vendor / Engineering Zone ·<br/>10.20.20.0/24 · dmz"]
+    direction TB
+    n_overview_eng_workstation_98493649dc["eng_workstation"]
+    n_overview_vendor_jump_52013698df["vendor_jump"]
+    n_overview_eng_workstation_98493649dc ~~~ n_overview_vendor_jump_52013698df
     end
-    subgraph n_us_network_field_net_3186d490c8["field_net · 10.40.40.0/24<br/>rangerdanger_field_net · Field Device Zone"]
-    n_us_nic_field_net_capbank_sim_17173f1950["capbank_sim · Capacitor Bank<br/>10.40.40.23"]
-    n_us_nic_field_net_firewall_676e575a6e["firewall · Containd Firewall<br/>10.40.40.2 · lan2"]
-    n_us_nic_field_net_recloser_sim_bffad176bc["recloser_sim · Mid-Feeder Recloser<br/>10.40.40.21"]
-    n_us_nic_field_net_regulator_sim_8d731d21f0["regulator_sim · Voltage Regulator<br/>10.40.40.22"]
-    n_us_nic_field_net_relay_sim_97501630b7["relay_sim · Feeder Breaker / Relay<br/>10.40.40.20"]
-    n_us_nic_field_net_rtac_sim_e642294ac5["rtac_sim · RTAC / Supervisory Controller<br/>10.40.40.10"]
+    subgraph n_overview_zone_ot_ops_net_01097360f9["OT Operations Zone ·<br/>10.30.30.0/24 · lan1"]
+    direction TB
+    n_overview_fuxa_hmi_c2772b5611["fuxa_hmi"]
+    n_overview_gps_sim_8b175dc219["gps_sim"]
+    n_overview_historian_sim_f3a44c7589["historian_sim"]
+    n_overview_openplc_9b5c6f2535["openplc"]
+    n_overview_rtac_sim_96a7a5b0c6["rtac_sim"]
+    n_overview_fuxa_hmi_c2772b5611 ~~~ n_overview_gps_sim_8b175dc219
+    n_overview_gps_sim_8b175dc219 ~~~ n_overview_historian_sim_f3a44c7589
+    n_overview_historian_sim_f3a44c7589 ~~~ n_overview_openplc_9b5c6f2535
+    n_overview_openplc_9b5c6f2535 ~~~ n_overview_rtac_sim_96a7a5b0c6
     end
-    subgraph n_us_network_mgmt_net_e116615e70["mgmt_net · 10.99.99.0/24<br/>rangerdanger_mgmt_net"]
-    n_us_nic_mgmt_net_backend_595ac1898f["backend<br/>10.99.99.10"]
-    n_us_nic_mgmt_net_firewall_c2092b46e0["firewall · Containd Firewall<br/>10.99.99.2 · lan3"]
-    n_us_nic_mgmt_net_frontend_e44853b363["frontend · Next.js 16<br/>10.99.99.11"]
-    n_us_nic_mgmt_net_fuxa_hmi_da2de3e966["fuxa_hmi · Substation HMI<br/>10.99.99.50"]
-    n_us_nic_mgmt_net_hmi_poller_fb2a13efde["hmi_poller<br/>shares fuxa_hmi namespace"]
-    n_us_nic_mgmt_net_hmi_poller_fb2a13efde ---|"namespace"| n_us_nic_mgmt_net_fuxa_hmi_da2de3e966
-    n_us_nic_mgmt_net_openplc_a6b66aa1b3["openplc · Substation Automation PLC<br/>10.99.99.30"]
-    n_us_nic_mgmt_net_proxy_17fb745021["proxy<br/>10.99.99.3"]
-    n_us_nic_mgmt_net_rtac_sim_887c576b42["rtac_sim · RTAC / Supervisory Controller<br/>10.99.99.20"]
+    subgraph n_overview_zone_physics_net_7425e81995["Physics ·<br/>10.50.50.0/24"]
+    direction TB
+    n_overview_opendss_sim_cbba1e0964["opendss_sim"]
     end
-    subgraph n_us_network_ot_ops_net_8b6332e643["ot_ops_net · 10.30.30.0/24<br/>rangerdanger_ot_ops_net · OT Operations Zone"]
-    n_us_nic_ot_ops_net_firewall_547aeabfe6["firewall · Containd Firewall<br/>10.30.30.2 · lan1"]
-    n_us_nic_ot_ops_net_fuxa_hmi_a73fe5ea6d["fuxa_hmi · Substation HMI<br/>10.30.30.10"]
-    n_us_nic_ot_ops_net_hmi_poller_8e137768e9["hmi_poller<br/>shares fuxa_hmi namespace"]
-    n_us_nic_ot_ops_net_hmi_poller_8e137768e9 ---|"namespace"| n_us_nic_ot_ops_net_fuxa_hmi_a73fe5ea6d
-    n_us_nic_ot_ops_net_gps_sim_7ac51d91bc["gps_sim · GPS Time Server<br/>10.30.30.50"]
-    n_us_nic_ot_ops_net_historian_sim_78603cc6fb["historian_sim · Data Historian<br/>10.30.30.40"]
-    n_us_nic_ot_ops_net_openplc_42dd616358["openplc · Substation Automation PLC<br/>10.30.30.30"]
-    n_us_nic_ot_ops_net_rtac_sim_5ac17eef50["rtac_sim · RTAC / Supervisory Controller<br/>10.30.30.20"]
-    end
-    subgraph n_us_network_physics_net_d0b188a64c["physics_net · 10.50.50.0/24<br/>rangerdanger_physics_net"]
-    n_us_nic_physics_net_opendss_sim_39e464fe36["opendss_sim<br/>10.50.50.20"]
-    n_us_nic_physics_net_rtac_sim_45c3962b31["rtac_sim · RTAC / Supervisory Controller<br/>10.50.50.10"]
-    end
-    subgraph n_us_network_vendor_net_c0d5514bb4["vendor_net · 10.20.20.0/24<br/>rangerdanger_vendor_net · Vendor / Engineering Zone"]
-    n_us_nic_vendor_net_eng_workstation_19319c41c1["eng_workstation · Engineering Workstation<br/>10.20.20.20"]
-    n_us_nic_vendor_net_firewall_0924e7c691["firewall · Containd Firewall<br/>10.20.20.2 · dmz"]
-    n_us_nic_vendor_net_vendor_jump_27f8bb0f8f["vendor_jump · Vendor Jump Box<br/>10.20.20.10"]
-    end
-    n_us_nic_desk_corp_net_corp_ws_4fcb4852dd -.-|"same corp_ws"| n_us_nic_enterprise_net_corp_ws_fbdd5ce6cc
-    n_us_nic_desk_eng_net_eng_workstation_05f4e74915 -.-|"same eng_workstation"| n_us_nic_vendor_net_eng_workstation_19319c41c1
-    n_us_nic_enterprise_net_firewall_d099a42e68 -.-|"same firewall"| n_us_nic_field_net_firewall_676e575a6e
-    n_us_nic_enterprise_net_firewall_d099a42e68 -.-|"same firewall"| n_us_nic_mgmt_net_firewall_c2092b46e0
-    n_us_nic_enterprise_net_firewall_d099a42e68 -.-|"same firewall"| n_us_nic_ot_ops_net_firewall_547aeabfe6
-    n_us_nic_enterprise_net_firewall_d099a42e68 -.-|"same firewall"| n_us_nic_vendor_net_firewall_0924e7c691
-    n_us_nic_mgmt_net_fuxa_hmi_da2de3e966 -.-|"same fuxa_hmi"| n_us_nic_ot_ops_net_fuxa_hmi_a73fe5ea6d
-    n_us_nic_mgmt_net_hmi_poller_fb2a13efde -.-|"same hmi_poller"| n_us_nic_ot_ops_net_hmi_poller_8e137768e9
-    n_us_nic_mgmt_net_openplc_a6b66aa1b3 -.-|"same openplc"| n_us_nic_ot_ops_net_openplc_42dd616358
-    n_us_nic_desk_corp_net_proxy_751caa916e -.-|"same proxy"| n_us_nic_desk_eng_net_proxy_b68856c902
-    n_us_nic_desk_corp_net_proxy_751caa916e -.-|"same proxy"| n_us_nic_desk_vendor_net_proxy_71d8b73b8c
-    n_us_nic_desk_corp_net_proxy_751caa916e -.-|"same proxy"| n_us_nic_mgmt_net_proxy_17fb745021
-    n_us_nic_field_net_rtac_sim_e642294ac5 -.-|"same rtac_sim"| n_us_nic_mgmt_net_rtac_sim_887c576b42
-    n_us_nic_field_net_rtac_sim_e642294ac5 -.-|"same rtac_sim"| n_us_nic_ot_ops_net_rtac_sim_5ac17eef50
-    n_us_nic_field_net_rtac_sim_e642294ac5 -.-|"same rtac_sim"| n_us_nic_physics_net_rtac_sim_45c3962b31
-    n_us_nic_desk_vendor_net_vendor_jump_c7c674d8fd -.-|"same vendor_jump"| n_us_nic_vendor_net_vendor_jump_27f8bb0f8f
-    n_dockerd_7aca045973["Docker daemon · host"]
-    n_browser_61b7d23f0f["Student browser"]
-    n_browser_61b7d23f0f -->|"127.0.0.1:8088:8080"| n_us_nic_mgmt_net_proxy_17fb745021
-    n_us_nic_mgmt_net_proxy_17fb745021 -->|"backend:8080<br/>/api/"| n_us_nic_mgmt_net_backend_595ac1898f
-    n_us_nic_desk_corp_net_proxy_751caa916e -->|"corp_ws:3000<br/>/apps/corp-ws/"| n_us_nic_desk_corp_net_corp_ws_4fcb4852dd
-    n_us_nic_desk_eng_net_proxy_b68856c902 -->|"eng_workstation:3000<br/>/apps/eng-ws/, /apps/ews/"| n_us_nic_desk_eng_net_eng_workstation_05f4e74915
-    n_us_nic_mgmt_net_proxy_17fb745021 -->|"firewall:8080<br/>/containd/, /icons/"| n_us_nic_mgmt_net_firewall_c2092b46e0
-    n_us_nic_mgmt_net_proxy_17fb745021 -->|"frontend:3000<br/>/"| n_us_nic_mgmt_net_frontend_e44853b363
-    n_us_nic_mgmt_net_proxy_17fb745021 -->|"fuxa_hmi:1881<br/>/api/alarmsHistory, /api/device (+21 locations)"| n_us_nic_mgmt_net_fuxa_hmi_da2de3e966
-    n_us_nic_mgmt_net_proxy_17fb745021 -->|"openplc:8080<br/>/apps/openplc/, /apps/plc/"| n_us_nic_mgmt_net_openplc_a6b66aa1b3
-    n_us_nic_desk_vendor_net_proxy_71d8b73b8c -->|"vendor_jump:3000<br/>/apps/jumpbox/, /apps/vendor-jump/"| n_us_nic_desk_vendor_net_vendor_jump_c7c674d8fd
+    n_overview_firewall_d4f06fc78a["containd · firewall"]
+    n_overview_dockerd_7619ae3dee["Docker daemon"]
+    n_overview_browser_65218e3e32["Browser"]
+    n_overview_browser_65218e3e32 -->|"portal · loopback 8088"| n_overview_proxy_36dc8972f0
+    n_overview_zone_platform_105afc123b ---|"lan3"| n_overview_firewall_d4f06fc78a
+    n_overview_firewall_d4f06fc78a ---|"wan"| n_overview_zone_enterprise_net_6f13584f70
+    n_overview_firewall_d4f06fc78a ---|"dmz"| n_overview_zone_vendor_net_10dbb7aebe
+    n_overview_firewall_d4f06fc78a ---|"lan1"| n_overview_zone_ot_ops_net_01097360f9
+    n_overview_firewall_d4f06fc78a ---|"lan2"| n_overview_zone_field_net_a57fab3daf
+    n_overview_proxy_36dc8972f0 -->|"API"| n_overview_backend_82688e5de7
+    n_overview_proxy_36dc8972f0 -.->|"10.98.1.0/28"| n_overview_corp_ws_b3a8da2870
+    n_overview_proxy_36dc8972f0 -.->|"10.98.3.0/28"| n_overview_eng_workstation_98493649dc
+    n_overview_proxy_36dc8972f0 -->|"UI"| n_overview_frontend_bc72e9f36e
+    n_overview_proxy_36dc8972f0 -.->|"10.98.2.0/28"| n_overview_vendor_jump_52013698df
     %% source: backend/internal/orchestrator/orchestrator.go:New
-    n_us_nic_mgmt_net_backend_595ac1898f -.->|"Docker SDK via /var/run/docker.sock"| n_dockerd_7aca045973
+    n_overview_backend_82688e5de7 -.->|"Docker SDK · socket"| n_overview_dockerd_7619ae3dee
     %% source: backend/internal/containd/client.go:send
-    n_us_nic_mgmt_net_backend_595ac1898f -.->|"JWT REST · policy / PCAP / events"| n_us_nic_mgmt_net_firewall_c2092b46e0
+    n_overview_backend_82688e5de7 -.->|"JWT REST · management"| n_overview_firewall_d4f06fc78a
     %% source: scripts/rtac-harden.sh:93
-    n_us_nic_ot_ops_net_rtac_sim_5ac17eef50 -.->|"Kernel-pinned field route via firewall"| n_us_network_field_net_3186d490c8
+    n_overview_rtac_sim_96a7a5b0c6 -.->|"Pinned field route"| n_overview_zone_field_net_a57fab3daf
     %% source: services/rtac-sim/main.go:132
-    n_us_nic_physics_net_rtac_sim_45c3962b31 -.->|"HTTP push · /api/update-state"| n_us_nic_physics_net_opendss_sim_39e464fe36
+    n_overview_rtac_sim_96a7a5b0c6 -.->|"HTTP push"| n_overview_opendss_sim_cbba1e0964
+    style n_overview_zone_platform_105afc123b fill:#f1f5f9,stroke:#64748b,color:#172033
+    style n_overview_zone_field_net_a57fab3daf fill:#f0fdf4,stroke:#16a34a,color:#172033
+    style n_overview_zone_enterprise_net_6f13584f70 fill:#fff7ed,stroke:#c2410c,color:#172033
+    style n_overview_zone_vendor_net_10dbb7aebe fill:#faf5ff,stroke:#9333ea,color:#172033
+    style n_overview_zone_ot_ops_net_01097360f9 fill:#f0f9ff,stroke:#0284c7,color:#172033
+    style n_overview_zone_physics_net_7425e81995 fill:#fffbeb,stroke:#d97706,color:#172033
 ```
 <!-- END GENERATED: overview -->
 
