@@ -345,13 +345,23 @@ curl() {
         echo '{"phase":"ready","package":"us"}'
     elif [ "$SCENARIO" = conflict ]; then
         return 28
-    else
+    elif [ "$SCENARIO" = missing ]; then
         echo '{"phase":"ready","package":"eu"}'
+    elif [ "$SCENARIO" = pending ]; then
+        echo '{"phase":"ready","package":"eu","containd":{"applyId":"id","protection":"pending"}}'
+    elif [ "$SCENARIO" = degraded ]; then
+        echo '{"phase":"ready","package":"eu","containd":{"applyId":"id","protection":"degraded"}}'
+    elif [ "$SCENARIO" = failed-receipt ]; then
+        echo '{"phase":"ready","package":"eu","containd":{"applyId":"id","protection":"failed"}}'
+    else
+        echo '{"phase":"ready","package":"eu","containd":{"applyId":"id","protection":"protecting"}}'
     fi
 }
 """
         for scenario, expected in (("ready", 0), ("failed", 1),
-                                   ("wrong", 1), ("conflict", 1)):
+                                   ("wrong", 1), ("conflict", 1),
+                                   ("missing", 1), ("pending", 1),
+                                   ("degraded", 1), ("failed-receipt", 1)):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as tmp:
                 calls = Path(tmp) / "calls"
                 result = run_bash(
@@ -361,6 +371,60 @@ curl() {
                 self.assertEqual(result.returncode, expected, result.stderr)
                 if scenario == "conflict":
                     self.assertEqual(calls.read_text().splitlines(), ["POST"] * 3)
+
+    def test_firewall_gate_requires_apply_and_reset_protection_receipts(self):
+        start = SOURCE.index('if [ "$SKIP_FW_GATE" -eq 1 ]; then')
+        end = SOURCE.index("# ─── OpenPLC readiness", start)
+        gate = SOURCE[start:end]
+        for route in ("valid", "apply", "reset"):
+            protections = ("protecting",) if route == "valid" else (
+                "empty", "missing", "pending", "degraded", "failed")
+            for protection in protections:
+                expected = 0 if route == "valid" else 1
+                with self.subTest(route=route, protection=protection):
+                    script = r'''
+set -euo pipefail
+. "$ROOT/scripts/lib/range.sh"
+say() { :; }
+warn() { :; }
+die() { echo "$*" >&2; exit 1; }
+SKIP_FW_GATE=0
+curl() {
+    case "$*" in
+        *api/firewall/health*) return 0 ;;
+        *api/firewall/apply*)
+            [[ "$*" = *"--max-time 60"* ]] || exit 90
+            if [ "$ROUTE" = apply ]; then
+                case "$PROTECTION" in
+                    empty) : ;;
+                    missing) printf '{"success":true}' ;;
+                    *) printf '{"containd":{"applyId":"apply-id","protection":"%s"}}' "$PROTECTION" ;;
+                esac
+            else
+                printf '{"containd":{"applyId":"apply-id","protection":"protecting"}}'
+            fi
+            ;;
+        *api/workshop/reset*)
+            [[ "$*" = *"--max-time 60"* ]] || exit 91
+            if [ "$ROUTE" = reset ]; then
+                case "$PROTECTION" in
+                    empty) : ;;
+                    missing) printf '{"success":true}' ;;
+                    *) printf '{"success":true,"containd":{"applyId":"reset-id","protection":"%s"}}' "$PROTECTION" ;;
+                esac
+            else
+                printf '{"success":true,"containd":{"applyId":"reset-id","protection":"protecting"}}'
+            fi
+            ;;
+        *) exit 92 ;;
+    esac
+}
+''' + gate
+                    result = run_bash(
+                        script, ROOT=str(ROOT), ROUTE=route, PROTECTION=protection)
+                    self.assertEqual(result.returncode, expected, result.stderr)
+                    if expected:
+                        self.assertIn("Workshop-readiness gate failed", result.stderr)
 
     def test_docker_floor_compares_compose_and_engine_api(self):
         cases = (
