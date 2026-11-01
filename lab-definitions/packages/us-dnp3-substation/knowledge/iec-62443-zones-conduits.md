@@ -5,7 +5,7 @@ IEC 62443 is the international standard series for Industrial Automation and Con
 - A **zone** is a grouping of logical or physical assets that share common security requirements.
 - A **conduit** is the communication pathway connecting zones. It must provide the security functions necessary to protect the connected zones.
 
-Each zone gets a target Security Level (SL-T) based on risk assessment. The conduits connecting zones must enforce the higher SL of the two zones they connect.
+Each zone gets a target Security Level (SL-T) based on risk assessment. Conduit requirements are derived from risk assessment and the security needs of the connected zones, not automatically from the higher of two zone labels. A firewall policy alone is not an IEC 62443 SL assessment.
 
 ### Applying Zones to This Lab
 
