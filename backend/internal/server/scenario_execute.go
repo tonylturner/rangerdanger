@@ -154,6 +154,8 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 	})
 }
 
+const rtacCommandResponseLimit = 1 << 20
+
 // executeRTACCommand evaluates the actual running L4 policy before simulating
 // a source's command through the RTAC transport. A missing identity is untested.
 func (s *Server) executeRTACCommand(ctx context.Context, gen *lifecycle.Generation, _ *packageRecipe, device, command, source string, value *float64) StepActionResult {
@@ -188,22 +190,38 @@ func (s *Server) executeRTACCommand(ctx context.Context, gen *lifecycle.Generati
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	action := StepActionResult{Action: fmt.Sprintf("%s/%s from %s", device, command, source)}
+	// Read one extra byte so a valid JSON prefix cannot hide an oversized body.
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, rtacCommandResponseLimit+1))
+	if err != nil {
+		action.Detail = fmt.Sprintf("RTAC returned HTTP %d: cannot read response: %v", resp.StatusCode, err)
+		return action
+	}
+	if len(respBody) > rtacCommandResponseLimit {
+		action.Detail = fmt.Sprintf("RTAC returned HTTP %d: response exceeds %d bytes", resp.StatusCode, rtacCommandResponseLimit)
+		return action
+	}
 	var result map[string]any
-	json.Unmarshal(respBody, &result)
+	decodeErr := json.Unmarshal(respBody, &result)
 
 	resultStr, _ := result["result"].(string)
 	detail, _ := result["detail"].(string)
 	impact, _ := result["process_impact"].(string)
 
-	succeeded := resultStr == "executed" || resultStr == "success"
-
-	return StepActionResult{
-		Action:  fmt.Sprintf("%s/%s from %s", device, command, source),
-		Success: succeeded,
-		Detail:  detail,
-		Impact:  impact,
+	action.Success = resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices &&
+		decodeErr == nil && (resultStr == "executed" || resultStr == "success")
+	action.Detail = detail
+	action.Impact = impact
+	if !action.Success {
+		action.Detail = fmt.Sprintf("RTAC returned HTTP %d", resp.StatusCode)
+		if decodeErr != nil {
+			action.Detail += ": invalid JSON response: " + decodeErr.Error()
+		}
+		if detail != "" {
+			action.Detail += ": " + detail
+		}
 	}
+	return action
 }
 
 // executeFirewallAction applies a firewall configuration.
