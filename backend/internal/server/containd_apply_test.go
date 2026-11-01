@@ -130,18 +130,7 @@ func TestInstallerReceiptEncoding(t *testing.T) {
 			fw, commits := receiptFirewall(t, state)
 			s := newTestServer(t, fw.URL)
 			s.orchestrator = &orchestrator.Orchestrator{}
-			_, rtac := newUpstreamStub(t, map[string]stubResponse{
-				"POST /api/command/relay":     {200, `{"result":"executed"}`},
-				"POST /api/command/recloser":  {200, `{"result":"executed"}`},
-				"POST /api/command/regulator": {200, `{"result":"executed"}`},
-				"POST /api/command/capbank":   {200, `{"result":"executed"}`},
-			})
 			rng := s.rng.(*fakeRange)
-			for i, svc := range rng.gen.Manifest.Services {
-				for name := range svc.Endpoints {
-					rng.gen.Manifest.Services[i].Endpoints[name] = rtac.URL
-				}
-			}
 			want := `"containd":{"applyId":"route-apply","protection":"` + state + `"`
 			if state == "degraded" {
 				want += `,"warning":"containd protection degraded: rule-hit logging unavailable"`
@@ -160,13 +149,40 @@ func TestInstallerReceiptEncoding(t *testing.T) {
 					assertEncoding(t, rec)
 				})
 			}
-			t.Run("reset", func(t *testing.T) {
-				rec, body := invoke(s, s.handleWorkshopReset, http.MethodPost, "/api/workshop/reset", nil)
-				assertEncoding(t, rec)
-				if body["success"] != true {
-					t.Fatalf("reset fixture failed: %s", rec.Body)
-				}
-			})
+			for _, success := range []bool{true, false} {
+				t.Run(fmt.Sprintf("reset/success=%t", success), func(t *testing.T) {
+					relayStatus := http.StatusOK
+					relayResult := `{"result":"executed"}`
+					if !success {
+						relayStatus = http.StatusInternalServerError
+						relayResult = `{"result":"failed","detail":"fixture command failure"}`
+					}
+					_, rtac := newUpstreamStub(t, map[string]stubResponse{
+						"POST /api/command/relay":     {relayStatus, relayResult},
+						"POST /api/command/recloser":  {200, `{"result":"executed"}`},
+						"POST /api/command/regulator": {200, `{"result":"executed"}`},
+						"POST /api/command/capbank":   {200, `{"result":"executed"}`},
+					})
+					for i, svc := range rng.gen.Manifest.Services {
+						for name := range svc.Endpoints {
+							rng.gen.Manifest.Services[i].Endpoints[name] = rtac.URL
+						}
+					}
+					rec, body := invoke(s, s.handleWorkshopReset, http.MethodPost, "/api/workshop/reset", nil)
+					assertEncoding(t, rec)
+					// gin.H sorts these keys: success is the final top-level
+					// field, after the actions array and compact receipt.
+					suffix := fmt.Sprintf(`],%s,"success":%t}`, want, success)
+					if !strings.HasPrefix(rec.Body.String(), `{"actions":[`) ||
+						!strings.HasSuffix(rec.Body.String(), suffix) || body["success"] != success {
+						t.Fatalf("installer reset encoding changed: want suffix %s, got %s", suffix, rec.Body)
+					}
+					actions := body["actions"].([]any)
+					if len(actions) == 0 || actions[0].(map[string]any)["success"] != true {
+						t.Fatalf("reset fixture must include a nested success: %s", rec.Body)
+					}
+				})
+			}
 			t.Run("range", func(t *testing.T) {
 				// The fake lifecycle manager returns a fixed Status; supply the
 				// last apply just as Manager.Status does in production.
@@ -175,8 +191,8 @@ func TestInstallerReceiptEncoding(t *testing.T) {
 				rec, _ := rangeRequest(s, http.MethodGet, "/api/range", "")
 				assertEncoding(t, rec)
 			})
-			if commits.Load() != 3 {
-				t.Fatalf("commits = %d, want both named applies and reset", commits.Load())
+			if commits.Load() != 4 {
+				t.Fatalf("commits = %d, want both named applies and both resets", commits.Load())
 			}
 		})
 	}
