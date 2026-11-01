@@ -207,10 +207,12 @@ eu_window_start() {
   platform=$(docker image inspect -f '{{.Os}}/{{.Architecture}}' "$image") || return
   # Reuse the already-running image, without pulling/tagging it. Sharing the
   # RTU namespace is necessary to observe its same-subnet PLC polls too.
-  # Measured on tcpdump 4.99.7/libpcap 1.11.0: this pair gives 3,913 2,144-byte
-  # frames in 4 KiB TPACKET_V2 blocks (15.28 MiB); 2 KiB fits MTU-1500 SLL/SLL2.
+  # Docker veths carry GRO/GSO segments far above the MTU (7,312 bytes seen in
+  # CI), so the snaplen must hold the largest one: 65,535-byte IP + 20-byte SLL2.
+  # Measured on tcpdump 4.99.7/libpcap 1.11.0 (TPACKET_V2, immediate mode):
+  # 512 frames of 65,648 bytes in 128 KiB blocks, 64 MiB.
   if ! docker run -d --platform "$platform" --name "$CAPTURE_HOST" --network "container:$peer" \
-    --cap-add NET_RAW --entrypoint tcpdump "$image" --immediate-mode -i any -s 2048 -B 8192 -U -w "$CAPTURE_PATH" \
+    --cap-add NET_RAW --entrypoint tcpdump "$image" --immediate-mode -i any -s 65560 -B 32768 -U -w "$CAPTURE_PATH" \
     'tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081' >"$TMP_DIR/$label-capture.id"; then
     fail "$label cannot start owned capture container"; return 1
   fi

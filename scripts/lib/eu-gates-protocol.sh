@@ -35,7 +35,7 @@ eu_gate_G3() {
   capture_running=1
   # Keep the measured ring settings in sync with eu_window_start.
   if ! docker exec "$FW" sh -c "rm -f '$CAPTURE_PATH' '$CAPTURE_PID_FILE' '$CAPTURE_LOG'; \
-    tcpdump --immediate-mode -i any -s 2048 -B 8192 -U -w '$CAPTURE_PATH' 'tcp port 2404 or tcp port 502' \
+    tcpdump --immediate-mode -i any -s 65560 -B 32768 -U -w '$CAPTURE_PATH' 'tcp port 2404 or tcp port 502' \
       >'$CAPTURE_LOG' 2>&1 & echo \$! > '$CAPTURE_PID_FILE'"; then
     fail "G3 could not start tcpdump for both protocol hops"
   else
