@@ -81,6 +81,21 @@ class EUOracleTests(unittest.TestCase):
         self.assertTrue(eu.semantic("historian", '[{"id":"point","ioa":1001,"last":{"value":"closed"}}]'))
         self.assertFalse(eu.semantic("reconnect", '{"trigger":"operator"}'))
 
+    def test_io_statistics_contract_matches_tshark_and_requires_frames(self):
+        data = json.loads((ROOT / "scripts/lab-commands-expectations-eu-iec104-substation.json").read_text())
+        oracle = next(row["oracle"] for key, row in data["commands"].items()
+                      if "|tshark " in key and " -z io,stat," in key)
+        self.assertEqual(oracle["semantic"], "io-stat")
+        for output, expected in (
+                ("| IO Statistics |\n| 0.0 <> 10.9 | 8 | 900 |", True),
+                ("| IO Statistics |\n| 0.0 <> 10.9 | 0 | 0 |", False),
+                ("| IO Statistics |\n", False),
+                ("| I/O Statistics |\n| 0.0 <> 10.9 | 8 | 900 |", False)):
+            with self.subTest(output=output):
+                passed = (worker.gate.verdict(oracle, 0, output, "")
+                          and eu.semantic(oracle["semantic"], output))
+                self.assertEqual(passed, expected)
+
     def audit(self, allowed):
         before = {"generation": 2, "latest_seq": 5, "oldest_seq": 1, "entries": []}
         initial = {"generation": 2, "revision": 4, "position": "closed"}

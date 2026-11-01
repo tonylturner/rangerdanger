@@ -76,7 +76,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "(?s)I/O Statistics.*\\|",
+        "match": "(?s)IO Statistics.*\\|",
         "semantic": "io-stat"
       },
       "reason": null
