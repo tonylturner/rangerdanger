@@ -1,0 +1,40 @@
+# Reviewed semantics that Compose/nginx/manifest cannot express. Citations are
+# repository paths plus stable symbols or line numbers, never external sources.
+schema: 1
+edges:
+  - from: backend
+    to: dockerd
+    label: Docker SDK via /var/run/docker.sock
+    packages: [us, eu]
+    views: [overview, request]
+    source: backend/internal/orchestrator/orchestrator.go:New
+  - from: backend
+    to: firewall
+    label: JWT REST · policy / PCAP / events
+    packages: [us, eu]
+    views: [overview, request]
+    source: backend/internal/containd/client.go:send
+  - from: backend
+    to: terminals
+    label: WebSocket terminal · Docker exec
+    packages: [us, eu]
+    views: [request]
+    source: backend/internal/server/terminal.go:connectTerminal
+  - from: backend
+    to: range
+    label: POST /api/range · lifecycle start, routes, seed policy
+    packages: [us, eu]
+    views: [compose]
+    source: backend/internal/lifecycle/transition.go:157
+  - from: rtac_sim@ot_ops_net
+    to: field_net
+    label: Kernel-pinned field route via firewall
+    packages: [us]
+    views: [overview]
+    source: scripts/rtac-harden.sh:93
+  - from: rtac_sim@physics_net
+    to: opendss_sim@physics_net
+    label: HTTP push · /api/update-state
+    packages: [us]
+    views: [overview, request]
+    source: services/rtac-sim/main.go:132
