@@ -402,11 +402,20 @@ docker start rangerdanger-backend
 ### "containd won't authenticate"
 
 Stale local users.db after the default password got changed in
-a prior session. Delete it and restart the range:
+a prior session. From the install root, select the **active package's**
+firewall store. Stop the firewall and back up its complete store before
+deleting credentials; this removes local users. Keep the backup with your
+saved workshop evidence. The final `POST` restarts the range and restores the
+package's default firewall policy, so export any policy and save other range
+work before recovery:
 
 ```bash
-docker stop rangerdanger-firewall
-rm -f data/firewall/users.db data/firewall/users.db-*
+FIREWALL_DATA=data/firewall                         # US
+# FIREWALL_DATA=data/eu-iec104-substation/firewall   # EU: use this instead
+docker stop rangerdanger-firewall &&
+cp -a "$FIREWALL_DATA" "${FIREWALL_DATA}.backup-$(date +%Y%m%d%H%M%S)" &&
+rm -f "$FIREWALL_DATA/users.db" "$FIREWALL_DATA/users.db-wal" \
+  "$FIREWALL_DATA/users.db-shm" "$FIREWALL_DATA/users.db-journal" &&
 curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8088/api/range
 ```
 

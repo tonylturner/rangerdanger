@@ -18,8 +18,8 @@ image?"
 | `vendor-jump` | Vendor support laptop | linuxserver/webtop ubuntu-xfce | Vendor / DMZ (10.20.20.10) | `Dockerfile.vendor-jump` |
 | `corp-ws` | Office laptop | linuxserver/webtop ubuntu-mate | Enterprise (10.10.10.10) | `Dockerfile.corp-ws` |
 | `openplc` | Substation automation PLC | tuttas/openplc_v3 | OT Operations (10.30.30.30) | `Dockerfile.openplc` |
-| `rtac-sim` | Supervisory controller | alpine 3.21 (sim-base) | OT Operations + Field | `services/Dockerfile` (`rtac-sim` target) |
-| `relay-sim`, `recloser-sim`, `regulator-sim`, `capbank-sim`, `historian-sim`, `gps-sim` | Field / OT sims | alpine 3.21 (sim-base) | Field or OT Ops | `services/Dockerfile` |
+| `rtac-sim` | Supervisory controller | alpine 3.22 (sim-base) | OT Operations + Field | `services/Dockerfile` (`rtac-sim` target) |
+| `relay-sim`, `recloser-sim`, `regulator-sim`, `capbank-sim`, `historian-sim`, `gps-sim` | Field / OT sims | alpine 3.22 (sim-base) | Field or OT Ops | `services/Dockerfile` |
 | `fuxa-hmi` | Operator HMI | frangoteam/fuxa | OT Operations (10.30.30.10) | `Dockerfile.fuxa-hmi` |
 
 ## Tool matrix
@@ -35,7 +35,7 @@ Treat `sim-base` ✓ as "every sim has this, rtac-sim included."
 | Tool | kali | eng-ws | vendor-jump | openplc | rtac-sim (additions) | sim-base (all sims, incl. rtac) |
 |------|:----:|:------:|:-----------:|:-------:|:--------:|:---------------------:|
 | **Network basics** | | | | | | |
-| `iproute2` | ✓ | | ✓ | | ✓ | ✓ |
+| `iproute2` | ✓ | ✓ | ✓ | ✓ | | ✓ |
 | `iptables` | | | | | ✓ | ✓ |
 | `iputils-ping` | ✓ | | | | | (busybox `ping`) |
 | `traceroute` | ✓ | | | | | |
@@ -55,6 +55,7 @@ Treat `sim-base` ✓ as "every sim has this, rtac-sim included."
 | `mbpoll` | ✓ (apt) | ✓ (apt) | ✓ (apt) | | ✓ (built-from-source) | |
 | `dnp3poll` | ✓ (in-tree build) | ✓ | ✓ | ✓ | ✓ | |
 | `dnp3cmd` | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| `iec104cmd` | ✓ (in-tree build) | ✓ (in-tree build) | | | | |
 | `pymodbus` | | ✓ (pip) | ✓ (pip) | | | |
 | **Languages / utilities** | | | | | | |
 | `python3` | ✓ | ✓ | ✓ | ✓ | ✓ | |
@@ -87,6 +88,9 @@ Notes:
   `dnp3-builder` stage in each Dockerfile that needs them, then
   `COPY --from=dnp3-builder` into the runtime image. There is **no**
   apt/apk source for these - they're our own.
+- **`iec104cmd`** is built from the in-tree `iec104go/` module in Kali
+  and engineering-workstation builder stages, then copied into their
+  runtime images.
 - **vendor-jump** runs the OpenSSH server (`openssh-server` package).
   The client-side `ssh` binary depends on whether
   `openssh-server`'s recommended dependency `openssh-client` resolves
