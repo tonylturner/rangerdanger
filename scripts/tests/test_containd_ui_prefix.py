@@ -365,6 +365,7 @@ class ProbeTests(unittest.TestCase):
         self.requests = []
         output = io.StringIO()
         with patch.object(probe, "build_opener") as build, patch.object(probe, "cli_upgrade") as upgrade, \
+                patch.object(probe, "check_upload_limits") as uploads, \
                 redirect_stdout(output):
             build.return_value.open.side_effect = self.open
             probe.probe("http://127.0.0.1:8088/")
@@ -377,6 +378,7 @@ class ProbeTests(unittest.TestCase):
                 call("http://127.0.0.1:8088", ticket="fixture-ticket-2", expected_status=401),
             ])
             self.assertEqual(upgrade.call_count, 6)
+            uploads.assert_called_once_with("http://127.0.0.1:8088")
         return output.getvalue()
 
     def test_probes_all_chunks_then_logs_in_reads_me_and_checks_api_routes(self):

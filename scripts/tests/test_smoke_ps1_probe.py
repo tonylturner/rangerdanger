@@ -43,6 +43,11 @@ $ErrorActionPreference = 'Stop'
 $fixture = $env:FIXTURE | ConvertFrom-Json
 $script:session = $null
 $script:seen = @()
+function Confirm-ContaindUploadLimits([string]$Origin) {
+    if ($Origin -cne $env:ORIGIN.TrimEnd('/')) { throw 'upload origin lost' }
+    $script:uploadCalls++
+}
+$script:uploadCalls = 0
 function Confirm-ContaindCliUpgrade(
     [string]$Origin, [string]$Ticket = '', [string]$Token = '',
     [string]$QueryName = '', [int]$ExpectedStatus = 101
@@ -125,6 +130,7 @@ function Invoke-WebRequest {
 }
 try {
     Invoke-ContaindUiProbe $env:ORIGIN
+    if ($script:uploadCalls -ne 1) { throw 'upload-limit check not invoked exactly once' }
     Write-Output ('REQUESTS=' + ($script:seen -join ','))
     exit 0
 } catch {

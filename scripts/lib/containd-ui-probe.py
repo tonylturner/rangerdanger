@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+import time
 from html.parser import HTMLParser
 from http.client import HTTPConnection, HTTPSConnection
 from http.cookiejar import CookieJar
@@ -30,6 +31,124 @@ from urllib.request import (
 
 class ProbeError(ValueError):
     """An incomplete check is a failure, never a pass."""
+
+
+UPLOAD_LIMIT_CODE = "rangerdanger_proxy_upload_limit"
+UPLOAD_LIMIT_ERROR = (
+    "RangerDanger proxy upload limit is 10 MB; this file is larger. "
+    "The limit is set by RangerDanger, not containd."
+)
+
+
+def check_upload_limits(origin):
+    """Isolated, unauthenticated multipart requests; bounded memory, no stored capture."""
+    url = urlsplit(origin)
+    path = "/containd/api/v1/pcap/analyze"
+    boundary = "rangerdanger-upload-probe"
+    prefix = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="file"; filename="probe.pcap"\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n"
+    ).encode("ascii")
+    suffix = f"\r\n--{boundary}--\r\n".encode("ascii")
+    block = bytes(65536)
+    for mib, expected in ((2, 401), (11, 413)):
+        size = mib * 1024 * 1024
+        connection = (HTTPSConnection if url.scheme == "https" else HTTPConnection)(
+            url.hostname, url.port, timeout=15,
+        )
+        deadline = time.monotonic() + 15
+
+        def remaining():
+            seconds = deadline - time.monotonic()
+            if seconds <= 0:
+                raise ProbeError(f"{path}: {mib} MiB upload timeout")
+            connection.sock.settimeout(seconds)
+
+        try:
+            connection.putrequest("POST", path)
+            connection.putheader("Content-Type", f"multipart/form-data; boundary={boundary}")
+            connection.putheader("Content-Length", str(size))
+            # nginx can reject Content-Length before reading a byte. Wait for
+            # 100 Continue rather than losing its 413 in a broken-pipe write.
+            connection.putheader("Expect", "100-continue")
+            connection.putheader("Connection", "close")
+            connection.endheaders()
+            with connection.sock.makefile("rb") as stream:
+                def headers():
+                    lines, length = [], 0
+                    while True:
+                        remaining()
+                        line = stream.readline(16385)
+                        length += len(line)
+                        if not line or length > 16384 or not line.endswith(b"\r\n"):
+                            raise ProbeError(f"{path}: incomplete or oversized upload response")
+                        if line == b"\r\n":
+                            break
+                        lines.append(line.decode("iso-8859-1").rstrip("\r\n"))
+                    if not lines or not re.match(r"^HTTP/1\.[01] [0-9]{3}(?: |$)", lines[0]):
+                        raise ProbeError(f"{path}: invalid upload response status")
+                    if any(":" not in line for line in lines[1:]):
+                        raise ProbeError(f"{path}: invalid upload response header")
+                    values = dict(line.lower().split(":", 1) for line in lines[1:])
+                    return int(lines[0].split()[1]), {k: v.strip() for k, v in values.items()}
+
+                status, response_headers = headers()
+                if status == 100:
+                    remaining()
+                    connection.send(prefix)
+                    left = size - len(prefix) - len(suffix)
+                    while left:
+                        remaining()
+                        count = min(left, len(block))
+                        connection.send(block[:count])
+                        left -= count
+                    remaining()
+                    connection.send(suffix)
+                    status, response_headers = headers()
+                content_type = response_headers.get("content-type", "").split(";")[0].strip()
+                nginx_html = (
+                    response_headers.get("server", "").startswith("nginx")
+                    and content_type == "text/html"
+                )
+                # Our named nginx handler has Content-Length. Bound reads even
+                # for an erroneous UI page; containd's 401 needs only its status/MIME.
+                length = response_headers.get("content-length", "")
+                body = None
+                if (content_type == "application/json" and re.fullmatch(r"[0-9]{1,4}", length)
+                        and int(length) <= 4096):
+                    remaining()
+                    raw = stream.read(int(length))
+                    try:
+                        if len(raw) == int(length):
+                            body = json.loads(raw.decode("utf-8"))
+                    except (ValueError, UnicodeError):
+                        # Malformed refusals fail the upload contract below.
+                        body = None
+                ranger_limit = (
+                    isinstance(body, dict) and body.get("code") == UPLOAD_LIMIT_CODE
+                    and body.get("error") == UPLOAD_LIMIT_ERROR
+                )
+                source = (
+                    "RangerDanger nginx proxy" if ranger_limit else
+                    "bare nginx proxy" if nginx_html else
+                    "containd/API or non-RangerDanger response"
+                )
+                valid = status == expected and (
+                    content_type == "application/json" and not ranger_limit if expected == 401 else ranger_limit
+                )
+                if not valid:
+                    target = (
+                        "401 application/json from containd" if expected == 401 else
+                        f"413 application/json with code={UPLOAD_LIMIT_CODE} and RangerDanger message"
+                    )
+                    raise ProbeError(
+                        f"{path}: {mib} MiB upload expected {target}, got HTTP {status} "
+                        f"{content_type} ({source})"
+                    )
+        finally:
+            connection.close()
+        print(f"PASS {path}: {mib} MiB upload -> HTTP {status} ({source})")
 
 
 def cli_upgrade(origin, *, ticket=None, token=None, query_token=False, expected_status=101):
@@ -363,6 +482,7 @@ def probe(base):
         if status != 400 or content_type == "text/html":
             raise ProbeError(f"{path}: expected a 400 refusal from the containd API, got {status} {content_type}")
     print(f"PASS {', '.join(API_ROUTES)}: 400 from the containd API, not the UI page")
+    check_upload_limits(base)
 
 
 def main():

@@ -199,6 +199,144 @@ function Confirm-ContaindCliUpgrade(
     Write-Host "PASS ${path}: websocket 101 with a fresh ticket and browser Origin $Origin"
 }
 
+function Confirm-ContaindUploadLimits([string]$Origin) {
+    # No cookies or bearer token. Generate multipart bodies in 64 KiB blocks.
+    $url = [uri]$Origin
+    $authority = [regex]::Match($Origin, '^[^:]+://([^/]+)$').Groups[1].Value
+    $path = '/containd/api/v1/pcap/analyze'
+    $boundary = 'rangerdanger-upload-probe'
+    $prefix = [Text.Encoding]::ASCII.GetBytes(
+        "--$boundary`r`n" +
+        "Content-Disposition: form-data; name=`"file`"; filename=`"probe.pcap`"`r`n" +
+        "Content-Type: application/octet-stream`r`n`r`n")
+    $suffix = [Text.Encoding]::ASCII.GetBytes("`r`n--$boundary--`r`n")
+    $block = New-Object byte[] 65536
+    foreach ($mib in @(2, 11)) {
+        $size = $mib * 1024 * 1024
+        $expected = if ($mib -eq 2) { 401 } else { 413 }
+        $client = New-Object Net.Sockets.TcpClient
+        $stream = $null
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        function Set-UploadTimeout {
+            $remaining = 15000 - [int]$timer.ElapsedMilliseconds
+            if ($remaining -le 0) { throw "${path}: $mib MiB upload timeout" }
+            if ($stream) {
+                $stream.ReadTimeout = $remaining
+                $stream.WriteTimeout = $remaining
+            }
+            $remaining
+        }
+        function Read-UploadHeaders {
+            $header = New-Object Text.StringBuilder
+            while (-not $header.ToString().EndsWith("`r`n`r`n", [StringComparison]::Ordinal)) {
+                $null = Set-UploadTimeout
+                $byte = $stream.ReadByte()
+                if ($byte -lt 0) { throw "${path}: incomplete upload response" }
+                $null = $header.Append([char]$byte)
+                if ($header.Length -gt 16384) { throw "${path}: oversized upload response" }
+            }
+            $lines = $header.ToString() -split "`r`n"
+            if ($lines[0] -notmatch '^HTTP/1\.[01] ([0-9]{3})(?: |$)') {
+                throw "${path}: invalid upload response status"
+            }
+            $code = [int]$Matches[1]
+            $values = @{}
+            foreach ($line in $lines[1..($lines.Length - 1)]) {
+                if (-not $line) { continue }
+                if (-not $line.Contains(':')) { throw "${path}: invalid upload response header" }
+                $pair = $line -split ':', 2
+                $values[$pair[0].ToLowerInvariant()] = $pair[1].Trim().ToLowerInvariant()
+            }
+            [pscustomobject]@{ Status = $code; Headers = $values }
+        }
+        try {
+            $connect = $client.ConnectAsync($url.DnsSafeHost, $url.Port)
+            if (-not $connect.Wait((Set-UploadTimeout))) { throw "${path}: connection timeout" }
+            $null = $connect.GetAwaiter().GetResult()
+            $stream = $client.GetStream()
+            $null = Set-UploadTimeout
+            if ($url.Scheme -eq 'https') {
+                $stream = New-Object Net.Security.SslStream $stream, $false
+                $tls = $stream.AuthenticateAsClientAsync($url.DnsSafeHost)
+                if (-not $tls.Wait((Set-UploadTimeout))) { throw "${path}: TLS timeout" }
+                $null = $tls.GetAwaiter().GetResult()
+            }
+            # Respect an early nginx 413 instead of writing into a closed socket.
+            $request = "POST $path HTTP/1.1`r`nHost: $authority`r`n" +
+                "Content-Type: multipart/form-data; boundary=$boundary`r`n" +
+                "Content-Length: $size`r`nExpect: 100-continue`r`nAccept-Encoding: identity`r`nConnection: close`r`n`r`n"
+            $bytes = [Text.Encoding]::ASCII.GetBytes($request)
+            $null = Set-UploadTimeout
+            $stream.Write($bytes, 0, $bytes.Length)
+            $response = Read-UploadHeaders
+            if ($response.Status -eq 100) {
+                $null = Set-UploadTimeout
+                $stream.Write($prefix, 0, $prefix.Length)
+                $left = $size - $prefix.Length - $suffix.Length
+                while ($left -gt 0) {
+                    $null = Set-UploadTimeout
+                    $count = [Math]::Min($left, $block.Length)
+                    $stream.Write($block, 0, $count)
+                    $left -= $count
+                }
+                $null = Set-UploadTimeout
+                $stream.Write($suffix, 0, $suffix.Length)
+                $response = Read-UploadHeaders
+            }
+            $code = $response.Status
+            $type = ([string]$response.Headers['content-type'] -split ';', 2)[0].Trim()
+            $nginxHtml = ([string]$response.Headers['server']).StartsWith('nginx', [StringComparison]::Ordinal) -and $type -ceq 'text/html'
+            $length = [string]$response.Headers['content-length']
+            $body = ''
+            # Our named nginx handler has Content-Length. Bound even a malformed
+            # response to 4 KiB; containd's 401 needs only its status/MIME.
+            if ($type -ceq 'application/json' -and $length -cmatch '^[0-9]{1,4}$' -and [int]$length -le 4096) {
+                $data = New-Object byte[] ([int]$length)
+                $offset = 0
+                while ($offset -lt $data.Length) {
+                    $null = Set-UploadTimeout
+                    $read = $stream.Read($data, $offset, $data.Length - $offset)
+                    if ($read -eq 0) { break }
+                    $offset += $read
+                }
+                try {
+                    if ($offset -ne $data.Length) { throw 'Incomplete upload response body' }
+                    $utf8 = New-Object Text.UTF8Encoding $false, $true
+                    $body = $utf8.GetString($data, 0, $offset)
+                    # Validate syntax here; strict property lookup below rejects
+                    # arrays, nulls, wrong-case keys and non-string values.
+                    $null = ConvertFrom-Json -InputObject $body -ErrorAction Stop
+                } catch { $body = '' }
+            }
+            $limitCode = 'rangerdanger_proxy_upload_limit'
+            $limitError = 'RangerDanger proxy upload limit is 10 MB; this file is larger. The limit is set by RangerDanger, not containd.'
+            $rangerLimit = $false
+            $isObject = $body.TrimStart().StartsWith('{', [StringComparison]::Ordinal)
+            if ($isObject) {
+                $object = ConvertFrom-Json -InputObject $body -ErrorAction Stop
+                $codeProperty = $object.PSObject.Properties | Where-Object { $_.Name -ceq 'code' } | Select-Object -First 1
+                $errorProperty = $object.PSObject.Properties | Where-Object { $_.Name -ceq 'error' } | Select-Object -First 1
+                $rangerLimit = $codeProperty -and $errorProperty -and
+                    $codeProperty.Value -is [string] -and $codeProperty.Value -ceq $limitCode -and
+                    $errorProperty.Value -is [string] -and $errorProperty.Value -ceq $limitError
+            }
+            $source = if ($rangerLimit) { 'RangerDanger nginx proxy' }
+                elseif ($nginxHtml) { 'bare nginx proxy' }
+                else { 'containd/API or non-RangerDanger response' }
+            $valid = $code -eq $expected -and $(if ($expected -eq 401) { $type -ceq 'application/json' -and -not $rangerLimit } else { $rangerLimit })
+            if (-not $valid) {
+                $target = if ($expected -eq 401) { '401 application/json from containd' }
+                    else { "413 application/json with code=$limitCode and RangerDanger message" }
+                throw "${path}: $mib MiB upload expected $target, got HTTP $code $type ($source)"
+            }
+        } finally {
+            if ($stream) { $stream.Dispose() }
+            $client.Close()
+        }
+        Write-Host "PASS ${path}: $mib MiB upload -> HTTP $code ($source)"
+    }
+}
+
 function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
     $Origin = $Origin.TrimEnd('/')
     $base = $null
@@ -392,4 +530,5 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         }
     }
     Write-Host "PASS $($apiRoutes -join ', '): 400 from the containd API, not the UI page"
+    Confirm-ContaindUploadLimits $Origin
 }
