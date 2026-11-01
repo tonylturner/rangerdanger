@@ -76,7 +76,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "(?s)I/O Statistics.*\\|",
+        "match": "(?s)IO Statistics.*\\|",
         "semantic": "io-stat"
       },
       "reason": null
@@ -107,7 +107,7 @@
       },
       "reason": null
     },
-    "eu-baseline-assessment|7|nmap -p 2404 10.30.30.20 --max-retries 1 -T4|1": {
+    "eu-baseline-assessment|7|nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -132,7 +132,7 @@
       },
       "reason": null
     },
-    "eu-baseline-assessment|7|nmap -p 502 10.40.40.20 --max-retries 1 -T4|1": {
+    "eu-baseline-assessment|7|nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -157,7 +157,7 @@
       },
       "reason": null
     },
-    "eu-firewall-implementation|3|nmap -p 2404 10.30.30.20 --max-retries 1 -T4|1": {
+    "eu-firewall-implementation|3|nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -169,7 +169,7 @@
       },
       "reason": null
     },
-    "eu-firewall-implementation|3|nmap -p 502 10.40.40.20 --max-retries 1 -T4|1": {
+    "eu-firewall-implementation|3|nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -228,7 +228,7 @@
       },
       "reason": null
     },
-    "eu-firewall-implementation|8|nmap -p 2404 10.30.30.20 --max-retries 1 -T4|1": {
+    "eu-firewall-implementation|8|nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "hardened",
       "prompt": "shell",
@@ -242,7 +242,7 @@
       },
       "reason": null
     },
-    "eu-firewall-implementation|8|nmap -p 502 10.40.40.20 --max-retries 1 -T4|1": {
+    "eu-firewall-implementation|8|nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "hardened",
       "prompt": "shell",
@@ -256,7 +256,7 @@
       },
       "reason": null
     },
-    "eu-firewall-implementation|8|nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4|1": {
+    "eu-firewall-implementation|8|nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "hardened",
       "prompt": "shell",
@@ -299,7 +299,7 @@
       },
       "reason": null
     },
-    "eu-vendor-rdp-compromise|1|nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4|1": {
+    "eu-vendor-rdp-compromise|1|nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -334,7 +334,7 @@
       },
       "reason": null
     },
-    "eu-vendor-rdp-compromise|6|nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4|1": {
+    "eu-vendor-rdp-compromise|6|nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "hardened",
       "prompt": "shell",

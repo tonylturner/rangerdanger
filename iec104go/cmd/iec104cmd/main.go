@@ -72,7 +72,7 @@ func run(ctx context.Context, argv []string, stdout, stderr io.Writer, rt runtim
 	o.logf("connecting to %s:%d oa=%d ca=%d", a.host, a.port, a.oa, a.ca)
 	c, err := rt.dial(ctx, net.JoinHostPort(a.host, strconv.Itoa(a.port)), opts, r.handler(o, a.json && op == "monitor"))
 	if err != nil {
-		o.logf("connect failed")
+		o.logf("connect failed: %v", err)
 		return 2
 	}
 	defer func() {

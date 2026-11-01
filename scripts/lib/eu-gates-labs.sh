@@ -142,9 +142,9 @@ eu_lab_baseline_walk() {
   eu_lab_step "$scenario" critical-conduits-what-must-flow || return
   eu_lab_step "$scenario" findings-what-you-observed || return
   eu_lab_step "$scenario" probe-for-latent-exposure || return
-  eu_lab_exec kali-1 'nmap -p 2404 10.30.30.20 --max-retries 1 -T4' || return
+  eu_lab_exec kali-1 'nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4' || return
   eu_lab_exec kali-1 'iec104cmd 10.30.30.20 gi --json' || return
-  eu_lab_exec kali-1 'nmap -p 502 10.40.40.20 --max-retries 1 -T4' || return
+  eu_lab_exec kali-1 'nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4' || return
   eu_lab_exec kali-1 'mbpoll -m tcp -a 1 -t 3 -0 -r 0 -c 11 -1 10.40.40.20' || return
   eu_lab_step "$scenario" transition-decide-what-to-fix-first
 }
