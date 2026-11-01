@@ -1,6 +1,7 @@
 """Read-only simulator listener catalogue, transport proofs and G3 orchestration."""
 from datetime import datetime
 import hashlib
+import http.client
 import inspect
 import ipaddress
 import json
@@ -54,9 +55,15 @@ SOCKET_PROGRAM = (
 )
 HTTP_PROGRAM = """
 import json,sys,urllib.request
-with urllib.request.urlopen(sys.argv[1],timeout=3) as response:
-    print(json.dumps({"status":response.status,
-                      "body":response.read(1048577).decode()}))
+opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+with opener.open(sys.argv[1],timeout=3) as response:
+    body=response.read(1048577)
+    if len(body)>1048576:
+        raise ValueError("oversized HTTP peer response")
+    length=response.headers.get("Content-Length")
+    if length is not None and len(body)!=int(length):
+        raise ValueError("truncated HTTP peer response")
+    print(json.dumps({"status":response.status,"body":body.decode()}))
 """
 PREFLIGHT_PROGRAM = (
     "import concurrent.futures,json,socket,time; "
@@ -263,8 +270,20 @@ class Evidence:
 
     def raw(self, kind, text):
         name = f"{len(self.record['events']):04d}-{kind}.txt"
-        (self.directory / name).write_text(text)
+        if isinstance(text, bytes):
+            (self.directory / name).write_bytes(text)
+        else:
+            (self.directory / name).write_text(text)
         return name
+
+
+class ReadOnlyRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # urllib otherwise turns a redirected policy POST into a GET. Only
+        # read-only portal redirects may be followed; never replay a mutation.
+        if req.get_method() != "GET":
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class Transport:
@@ -273,7 +292,7 @@ class Transport:
         self.base_url = base_url.rstrip("/")
         self.evidence = evidence
         self.run = run
-        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), ReadOnlyRedirects())
 
     def exec(self, container, argv, timeout=15):
         command = ["docker", "exec", container] + argv
@@ -295,23 +314,32 @@ class Transport:
     def http(self, path, body=None, json_body=True):
         data = None if body is None else json.dumps(body).encode()
         request = urllib.request.Request(self.base_url + path, data=data,
+                                         method="GET" if body is None else "POST",
                                          headers={"Content-Type": "application/json"})
         try:
             with self.opener.open(request, timeout=15) as response:
-                text = response.read(1048577).decode()
-                raw = self.evidence.raw("http", text)
-                self.evidence.event("http", path=path, method=request.method,
+                payload = response.read(1048577)
+                raw = self.evidence.raw("http", payload)
+                self.evidence.event("http", path=path, method=request.get_method(),
                                     status=response.status, raw=raw)
-                require(response.status == 200 and len(text) <= 1048576,
+                require(response.status == 200 and len(payload) <= 1048576,
                         f"HTTP positive/apply failed: {path}")
+                length = response.headers.get("Content-Length")
+                require(length is None or len(payload) == int(length),
+                        f"truncated HTTP response: {path}")
+                text = payload.decode()
                 return json.loads(text) if json_body else text
         except urllib.error.HTTPError as exc:
             try:
-                raw = self.evidence.raw("http-error", exc.read(1048576).decode(errors="replace"))
+                raw = self.evidence.raw("http-error", exc.read(1048576))
             finally:
                 exc.close()
             self.evidence.event("http-error", path=path, status=exc.code, raw=raw)
             raise  # In particular: never retry a 409.
+        except http.client.IncompleteRead as exc:
+            raw = self.evidence.raw("http-incomplete", exc.partial)
+            self.evidence.event("http-error", path=path, error=str(exc), raw=raw)
+            raise
         except (OSError, urllib.error.URLError) as exc:
             self.evidence.event("http-error", path=path, error=str(exc))
             raise
@@ -331,7 +359,8 @@ class Gate:
 
     def identity(self):
         identity = self.io.http("/api/range")
-        require(identity.get("package") == self.package and identity.get("phase") == "ready" and
+        require(isinstance(identity, dict) and identity.get("package") == self.package and
+                identity.get("phase") == "ready" and
                 type(identity.get("generation")) is int and identity["generation"] > 0,
                 f"range identity/phase mismatch: {identity}")
         if self.generation is None:
@@ -376,7 +405,8 @@ class Gate:
         url = f"http://{d['host']}:{d['port']}{c['path'] or '/'}"
         if c["tool"] == "python3" and c["path"]:
             response = json.loads(self.io.exec(container, ["python3", "-c", HTTP_PROGRAM, url]))
-            require(response["status"] == 200 and len(response["body"]) <= 1048576,
+            require(isinstance(response, dict) and response.get("status") == 200 and
+                    isinstance(response.get("body"), str) and len(response["body"]) <= 1048576,
                     f"HTTP peer failed: {d}")
             require(isinstance(json.loads(response["body"]), (dict, list)),
                     "peer control is not a JSON application response")
