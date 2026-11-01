@@ -105,18 +105,28 @@ PY
   pass "$label capture has zero kernel drops and complete pcap records ($pcap_error)"
 }
 
-# eu_iec104_command_filter CA IOA SE: CC-to-RTU frames carrying a C_DC_NA_1
+# eu_iec104_command_filter CA IOA SE [SOURCE [DCS]]: frames carrying a C_DC_NA_1
 # (TypeID 46) activation for the breaker command with S/E = SE. The # layer
 # operator binds the fields to one ASDU, so a segment carrying several APDUs
 # cannot combine fields of different ASDUs; up to k = 12 APDUs per segment.
 eu_iec104_command_filter() {
-  local ca="$1" ioa="$2" se="$3" layer filter=""
+  local ca="$1" ioa="$2" se="$3" source="${4:-$CC_IP}" dcs="${5:-}" layer filter=""
   for layer in 1 2 3 4 5 6 7 8 9 10 11 12; do
     filter="$filter${filter:+ || }(iec60870_asdu.typeid#$layer == 46"
     filter="$filter && iec60870_asdu.causetx#$layer == 6 && iec60870_asdu.addr#$layer == $ca"
-    filter="$filter && iec60870_asdu.ioa#$layer == $ioa && iec60870_asdu.dco.se#$layer == $se)"
+    filter="$filter && iec60870_asdu.ioa#$layer == $ioa && iec60870_asdu.dco.se#$layer == $se"
+    [ -z "$dcs" ] || filter="$filter && iec60870_asdu.dco.on#$layer == $dcs"
+    filter="$filter)"
   done
-  printf 'ip.src == %s && ip.dst == %s && tcp.dstport == 2404 && (%s)' "$CC_IP" "$RTU_IP" "$filter"
+  printf 'ip.src == %s && ip.dst == %s && tcp.dstport == 2404 && (%s)' "$source" "$RTU_IP" "$filter"
+}
+
+eu_g22_capture_chain() {
+  if ! python3 "$SCRIPT_DIR/lib/eu-g22-evidence.py" capture "$1" "$2" "$3" "$4" \
+    2>"$TMP_DIR/G22-decode.err"; then
+    fail "G22 chain decode failed: $(cat "$TMP_DIR/G22-decode.err")"
+    return 1
+  fi
 }
 # eu_check_iec104_command PCAP CA IOA SE NAME: at least one frame matches the
 # filter. Frame existence avoids parsing tshark's Boolean or aggregated fields.
