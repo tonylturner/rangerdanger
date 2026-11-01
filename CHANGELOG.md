@@ -26,9 +26,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   authored rule order is the enforced order. Labs teach first-match terminal
   decisions.
 - Architecture diagrams now generate from package wiring and proxy routes, with CI drift checks; README and architecture guidance reflect both packages.
-- RangerDanger now requires containd 0.1.36. Source mode builds the
-  firewall from the containd `v0.1.36` tag, and containd migrates its stored
-  schema one way to 0.1.9.
+- RangerDanger now requires containd 0.1.37. Source mode builds the
+  firewall from the containd `v0.1.37` tag, and containd migrates its stored
+  schema one way to 0.1.10; back up the firewall data before the first start.
+- Policy applies send containd's configuration revision on every write and
+  wait until containd reports the committed policy as protecting. Apply,
+  reset and range status responses include the apply id and protection state;
+  a configuration changed elsewhere returns HTTP 409 and is never retried.
+- A commit re-evaluates established connections on their next packet. Labs,
+  gates G6, G7 and G11 and the Traffic Matrix now treat a retained Sessions
+  entry as connection-tracking state, not proof that traffic passes; session
+  revocation is optional.
 
 ### Fixed
 
