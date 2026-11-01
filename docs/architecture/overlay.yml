@@ -59,3 +59,11 @@ zone_styles:
   desk_corp_net: {fill: "#fff7ed", stroke: "#c2410c"}
   desk_vendor_net: {fill: "#faf5ff", stroke: "#9333ea"}
   desk_eng_net: {fill: "#faf5ff", stroke: "#9333ea"}
+
+# Invisible ordering constraints keep the six EU teaching zones in three
+# columns. They describe presentation only, never connectivity or traffic.
+zone_columns:
+  eu:
+    - [enterprise_net, station_net]
+    - [vendor_net, field_net]
+    - [control_centre_net, ops_dmz_net]
