@@ -66,6 +66,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after an injected fault; a remote trip stays open until someone closes it.
 - The Physical System view is labelled as simulation truth that SCADA does
   not see, and the RTAC polling label no longer implies a firewall path.
+- Lab command steps and lab checks no longer pass on an RTAC HTTP error or a
+  malformed reply. They need a 2xx status and valid JSON, and RTAC replies
+  are capped at 1 MiB.
 - The containd portal's proxy upload cap is now 10 MB instead of 1 MiB, with a RangerDanger-specific JSON error for larger uploads; containd's own limits remain unchanged.
 - Lab Run buttons honor per-command source terminals and keep host commands
   and tools the backend cannot run copy-only. The EU baseline capture again
