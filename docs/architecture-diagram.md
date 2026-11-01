@@ -157,90 +157,96 @@ services.
 
 ## Docker network wiring
 
-These diagrams show complete Compose NIC membership, including management,
-process/physics and desktop delivery networks absent from the simplified
-teaching topology. Repeated service boxes are NICs of the **same container**;
-dotted identity links are not traffic. Addresses and pinned firewall
-interface names come from Compose; teaching names come from the package's
-declared topology; Docker network names come from its manifest. External
-networks join the platform-owned definitions by Docker name.
+Each service appears once. Single-homed services sit inside their network;
+multi-homed services sit outside, with one attachment edge per NIC labelled
+`IP · iface` (interface names are shown where Compose pins them). Small circles
+are network attachment points, not containers. FUXA's label notes its shared
+poller namespace; there is no independent poller NIC. Colours are authored
+presentation metadata; addresses and memberships remain generated from Compose.
 
 ### US package networks
 
 <!-- BEGIN GENERATED: network-us -->
 ```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 22, "rankSpacing": 45, "padding": 10}}}%%
 flowchart LR
-    subgraph n_us_network_desk_corp_net_9f767bb2d0["desk_corp_net · 10.98.1.0/28<br/>rangerdanger_desk_corp · internal"]
-    n_us_nic_desk_corp_net_corp_ws_4fcb4852dd["corp_ws · Corporate Workstation<br/>10.98.1.3"]
-    n_us_nic_desk_corp_net_proxy_751caa916e["proxy<br/>10.98.1.2"]
+    subgraph n_us_network_desk_corp_net_9f767bb2d0["desk_corp_net · 10.98.1.0/28 · internal"]
+    n_us_bus_desk_corp_net_7740ebd703((" "))
     end
-    subgraph n_us_network_desk_eng_net_4283788807["desk_eng_net · 10.98.3.0/28<br/>rangerdanger_desk_eng · internal"]
-    n_us_nic_desk_eng_net_eng_workstation_05f4e74915["eng_workstation · Engineering Workstation<br/>10.98.3.3"]
-    n_us_nic_desk_eng_net_proxy_b68856c902["proxy<br/>10.98.3.2"]
+    subgraph n_us_network_desk_eng_net_4283788807["desk_eng_net · 10.98.3.0/28 · internal"]
+    n_us_bus_desk_eng_net_987beacd37((" "))
     end
-    subgraph n_us_network_desk_vendor_net_6bd70e9271["desk_vendor_net · 10.98.2.0/28<br/>rangerdanger_desk_vendor · internal"]
-    n_us_nic_desk_vendor_net_proxy_71d8b73b8c["proxy<br/>10.98.2.2"]
-    n_us_nic_desk_vendor_net_vendor_jump_c7c674d8fd["vendor_jump · Vendor Jump Box<br/>10.98.2.3"]
+    subgraph n_us_network_desk_vendor_net_6bd70e9271["desk_vendor_net · 10.98.2.0/28 · internal"]
+    n_us_bus_desk_vendor_net_2e8190f670((" "))
     end
-    subgraph n_us_network_enterprise_net_2fcdd9caba["enterprise_net · 10.10.10.0/24<br/>rangerdanger_enterprise_net · Enterprise Zone"]
-    n_us_nic_enterprise_net_corp_ws_fbdd5ce6cc["corp_ws · Corporate Workstation<br/>10.10.10.10"]
-    n_us_nic_enterprise_net_firewall_d099a42e68["firewall · Containd Firewall<br/>10.10.10.2 · wan"]
-    n_us_nic_enterprise_net_kali_19f6bc4e54["kali · Kali Attacker<br/>10.10.10.50"]
+    subgraph n_us_network_enterprise_net_2fcdd9caba["enterprise_net · 10.10.10.0/24"]
+    n_us_bus_enterprise_net_2893e7f976((" "))
+    n_us_service_kali_da22bb94e9["kali<br/>10.10.10.50"]
     end
-    subgraph n_us_network_field_net_3186d490c8["field_net · 10.40.40.0/24<br/>rangerdanger_field_net · Field Device Zone"]
-    n_us_nic_field_net_capbank_sim_17173f1950["capbank_sim · Capacitor Bank<br/>10.40.40.23"]
-    n_us_nic_field_net_firewall_676e575a6e["firewall · Containd Firewall<br/>10.40.40.2 · lan2"]
-    n_us_nic_field_net_recloser_sim_bffad176bc["recloser_sim · Mid-Feeder Recloser<br/>10.40.40.21"]
-    n_us_nic_field_net_regulator_sim_8d731d21f0["regulator_sim · Voltage Regulator<br/>10.40.40.22"]
-    n_us_nic_field_net_relay_sim_97501630b7["relay_sim · Feeder Breaker / Relay<br/>10.40.40.20"]
-    n_us_nic_field_net_rtac_sim_e642294ac5["rtac_sim · RTAC / Supervisory Controller<br/>10.40.40.10"]
+    subgraph n_us_network_field_net_3186d490c8["field_net · 10.40.40.0/24"]
+    n_us_bus_field_net_583586caad((" "))
+    n_us_service_capbank_sim_3d3260cc58["capbank_sim<br/>10.40.40.23"]
+    n_us_service_recloser_sim_829fed66b5["recloser_sim<br/>10.40.40.21"]
+    n_us_service_regulator_sim_d439cc0af4["regulator_sim<br/>10.40.40.22"]
+    n_us_service_relay_sim_11107a854c["relay_sim<br/>10.40.40.20"]
     end
-    subgraph n_us_network_mgmt_net_e116615e70["mgmt_net · 10.99.99.0/24<br/>rangerdanger_mgmt_net"]
-    n_us_nic_mgmt_net_backend_595ac1898f["backend<br/>10.99.99.10"]
-    n_us_nic_mgmt_net_firewall_c2092b46e0["firewall · Containd Firewall<br/>10.99.99.2 · lan3"]
-    n_us_nic_mgmt_net_frontend_e44853b363["frontend<br/>10.99.99.11"]
-    n_us_nic_mgmt_net_fuxa_hmi_da2de3e966["fuxa_hmi · Substation HMI<br/>10.99.99.50"]
-    n_us_nic_mgmt_net_hmi_poller_fb2a13efde["hmi_poller<br/>shares fuxa_hmi namespace"]
-    n_us_nic_mgmt_net_hmi_poller_fb2a13efde ---|"namespace"| n_us_nic_mgmt_net_fuxa_hmi_da2de3e966
-    n_us_nic_mgmt_net_openplc_a6b66aa1b3["openplc · Substation Automation PLC<br/>10.99.99.30"]
-    n_us_nic_mgmt_net_proxy_17fb745021["proxy<br/>10.99.99.3"]
-    n_us_nic_mgmt_net_rtac_sim_887c576b42["rtac_sim · RTAC / Supervisory Controller<br/>10.99.99.20"]
+    subgraph n_us_network_mgmt_net_e116615e70["mgmt_net · 10.99.99.0/24"]
+    n_us_bus_mgmt_net_e7df616975((" "))
+    n_us_service_backend_5f9e02149f["backend<br/>10.99.99.10"]
+    n_us_service_frontend_6362cb3471["frontend<br/>10.99.99.11"]
     end
-    subgraph n_us_network_ot_ops_net_8b6332e643["ot_ops_net · 10.30.30.0/24<br/>rangerdanger_ot_ops_net · OT Operations Zone"]
-    n_us_nic_ot_ops_net_firewall_547aeabfe6["firewall · Containd Firewall<br/>10.30.30.2 · lan1"]
-    n_us_nic_ot_ops_net_fuxa_hmi_a73fe5ea6d["fuxa_hmi · Substation HMI<br/>10.30.30.10"]
-    n_us_nic_ot_ops_net_hmi_poller_8e137768e9["hmi_poller<br/>shares fuxa_hmi namespace"]
-    n_us_nic_ot_ops_net_hmi_poller_8e137768e9 ---|"namespace"| n_us_nic_ot_ops_net_fuxa_hmi_a73fe5ea6d
-    n_us_nic_ot_ops_net_gps_sim_7ac51d91bc["gps_sim · GPS Time Server<br/>10.30.30.50"]
-    n_us_nic_ot_ops_net_historian_sim_78603cc6fb["historian_sim · Data Historian<br/>10.30.30.40"]
-    n_us_nic_ot_ops_net_openplc_42dd616358["openplc · Substation Automation PLC<br/>10.30.30.30"]
-    n_us_nic_ot_ops_net_rtac_sim_5ac17eef50["rtac_sim · RTAC / Supervisory Controller<br/>10.30.30.20"]
+    subgraph n_us_network_ot_ops_net_8b6332e643["ot_ops_net · 10.30.30.0/24"]
+    n_us_bus_ot_ops_net_c9ed47c27e((" "))
+    n_us_service_gps_sim_6bc41de0cd["gps_sim<br/>10.30.30.50"]
+    n_us_service_historian_sim_729d7ab37b["historian_sim<br/>10.30.30.40"]
     end
-    subgraph n_us_network_physics_net_d0b188a64c["physics_net · 10.50.50.0/24<br/>rangerdanger_physics_net"]
-    n_us_nic_physics_net_opendss_sim_39e464fe36["opendss_sim<br/>10.50.50.20"]
-    n_us_nic_physics_net_rtac_sim_45c3962b31["rtac_sim · RTAC / Supervisory Controller<br/>10.50.50.10"]
+    subgraph n_us_network_physics_net_d0b188a64c["physics_net · 10.50.50.0/24"]
+    n_us_bus_physics_net_42e9924695((" "))
+    n_us_service_opendss_sim_c8f9e7a8d0["opendss_sim<br/>10.50.50.20"]
     end
-    subgraph n_us_network_vendor_net_c0d5514bb4["vendor_net · 10.20.20.0/24<br/>rangerdanger_vendor_net · Vendor / Engineering Zone"]
-    n_us_nic_vendor_net_eng_workstation_19319c41c1["eng_workstation · Engineering Workstation<br/>10.20.20.20"]
-    n_us_nic_vendor_net_firewall_0924e7c691["firewall · Containd Firewall<br/>10.20.20.2 · dmz"]
-    n_us_nic_vendor_net_vendor_jump_27f8bb0f8f["vendor_jump · Vendor Jump Box<br/>10.20.20.10"]
+    subgraph n_us_network_vendor_net_c0d5514bb4["vendor_net · 10.20.20.0/24"]
+    n_us_bus_vendor_net_b5e9e37ceb((" "))
     end
-    n_us_nic_desk_corp_net_corp_ws_4fcb4852dd -.-|"same corp_ws"| n_us_nic_enterprise_net_corp_ws_fbdd5ce6cc
-    n_us_nic_desk_eng_net_eng_workstation_05f4e74915 -.-|"same eng_workstation"| n_us_nic_vendor_net_eng_workstation_19319c41c1
-    n_us_nic_enterprise_net_firewall_d099a42e68 -.-|"same firewall"| n_us_nic_field_net_firewall_676e575a6e
-    n_us_nic_enterprise_net_firewall_d099a42e68 -.-|"same firewall"| n_us_nic_mgmt_net_firewall_c2092b46e0
-    n_us_nic_enterprise_net_firewall_d099a42e68 -.-|"same firewall"| n_us_nic_ot_ops_net_firewall_547aeabfe6
-    n_us_nic_enterprise_net_firewall_d099a42e68 -.-|"same firewall"| n_us_nic_vendor_net_firewall_0924e7c691
-    n_us_nic_mgmt_net_fuxa_hmi_da2de3e966 -.-|"same fuxa_hmi"| n_us_nic_ot_ops_net_fuxa_hmi_a73fe5ea6d
-    n_us_nic_mgmt_net_hmi_poller_fb2a13efde -.-|"same hmi_poller"| n_us_nic_ot_ops_net_hmi_poller_8e137768e9
-    n_us_nic_mgmt_net_openplc_a6b66aa1b3 -.-|"same openplc"| n_us_nic_ot_ops_net_openplc_42dd616358
-    n_us_nic_desk_corp_net_proxy_751caa916e -.-|"same proxy"| n_us_nic_desk_eng_net_proxy_b68856c902
-    n_us_nic_desk_corp_net_proxy_751caa916e -.-|"same proxy"| n_us_nic_desk_vendor_net_proxy_71d8b73b8c
-    n_us_nic_desk_corp_net_proxy_751caa916e -.-|"same proxy"| n_us_nic_mgmt_net_proxy_17fb745021
-    n_us_nic_field_net_rtac_sim_e642294ac5 -.-|"same rtac_sim"| n_us_nic_mgmt_net_rtac_sim_887c576b42
-    n_us_nic_field_net_rtac_sim_e642294ac5 -.-|"same rtac_sim"| n_us_nic_ot_ops_net_rtac_sim_5ac17eef50
-    n_us_nic_field_net_rtac_sim_e642294ac5 -.-|"same rtac_sim"| n_us_nic_physics_net_rtac_sim_45c3962b31
-    n_us_nic_desk_vendor_net_vendor_jump_c7c674d8fd -.-|"same vendor_jump"| n_us_nic_vendor_net_vendor_jump_27f8bb0f8f
+    n_us_service_corp_ws_6210261542["corp_ws"]
+    n_us_service_corp_ws_6210261542 ---|"10.10.10.10"| n_us_network_enterprise_net_2fcdd9caba
+    n_us_service_corp_ws_6210261542 ---|"10.98.1.3"| n_us_network_desk_corp_net_9f767bb2d0
+    n_us_service_eng_workstation_2714814370["eng_workstation"]
+    n_us_service_eng_workstation_2714814370 ---|"10.20.20.20"| n_us_network_vendor_net_c0d5514bb4
+    n_us_service_eng_workstation_2714814370 ---|"10.98.3.3"| n_us_network_desk_eng_net_4283788807
+    n_us_service_firewall_f4dcb053a4["firewall"]
+    n_us_service_firewall_f4dcb053a4 ---|"10.99.99.2 · lan3"| n_us_network_mgmt_net_e116615e70
+    n_us_service_firewall_f4dcb053a4 ---|"10.10.10.2 · wan"| n_us_network_enterprise_net_2fcdd9caba
+    n_us_service_firewall_f4dcb053a4 ---|"10.20.20.2 · dmz"| n_us_network_vendor_net_c0d5514bb4
+    n_us_service_firewall_f4dcb053a4 ---|"10.30.30.2 · lan1"| n_us_network_ot_ops_net_8b6332e643
+    n_us_service_firewall_f4dcb053a4 ---|"10.40.40.2 · lan2"| n_us_network_field_net_3186d490c8
+    n_us_service_fuxa_hmi_8ab3e4ce5a["fuxa_hmi<br/>hmi_poller shares namespace"]
+    n_us_service_fuxa_hmi_8ab3e4ce5a ---|"10.30.30.10"| n_us_network_ot_ops_net_8b6332e643
+    n_us_service_fuxa_hmi_8ab3e4ce5a ---|"10.99.99.50"| n_us_network_mgmt_net_e116615e70
+    n_us_service_openplc_5e5b853905["openplc"]
+    n_us_service_openplc_5e5b853905 ---|"10.30.30.30"| n_us_network_ot_ops_net_8b6332e643
+    n_us_service_openplc_5e5b853905 ---|"10.99.99.30"| n_us_network_mgmt_net_e116615e70
+    n_us_service_proxy_6d1dfbfc74["proxy"]
+    n_us_service_proxy_6d1dfbfc74 ---|"10.99.99.3"| n_us_network_mgmt_net_e116615e70
+    n_us_service_proxy_6d1dfbfc74 ---|"10.98.1.2"| n_us_network_desk_corp_net_9f767bb2d0
+    n_us_service_proxy_6d1dfbfc74 ---|"10.98.2.2"| n_us_network_desk_vendor_net_6bd70e9271
+    n_us_service_proxy_6d1dfbfc74 ---|"10.98.3.2"| n_us_network_desk_eng_net_4283788807
+    n_us_service_rtac_sim_362b5b5734["rtac_sim"]
+    n_us_service_rtac_sim_362b5b5734 ---|"10.30.30.20"| n_us_network_ot_ops_net_8b6332e643
+    n_us_service_rtac_sim_362b5b5734 ---|"10.40.40.10"| n_us_network_field_net_3186d490c8
+    n_us_service_rtac_sim_362b5b5734 ---|"10.50.50.10"| n_us_network_physics_net_d0b188a64c
+    n_us_service_rtac_sim_362b5b5734 ---|"10.99.99.20"| n_us_network_mgmt_net_e116615e70
+    n_us_service_vendor_jump_4567da3e19["vendor_jump"]
+    n_us_service_vendor_jump_4567da3e19 ---|"10.20.20.10"| n_us_network_vendor_net_c0d5514bb4
+    n_us_service_vendor_jump_4567da3e19 ---|"10.98.2.3"| n_us_network_desk_vendor_net_6bd70e9271
+    style n_us_network_desk_corp_net_9f767bb2d0 fill:#fff7ed,stroke:#c2410c,color:#172033
+    style n_us_network_desk_eng_net_4283788807 fill:#faf5ff,stroke:#9333ea,color:#172033
+    style n_us_network_desk_vendor_net_6bd70e9271 fill:#faf5ff,stroke:#9333ea,color:#172033
+    style n_us_network_enterprise_net_2fcdd9caba fill:#fff7ed,stroke:#c2410c,color:#172033
+    style n_us_network_field_net_3186d490c8 fill:#f0fdf4,stroke:#16a34a,color:#172033
+    style n_us_network_mgmt_net_e116615e70 fill:#f1f5f9,stroke:#64748b,color:#172033
+    style n_us_network_ot_ops_net_8b6332e643 fill:#f0f9ff,stroke:#0284c7,color:#172033
+    style n_us_network_physics_net_d0b188a64c fill:#fffbeb,stroke:#d97706,color:#172033
+    style n_us_network_vendor_net_c0d5514bb4 fill:#faf5ff,stroke:#9333ea,color:#172033
 ```
 <!-- END GENERATED: network-us -->
 
@@ -256,99 +262,110 @@ NIC or terminal node. The L4 source pin enforces; DPI detects and logs.
 
 <!-- BEGIN GENERATED: network-eu -->
 ```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 22, "rankSpacing": 45, "padding": 10}}}%%
 flowchart LR
-    subgraph n_eu_network_control_centre_net_cf0cc306c5["control_centre_net · 10.60.60.0/24<br/>rangerdanger_control_centre_net · Control Centre Zone"]
-    n_eu_nic_control_centre_net_control_centre_74c4dca584["control_centre · Control Centre<br/>10.60.60.20"]
-    n_eu_nic_control_centre_net_firewall_ea5eeba94c["firewall · Containd Firewall<br/>10.60.60.2 · lan4"]
+    subgraph n_eu_network_control_centre_net_cf0cc306c5["control_centre_net · 10.60.60.0/24"]
+    n_eu_bus_control_centre_net_495770a4bf((" "))
     end
-    subgraph n_eu_network_desk_corp_net_f618e9b383["desk_corp_net · 10.98.1.0/28<br/>rangerdanger_desk_corp · internal"]
-    n_eu_nic_desk_corp_net_proxy_d29f0979b2["proxy<br/>10.98.1.2"]
+    subgraph n_eu_network_desk_corp_net_f618e9b383["desk_corp_net · 10.98.1.0/28 · internal"]
+    n_eu_bus_desk_corp_net_9a5e615424((" "))
     end
-    subgraph n_eu_network_desk_eng_net_ee82060010["desk_eng_net · 10.98.3.0/28<br/>rangerdanger_desk_eng · internal"]
-    n_eu_nic_desk_eng_net_eng_workstation_9cb9a6f3fd["eng_workstation · Engineering Workstation<br/>10.98.3.3"]
-    n_eu_nic_desk_eng_net_proxy_539c753eb9["proxy<br/>10.98.3.2"]
+    subgraph n_eu_network_desk_eng_net_ee82060010["desk_eng_net · 10.98.3.0/28 · internal"]
+    n_eu_bus_desk_eng_net_269fc5372c((" "))
     end
-    subgraph n_eu_network_desk_vendor_net_e6b5faea55["desk_vendor_net · 10.98.2.0/28<br/>rangerdanger_desk_vendor · internal"]
-    n_eu_nic_desk_vendor_net_proxy_854a13e2ce["proxy<br/>10.98.2.2"]
-    n_eu_nic_desk_vendor_net_vendor_jump_d437af0157["vendor_jump · Vendor Jump Box<br/>10.98.2.3"]
+    subgraph n_eu_network_desk_vendor_net_e6b5faea55["desk_vendor_net · 10.98.2.0/28 · internal"]
+    n_eu_bus_desk_vendor_net_5852913bb6((" "))
     end
-    subgraph n_eu_network_enterprise_net_871b5664d1["enterprise_net · 10.10.10.0/24<br/>rangerdanger_enterprise_net · Enterprise Zone"]
-    n_eu_nic_enterprise_net_firewall_9c2d05d829["firewall · Containd Firewall<br/>10.10.10.2 · wan"]
-    n_eu_nic_enterprise_net_kali_934940a5ed["kali · Kali Attacker<br/>10.10.10.50"]
+    subgraph n_eu_network_enterprise_net_871b5664d1["enterprise_net · 10.10.10.0/24"]
+    n_eu_bus_enterprise_net_792f4b405c((" "))
+    n_eu_service_kali_8a5987ce91["kali<br/>10.10.10.50"]
     end
-    subgraph n_eu_network_field_net_f636fc1bd8["field_net · 10.40.40.0/24<br/>rangerdanger_field_net · Field Device Zone"]
-    n_eu_nic_field_net_f2_breaker_e96128111c["f2_breaker · F2 Breaker (indication only)<br/>10.40.40.24"]
-    n_eu_nic_field_net_feeder_breaker_0d44071818["feeder_breaker · Feeder Breaker<br/>10.40.40.20"]
-    n_eu_nic_field_net_firewall_abead9ca80["firewall · Containd Firewall<br/>10.40.40.2 · lan2"]
-    n_eu_nic_field_net_oltc_1_43fdd4788f["oltc_1 · Transformer OLTC<br/>10.40.40.23"]
-    n_eu_nic_field_net_rmu_1_7e620d4863["rmu_1 · RMU 1 (normally closed)<br/>10.40.40.21"]
-    n_eu_nic_field_net_rmu_2_f736d491e2["rmu_2 · RMU 2 (normally open tie)<br/>10.40.40.22"]
+    subgraph n_eu_network_field_net_f636fc1bd8["field_net · 10.40.40.0/24"]
+    n_eu_bus_field_net_60b09c7a86((" "))
     end
-    subgraph n_eu_network_mgmt_net_9a8f46900d["mgmt_net · 10.99.99.0/24<br/>rangerdanger_mgmt_net"]
-    n_eu_nic_mgmt_net_backend_6da6e76704["backend<br/>10.99.99.10"]
-    n_eu_nic_mgmt_net_control_centre_99efd97b0b["control_centre · Control Centre<br/>10.99.99.21"]
-    n_eu_nic_mgmt_net_f2_breaker_7df9dd17e0["f2_breaker · F2 Breaker (indication only)<br/>10.99.99.28"]
-    n_eu_nic_mgmt_net_feeder_breaker_2a4376ce92["feeder_breaker · Feeder Breaker<br/>10.99.99.22"]
-    n_eu_nic_mgmt_net_firewall_5db53e6f0e["firewall · Containd Firewall<br/>10.99.99.2 · lan3"]
-    n_eu_nic_mgmt_net_frontend_9d0b2b5a5a["frontend<br/>10.99.99.11"]
-    n_eu_nic_mgmt_net_gps_sim_779c61a833["gps_sim · Station GPS Clock<br/>10.99.99.27"]
-    n_eu_nic_mgmt_net_historian_eu_175a10446f["historian_eu · Read-only Historian<br/>10.99.99.40"]
-    n_eu_nic_mgmt_net_oltc_1_93b100163b["oltc_1 · Transformer OLTC<br/>10.99.99.26"]
-    n_eu_nic_mgmt_net_opendss_sim_014eddcd0d["opendss_sim<br/>10.99.99.23"]
-    n_eu_nic_mgmt_net_openplc_eu_d76544a448["openplc_eu · OpenPLC Voltage Controller<br/>10.99.99.30"]
-    n_eu_nic_mgmt_net_proxy_32ded2924c["proxy<br/>10.99.99.3"]
-    n_eu_nic_mgmt_net_rmu_1_565212acc1["rmu_1 · RMU 1 (normally closed)<br/>10.99.99.24"]
-    n_eu_nic_mgmt_net_rmu_2_84ecffa43c["rmu_2 · RMU 2 (normally open tie)<br/>10.99.99.25"]
+    subgraph n_eu_network_mgmt_net_9a8f46900d["mgmt_net · 10.99.99.0/24"]
+    n_eu_bus_mgmt_net_8cdd1099b8((" "))
+    n_eu_service_backend_68fe7e7bbf["backend<br/>10.99.99.10"]
+    n_eu_service_frontend_62c3d415ea["frontend<br/>10.99.99.11"]
     end
-    subgraph n_eu_network_ops_dmz_net_e3837ac2f9["ops_dmz_net · 10.70.70.0/24<br/>rangerdanger_ops_dmz_net · Operations DMZ"]
-    n_eu_nic_ops_dmz_net_firewall_bf8d5a4144["firewall · Containd Firewall<br/>10.70.70.2 · lan5"]
-    n_eu_nic_ops_dmz_net_historian_eu_6e6221f1cc["historian_eu · Read-only Historian<br/>10.70.70.40"]
+    subgraph n_eu_network_ops_dmz_net_e3837ac2f9["ops_dmz_net · 10.70.70.0/24"]
+    n_eu_bus_ops_dmz_net_ef249ab45c((" "))
     end
-    subgraph n_eu_network_process_net_63977ed1ef["process_net · 10.50.50.0/24<br/>rangerdanger_process_net · internal"]
-    n_eu_nic_process_net_f2_breaker_c034e0d622["f2_breaker · F2 Breaker (indication only)<br/>10.50.50.34"]
-    n_eu_nic_process_net_feeder_breaker_b22caefae6["feeder_breaker · Feeder Breaker<br/>10.50.50.30"]
-    n_eu_nic_process_net_oltc_1_6ffd26b214["oltc_1 · Transformer OLTC<br/>10.50.50.33"]
-    n_eu_nic_process_net_opendss_sim_b7f18a9d4d["opendss_sim<br/>10.50.50.20"]
-    n_eu_nic_process_net_rmu_1_95fcc1637f["rmu_1 · RMU 1 (normally closed)<br/>10.50.50.31"]
-    n_eu_nic_process_net_rmu_2_87ae12fc04["rmu_2 · RMU 2 (normally open tie)<br/>10.50.50.32"]
+    subgraph n_eu_network_process_net_63977ed1ef["process_net · 10.50.50.0/24 · internal"]
+    n_eu_bus_process_net_172d4e1e08((" "))
     end
-    subgraph n_eu_network_station_net_d611010d39["station_net · 10.30.30.0/24<br/>rangerdanger_station_net · Station Zone"]
-    n_eu_nic_station_net_firewall_e558aa15f1["firewall · Containd Firewall<br/>10.30.30.2 · lan1"]
-    n_eu_nic_station_net_gps_sim_a25d325ba0["gps_sim · Station GPS Clock<br/>10.30.30.50"]
-    n_eu_nic_station_net_iec104_rtu_94410aaecb["iec104_rtu · IEC104 Remote Terminal Unit<br/>10.30.30.20"]
-    n_eu_nic_station_net_openplc_eu_4edd22d347["openplc_eu · OpenPLC Voltage Controller<br/>10.30.30.30"]
+    subgraph n_eu_network_station_net_d611010d39["station_net · 10.30.30.0/24"]
+    n_eu_bus_station_net_cb8175d41f((" "))
+    n_eu_service_iec104_rtu_f4559d37ab["iec104_rtu<br/>10.30.30.20"]
     end
-    subgraph n_eu_network_vendor_net_9aff829aa1["vendor_net · 10.20.20.0/24<br/>rangerdanger_vendor_net · Vendor / Engineering Zone"]
-    n_eu_nic_vendor_net_eng_workstation_2a6e793ebe["eng_workstation · Engineering Workstation<br/>10.20.20.20"]
-    n_eu_nic_vendor_net_firewall_32e34c05b4["firewall · Containd Firewall<br/>10.20.20.2 · dmz"]
-    n_eu_nic_vendor_net_vendor_jump_9419f38f0b["vendor_jump · Vendor Jump Box<br/>10.20.20.10"]
+    subgraph n_eu_network_vendor_net_9aff829aa1["vendor_net · 10.20.20.0/24"]
+    n_eu_bus_vendor_net_8b79cd10db((" "))
     end
-    n_eu_nic_control_centre_net_control_centre_74c4dca584 -.-|"same control_centre"| n_eu_nic_mgmt_net_control_centre_99efd97b0b
-    n_eu_nic_desk_eng_net_eng_workstation_9cb9a6f3fd -.-|"same eng_workstation"| n_eu_nic_vendor_net_eng_workstation_2a6e793ebe
-    n_eu_nic_field_net_f2_breaker_e96128111c -.-|"same f2_breaker"| n_eu_nic_mgmt_net_f2_breaker_7df9dd17e0
-    n_eu_nic_field_net_f2_breaker_e96128111c -.-|"same f2_breaker"| n_eu_nic_process_net_f2_breaker_c034e0d622
-    n_eu_nic_field_net_feeder_breaker_0d44071818 -.-|"same feeder_breaker"| n_eu_nic_mgmt_net_feeder_breaker_2a4376ce92
-    n_eu_nic_field_net_feeder_breaker_0d44071818 -.-|"same feeder_breaker"| n_eu_nic_process_net_feeder_breaker_b22caefae6
-    n_eu_nic_control_centre_net_firewall_ea5eeba94c -.-|"same firewall"| n_eu_nic_enterprise_net_firewall_9c2d05d829
-    n_eu_nic_control_centre_net_firewall_ea5eeba94c -.-|"same firewall"| n_eu_nic_field_net_firewall_abead9ca80
-    n_eu_nic_control_centre_net_firewall_ea5eeba94c -.-|"same firewall"| n_eu_nic_mgmt_net_firewall_5db53e6f0e
-    n_eu_nic_control_centre_net_firewall_ea5eeba94c -.-|"same firewall"| n_eu_nic_ops_dmz_net_firewall_bf8d5a4144
-    n_eu_nic_control_centre_net_firewall_ea5eeba94c -.-|"same firewall"| n_eu_nic_station_net_firewall_e558aa15f1
-    n_eu_nic_control_centre_net_firewall_ea5eeba94c -.-|"same firewall"| n_eu_nic_vendor_net_firewall_32e34c05b4
-    n_eu_nic_mgmt_net_gps_sim_779c61a833 -.-|"same gps_sim"| n_eu_nic_station_net_gps_sim_a25d325ba0
-    n_eu_nic_mgmt_net_historian_eu_175a10446f -.-|"same historian_eu"| n_eu_nic_ops_dmz_net_historian_eu_6e6221f1cc
-    n_eu_nic_field_net_oltc_1_43fdd4788f -.-|"same oltc_1"| n_eu_nic_mgmt_net_oltc_1_93b100163b
-    n_eu_nic_field_net_oltc_1_43fdd4788f -.-|"same oltc_1"| n_eu_nic_process_net_oltc_1_6ffd26b214
-    n_eu_nic_mgmt_net_opendss_sim_014eddcd0d -.-|"same opendss_sim"| n_eu_nic_process_net_opendss_sim_b7f18a9d4d
-    n_eu_nic_mgmt_net_openplc_eu_d76544a448 -.-|"same openplc_eu"| n_eu_nic_station_net_openplc_eu_4edd22d347
-    n_eu_nic_desk_corp_net_proxy_d29f0979b2 -.-|"same proxy"| n_eu_nic_desk_eng_net_proxy_539c753eb9
-    n_eu_nic_desk_corp_net_proxy_d29f0979b2 -.-|"same proxy"| n_eu_nic_desk_vendor_net_proxy_854a13e2ce
-    n_eu_nic_desk_corp_net_proxy_d29f0979b2 -.-|"same proxy"| n_eu_nic_mgmt_net_proxy_32ded2924c
-    n_eu_nic_field_net_rmu_1_7e620d4863 -.-|"same rmu_1"| n_eu_nic_mgmt_net_rmu_1_565212acc1
-    n_eu_nic_field_net_rmu_1_7e620d4863 -.-|"same rmu_1"| n_eu_nic_process_net_rmu_1_95fcc1637f
-    n_eu_nic_field_net_rmu_2_f736d491e2 -.-|"same rmu_2"| n_eu_nic_mgmt_net_rmu_2_84ecffa43c
-    n_eu_nic_field_net_rmu_2_f736d491e2 -.-|"same rmu_2"| n_eu_nic_process_net_rmu_2_87ae12fc04
-    n_eu_nic_desk_vendor_net_vendor_jump_d437af0157 -.-|"same vendor_jump"| n_eu_nic_vendor_net_vendor_jump_9419f38f0b
+    n_eu_service_control_centre_38bed7e3e3["control_centre"]
+    n_eu_service_control_centre_38bed7e3e3 ---|"10.60.60.20"| n_eu_network_control_centre_net_cf0cc306c5
+    n_eu_service_control_centre_38bed7e3e3 ---|"10.99.99.21"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_eng_workstation_695bbe1df4["eng_workstation"]
+    n_eu_service_eng_workstation_695bbe1df4 ---|"10.20.20.20"| n_eu_network_vendor_net_9aff829aa1
+    n_eu_service_eng_workstation_695bbe1df4 ---|"10.98.3.3"| n_eu_network_desk_eng_net_ee82060010
+    n_eu_service_f2_breaker_a2e71e41d4["f2_breaker"]
+    n_eu_service_f2_breaker_a2e71e41d4 ---|"10.40.40.24"| n_eu_network_field_net_f636fc1bd8
+    n_eu_service_f2_breaker_a2e71e41d4 ---|"10.50.50.34"| n_eu_network_process_net_63977ed1ef
+    n_eu_service_f2_breaker_a2e71e41d4 ---|"10.99.99.28"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_feeder_breaker_5087166ffd["feeder_breaker"]
+    n_eu_service_feeder_breaker_5087166ffd ---|"10.40.40.20"| n_eu_network_field_net_f636fc1bd8
+    n_eu_service_feeder_breaker_5087166ffd ---|"10.50.50.30"| n_eu_network_process_net_63977ed1ef
+    n_eu_service_feeder_breaker_5087166ffd ---|"10.99.99.22"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_firewall_91959675b6["firewall"]
+    n_eu_service_firewall_91959675b6 ---|"10.99.99.2 · lan3"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_firewall_91959675b6 ---|"10.10.10.2 · wan"| n_eu_network_enterprise_net_871b5664d1
+    n_eu_service_firewall_91959675b6 ---|"10.20.20.2 · dmz"| n_eu_network_vendor_net_9aff829aa1
+    n_eu_service_firewall_91959675b6 ---|"10.30.30.2 · lan1"| n_eu_network_station_net_d611010d39
+    n_eu_service_firewall_91959675b6 ---|"10.40.40.2 · lan2"| n_eu_network_field_net_f636fc1bd8
+    n_eu_service_firewall_91959675b6 ---|"10.60.60.2 · lan4"| n_eu_network_control_centre_net_cf0cc306c5
+    n_eu_service_firewall_91959675b6 ---|"10.70.70.2 · lan5"| n_eu_network_ops_dmz_net_e3837ac2f9
+    n_eu_service_gps_sim_1ade4a425b["gps_sim"]
+    n_eu_service_gps_sim_1ade4a425b ---|"10.30.30.50"| n_eu_network_station_net_d611010d39
+    n_eu_service_gps_sim_1ade4a425b ---|"10.99.99.27"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_historian_eu_06c1593dd8["historian_eu"]
+    n_eu_service_historian_eu_06c1593dd8 ---|"10.70.70.40"| n_eu_network_ops_dmz_net_e3837ac2f9
+    n_eu_service_historian_eu_06c1593dd8 ---|"10.99.99.40"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_oltc_1_673ae8966b["oltc_1"]
+    n_eu_service_oltc_1_673ae8966b ---|"10.40.40.23"| n_eu_network_field_net_f636fc1bd8
+    n_eu_service_oltc_1_673ae8966b ---|"10.50.50.33"| n_eu_network_process_net_63977ed1ef
+    n_eu_service_oltc_1_673ae8966b ---|"10.99.99.26"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_opendss_sim_c2fedf10c4["opendss_sim"]
+    n_eu_service_opendss_sim_c2fedf10c4 ---|"10.99.99.23"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_opendss_sim_c2fedf10c4 ---|"10.50.50.20"| n_eu_network_process_net_63977ed1ef
+    n_eu_service_openplc_eu_27312fc942["openplc_eu"]
+    n_eu_service_openplc_eu_27312fc942 ---|"10.30.30.30"| n_eu_network_station_net_d611010d39
+    n_eu_service_openplc_eu_27312fc942 ---|"10.99.99.30"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_proxy_6602c93318["proxy"]
+    n_eu_service_proxy_6602c93318 ---|"10.99.99.3"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_proxy_6602c93318 ---|"10.98.1.2"| n_eu_network_desk_corp_net_f618e9b383
+    n_eu_service_proxy_6602c93318 ---|"10.98.2.2"| n_eu_network_desk_vendor_net_e6b5faea55
+    n_eu_service_proxy_6602c93318 ---|"10.98.3.2"| n_eu_network_desk_eng_net_ee82060010
+    n_eu_service_rmu_1_77a05c3094["rmu_1"]
+    n_eu_service_rmu_1_77a05c3094 ---|"10.40.40.21"| n_eu_network_field_net_f636fc1bd8
+    n_eu_service_rmu_1_77a05c3094 ---|"10.50.50.31"| n_eu_network_process_net_63977ed1ef
+    n_eu_service_rmu_1_77a05c3094 ---|"10.99.99.24"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_rmu_2_94f0201ee7["rmu_2"]
+    n_eu_service_rmu_2_94f0201ee7 ---|"10.40.40.22"| n_eu_network_field_net_f636fc1bd8
+    n_eu_service_rmu_2_94f0201ee7 ---|"10.50.50.32"| n_eu_network_process_net_63977ed1ef
+    n_eu_service_rmu_2_94f0201ee7 ---|"10.99.99.25"| n_eu_network_mgmt_net_9a8f46900d
+    n_eu_service_vendor_jump_529c96dee4["vendor_jump"]
+    n_eu_service_vendor_jump_529c96dee4 ---|"10.20.20.10"| n_eu_network_vendor_net_9aff829aa1
+    n_eu_service_vendor_jump_529c96dee4 ---|"10.98.2.3"| n_eu_network_desk_vendor_net_e6b5faea55
+    style n_eu_network_control_centre_net_cf0cc306c5 fill:#eef2ff,stroke:#4f46e5,color:#172033
+    style n_eu_network_desk_corp_net_f618e9b383 fill:#fff7ed,stroke:#c2410c,color:#172033
+    style n_eu_network_desk_eng_net_ee82060010 fill:#faf5ff,stroke:#9333ea,color:#172033
+    style n_eu_network_desk_vendor_net_e6b5faea55 fill:#faf5ff,stroke:#9333ea,color:#172033
+    style n_eu_network_enterprise_net_871b5664d1 fill:#fff7ed,stroke:#c2410c,color:#172033
+    style n_eu_network_field_net_f636fc1bd8 fill:#f0fdf4,stroke:#16a34a,color:#172033
+    style n_eu_network_mgmt_net_9a8f46900d fill:#f1f5f9,stroke:#64748b,color:#172033
+    style n_eu_network_ops_dmz_net_e3837ac2f9 fill:#fdf2f8,stroke:#db2777,color:#172033
+    style n_eu_network_process_net_63977ed1ef fill:#fffbeb,stroke:#d97706,color:#172033
+    style n_eu_network_station_net_d611010d39 fill:#f0f9ff,stroke:#0284c7,color:#172033
+    style n_eu_network_vendor_net_9aff829aa1 fill:#faf5ff,stroke:#9333ea,color:#172033
 ```
 <!-- END GENERATED: network-eu -->
 
@@ -374,7 +391,9 @@ direct ports for instructor/debug use. Those ports are not the reserved
 management path and do not promise management reachability under every
 policy. The backend reaches containd on `mgmt_net`.
 
-Below, nginx locations are grouped by actual upstream or return action.
+Below, nginx locations collapse into one edge per upstream. Labels show at most
+three public prefixes; additional locations (including regex and root API
+exceptions) are counted, not printed. US/EU-only upstreams are marked.
 Root `/api/` goes to the backend **except for the more specific US FUXA
 locations**: `/api/version`, `/api/settings`, `/api/project`,
 `/api/projectData`, `/api/device`, `/api/alarmsHistory`, `/api/resources`.
@@ -385,181 +404,43 @@ The platform's delivery-peer 403 guard applies before all these locations.
 
 <!-- BEGIN GENERATED: request-flow -->
 ```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 22, "rankSpacing": 45, "padding": 10}}}%%
 flowchart LR
-    n_browser_61b7d23f0f["Student browser"]
-    n_host_client_fbed58cab0["Host debug client · direct firewall ports"]
-    n_dockerd_7aca045973["Docker daemon · host"]
-    subgraph n_eu_requests_901b490e9b["European feeder telecontrol (IEC104)"]
-    n_eu_request_backend_103ec7533b["backend"]
-    n_eu_request_frontend_f97827b6a0["frontend"]
-    n_eu_request_proxy_49d8edc106["proxy"]
-    n_eu_request_control_centre_dfb94537ea["control_centre · Control Centre<br/>api: http://10.99.99.21:8080"]
-    n_eu_request_eng_workstation_42ca13ae13["eng_workstation · Engineering Workstation"]
-    n_eu_request_f2_breaker_ea7b6526a8["f2_breaker · F2 Breaker (indication only)<br/>sim: http://10.99.99.28:8080"]
-    n_eu_request_feeder_breaker_dd29b12e09["feeder_breaker · Feeder Breaker<br/>sim: http://10.99.99.22:8080"]
-    n_eu_request_firewall_68e5b2636b["firewall · Containd Firewall<br/>api: http://10.99.99.2:8080"]
-    n_eu_request_gps_sim_9e812f4cf7["gps_sim · Station GPS Clock<br/>sim: http://10.99.99.27:8080"]
-    n_eu_request_historian_eu_80dde5feb7["historian_eu · Read-only Historian<br/>api: http://10.99.99.40:8080"]
-    n_eu_request_iec104_rtu_44f65013f0["iec104_rtu · IEC104 Remote Terminal Unit"]
-    n_eu_request_kali_64f3803463["kali · Kali Attacker"]
-    n_eu_request_oltc_1_0d308096d8["oltc_1 · Transformer OLTC<br/>sim: http://10.99.99.26:8080"]
-    n_eu_request_opendss_sim_583e3d5caf["opendss_sim<br/>api: http://10.99.99.23:8080"]
-    n_eu_request_openplc_eu_dccf240776["openplc_eu · OpenPLC Voltage Controller"]
-    n_eu_request_rmu_1_bb7d6c7752["rmu_1 · RMU 1 (normally closed)<br/>sim: http://10.99.99.24:8080"]
-    n_eu_request_rmu_2_ef5caec2af["rmu_2 · RMU 2 (normally open tie)<br/>sim: http://10.99.99.25:8080"]
-    n_eu_request_vendor_jump_366a5e829b["vendor_jump · Vendor Jump Box"]
-    n_eu_request_terminals_297702d162["Terminal targets (manifest nodes only)<br/>breaker-1 → feeder_breaker<br/>cc-1 → control_centre<br/>eng-ws-1 → eng_workstation<br/>f2-breaker → f2_breaker<br/>fw-1 → firewall<br/>gps-1 → gps_sim<br/>historian-1 → historian_eu<br/>kali-1 → kali<br/>oltc-1 → oltc_1<br/>plc-1 → openplc_eu<br/>rmu-1 → rmu_1<br/>rmu-2 → rmu_2<br/>rtu-1 → iec104_rtu<br/>vendor-jump-1 → vendor_jump"]
-    n_eu_request_port_firewall_127_0_0_1_2222_2222_68f19c246a["127.0.0.1:2222:2222"]
-    n_host_client_fbed58cab0 -->|"loopback published port"| n_eu_request_port_firewall_127_0_0_1_2222_2222_68f19c246a
-    n_eu_request_port_firewall_127_0_0_1_2222_2222_68f19c246a -->|"published to container"| n_eu_request_firewall_68e5b2636b
-    n_eu_request_port_firewall_127_0_0_1_9080_8080_10873abac5["127.0.0.1:9080:8080"]
-    n_host_client_fbed58cab0 -->|"loopback published port"| n_eu_request_port_firewall_127_0_0_1_9080_8080_10873abac5
-    n_eu_request_port_firewall_127_0_0_1_9080_8080_10873abac5 -->|"published to container"| n_eu_request_firewall_68e5b2636b
-    n_eu_request_port_firewall_127_0_0_1_9443_8443_f036a0d012["127.0.0.1:9443:8443"]
-    n_host_client_fbed58cab0 -->|"loopback published port"| n_eu_request_port_firewall_127_0_0_1_9443_8443_f036a0d012
-    n_eu_request_port_firewall_127_0_0_1_9443_8443_f036a0d012 -->|"published to container"| n_eu_request_firewall_68e5b2636b
-    n_eu_request_port_proxy_127_0_0_1_8088_8080_4d3cc9d1c3["127.0.0.1:8088:8080"]
-    n_browser_61b7d23f0f -->|"loopback published port"| n_eu_request_port_proxy_127_0_0_1_8088_8080_4d3cc9d1c3
-    n_eu_request_port_proxy_127_0_0_1_8088_8080_4d3cc9d1c3 -->|"published to container"| n_eu_request_proxy_49d8edc106
-    n_eu_request_route_0_31a357cd93["/api/<br/>except package-specific nginx locations"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_0_31a357cd93
-    n_eu_request_route_0_31a357cd93 -->|"backend:8080"| n_eu_request_backend_103ec7533b
-    n_eu_request_route_1_02eec1b76e["/apps/eng-ws/<br/>/apps/ews/"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_1_02eec1b76e
-    n_eu_request_route_1_02eec1b76e -->|"eng_workstation:3000"| n_eu_request_eng_workstation_42ca13ae13
-    n_eu_request_route_2_f45b2a5ee8["/containd/<br/>/icons/"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_2_f45b2a5ee8
-    n_eu_request_route_2_f45b2a5ee8 -->|"firewall:8080"| n_eu_request_firewall_68e5b2636b
-    n_eu_request_route_3_51e98dd5e9["/"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_3_51e98dd5e9
-    n_eu_request_route_3_51e98dd5e9 -->|"frontend:3000"| n_eu_request_frontend_f97827b6a0
-    n_eu_request_route_4_f6d4715262["/apps/openplc/"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_4_f6d4715262
-    n_eu_request_route_4_f6d4715262 -->|"openplc_eu:8080"| n_eu_request_openplc_eu_dccf240776
-    n_eu_request_route_5_2ff8d3c7e9["/apps/jumpbox/<br/>/apps/vendor-jump/"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_5_2ff8d3c7e9
-    n_eu_request_route_5_2ff8d3c7e9 -->|"vendor_jump:3000"| n_eu_request_vendor_jump_366a5e829b
-    n_eu_request_route_6_9f7be8f587["~ ^/(alerts#124;audit#124;config#124;dataplane#124;dhcp#124;diagnostics#124;docs#124;events#124;firewall#124;flows#124;forbidden#124;ics#124;identities#124;ids#124;interfaces#124;monitoring#124;nat#124;pcap#124;proxies#124;routing#124;sessions#124;system#124;templates#124;topology#124;vpn#124;wizard#124;zones)(/.*)?$"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_6_9f7be8f587
-    n_eu_request_302__containd_uri_is_args_args_1a71dddc6a["302 /containd$uri$is_args$args"]
-    n_eu_request_route_6_9f7be8f587 -->|"return"| n_eu_request_302__containd_uri_is_args_args_1a71dddc6a
-    n_eu_request_route_7_a56d007191["= /favicon.ico"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_7_a56d007191
-    n_eu_request_302__containd_favicon_ico_52b9a06486["302 /containd/favicon.ico"]
-    n_eu_request_route_7_a56d007191 -->|"return"| n_eu_request_302__containd_favicon_ico_52b9a06486
-    n_eu_request_route_8_a48ccb816f["= /index.txt"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_8_a48ccb816f
-    n_eu_request_302__containd_index_txt_is_args_args_776ad81e1e["302 /containd/index.txt$is_args$args"]
-    n_eu_request_route_8_a48ccb816f -->|"return"| n_eu_request_302__containd_index_txt_is_args_args_776ad81e1e
-    n_eu_request_route_9_27e8463497["= /login"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_9_27e8463497
-    n_eu_request_302__containd_login_is_args_args_abeb35801e["302 /containd/login$is_args$args"]
-    n_eu_request_route_9_27e8463497 -->|"return"| n_eu_request_302__containd_login_is_args_args_abeb35801e
-    n_eu_request_route_10_d4656254ed["~ ^/containd/api/v#91;0-9#93;+/(auth/me#124;users/#91;^/#93;+)/password$"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_10_d4656254ed
-    n_eu_request_403_response_e28cf6974d["403 response"]
-    n_eu_request_route_10_d4656254ed -->|"return"| n_eu_request_403_response_e28cf6974d
-    n_eu_request_route_11_c4770fa930["= /apps"]
-    n_eu_request_proxy_49d8edc106 -->|"nginx location"| n_eu_request_route_11_c4770fa930
-    n_eu_request_404_response_f7f545d062["404 response"]
-    n_eu_request_route_11_c4770fa930 -->|"return"| n_eu_request_404_response_f7f545d062
+    n_request_browser_d6e04625c6["Browser"]
+    n_request_proxy_d5396709ea["nginx proxy"]
+    n_request_dockerd_cf96c2c4a4["Docker daemon"]
+    n_request_debug_b17dc22a94["Host debug client"]
+    n_request_terminals_7613155371["WebSocket exec →<br/>manifest topology nodes<br/>(US 14, EU 14)"]
+    n_request_browser_d6e04625c6 -->|"127.0.0.1:8088:8080"| n_request_proxy_d5396709ea
+    n_request_debug_b17dc22a94 -->|"127.0.0.1:2222:2222<br/>127.0.0.1:9080:8080<br/>127.0.0.1:9443:8443"| n_request_firewall_22a261f7f5
+    n_request_backend_876df1baf6["backend:8080"]
+    n_request_proxy_d5396709ea -->|"/api/"| n_request_backend_876df1baf6
+    n_request_corp_ws_de8b781e99["corp_ws:3000 (US)"]
+    n_request_proxy_d5396709ea -->|"/apps/corp-ws/"| n_request_corp_ws_de8b781e99
+    n_request_eng_workstation_af1ba81aff["eng_workstation:3000"]
+    n_request_proxy_d5396709ea -->|"/apps/ews/<br/>/apps/eng-ws/"| n_request_eng_workstation_af1ba81aff
+    n_request_firewall_22a261f7f5["firewall:8080"]
+    n_request_proxy_d5396709ea -->|"/icons/<br/>/containd/"| n_request_firewall_22a261f7f5
+    n_request_frontend_9cb0e3cb45["frontend:3000"]
+    n_request_proxy_d5396709ea -->|"/"| n_request_frontend_9cb0e3cb45
+    n_request_fuxa_hmi_7e1bbc1a2d["fuxa_hmi:1881 (US)"]
+    n_request_proxy_d5396709ea -->|"/apps/hmi/<br/>/apps/fuxa-hmi/<br/>/apps/hmi-view/<br/>+20 more"| n_request_fuxa_hmi_7e1bbc1a2d
+    n_request_openplc_ba916b5bd4["openplc:8080 (US)"]
+    n_request_proxy_d5396709ea -->|"/apps/plc/<br/>/apps/openplc/"| n_request_openplc_ba916b5bd4
+    n_request_openplc_eu_d0ec29f0a0["openplc_eu:8080 (EU)"]
+    n_request_proxy_d5396709ea -->|"/apps/openplc/"| n_request_openplc_eu_d0ec29f0a0
+    n_request_vendor_jump_e9d5e77d53["vendor_jump:3000"]
+    n_request_proxy_d5396709ea -->|"/apps/jumpbox/<br/>/apps/vendor-jump/"| n_request_vendor_jump_e9d5e77d53
     %% source: backend/internal/orchestrator/orchestrator.go:New
-    n_eu_request_backend_103ec7533b -.->|"Docker SDK via /var/run/docker.sock"| n_dockerd_7aca045973
+    n_request_backend_876df1baf6 -.->|"Docker SDK · socket"| n_request_dockerd_cf96c2c4a4
     %% source: backend/internal/containd/client.go:send
-    n_eu_request_backend_103ec7533b -.->|"JWT REST · policy / PCAP / events"| n_eu_request_firewall_68e5b2636b
+    n_request_backend_876df1baf6 -.->|"JWT REST · management"| n_request_firewall_22a261f7f5
     %% source: backend/internal/server/terminal.go:connectTerminal
-    n_eu_request_backend_103ec7533b -.->|"WebSocket terminal · Docker exec"| n_eu_request_terminals_297702d162
-    end
-    subgraph n_us_requests_0692d311f0["US distribution substation (DNP3)"]
-    n_us_request_backend_7463f408fc["backend"]
-    n_us_request_frontend_b4fca5f001["frontend"]
-    n_us_request_proxy_91149aa375["proxy"]
-    n_us_request_capbank_sim_9b48dbe8ab["capbank_sim · Capacitor Bank"]
-    n_us_request_corp_ws_96f8013176["corp_ws · Corporate Workstation"]
-    n_us_request_eng_workstation_dd0370f857["eng_workstation · Engineering Workstation"]
-    n_us_request_firewall_55d0be2164["firewall · Containd Firewall<br/>api: http://10.99.99.2:8080"]
-    n_us_request_fuxa_hmi_7dd5ff3539["fuxa_hmi · Substation HMI"]
-    n_us_request_gps_sim_bf712cfcfd["gps_sim · GPS Time Server"]
-    n_us_request_historian_sim_8434ad6acc["historian_sim · Data Historian"]
-    n_us_request_hmi_poller_7d84e257a9["hmi_poller"]
-    n_us_request_kali_7e61d9d48b["kali · Kali Attacker"]
-    n_us_request_opendss_sim_cd9c62aceb["opendss_sim"]
-    n_us_request_openplc_f54269f7d5["openplc · Substation Automation PLC"]
-    n_us_request_recloser_sim_e4efc101f6["recloser_sim · Mid-Feeder Recloser"]
-    n_us_request_regulator_sim_6cf4fdec89["regulator_sim · Voltage Regulator"]
-    n_us_request_relay_sim_3d22a9aa96["relay_sim · Feeder Breaker / Relay"]
-    n_us_request_rtac_sim_d57b75efa1["rtac_sim · RTAC / Supervisory Controller<br/>api: http://10.99.99.20:8080"]
-    n_us_request_vendor_jump_703b7d844d["vendor_jump · Vendor Jump Box"]
-    n_us_request_terminals_a45bf737d2["Terminal targets (manifest nodes only)<br/>capbank-1 → capbank_sim<br/>corp-ws-1 → corp_ws<br/>eng-ws-1 → eng_workstation<br/>fw-1 → firewall<br/>gps-1 → gps_sim<br/>historian-1 → historian_sim<br/>hmi-1 → fuxa_hmi<br/>kali-1 → kali<br/>openplc-1 → openplc<br/>recloser-1 → recloser_sim<br/>regulator-1 → regulator_sim<br/>relay-1 → relay_sim<br/>rtac-1 → rtac_sim<br/>vendor-jump-1 → vendor_jump"]
-    n_us_request_port_firewall_127_0_0_1_2222_2222_185f7f01f0["127.0.0.1:2222:2222"]
-    n_host_client_fbed58cab0 -->|"loopback published port"| n_us_request_port_firewall_127_0_0_1_2222_2222_185f7f01f0
-    n_us_request_port_firewall_127_0_0_1_2222_2222_185f7f01f0 -->|"published to container"| n_us_request_firewall_55d0be2164
-    n_us_request_port_firewall_127_0_0_1_9080_8080_5ec266acbd["127.0.0.1:9080:8080"]
-    n_host_client_fbed58cab0 -->|"loopback published port"| n_us_request_port_firewall_127_0_0_1_9080_8080_5ec266acbd
-    n_us_request_port_firewall_127_0_0_1_9080_8080_5ec266acbd -->|"published to container"| n_us_request_firewall_55d0be2164
-    n_us_request_port_firewall_127_0_0_1_9443_8443_69d2650d38["127.0.0.1:9443:8443"]
-    n_host_client_fbed58cab0 -->|"loopback published port"| n_us_request_port_firewall_127_0_0_1_9443_8443_69d2650d38
-    n_us_request_port_firewall_127_0_0_1_9443_8443_69d2650d38 -->|"published to container"| n_us_request_firewall_55d0be2164
-    n_us_request_port_proxy_127_0_0_1_8088_8080_f42bbea8b6["127.0.0.1:8088:8080"]
-    n_browser_61b7d23f0f -->|"loopback published port"| n_us_request_port_proxy_127_0_0_1_8088_8080_f42bbea8b6
-    n_us_request_port_proxy_127_0_0_1_8088_8080_f42bbea8b6 -->|"published to container"| n_us_request_proxy_91149aa375
-    n_us_request_route_0_629613ea65["/api/<br/>except package-specific nginx locations"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_0_629613ea65
-    n_us_request_route_0_629613ea65 -->|"backend:8080"| n_us_request_backend_7463f408fc
-    n_us_request_route_1_64902d31b4["/apps/corp-ws/"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_1_64902d31b4
-    n_us_request_route_1_64902d31b4 -->|"corp_ws:3000"| n_us_request_corp_ws_96f8013176
-    n_us_request_route_2_683d363d8d["/apps/eng-ws/<br/>/apps/ews/"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_2_683d363d8d
-    n_us_request_route_2_683d363d8d -->|"eng_workstation:3000"| n_us_request_eng_workstation_dd0370f857
-    n_us_request_route_3_488344e414["/containd/<br/>/icons/"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_3_488344e414
-    n_us_request_route_3_488344e414 -->|"firewall:8080"| n_us_request_firewall_55d0be2164
-    n_us_request_route_4_cc8a5b4d05["/"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_4_cc8a5b4d05
-    n_us_request_route_4_cc8a5b4d05 -->|"frontend:3000"| n_us_request_frontend_b4fca5f001
-    n_us_request_route_5_9b90ba57eb["/api/alarmsHistory<br/>/api/device<br/>/api/project<br/>/api/projectData<br/>/api/resources<br/>/api/settings<br/>/api/version<br/>/apps/fuxa-hmi/<br/>/apps/fuxa-hmi/api/<br/>/apps/fuxa-hmi/socket.io/<br/>/apps/hmi-control/<br/>/apps/hmi-control/api/<br/>/apps/hmi-control/socket.io/<br/>/apps/hmi-view/<br/>/apps/hmi-view/api/<br/>/apps/hmi-view/socket.io/<br/>/apps/hmi/<br/>/apps/hmi/api/<br/>/apps/hmi/socket.io/<br/>/assets/<br/>/socket.io/<br/>~ ^/(roboto-#124;logo#92;.#124;Quicksand#124;material-icons)#91;^/#93;+#92;.(woff2?#124;ttf#124;svg)$<br/>~ ^/(runtime#124;polyfills#124;main#124;scripts#124;styles)#92;.#91;a-f0-9#93;+#92;.(js#124;css)$"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_5_9b90ba57eb
-    n_us_request_route_5_9b90ba57eb -->|"fuxa_hmi:1881"| n_us_request_fuxa_hmi_7dd5ff3539
-    n_us_request_route_6_fdec5b3d7f["/apps/openplc/<br/>/apps/plc/"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_6_fdec5b3d7f
-    n_us_request_route_6_fdec5b3d7f -->|"openplc:8080"| n_us_request_openplc_f54269f7d5
-    n_us_request_route_7_d0d06d950b["/apps/jumpbox/<br/>/apps/vendor-jump/"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_7_d0d06d950b
-    n_us_request_route_7_d0d06d950b -->|"vendor_jump:3000"| n_us_request_vendor_jump_703b7d844d
-    n_us_request_route_8_9e708e0e85["~ ^/(alerts#124;audit#124;config#124;dataplane#124;dhcp#124;diagnostics#124;docs#124;events#124;firewall#124;flows#124;forbidden#124;ics#124;identities#124;ids#124;interfaces#124;monitoring#124;nat#124;pcap#124;proxies#124;routing#124;sessions#124;system#124;templates#124;topology#124;vpn#124;wizard#124;zones)(/.*)?$"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_8_9e708e0e85
-    n_us_request_302__containd_uri_is_args_args_968342c2d1["302 /containd$uri$is_args$args"]
-    n_us_request_route_8_9e708e0e85 -->|"return"| n_us_request_302__containd_uri_is_args_args_968342c2d1
-    n_us_request_route_9_732b92aea7["= /favicon.ico"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_9_732b92aea7
-    n_us_request_302__containd_favicon_ico_c1784338b4["302 /containd/favicon.ico"]
-    n_us_request_route_9_732b92aea7 -->|"return"| n_us_request_302__containd_favicon_ico_c1784338b4
-    n_us_request_route_10_1dfd279f8a["= /index.txt"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_10_1dfd279f8a
-    n_us_request_302__containd_index_txt_is_args_args_33967ffa5f["302 /containd/index.txt$is_args$args"]
-    n_us_request_route_10_1dfd279f8a -->|"return"| n_us_request_302__containd_index_txt_is_args_args_33967ffa5f
-    n_us_request_route_11_d9afe795d1["= /login"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_11_d9afe795d1
-    n_us_request_302__containd_login_is_args_args_1ec5381274["302 /containd/login$is_args$args"]
-    n_us_request_route_11_d9afe795d1 -->|"return"| n_us_request_302__containd_login_is_args_args_1ec5381274
-    n_us_request_route_12_7e58ded0f9["~ ^/containd/api/v#91;0-9#93;+/(auth/me#124;users/#91;^/#93;+)/password$"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_12_7e58ded0f9
-    n_us_request_403_response_f3ac5c6d5e["403 response"]
-    n_us_request_route_12_7e58ded0f9 -->|"return"| n_us_request_403_response_f3ac5c6d5e
-    n_us_request_route_13_faec37731f["= /apps"]
-    n_us_request_proxy_91149aa375 -->|"nginx location"| n_us_request_route_13_faec37731f
-    n_us_request_404_response_cc055ff168["404 response"]
-    n_us_request_route_13_faec37731f -->|"return"| n_us_request_404_response_cc055ff168
-    %% source: backend/internal/orchestrator/orchestrator.go:New
-    n_us_request_backend_7463f408fc -.->|"Docker SDK via /var/run/docker.sock"| n_dockerd_7aca045973
-    %% source: backend/internal/containd/client.go:send
-    n_us_request_backend_7463f408fc -.->|"JWT REST · policy / PCAP / events"| n_us_request_firewall_55d0be2164
-    %% source: backend/internal/server/terminal.go:connectTerminal
-    n_us_request_backend_7463f408fc -.->|"WebSocket terminal · Docker exec"| n_us_request_terminals_a45bf737d2
+    n_request_backend_876df1baf6 -.->|"Docker exec"| n_request_terminals_7613155371
+    n_request_rtac_sim_97d59c80a1["rtac_sim (US)"]
+    n_request_opendss_sim_81c6f46d2f["opendss_sim (US)"]
     %% source: services/rtac-sim/main.go:132
-    n_us_request_rtac_sim_d57b75efa1 -.->|"HTTP push · /api/update-state"| n_us_request_opendss_sim_cd9c62aceb
-    end
+    n_request_rtac_sim_97d59c80a1 -.->|"HTTP push"| n_request_opendss_sim_81c6f46d2f
 ```
 <!-- END GENERATED: request-flow -->
 

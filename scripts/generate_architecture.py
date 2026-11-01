@@ -198,11 +198,6 @@ class Package:
                     if service.get(field) != release["services"][key].get(field):
                         raise ValueError(f"source/release {key}.{field} differs")
 
-    def title(self, key):
-        node = self.nodes.get(key, {}).get("node")
-        name = self.teaching_nodes.get(node, {}).get("name")
-        return f"{key} · {name}" if name else key
-
 
 def load(root):
     platform = {mode: read_yaml(root / filename) for mode, filename in (
@@ -221,13 +216,14 @@ def load(root):
     return packages, overlay
 
 
-def overlay_edges(overlay, package, view, resolve):
+def overlay_edges(overlay, package, view, resolve, compact=False):
     lines = []
     for item in overlay["edges"]:
         if view not in item["views"] or package.short not in item["packages"]:
             continue
         lines.append(f"    %% source: {item['source']}")
-        lines.append(edge(resolve(item["from"]), resolve(item["to"]), item["label"], "-.->"))
+        text = item.get("compact_label", item["label"]) if compact else item["label"]
+        lines.append(edge(resolve(item["from"]), resolve(item["to"]), text, "-.->"))
     return lines
 
 
@@ -277,131 +273,190 @@ def compose_graph(package, overlay):
     return fenced(lines)
 
 
-def network_graph(package, overlay, overview=False, next_major=None, root=None):
-    lines = ["flowchart LR"]
-    aliases = defaultdict(list)
+def chart(direction="LR"):
+    return ['%%{init: {"flowchart": {"nodeSpacing": 22, "rankSpacing": 45, "padding": 10}}}%%',
+            f"flowchart {direction}"]
+
+
+def styles(lines, overlay, groups):
+    for key, group in groups.items():
+        colors = overlay["zone_styles"][key]
+        lines.append(f"    style {group} fill:{colors['fill']},stroke:{colors['stroke']},color:#172033")
+
+
+def service_label(package, key):
+    sidecars = sorted(k for k, v in package.services.items()
+                      if v.get("network_mode") == f"service:{key}")
+    return key + ("\n" + ", ".join(sidecars) + " shares namespace" if sidecars else "")
+
+
+def primary_network(package, key):
+    networks = package.services[key].get("networks", {})
+    node = package.teaching_nodes.get(package.nodes.get(key, {}).get("node"), {})
+    for network in node.get("networks", []):
+        if network in networks and network in package.zones:
+            return network
+    for network in networks:
+        if network in package.zones:
+            return network
+    return "mgmt_net" if "mgmt_net" in networks else next(iter(networks))
+
+
+def overview_graph(root, package, overlay, next_major):
+    lines = chart("TB")
+    node = lambda key: ident("overview", key)
     groups = {}
-    for key, network in sorted(package.networks.items()):
-        group = groups[key] = ident(package.short, "network", key)
-        config = network["ipam"]["config"]
-        zone = package.zones.get(key, {})
-        title = f'{key} · {config[0]["subnet"]}'
-        docker_name = (package.manifest_networks[key]["name"] if key in package.manifest_networks
-                       else network["name"])
-        title += f"\n{docker_name}"
-        if zone:
-            title += f' · {zone["name"]}'
-        if network.get("internal"):
-            title += " · internal"
+    assignments = defaultdict(list)
+    for key, service in sorted(package.services.items()):
+        if key == "firewall" or service.get("network_mode"):
+            continue
+        network = "platform" if key in package.platform["source"]["services"] else primary_network(package, key)
+        assignments[network].append(key)
+    firewall_nics = package.services["firewall"]["networks"]
+    for key, members in assignments.items():
+        group = groups[key] = ident("overview", "zone", key)
+        if key == "platform":
+            subnet = package.networks["mgmt_net"]["ipam"]["config"][0]["subnet"]
+            title = f"Platform · management\n{subnet} · {firewall_nics['mgmt_net']['interface_name']}"
+        else:
+            subnet = package.networks[key]["ipam"]["config"][0]["subnet"]
+            name = package.zones.get(key, {}).get("name", key.removesuffix("_net").title())
+            iface = firewall_nics.get(key, {}).get("interface_name")
+            title = f"{name} ·\n{subnet}" + (f" · {iface}" if iface else "")
         lines.append(f'    subgraph {group}["{label(title)}"]')
-        for service_key, service in sorted(package.services.items()):
-            attachment = service.get("networks", {}).get(key)
-            if attachment is None:
-                continue
-            node = ident(package.short, "nic", key, service_key)
-            aliases[service_key].append(node)
-            text = package.title(service_key)
-            if service_key == "frontend" and next_major:
+        lines.append("    direction TB")
+        for service in members:
+            text = service
+            if service == "frontend":
                 text += f" · Next.js {next_major}"
-            text += "\n" + attachment["ipv4_address"]
-            if attachment.get("interface_name"):
-                text += " · " + attachment["interface_name"]
-            lines.append(box(node, text))
-            # Sidecars have no independent NIC or topology node.
-            for sidecar, spec in sorted(package.services.items()):
-                if spec.get("network_mode") == f"service:{service_key}":
-                    shared = ident(package.short, "nic", key, sidecar)
-                    aliases[sidecar].append(shared)
-                    lines.append(box(shared, f"{sidecar}\nshares {service_key} namespace"))
-                    lines.append(edge(shared, node, "namespace", "---"))
+            lines.append(box(node(service), text))
+        if key != "platform":
+            for first, second in zip(members, members[1:]):
+                lines.append(f"    {node(first)} ~~~ {node(second)}")
         lines.append("    end")
-    # One identity can have multiple NIC boxes; dotted links are identity, not traffic.
-    for service, nodes in sorted(aliases.items()):
-        for target in nodes[1:]:
-            lines.append(edge(nodes[0], target, f"same {service}", "-.-"))
-    if overview:
-        lines.append(box(ident("dockerd"), "Docker daemon · host"))
-        lines.append(box(ident("browser"), "Student browser"))
-        for port in package.services["proxy"]["ports"]:
-            lines.append(edge(ident("browser"), ident(package.short, "nic", "mgmt_net", "proxy"), port))
-        for (kind, destination), paths in routes(root, package).items():
-            if kind != "proxy":
-                continue
-            service = destination.split(":")[0]
-            shared = set(package.services["proxy"]["networks"]) & set(package.services[service]["networks"])
-            if len(shared) != 1:
-                raise ValueError(f"proxy upstream must share exactly one network: {service}")
-            network = shared.pop()
-            summary = ", ".join(paths[:2])
-            if len(paths) > 2:
-                summary += f" (+{len(paths) - 2} locations)"
-            lines.append(edge(ident(package.short, "nic", network, "proxy"),
-                              ident(package.short, "nic", network, service),
-                              destination + "\n" + summary))
-        def resolve(key):
-            if key == "dockerd":
-                return ident("dockerd")
-            if key in groups:
-                return groups[key]
-            if "@" in key:
-                service, network = key.split("@", 1)
-                node = ident(package.short, "nic", network, service)
-                if node not in aliases[service]:
-                    raise ValueError(f"unknown overlay NIC {key}")
-                return node
-            if key == "firewall":
-                return ident(package.short, "nic", "mgmt_net", key)
-            return aliases[key][0]
-        lines += overlay_edges(overlay, package, "overview", resolve)
+    lines += [box(node("firewall"), "containd · firewall"),
+              box(node("dockerd"), "Docker daemon"), box(node("browser"), "Browser")]
+    lines.append(edge(node("browser"), node("proxy"), "portal · loopback 8088"))
+    for network, nic in firewall_nics.items():
+        group = groups["platform"] if network == "mgmt_net" else groups[network]
+        # Undirected attachments follow the reading order, avoiding a feedback
+        # arc around the entire overview for the management connection.
+        first, second = (group, node("firewall")) if network == "mgmt_net" else (node("firewall"), group)
+        lines.append(edge(first, second, nic["interface_name"], "---"))
+    # Show portal dispatch at a glance, not its complete route inventory.
+    for (kind, destination), _ in routes(root, package).items():
+        if kind != "proxy":
+            continue
+        service = destination.split(":")[0]
+        if service == "firewall":
+            continue  # Management hub attachment is already shown above.
+        shared = set(package.services["proxy"]["networks"]) & set(package.services[service]["networks"])
+        if len(shared) != 1:
+            raise ValueError(f"proxy upstream must share exactly one network: {service}")
+        network = shared.pop()
+        delivery = package.manifest_networks.get(network, {}).get("delivery")
+        if delivery:
+            subnet = package.networks[network]["ipam"]["config"][0]["subnet"]
+            lines.append(edge(node("proxy"), node(service), subnet, "-.->"))
+        elif service in ("backend", "frontend"):
+            lines.append(edge(node("proxy"), node(service), "API" if service == "backend" else "UI"))
+    def resolve(key):
+        key = key.split("@", 1)[0]
+        return groups[key] if key in groups else node(key)
+    lines += overlay_edges(overlay, package, "overview", resolve, compact=True)
+    styles(lines, overlay, {("mgmt_net" if k == "platform" else k): v for k, v in groups.items()})
     return fenced(lines)
 
 
-def request_graph(root, packages, overlay):
-    lines = ["flowchart LR", box(ident("browser"), "Student browser"),
-             box(ident("host-client"), "Host debug client · direct firewall ports"),
-             box(ident("dockerd"), "Docker daemon · host")]
-    for package in packages:
-        prefix = package.short
-        node = lambda key: ident(prefix, "request", key)
-        lines.append(f'    subgraph {ident(prefix, "requests")}["{label(package.config["title"])}"]')
-        for key in ("backend", "frontend", "proxy"):
-            lines.append(box(node(key), key))
-        for key, service in sorted(package.nodes.items()):
-            endpoints = "\n".join(f"{name}: {url}" for name, url in sorted(service.get("endpoints", {}).items()))
-            lines.append(box(node(key), package.title(key) + ("\n" + endpoints if endpoints else "")))
-        terminals = [f'{s["node"]} → {s["key"]}' for s in package.nodes.values() if s.get("node")]
-        lines.append(box(node("terminals"), "Terminal targets (manifest nodes only)\n" + "\n".join(sorted(terminals))))
-        for key, service in sorted(package.services.items()):
-            for port in sorted(service.get("ports", [])):
-                if not isinstance(port, str):
-                    raise ValueError("unsupported long-form port mapping")
-                port_id = node(f"port:{key}:{port}")
-                lines.append(box(port_id, port))
-                client = "browser" if key == "proxy" else "host-client"
-                lines.append(edge(ident(client), port_id, "loopback published port"))
-                lines.append(edge(port_id, node(key), "published to container"))
-        for index, ((kind, destination), paths) in enumerate(routes(root, package).items()):
-            route_id = node(f"route:{index}")
-            title = "\n".join(paths)
-            if destination.startswith("backend"):
-                title += "\nexcept package-specific nginx locations"
-            lines.append(box(route_id, title))
-            lines.append(edge(node("proxy"), route_id, "nginx location"))
-            if kind == "proxy":
-                lines.append(edge(route_id, node(destination.split(":")[0]), destination))
-            else:
-                response_id = node(destination)
-                lines.append(box(response_id, destination))
-                lines.append(edge(route_id, response_id, "return"))
-        def resolve(key):
-            if key == "dockerd":
-                return ident("dockerd")
-            service = key.split("@", 1)[0]
-            if service not in package.services and service != "terminals":
-                raise ValueError(f"unknown overlay service {service}")
-            return node(service)
-        lines += overlay_edges(overlay, package, "request", resolve)
+def network_graph(package, overlay):
+    lines = chart()
+    node = lambda key: ident(package.short, "service", key)
+    groups = {}
+    single = defaultdict(list)
+    multiple = []
+    for key, service in sorted(package.services.items()):
+        if service.get("network_mode"):
+            continue
+        networks = service.get("networks", {})
+        if len(networks) == 1:
+            single[next(iter(networks))].append(key)
+        else:
+            multiple.append(key)
+    for key, network in sorted(package.networks.items()):
+        group = groups[key] = ident(package.short, "network", key)
+        subnet = network["ipam"]["config"][0]["subnet"]
+        title = f"{key} · {subnet}" + (" · internal" if network.get("internal") else "")
+        lines.append(f'    subgraph {group}["{label(title)}"]')
+        # Every network has an explicit attachment point, even with no single-
+        # homed services (EU field/process and the desktop delivery bridges).
+        lines.append(f'    {ident(package.short, "bus", key)}((" "))')
+        for service in single[key]:
+            address = package.services[service]["networks"][key]["ipv4_address"]
+            lines.append(box(node(service), service_label(package, service) + "\n" + address))
         lines.append("    end")
+    for service in multiple:
+        lines.append(box(node(service), service_label(package, service)))
+        for key, nic in package.services[service]["networks"].items():
+            text = nic["ipv4_address"]
+            if nic.get("interface_name"):
+                text += " · " + nic["interface_name"]
+            lines.append(edge(node(service), groups[key], text, "---"))
+    styles(lines, overlay, groups)
+    return fenced(lines)
+
+
+def route_summary(paths):
+    # Only public prefix locations are printed. Regex, exact matches and FUXA's
+    # root API exceptions contribute to the count, never huge diagram labels.
+    prefixes = [p for p in paths if p.startswith("/") and p.endswith("/")]
+    prefixes.sort(key=lambda p: (not p.startswith("/apps/"), p.count("/"), len(p), p))
+    shown = prefixes[:3]
+    hidden = len(paths) - len(shown)
+    return "\n".join(shown + ([f"+{hidden} more"] if hidden else []))
+
+
+def request_graph(root, packages, overlay):
+    lines = chart()
+    node = lambda key: ident("request", key)
+    upstreams = defaultdict(set)
+    owners = defaultdict(set)
+    ports = defaultdict(set)
+    for package in packages:
+        for (kind, destination), paths in routes(root, package).items():
+            if kind == "proxy":
+                upstreams[destination].update(paths)
+                owners[destination].add(package.short.upper())
+        for key, spec in package.services.items():
+            ports[key].update(spec.get("ports", []))
+    lines += [box(node("browser"), "Browser"), box(node("proxy"), "nginx proxy"),
+              box(node("dockerd"), "Docker daemon"), box(node("debug"), "Host debug client")]
+    counts = ", ".join(f"{p.short.upper()} {sum(bool(s.get('node')) for s in p.nodes.values())}"
+                       for p in sorted(packages, key=lambda p: p.short, reverse=True))
+    lines.append(box(node("terminals"), "WebSocket exec →\nmanifest topology nodes\n(" + counts + ")"))
+    lines.append(edge(node("browser"), node("proxy"), "\n".join(sorted(ports["proxy"]))))
+    lines.append(edge(node("debug"), node("firewall"), "\n".join(sorted(ports["firewall"]))))
+    for destination, paths in sorted(upstreams.items()):
+        service = destination.split(":")[0]
+        suffix = " (" + "/".join(sorted(owners[destination])) + ")" if len(owners[destination]) == 1 else ""
+        lines.append(box(node(service), destination + suffix))
+        lines.append(edge(node("proxy"), node(service), route_summary(paths)))
+    # Shared SDK/JWT/exec semantics appear once, not once per package. Retain
+    # package-only logical edges (the US RTAC physics push) with scoped labels.
+    seen = set()
+    for package in packages:
+        for item in overlay["edges"]:
+            if "request" not in item["views"] or package.short not in item["packages"]:
+                continue
+            source, target = (item[k].split("@", 1)[0] for k in ("from", "to"))
+            signature = (source, target, item["source"])
+            if signature in seen:
+                continue
+            seen.add(signature)
+            for service in (source, target):
+                if service not in {"backend", "firewall", "dockerd", "terminals"}:
+                    lines.append(box(node(service), service + " (" + "/".join(p.upper() for p in item["packages"]) + ")"))
+            lines.append(f"    %% source: {item['source']}")
+            lines.append(edge(node(source), node(target), item.get("compact_label", item["label"]), "-.->"))
     return fenced(lines)
 
 
@@ -410,7 +465,7 @@ def render(root):
     by_short = {p.short: p for p in packages}
     next_version = json.loads((root / "frontend/package.json").read_text(encoding="utf-8"))["dependencies"]["next"]
     inventory = json.loads((root / ".github/release-images.json").read_text(encoding="utf-8"))["images"]
-    overview = network_graph(by_short["us"], overlay, overview=True, next_major=next_version.split(".")[0], root=root)
+    overview = overview_graph(root, by_short["us"], overlay, next_version.split(".")[0])
     result = {"overview": overview}
     for package in packages:
         result[f"compose-{package.short}"] = compose_graph(package, overlay)

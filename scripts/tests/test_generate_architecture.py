@@ -30,8 +30,8 @@ class ArchitectureTests(unittest.TestCase):
     def test_package_pointers_not_guessed_names(self):
         self.assertEqual(self.us.topology_path, ROOT / "lab-definitions/substation-segmentation.yml")
         self.assertEqual(self.eu.topology_path, self.eu.directory / "topology.yml")
-        self.assertIn("OT Operations Zone", self.rendered["network-us"])
-        self.assertIn("Control Centre Zone", self.rendered["network-eu"])
+        self.assertIn("OT Operations Zone", self.rendered["overview"])
+        self.assertEqual(self.eu.zones["control_centre_net"]["name"], "Control Centre Zone")
 
     def test_source_and_release_are_distinct(self):
         for key in ("compose-us", "compose-eu"):
@@ -53,7 +53,7 @@ class ArchitectureTests(unittest.TestCase):
 
     def test_namespace_sharing_is_not_a_new_nic(self):
         self.assertIn("shares network namespace", self.rendered["compose-us"])
-        self.assertEqual(self.rendered["network-us"].count("shares fuxa_hmi namespace"), 2)
+        self.assertEqual(self.rendered["network-us"].count("hmi_poller shares namespace"), 1)
         self.assertNotIn("hmi_poller", self.rendered["network-eu"])
 
     def test_external_networks_join_platform_by_name(self):
@@ -64,17 +64,75 @@ class ArchitectureTests(unittest.TestCase):
         self.assertIn("desk_corp_net", self.rendered["network-eu"])
         self.assertNotIn("corp_ws", self.rendered["network-eu"])
 
-    def test_overview_routes_and_logical_edges_use_the_correct_nics(self):
-        nic = lambda network, service: architecture.ident("us", "nic", network, service)
+    def test_overview_has_one_service_per_primary_zone_and_logical_edges(self):
+        node = lambda key: architecture.ident("overview", key)
         graph = self.rendered["overview"]
-        self.assertIn(architecture.edge(nic("mgmt_net", "backend"), architecture.ident("dockerd"),
-                                       "Docker SDK via /var/run/docker.sock", "-.->"), graph)
-        self.assertIn(architecture.edge(nic("mgmt_net", "backend"), nic("mgmt_net", "firewall"),
-                                       "JWT REST · policy / PCAP / events", "-.->"), graph)
-        self.assertIn(architecture.edge(nic("physics_net", "rtac_sim"), nic("physics_net", "opendss_sim"),
-                                       "HTTP push · /api/update-state", "-.->"), graph)
-        self.assertIn('frontend:3000<br/>/', graph)
-        self.assertIn('corp_ws:3000<br/>/apps/corp-ws/', graph)
+        self.assertIn(architecture.edge(node("backend"), node("dockerd"), "Docker SDK · socket", "-.->"), graph)
+        self.assertIn(architecture.edge(node("backend"), node("firewall"), "JWT REST · management", "-.->"), graph)
+        self.assertIn(architecture.edge(node("rtac_sim"), node("opendss_sim"), "HTTP push", "-.->"), graph)
+        self.assertEqual(architecture.primary_network(self.us, "rtac_sim"), "ot_ops_net")
+        self.assertEqual(architecture.primary_network(self.us, "corp_ws"), "enterprise_net")
+        self.assertIn("Enterprise Zone ·<br/>10.10.10.0/24 · wan", graph)
+        self.assertNotIn("10.99.99.10", graph)
+        self.assertIn("10.98.1.0/28", graph)
+        self.assertIn("fill:#fff7ed", graph)
+
+    def test_aggregated_views_never_duplicate_services_or_identity_edges(self):
+        import re
+        for package in self.packages:
+            graph = self.rendered[f"network-{package.short}"]
+            self.assertNotIn("same ", graph)
+            for key, spec in package.services.items():
+                if spec.get("network_mode"):
+                    self.assertNotIn(architecture.ident(package.short, "service", key), graph)
+                    continue
+                node = architecture.ident(package.short, "service", key)
+                self.assertEqual(graph.count(node + '["'), 1, key)
+                if len(spec["networks"]) > 1:
+                    for network, nic in spec["networks"].items():
+                        text = nic["ipv4_address"] + (" · " + nic["interface_name"] if nic.get("interface_name") else "")
+                        self.assertIn(architecture.edge(node, architecture.ident(package.short, "network", network), text, "---"), graph)
+            self.assertLessEqual(len(re.findall(r'^    \w+(?:\["|\(\()', graph, re.M)), 30)
+        self.assertNotIn("same ", self.rendered["overview"])
+        for key, spec in self.us.services.items():
+            if not spec.get("network_mode"):
+                self.assertEqual(self.rendered["overview"].count(architecture.ident("overview", key) + '["'), 1)
+
+    def test_network_and_overview_service_placement(self):
+        def placements(graph):
+            group, result = None, {}
+            for line in graph.splitlines():
+                if line.startswith("    subgraph "):
+                    group = line.split()[1].split("[")[0]
+                elif line == "    end":
+                    group = None
+                elif '["' in line:
+                    result[line.strip().split("[")[0]] = group
+            return result
+
+        for package in self.packages:
+            actual = placements(self.rendered[f"network-{package.short}"])
+            for key, service in package.services.items():
+                if service.get("network_mode"):
+                    continue
+                networks = service["networks"]
+                expected = (architecture.ident(package.short, "network", next(iter(networks)))
+                            if len(networks) == 1 else None)
+                self.assertEqual(actual[architecture.ident(package.short, "service", key)], expected)
+        actual = placements(self.rendered["overview"])
+        for key, service in self.us.services.items():
+            if key == "firewall" or service.get("network_mode"):
+                continue
+            network = ("platform" if key in self.us.platform["source"]["services"]
+                       else architecture.primary_network(self.us, key))
+            self.assertEqual(actual[architecture.ident("overview", key)],
+                             architecture.ident("overview", "zone", network))
+
+    def test_route_summary_limits_prefixes_and_counts_all_hidden_locations(self):
+        paths = {"/apps/a/", "/apps/b/", "/apps/c/", "/apps/d/",
+                 "= /api/project", "~ ^/api/(device|settings)$"}
+        self.assertEqual(architecture.route_summary(paths),
+                         "/apps/a/\n/apps/b/\n/apps/c/\n+3 more")
 
     def test_nginx_api_exceptions_and_app_upstreams(self):
         routes = architecture.routes(ROOT, self.us)
@@ -85,18 +143,32 @@ class ArchitectureTests(unittest.TestCase):
         self.assertIn("/containd/", routes[("proxy", "firewall:8080")])
         self.assertNotIn("/apps/firewall", self.rendered["request-flow"])
         self.assertNotIn(("proxy", "fuxa_hmi:1881"), architecture.routes(ROOT, self.eu))
-        self.assertIn("except package-specific nginx locations", self.rendered["request-flow"])
-        self.assertIn("403 response", self.rendered["request-flow"])
+        self.assertNotIn("^/", self.rendered["request-flow"])
+        self.assertNotIn("/api/projectData", self.rendered["request-flow"])
+        self.assertIn("+", self.rendered["request-flow"])
+        self.assertIn("fuxa_hmi:1881 (US)", self.rendered["request-flow"])
+        self.assertIn("openplc_eu:8080 (EU)", self.rendered["request-flow"])
 
-    def test_terminal_targets_are_only_manifest_nodes(self):
-        self.assertIn("Terminal targets (manifest nodes only)", self.rendered["request-flow"])
+    def test_terminal_counts_and_request_nodes_are_connected(self):
+        import re
+        graph = self.rendered["request-flow"]
         for package in self.packages:
-            targets = [s["key"] for s in package.nodes.values() if s.get("node")]
-            self.assertNotIn("opendss_sim", targets)
-            self.assertNotIn("hmi_poller", targets)
-            for key in targets:
-                node = package.nodes[key]["node"]
-                self.assertIn(f"{node} → {key}", self.rendered["request-flow"])
+            count = sum(bool(s.get("node")) for s in package.nodes.values())
+            self.assertIn(f"{package.short.upper()} {count}", graph)
+        self.assertNotIn("capbank-1", graph)
+        self.assertNotIn("subgraph", graph)
+        nodes = re.findall(r'^    (\w+)\["', graph, re.M)
+        self.assertEqual(len(nodes), len(set(nodes)))
+        self.assertLessEqual(len(nodes), 30)
+        for node in nodes:
+            self.assertTrue(any(node in line and ('-->' in line or '-.->' in line)
+                                for line in graph.splitlines()), node)
+        self.assertEqual(graph.count('127.0.0.1:8088:8080'), 1)
+        self.assertEqual(graph.count('127.0.0.1:9080:8080'), 1)
+        for line in graph.splitlines():
+            if 'nginx proxy' not in line and architecture.ident("request", "proxy") + ' -->' in line:
+                text = line.split('|"')[1].split('"|')[0]
+                self.assertLessEqual(sum(p.startswith('/') for p in text.split('<br/>')), 3)
 
     def test_labels_escape_untrusted_mermaid_and_html_characters(self):
         text = architecture.label('a"<b>&[#]`|\\\nsecond')
@@ -216,7 +288,7 @@ class ArchitectureTests(unittest.TestCase):
             root = Path(directory)
             self.fixture(root)
             path = root / "README.md"
-            path.write_text(path.read_text().replace("flowchart LR", "flowchart TB", 1))
+            path.write_text(path.read_text().replace("<!-- BEGIN GENERATED: overview -->", "<!-- BEGIN GENERATED: overview -->\n%% stale", 1))
             before = path.read_bytes()
             stderr = io.StringIO()
             with redirect_stderr(stderr):
