@@ -25,9 +25,37 @@ TOKEN = "0123456789abcdef0123456789abcdef"
 
 
 def addresses(ips):
-    return [{"ifname": "leg" + str(i), "address": "02:00:00:00:00:%02x" % (i + 1),
+    return [{"ifindex": i + 2, "ifname": "leg" + str(i),
+             "address": "02:00:00:00:00:%02x" % (i + 1),
              "flags": ["UP", "LOWER_UP"],
              "addr_info": [{"family": "inet", "local": ip}]} for i, ip in enumerate(ips)]
+
+
+def ipv4_rows(rows):
+    return [{key: value for key, value in row.items() if key != "address"} for row in rows]
+
+
+def link_rows(rows):
+    return [{key: row[key] for key in ("ifindex", "ifname", "address")} for row in rows]
+
+
+# Projection of the downloaded RTAC IPv4 snapshot: no link-layer address key.
+LIVE_IPV4_ROWS = json.loads("""[
+  {"ifindex":1,"ifname":"lo","flags":["LOOPBACK","UP","LOWER_UP"],"operstate":"UNKNOWN",
+   "addr_info":[{"family":"inet","local":"127.0.0.1","prefixlen":8,"scope":"host"}]},
+  {"ifindex":2,"link_index":166,"ifname":"eth0","flags":["BROADCAST","MULTICAST","UP","LOWER_UP"],
+   "operstate":"UP","link_netnsid":0,
+   "addr_info":[{"family":"inet","local":"10.40.40.10","prefixlen":24,"scope":"global"}]},
+  {"ifindex":3,"link_index":167,"ifname":"eth1","flags":["BROADCAST","MULTICAST","UP","LOWER_UP"],
+   "operstate":"UP","link_netnsid":0,
+   "addr_info":[{"family":"inet","local":"10.99.99.20","prefixlen":24,"scope":"global"}]},
+  {"ifindex":4,"link_index":168,"ifname":"eth2","flags":["BROADCAST","MULTICAST","UP","LOWER_UP"],
+   "operstate":"UP","link_netnsid":0,
+   "addr_info":[{"family":"inet","local":"10.30.30.20","prefixlen":24,"scope":"global"}]},
+  {"ifindex":5,"link_index":169,"ifname":"eth3","flags":["BROADCAST","MULTICAST","UP","LOWER_UP"],
+   "operstate":"UP","link_netnsid":0,
+   "addr_info":[{"family":"inet","local":"10.50.50.10","prefixlen":24,"scope":"global"}]}
+]""")
 
 
 def snapshot():
@@ -102,6 +130,14 @@ class HostAssertionsTests(unittest.TestCase):
                 rows[1]["ifname"] = rows[0]["ifname"]
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 g.assert_interfaces(rows)
+
+    def test_mac_missing_and_interface_down_have_distinct_diagnostics(self):
+        with self.assertRaisesRegex(ValueError, "interface_mac_missing: 10.30.30.20"):
+            g.assert_interfaces(LIVE_IPV4_ROWS)
+        rows = addresses(g.LEGS)
+        rows[0]["flags"] = []
+        with self.assertRaisesRegex(ValueError, "interface_not_up: 10.30.30.20"):
+            g.assert_interfaces(rows)
 
     def test_forwarding_one_or_unreadable_or_missing(self):
         for path in snapshot()["forwarding"]:
@@ -606,9 +642,67 @@ class TransportTests(unittest.TestCase):
 
 
 class HelperTests(unittest.TestCase):
+    def test_live_ipv4_shape_is_joined_with_independently_ordered_link_data(self):
+        rows = copy.deepcopy(LIVE_IPV4_ROWS)
+        self.assertTrue(all("address" not in row for row in rows))
+        # The failed run never captured MACs; these are labelled fixture MACs.
+        fixture_links = [dict(ifindex=row["ifindex"], ifname=row["ifname"],
+                              address="02:00:00:00:00:%02x" % row["ifindex"])
+                         for row in reversed(rows)]
+        with patch.object(g, "container_command", side_effect=[
+                json.dumps(rows), json.dumps(fixture_links)]) as command:
+            assembled = g.helper_addresses()
+        result = g.assert_interfaces(assembled)
+        self.assertEqual(result[g.OT], {"ifname": "eth2", "mac": "02:00:00:00:00:04"})
+        self.assertEqual(result[g.FIELD]["ifname"], "eth0")
+        self.assertEqual(result[g.PHYSICS]["ifname"], "eth3")
+        self.assertEqual(result[g.MGMT]["ifname"], "eth1")
+        self.assertEqual([call.args for call in command.call_args_list],
+                         [("ip", "-j", "-4", "addr", "show"), ("ip", "-j", "link", "show")])
+        self.assertTrue(all("address" not in row for row in rows))
+
+    def test_openplc_and_opendss_links_use_same_mac_source(self):
+        for ip in (g.SOURCE, g.DEST):
+            rows = addresses((ip,))
+            with self.subTest(ip=ip), patch.object(g, "container_command", side_effect=[
+                    json.dumps(ipv4_rows(rows)), json.dumps(link_rows(rows))]), \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                g.helper("links", {})
+            assembled = json.loads(output.getvalue())
+            self.assertEqual(g.assert_interfaces(assembled, (ip,))[ip],
+                             {"ifname": "leg0", "mac": rows[0]["address"]})
+
+    def test_missing_duplicate_or_replaced_link_identity_fails(self):
+        rows = addresses(g.LEGS)
+        for mutation in ("missing", "duplicate", "replaced"):
+            fixture_links = link_rows(rows)
+            if mutation == "missing":
+                fixture_links.pop()
+            elif mutation == "duplicate":
+                fixture_links.append(copy.deepcopy(fixture_links[0]))
+            else:
+                fixture_links[0]["ifindex"] += 100
+            with self.subTest(mutation=mutation), patch.object(
+                    g, "container_command", side_effect=[
+                        json.dumps(ipv4_rows(rows)), json.dumps(fixture_links)]):
+                with self.assertRaisesRegex(ValueError, "interface_link_missing_or_duplicate"):
+                    g.helper_addresses()
+
+    def test_ipv4_mac_is_not_used_when_link_mac_is_missing(self):
+        rows = addresses(g.LEGS)
+        fixture_links = link_rows(rows)
+        del fixture_links[0]["address"]
+        with patch.object(g, "container_command", side_effect=[
+                json.dumps(rows), json.dumps(fixture_links)]):
+            assembled = g.helper_addresses()
+        with self.assertRaisesRegex(ValueError, "interface_mac_missing"):
+            g.assert_interfaces(assembled)
+
     def test_snapshot_reads_exact_host_controls_without_mutations(self):
         data = snapshot()
-        outputs = [json.dumps(data["addresses"]), data["forward_chain"], data["input_chain"],
+        outputs = [json.dumps(ipv4_rows(data["addresses"])),
+                   json.dumps(link_rows(data["addresses"])),
+                   data["forward_chain"], data["input_chain"],
                    json.dumps(data["field_route"]), json.dumps(data["default_route"])]
         outputs += [json.dumps(data["route_get"]["10.40.40." + str(i)])
                     for i in (20, 21, 22, 23)]
@@ -620,7 +714,7 @@ class HelperTests(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()):
             result = g.helper_snapshot()
         self.assertEqual(g.assert_host(result), g.assert_host(data))
-        expected = [("ip", "-j", "-4", "addr", "show"),
+        expected = [("ip", "-j", "-4", "addr", "show"), ("ip", "-j", "link", "show"),
                     ("iptables", "-S", "FORWARD"), ("iptables", "-S", "INPUT"),
                     ("ip", "-j", "-4", "route", "show", "table", "main", "exact",
                      "10.40.40.0/24"),
@@ -679,7 +773,8 @@ class HelperTests(unittest.TestCase):
 
     def test_snapshot_nonzero_iptables_exit_retains_stderr(self):
         calls = [
-            subprocess.CompletedProcess([], 0, json.dumps(addresses(g.LEGS)), ""),
+            subprocess.CompletedProcess([], 0, json.dumps(ipv4_rows(addresses(g.LEGS))), ""),
+            subprocess.CompletedProcess([], 0, json.dumps(link_rows(addresses(g.LEGS))), ""),
             subprocess.CompletedProcess([], 1, "", "iptables: permission denied")]
         with patch.object(g.subprocess, "run", side_effect=calls), \
                 patch.object(g.glob, "glob", return_value=[]), \
@@ -691,8 +786,9 @@ class HelperTests(unittest.TestCase):
         self.assertIn('"exit_code": 1', output.getvalue())
 
     def test_snapshot_unreadable_forwarding_is_fatal(self):
-        with patch.object(g.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, json.dumps(addresses(g.LEGS)), "")), \
+        with patch.object(g.subprocess, "run", side_effect=[
+                subprocess.CompletedProcess([], 0, json.dumps(ipv4_rows(addresses(g.LEGS))), ""),
+                subprocess.CompletedProcess([], 0, json.dumps(link_rows(addresses(g.LEGS))), "")]), \
                 patch.object(g.glob, "glob", return_value=[]), \
                 patch.object(g.Path, "read_text", side_effect=PermissionError("unreadable")), \
                 contextlib.redirect_stderr(io.StringIO()):

@@ -56,8 +56,9 @@ def assert_interfaces(rows, addresses=LEGS):
             for a in row.get("addr_info", []))]
         require(len(matches) == 1, "interface_missing_or_duplicate: " + address)
         row = matches[0]
-        require(row.get("ifname") and row.get("address") and
-                "UP" in row.get("flags", []), "interface_not_up: " + address)
+        require(row.get("ifname"), "interface_name_missing: " + address)
+        require("UP" in row.get("flags", []), "interface_not_up: " + address)
+        require(row.get("address"), "interface_mac_missing: " + address)
         result[address] = {"ifname": row["ifname"], "mac": row["address"]}
     require(len({r["ifname"] for r in result.values()}) == len(addresses),
             "interfaces_not_distinct")
@@ -196,10 +197,25 @@ def container_command(*args):
     return result.stdout
 
 
+def helper_addresses():
+    # IPv4-filtered addr JSON omits link-layer fields. Read MACs only from
+    # link data, joined by identity rather than interface enumeration order.
+    rows = json.loads(container_command("ip", "-j", "-4", "addr", "show"))
+    link_rows = json.loads(container_command("ip", "-j", "link", "show"))
+    result = []
+    for row in rows:
+        require(row.get("ifindex") and row.get("ifname"), "interface_identity_missing")
+        matches = [link for link in link_rows if link.get("ifindex") == row["ifindex"]
+                   and link.get("ifname") == row["ifname"]]
+        require(len(matches) == 1, "interface_link_missing_or_duplicate: " + row["ifname"])
+        result.append(dict(row, address=matches[0].get("address")))
+    return result
+
+
 def helper_snapshot():
     def ip(*args):
         return json.loads(container_command("ip", "-j", "-4", *args))
-    rows = ip("addr", "show")
+    rows = helper_addresses()
     paths = ["/proc/sys/net/ipv4/ip_forward"] + sorted(
         glob.glob("/proc/sys/net/ipv4/conf/*/forwarding"))
     values = {path: Path(path).read_text().strip() for path in paths}
@@ -216,7 +232,7 @@ def helper(mode, cfg):
     if mode == "snapshot":
         print(json.dumps(helper_snapshot()))
     elif mode == "links":
-        print(container_command("ip", "-j", "-4", "addr", "show"))
+        print(json.dumps(helper_addresses()))
     elif mode == "observe":
         # Bound to one discovered interface. No promiscuous mode is needed.
         with socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0800)) as sock:
