@@ -459,11 +459,11 @@ func validateValidationEvidence(state map[string]any) []ValidationCheck {
 		checks = append(checks, ValidationCheck{"Critical loads", "fail", "Critical loads de-energized"})
 	}
 
-	// RTAC still communicating through hardened firewall
+	// Polling flags report RTAC communications, not the network path.
 	comms := mapGet(state, "device_comms")
 	allComms := boolGet(comms, "relay") && boolGet(comms, "recloser") && boolGet(comms, "regulator")
 	if allComms {
-		checks = append(checks, ValidationCheck{"RTAC→field comms", "pass", "RTAC polling all field devices through containd"})
+		checks = append(checks, ValidationCheck{"RTAC→field comms", "pass", "RTAC reports polling all field devices"})
 	} else {
 		checks = append(checks, ValidationCheck{"RTAC→field comms", "fail", "RTAC lost communication with field devices"})
 	}
