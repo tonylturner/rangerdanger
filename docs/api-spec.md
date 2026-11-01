@@ -88,11 +88,11 @@ The workshop endpoints operate on the serving range, with nodes from the topolog
 | `GET` | `/workshop/graph` | Serving generation's topology: `nodes`, `edges`, package-owned `flows`, `liveness`, `networks`, and `operations.traffic_generation`; zones and per-network `interface_ips` come from the manifest |
 | `GET` | `/workshop/status` | Status of all workshop nodes |
 | `GET` | `/workshop/nodes/:nodeId/terminal` | WebSocket terminal to a node (see Terminals) |
-| `POST` | `/workshop/nodes/:nodeId/exec` | Run a one-shot command on a node. Body: `{"command": "...", "timeout_sec": 30}`. The first token of `command` must be in the backend allowlist: `nmap, mbpoll, dnp3poll, dnp3cmd, curl, tshark, tcpdump, nc, ping, traceroute, wget, cat, ls, ip, ss, netstat` - anything else returns `403 {"error":"command not allowed"}`. On success returns `{"stdout", "stderr", "exit_code", "duration_ms"}`. |
-| `POST` | `/workshop/reset` | Reset substation state (clear lockouts, restore voltage, re-enable reclose, etc.). Returns `{"success","actions":[{"action","success","detail"}]}`; any failed step returns `502`. |
+| `POST` | `/workshop/nodes/:nodeId/exec` | Run a one-shot command on a node. Body: `{"command": "...", "timeout_sec": 30}`. The first token of `command` must be in the backend allowlist: `nmap, mbpoll, dnp3poll, dnp3cmd, iec104cmd, curl, tshark, tcpdump, nc, ping, traceroute, wget, cat, ls, ip, ss, netstat` - anything else returns `403 {"error":"command not allowed"}`. On success returns `{"stdout", "stderr", "exit_code", "duration_ms"}`. |
+| `POST` | `/workshop/reset` | Reset substation state (clear lockouts, restore voltage, re-enable reclose, etc.) and restore the package's default firewall policy. Returns `{"success","actions":[{"action","success","detail"}]}`. A failed action returns `502` for truth-backed resets (EU); US returns `200` even with `success:false`. Always inspect `success` and the per-action results, not HTTP status alone. |
 | `POST` | `/workshop/test-suite` | Run all exercise validators programmatically |
 
-For `eu-iec104-substation`, `POST /workshop/reset` runs process `reset`, then device `reset` for the OLTC, RMU2, RMU1 and breaker, then GPS `reset_offset`, and waits up to 5 s until every process device reports `solved_revision == revision` at or after its post-reset revision. The PLC is not reset and historian data is kept. Shared firewall-baseline and cleanup steps follow.
+For `eu-iec104-substation`, `POST /workshop/reset` runs process `reset`, then device `reset` for the OLTC, RMU2, RMU1, breaker and F2 breaker, then GPS `reset_offset`, and waits up to 5 s until every process device reports `solved_revision == revision` at or after its post-reset revision. The PLC is not reset and historian data is kept. Shared firewall-baseline and cleanup steps follow.
 
 Graph node `data.status` is Docker-derived for the active range: `running`,
 `exited`, `restarting`, `paused`, `missing`, or `unknown`. Missing means a
@@ -173,16 +173,17 @@ Proxied reads from the RTAC and control commands to individual field devices.
 
 ## Control centre and field
 
-For packages whose manifest has a control centre and a field device simulator (`eu-iec104-substation`). Other packages answer `404 {"error":"not supported by this package"}`. These are read routes plus the operator command and interrogation relays; the student changes field process state only through scenario step actions.
+For packages whose manifest has a control centre and a field device simulator (`eu-iec104-substation`). Other packages answer `404 {"error":"not supported by this package"}`. These are read routes plus the operator command, interrogation and reconnect relays; the student changes field process state only through scenario step actions.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/operator/state` | Control-centre state with `package_id` and `range_generation` added |
 | `POST` | `/operator/commands` | Relay one command to the control centre. The CC runs select, execute and feedback; the backend sends it once and never retries. A CC refusal keeps its status. |
 | `POST` | `/operator/gi` | No body. Queue CC interrogation; 202 `{"trigger":"operator","requested_at":"<UTC>"}` is acceptance, not completion. 409 `{"error":"interrogation already running"}` if pending/running; 503 `{"error":"link not started"}` if not started. Other CC failures are upstream failures. |
+| `POST` | `/operator/reconnect` | No body. Relay a real CC link close/reconnect request, not a cache or simulator reset. Preserves CC `202` acceptance, `409` (reconnect pending or command in flight) and `503` (link not started); acceptance is not proof of a restored connection. Other CC failures are upstream failures. |
 | `GET` | `/operator/journal?after=<seq>` | Bounded CC link, GI, quality, status-change and command journal after a sequence number |
 | `GET` | `/field/state` | `{"devices":{<node-id>:<device state>},"clock":<time-source state>|null,"process":<electrical state>}`. `devices` holds every manifest `sim` endpoint except the time source, keyed by topology node ID; the `time-source` sim (GPS) is `clock`, `null` only when none is declared, and more than one is a `502`. Any upstream failure, including a timeout, returns `502 {"error":"..."}` naming the failed upstream; it never returns partial state. |
-| `GET` | `/field/audit?after=<seq>&device=<key>` | Per-device audit. Keys: `breaker-1`, `rmu-1`, `rmu-2`, `oltc-1`; defaults to `breaker-1`. Other keys (including an explicit empty key) return `400`. |
+| `GET` | `/field/audit?after=<seq>&device=<key>` | Per-device audit. Keys: `breaker-1`, `f2-breaker`, `rmu-1`, `rmu-2`, `oltc-1`; defaults to `breaker-1`. Other keys (including an explicit empty key) return `400`. |
 
 ### Physical System (schema 3)
 
@@ -310,6 +311,8 @@ Direct operations against the containd NGFW.
 | `GET` | `/firewall/health` | Management-plane liveness and diagnostics: `status`, `component`, `build`, `time`, `ipv4Forwarding`, `managementBinding`, plus authenticated `managementReservation` or `managementReservationError`. HTTP 200/status `ok` remains liveness even when degraded; containd health read failure returns `503`. |
 | `GET` | `/firewall/rules` | Currently-loaded rules |
 | `GET` | `/firewall/flows` | containd engine flow table (proxied from containd `GET /api/v1/flows`). Optional `?limit=` 1..5000, default 200; anything else is `400`. Returns `{"flows":[{"flowId","firstSeen","lastSeen","srcIp","dstIp","srcPort","dstPort","transport","application","eventCount","avDetected","avBlocked"}]}`; containd omits empty `srcIp`/`dstIp`/ports/`transport`/`application` and false `av*` fields. `503` with `{"flows":[],"error":"..."}` when containd is unreachable or errors. |
+| `GET` | `/firewall/sessions` | Firewall conntrack entries, distinct from DPI flows. Optional `?dport=1..65535&src=<IPv4>&dst=<IPv4>` filters the fetched table (up to 5,000 entries). Invalid filters return `400`. Returns `{"sessions":[{"proto","src","dst","sport","dport","state","timeout"}],"count":N}`; ports and state may be null. Upstream failures return `502`, or `504` on timeout. |
+| `POST` | `/firewall/sessions/kill` | Delete the exact original-direction tuple. Strict JSON body: `{"proto":"tcp","src":"10.20.20.10","dst":"10.40.40.21","sport":40000,"dport":502}`; `proto` is `tcp` or `udp`, addresses are IPv4 and ports are 1..65535 (`400` otherwise). Returns `200` with `status:"deleted"` and containd closure diagnostics; missing entry is `404`, partial failure `502` with `status:"failed"` and diagnostics. Other upstream failures return `502`, or `504` on timeout. |
 | `GET` | `/firewall/active` | Active policy identity: `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan"\|"manual-custom"}` for the workshop policies. When the source is `plan`, also returns `plan: {label, actionIds, packageId, revision, policyHash, appliedAt}`; otherwise `plan` is omitted. `manual-custom` means the range's policy observer detected a divergent containd commit outside the backend. A new range starts on its package's default policy, with source `weak` or `hardened-reference` for those named defaults (empty for other default names). |
 | `GET` | `/firewall/compare` | Diff between weak and improved configs |
 | `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`). Returns `{"status":"applied","active_config":"weak"\|"improved"}` and includes `"warnings": [...]` when containd returned any. Sets server-side `policy_source` to `"weak"` (for weak) or `"hardened-reference"` (for improved). |
@@ -357,6 +360,12 @@ client-authored input; `policyHash` hashes its firewall section.
 Provenance retains chosen `actionIds` in catalog order and is cleared by a
 named-policy apply, observer divergence or range activation.
 
+Session-kill diagnostics include `scope`, `matched`, `deleted`,
+`conntrackDeleted`, `revocationInstalled` and `closure`, with optional
+`deleteError`, `revocationError` and `blockedUntil`. Killing a session revokes
+that exact tuple in both directions for 60 seconds by default; a fresh source
+port still meets the active policy. It is not a policy change.
+
 Validation returns two independent judgments:
 
 - `planProof: {applicable, pass, policyHash, hashStable, skipped, rows}` checks
@@ -379,8 +388,13 @@ Used by Lab 1.2 (Baseline Traffic Analysis) to produce representative substation
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/traffic/generate` | Start traffic generation. Body: `{"duration_sec": 50}` (defaults to `30` when omitted or `<= 0`). Returns `{"status": "generating", "duration_sec"}` |
-| `GET` | `/traffic/status` | Current traffic generation state. Returns `{"generating", "started_at", "flows_generated"}` |
+| `POST` | `/traffic/generate` | Start recipe-declared scenario traffic. Body: `{"duration_sec": 50}` (defaults to `30` when omitted or `<= 0`). Returns `{"status":"generating","duration_sec","run_id","started_at"}`. `409` while a run is active or its cancelled worker is draining. |
+| `POST` | `/traffic/stop` | Body: `{"run_id":"<observed run>"}`. Cancels only that run; returns `{"status":"stopping"}` while cancellation drains. Missing, completed or stale IDs are idempotent no-ops returning `{"status":"stopped"}`, never authority to cancel a newer run. Malformed JSON returns `400`. |
+| `GET` | `/traffic/status` | Current traffic generation state. Returns `{"generating","started_at","flows_generated","run_id"}`. Use the observed `run_id` when stopping. |
+
+Autonomous simulator baseline traffic is independent and is not stopped by
+`/traffic/stop`. A cancelled run keeps the start gate closed until its worker
+returns.
 
 ## PCAP capture
 
@@ -464,4 +478,9 @@ The backend calls `ContainerExecResize` on the Docker exec session for every res
 
 ## Data contracts
 
-Struct-level documentation lives in `backend/internal/models/models.go`. Topology, scenario steps, and firewall configs are stored as JSON strings in the database and shaped to match what the frontend expects directly - React Flow graphs for topology, ordered step arrays for scenarios, and the containd policy schema for firewall configurations.
+Struct-level documentation lives in `backend/internal/models/models.go`.
+`Scenario` is the only persisted model; its `tags`, `steps` and `nodes` fields
+are JSON-encoded strings (including the ordered step array). Topologies and
+firewall policies are package catalog data loaded from files, not database
+models. The graph API shapes topology for React Flow; policies use the
+containd configuration schema.
