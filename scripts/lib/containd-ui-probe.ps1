@@ -199,8 +199,9 @@ function Confirm-ContaindCliUpgrade(
     Write-Host "PASS ${path}: websocket 101 with a fresh ticket and browser Origin $Origin"
 }
 
-function Confirm-ContaindUploadLimits([string]$Origin) {
-    # No cookies or bearer token. Generate multipart bodies in 64 KiB blocks.
+function Confirm-ContaindUploadLimits([string]$Origin, [string]$Token) {
+    if (-not $Token -or $Token -match '[\r\n]') { throw 'upload check requires a valid session token' }
+    # Generate multipart bodies in 64 KiB blocks without ambient cookies.
     $url = [uri]$Origin
     $authority = [regex]::Match($Origin, '^[^:]+://([^/]+)$').Groups[1].Value
     $path = '/containd/api/v1/pcap/analyze'
@@ -210,10 +211,10 @@ function Confirm-ContaindUploadLimits([string]$Origin) {
         "Content-Disposition: form-data; name=`"file`"; filename=`"probe.pcap`"`r`n" +
         "Content-Type: application/octet-stream`r`n`r`n")
     $suffix = [Text.Encoding]::ASCII.GetBytes("`r`n--$boundary--`r`n")
-    $block = New-Object byte[] 65536
+    $block = New-Object byte[] 65536 # Zero-filled file: deliberately no classic PCAP magic.
     foreach ($mib in @(2, 11)) {
         $size = $mib * 1024 * 1024
-        $expected = if ($mib -eq 2) { 401 } else { 413 }
+        $expected = if ($mib -eq 2) { 400 } else { 413 }
         $client = New-Object Net.Sockets.TcpClient
         $stream = $null
         $timer = [Diagnostics.Stopwatch]::StartNew()
@@ -262,7 +263,11 @@ function Confirm-ContaindUploadLimits([string]$Origin) {
                 $null = $tls.GetAwaiter().GetResult()
             }
             # Respect an early nginx 413 instead of writing into a closed socket.
+            # Authenticate the small upload: containd may reset an unread body
+            # after an unauthenticated refusal while nginx is still sending it.
+            $authHeader = if ($mib -eq 2) { "Authorization: Bearer $Token`r`n" } else { '' }
             $request = "POST $path HTTP/1.1`r`nHost: $authority`r`n" +
+                $authHeader +
                 "Content-Type: multipart/form-data; boundary=$boundary`r`n" +
                 "Content-Length: $size`r`nExpect: 100-continue`r`nAccept-Encoding: identity`r`nConnection: close`r`n`r`n"
             $bytes = [Text.Encoding]::ASCII.GetBytes($request)
@@ -288,8 +293,7 @@ function Confirm-ContaindUploadLimits([string]$Origin) {
             $nginxHtml = ([string]$response.Headers['server']).StartsWith('nginx', [StringComparison]::Ordinal) -and $type -ceq 'text/html'
             $length = [string]$response.Headers['content-length']
             $body = ''
-            # Our named nginx handler has Content-Length. Bound even a malformed
-            # response to 4 KiB; containd's 401 needs only its status/MIME.
+            # Bound JSON refusal reads, including malformed/fallback responses.
             if ($type -ceq 'application/json' -and $length -cmatch '^[0-9]{1,4}$' -and [int]$length -le 4096) {
                 $data = New-Object byte[] ([int]$length)
                 $offset = 0
@@ -311,21 +315,26 @@ function Confirm-ContaindUploadLimits([string]$Origin) {
             $limitCode = 'rangerdanger_proxy_upload_limit'
             $limitError = 'RangerDanger proxy upload limit is 10 MB; this file is larger. The limit is set by RangerDanger, not containd.'
             $rangerLimit = $false
+            $rangerCode = $false
+            $invalidCapture = $false
             $isObject = $body.TrimStart().StartsWith('{', [StringComparison]::Ordinal)
             if ($isObject) {
                 $object = ConvertFrom-Json -InputObject $body -ErrorAction Stop
                 $codeProperty = $object.PSObject.Properties | Where-Object { $_.Name -ceq 'code' } | Select-Object -First 1
                 $errorProperty = $object.PSObject.Properties | Where-Object { $_.Name -ceq 'error' } | Select-Object -First 1
-                $rangerLimit = $codeProperty -and $errorProperty -and
-                    $codeProperty.Value -is [string] -and $codeProperty.Value -ceq $limitCode -and
+                $rangerCode = $codeProperty -and $codeProperty.Value -is [string] -and $codeProperty.Value -ceq $limitCode
+                $rangerLimit = $rangerCode -and $errorProperty -and
                     $errorProperty.Value -is [string] -and $errorProperty.Value -ceq $limitError
+                $invalidCapture = $errorProperty -and $errorProperty.Value -is [string] -and
+                    -not [string]::IsNullOrWhiteSpace($errorProperty.Value) -and
+                    (-not $codeProperty -or $codeProperty.Value -is [string]) -and -not $rangerCode
             }
-            $source = if ($rangerLimit) { 'RangerDanger nginx proxy' }
+            $source = if ($rangerCode) { 'RangerDanger nginx proxy' }
                 elseif ($nginxHtml) { 'bare nginx proxy' }
                 else { 'containd/API or non-RangerDanger response' }
-            $valid = $code -eq $expected -and $(if ($expected -eq 401) { $type -ceq 'application/json' -and -not $rangerLimit } else { $rangerLimit })
+            $valid = $code -eq $expected -and $(if ($expected -eq 400) { $invalidCapture } else { $rangerLimit })
             if (-not $valid) {
-                $target = if ($expected -eq 401) { '401 application/json from containd' }
+                $target = if ($expected -eq 400) { '400 application/json ErrorResponse for invalid capture from containd' }
                     else { "413 application/json with code=$limitCode and RangerDanger message" }
                 throw "${path}: $mib MiB upload expected $target, got HTTP $code $type ($source)"
             }
@@ -530,5 +539,5 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
         }
     }
     Write-Host "PASS $($apiRoutes -join ', '): 400 from the containd API, not the UI page"
-    Confirm-ContaindUploadLimits $Origin
+    Confirm-ContaindUploadLimits $Origin $token
 }

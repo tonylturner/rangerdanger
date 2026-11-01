@@ -40,8 +40,10 @@ UPLOAD_LIMIT_ERROR = (
 )
 
 
-def check_upload_limits(origin):
-    """Isolated, unauthenticated multipart requests; bounded memory, no stored capture."""
+def check_upload_limits(origin, token):
+    """Stream an authenticated invalid capture and an unauthenticated oversized body."""
+    if not token or "\r" in token or "\n" in token:
+        raise ProbeError("upload check requires a valid session token")
     url = urlsplit(origin)
     path = "/containd/api/v1/pcap/analyze"
     boundary = "rangerdanger-upload-probe"
@@ -51,8 +53,8 @@ def check_upload_limits(origin):
         "Content-Type: application/octet-stream\r\n\r\n"
     ).encode("ascii")
     suffix = f"\r\n--{boundary}--\r\n".encode("ascii")
-    block = bytes(65536)
-    for mib, expected in ((2, 401), (11, 413)):
+    block = bytes(65536)  # Zero-filled file: deliberately no classic PCAP magic.
+    for mib, expected in ((2, 400), (11, 413)):
         size = mib * 1024 * 1024
         connection = (HTTPSConnection if url.scheme == "https" else HTTPConnection)(
             url.hostname, url.port, timeout=15,
@@ -69,6 +71,10 @@ def check_upload_limits(origin):
             connection.putrequest("POST", path)
             connection.putheader("Content-Type", f"multipart/form-data; boundary={boundary}")
             connection.putheader("Content-Length", str(size))
+            # Authenticate the small upload: containd may reset an unread body
+            # after an unauthenticated refusal while nginx is still sending it.
+            if mib == 2:
+                connection.putheader("Authorization", f"Bearer {token}")
             # nginx can reject Content-Length before reading a byte. Wait for
             # 100 Continue rather than losing its 413 in a broken-pipe write.
             connection.putheader("Expect", "100-continue")
@@ -111,8 +117,7 @@ def check_upload_limits(origin):
                     response_headers.get("server", "").startswith("nginx")
                     and content_type == "text/html"
                 )
-                # Our named nginx handler has Content-Length. Bound reads even
-                # for an erroneous UI page; containd's 401 needs only its status/MIME.
+                # Bound JSON refusal reads, including malformed/fallback responses.
                 length = response_headers.get("content-length", "")
                 body = None
                 if (content_type == "application/json" and re.fullmatch(r"[0-9]{1,4}", length)
@@ -125,21 +130,25 @@ def check_upload_limits(origin):
                     except (ValueError, UnicodeError):
                         # Malformed refusals fail the upload contract below.
                         body = None
-                ranger_limit = (
-                    isinstance(body, dict) and body.get("code") == UPLOAD_LIMIT_CODE
-                    and body.get("error") == UPLOAD_LIMIT_ERROR
+                ranger_code = isinstance(body, dict) and body.get("code") == UPLOAD_LIMIT_CODE
+                ranger_limit = ranger_code and body.get("error") == UPLOAD_LIMIT_ERROR
+                invalid_capture = (
+                    isinstance(body, dict) and isinstance(body.get("error"), str)
+                    and bool(body["error"].strip())
+                    and ("code" not in body or isinstance(body["code"], str))
+                    and not ranger_code
                 )
                 source = (
-                    "RangerDanger nginx proxy" if ranger_limit else
+                    "RangerDanger nginx proxy" if ranger_code else
                     "bare nginx proxy" if nginx_html else
                     "containd/API or non-RangerDanger response"
                 )
                 valid = status == expected and (
-                    content_type == "application/json" and not ranger_limit if expected == 401 else ranger_limit
+                    invalid_capture if expected == 400 else ranger_limit
                 )
                 if not valid:
                     target = (
-                        "401 application/json from containd" if expected == 401 else
+                        "400 application/json ErrorResponse for invalid capture from containd" if expected == 400 else
                         f"413 application/json with code={UPLOAD_LIMIT_CODE} and RangerDanger message"
                     )
                     raise ProbeError(
@@ -482,7 +491,7 @@ def probe(base):
         if status != 400 or content_type == "text/html":
             raise ProbeError(f"{path}: expected a 400 refusal from the containd API, got {status} {content_type}")
     print(f"PASS {', '.join(API_ROUTES)}: 400 from the containd API, not the UI page")
-    check_upload_limits(base)
+    check_upload_limits(base, login["token"])
 
 
 def main():

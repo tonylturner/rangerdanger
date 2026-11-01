@@ -81,8 +81,12 @@ def portal(mode):
             return super().handle_expect_100()
 
         def check_upload_headers(self):
-            if self.headers.get("Authorization") or self.headers.get("Cookie"):
-                errors.append("upload unexpectedly authenticated")
+            small = int(self.headers["Content-Length"]) == 2 * 1024 * 1024
+            expected_auth = "Bearer lab-token" if small else None
+            if self.headers.get("Authorization") != expected_auth:
+                errors.append("small upload lost session bearer or oversized upload sent one")
+            if self.headers.get("Cookie"):
+                errors.append("upload unexpectedly used ambient cookies")
             if self.headers.get("Content-Type") != "multipart/form-data; boundary=rangerdanger-upload-probe":
                 errors.append("upload not multipart")
             if self.headers.get("Expect") != "100-continue":
@@ -184,8 +188,39 @@ def portal(mode):
                         or b'name="file"; filename="probe.pcap"' not in first
                         or not tail.endswith(b"\r\n--rangerdanger-upload-probe--\r\n")):
                     errors.append("invalid multipart framing")
+                payload = first.split(b"\r\n\r\n", 1)[-1]
+                if not payload.startswith(bytes(64)):
+                    errors.append("capture must start with zeros, not classic PCAP magic")
                 if mode == "late-limit" and size > 10 * 1024 * 1024:
                     self.upload_refusal()
+                elif size == 2 * 1024 * 1024:
+                    if mode == "small-502":
+                        self.reply(502, "text/html", "<html>Bad Gateway</html>")
+                    elif mode == "small-401":
+                        self.reply(401, "application/json", '{"error":"unauthorized"}')
+                    elif mode == "small-html":
+                        self.reply(400, "text/html", "<html>Invalid capture</html>")
+                    elif mode == "small-malformed":
+                        self.reply(400, "application/json", "not JSON")
+                    else:
+                        body = {"error": "Invalid or unsupported capture"}
+                        if mode == "small-with-code":
+                            body["code"] = "invalid_capture"
+                        elif mode == "small-proxy-code":
+                            body["code"] = UPLOAD_ERROR["code"]
+                        elif mode == "small-proxy-body":
+                            body = UPLOAD_ERROR
+                        elif mode == "small-missing-error":
+                            body = {}
+                        elif mode == "small-empty-error":
+                            body["error"] = " "
+                        elif mode == "small-wrong-error-type":
+                            body["error"] = ["invalid"]
+                        elif mode == "small-wrong-code-type":
+                            body["code"] = ["invalid"]
+                        elif mode == "small-array":
+                            body = [body]
+                        self.reply(400, "application/json", json.dumps(body))
                 else:
                     self.reply(401, "application/json", '{"error":"unauthorized"}')
                 return
@@ -281,7 +316,19 @@ catch { Write-Output "FAIL: $_"; exit 1 }
         for mode, message in (
             ("ok", None),
             ("late-limit", None),
-            ("small-limit", "2 MiB upload expected 401"),
+            ("small-with-code", None),
+            ("small-limit", "2 MiB upload expected 400"),
+            ("small-502", "got HTTP 502 text/html (bare nginx proxy)"),
+            ("small-401", "2 MiB upload expected 400"),
+            ("small-html", "2 MiB upload expected 400"),
+            ("small-malformed", "2 MiB upload expected 400"),
+            ("small-missing-error", "2 MiB upload expected 400"),
+            ("small-empty-error", "2 MiB upload expected 400"),
+            ("small-wrong-error-type", "2 MiB upload expected 400"),
+            ("small-wrong-code-type", "2 MiB upload expected 400"),
+            ("small-array", "2 MiB upload expected 400"),
+            ("small-proxy-code", "2 MiB upload expected 400"),
+            ("small-proxy-body", "2 MiB upload expected 400"),
             ("no-limit", "11 MiB upload expected 413"),
             ("bare-limit", "bare nginx proxy"),
             ("upstream-limit", "containd/API or non-RangerDanger response"),
@@ -295,14 +342,14 @@ catch { Write-Output "FAIL: $_"; exit 1 }
                     result = powershell(r"""
 $ErrorActionPreference = 'Stop'
 . "$env:REPO/scripts/lib/containd-ui-probe.ps1"
-try { Confirm-ContaindUploadLimits $env:ORIGIN; exit 0 }
+try { Confirm-ContaindUploadLimits $env:ORIGIN 'lab-token'; exit 0 }
 catch { Write-Output "FAIL: $_"; exit 1 }
 """, ORIGIN=origin)
                 else:
                     result = subprocess.run(
                         [sys.executable, "-c",
                          "import sys; from scripts.tests.test_containd_ui_prefix import probe; "
-                         "probe.check_upload_limits(sys.argv[1])", origin],
+                         "probe.check_upload_limits(sys.argv[1], 'lab-token')", origin],
                         capture_output=True, text=True, timeout=30, check=False,
                     )
                 output = result.stdout + result.stderr
@@ -310,9 +357,10 @@ catch { Write-Output "FAIL: $_"; exit 1 }
                 if message:
                     self.assertIn(message, output)
                 else:
-                    self.assertIn("2 MiB upload -> HTTP 401", output)
+                    self.assertIn("2 MiB upload -> HTTP 400", output)
                     self.assertIn("11 MiB upload -> HTTP 413 (RangerDanger nginx proxy)", output)
-                self.assertEqual(seen, [UPLOAD] if mode == "small-limit" else [UPLOAD, UPLOAD])
+                early_failure = mode.startswith("small-") and mode != "small-with-code"
+                self.assertEqual(seen, [UPLOAD] if early_failure else [UPLOAD, UPLOAD])
                 self.assertEqual(errors, [])
 
     def test_native_python_upload_limits(self):

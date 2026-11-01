@@ -43,8 +43,9 @@ $ErrorActionPreference = 'Stop'
 $fixture = $env:FIXTURE | ConvertFrom-Json
 $script:session = $null
 $script:seen = @()
-function Confirm-ContaindUploadLimits([string]$Origin) {
+function Confirm-ContaindUploadLimits([string]$Origin, [string]$Token) {
     if ($Origin -cne $env:ORIGIN.TrimEnd('/')) { throw 'upload origin lost' }
+    if ($Token -cne 'lab-token') { throw 'upload session token lost' }
     $script:uploadCalls++
 }
 $script:uploadCalls = 0
