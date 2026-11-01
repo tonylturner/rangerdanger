@@ -200,7 +200,7 @@ function Confirm-ContaindCliUpgrade(
 }
 
 function Confirm-ContaindUploadLimits([string]$Origin, [string]$Token) {
-    if (-not $Token -or $Token -match '[\r\n]') { throw 'upload check requires a valid session token' }
+    if (-not $Token -or $Token -match '[\r\n]') { throw 'upload check requires a valid session token; body_excerpt=' }
     # Generate multipart bodies in 64 KiB blocks without ambient cookies.
     $url = [uri]$Origin
     $authority = [regex]::Match($Origin, '^[^:]+://([^/]+)$').Groups[1].Value
@@ -217,6 +217,7 @@ function Confirm-ContaindUploadLimits([string]$Origin, [string]$Token) {
         $expected = if ($mib -eq 2) { 400 } else { 413 }
         $client = New-Object Net.Sockets.TcpClient
         $stream = $null
+        $raw = New-Object IO.MemoryStream
         $timer = [Diagnostics.Stopwatch]::StartNew()
         function Set-UploadTimeout {
             $remaining = 15000 - [int]$timer.ElapsedMilliseconds
@@ -249,6 +250,64 @@ function Confirm-ContaindUploadLimits([string]$Origin, [string]$Token) {
                 $values[$pair[0].ToLowerInvariant()] = $pair[1].Trim().ToLowerInvariant()
             }
             [pscustomobject]@{ Status = $code; Headers = $values }
+        }
+        function Read-UploadBody($Headers) {
+            # Decode HTTP framing, not JSON shape: both JSON and HTML are read.
+            $limit = 65536
+            $readBuffer = New-Object byte[] 4096
+            function Get-UploadSize([string]$Text, [int]$Base) {
+                $pattern = if ($Base -eq 16) { '^[0-9a-fA-F]+$' } else { '^[0-9]+$' }
+                if ($Text -cnotmatch $pattern) { throw 'invalid upload response length' }
+                $number = $Text.TrimStart([char]'0')
+                if (-not $number) { $number = '0' }
+                if ($number.Length -gt 5) { return ($limit + 1) }
+                [Math]::Min([Convert]::ToInt32($number, $Base), $limit + 1)
+            }
+            function Read-UploadBytes([int]$Count, [bool]$Exact) {
+                while ($Count -gt 0) {
+                    $null = Set-UploadTimeout
+                    $read = $stream.Read($readBuffer, 0, [Math]::Min($Count, $readBuffer.Length))
+                    if ($read -eq 0) {
+                        if ($Exact) { throw 'incomplete upload response body' }
+                        return
+                    }
+                    $raw.Write($readBuffer, 0, $read)
+                    if ($raw.Length -gt $limit) { throw 'upload response body exceeds 64 KiB' }
+                    $Count -= $read
+                }
+            }
+            $transfer = [string]$Headers['transfer-encoding']
+            if ($transfer) {
+                if ($transfer -cne 'chunked') { throw 'unsupported upload response transfer encoding' }
+                $framing = @{ Bytes = 0 }
+                function Read-UploadLine {
+                    $line = New-Object Text.StringBuilder
+                    while (-not $line.ToString().EndsWith("`r`n", [StringComparison]::Ordinal)) {
+                        $null = Set-UploadTimeout
+                        $byte = $stream.ReadByte()
+                        $framing.Bytes++
+                        if ($byte -lt 0 -or $framing.Bytes -gt 16384) {
+                            throw 'incomplete or oversized upload chunk metadata'
+                        }
+                        $null = $line.Append([char]$byte)
+                    }
+                    $line.ToString()
+                }
+                while ($true) {
+                    $line = Read-UploadLine
+                    $count = Get-UploadSize (($line.Substring(0, $line.Length - 2) -split ';', 2)[0]) 16
+                    if ($count -eq 0) {
+                        while ((Read-UploadLine) -cne "`r`n") { } # Consume bounded trailers.
+                        return
+                    }
+                    Read-UploadBytes ([Math]::Min($count, $limit + 1 - $raw.Length)) $true
+                    if ((Read-UploadLine) -cne "`r`n") { throw 'invalid upload chunk terminator' }
+                }
+            } elseif ($Headers.ContainsKey('content-length')) {
+                Read-UploadBytes (Get-UploadSize $Headers['content-length'] 10) $true
+            } else {
+                Read-UploadBytes ($limit + 1) $false
+            }
         }
         try {
             $connect = $client.ConnectAsync($url.DnsSafeHost, $url.Port)
@@ -291,24 +350,14 @@ function Confirm-ContaindUploadLimits([string]$Origin, [string]$Token) {
             $code = $response.Status
             $type = ([string]$response.Headers['content-type'] -split ';', 2)[0].Trim()
             $nginxHtml = ([string]$response.Headers['server']).StartsWith('nginx', [StringComparison]::Ordinal) -and $type -ceq 'text/html'
-            $length = [string]$response.Headers['content-length']
+            Read-UploadBody $response.Headers
             $body = ''
-            # Bound JSON refusal reads, including malformed/fallback responses.
-            if ($type -ceq 'application/json' -and $length -cmatch '^[0-9]{1,4}$' -and [int]$length -le 4096) {
-                $data = New-Object byte[] ([int]$length)
-                $offset = 0
-                while ($offset -lt $data.Length) {
-                    $null = Set-UploadTimeout
-                    $read = $stream.Read($data, $offset, $data.Length - $offset)
-                    if ($read -eq 0) { break }
-                    $offset += $read
-                }
+            if ($type -ceq 'application/json') {
                 try {
-                    if ($offset -ne $data.Length) { throw 'Incomplete upload response body' }
                     $utf8 = New-Object Text.UTF8Encoding $false, $true
-                    $body = $utf8.GetString($data, 0, $offset)
-                    # Validate syntax here; strict property lookup below rejects
-                    # arrays, nulls, wrong-case keys and non-string values.
+                    $body = $utf8.GetString($raw.ToArray())
+                    # The 400 check accepts any JSON object; the 413 check
+                    # below requires the exact RangerDanger fields.
                     $null = ConvertFrom-Json -InputObject $body -ErrorAction Stop
                 } catch { $body = '' }
             }
@@ -325,20 +374,23 @@ function Confirm-ContaindUploadLimits([string]$Origin, [string]$Token) {
                 $rangerCode = $codeProperty -and $codeProperty.Value -is [string] -and $codeProperty.Value -ceq $limitCode
                 $rangerLimit = $rangerCode -and $errorProperty -and
                     $errorProperty.Value -is [string] -and $errorProperty.Value -ceq $limitError
-                $invalidCapture = $errorProperty -and $errorProperty.Value -is [string] -and
-                    -not [string]::IsNullOrWhiteSpace($errorProperty.Value) -and
-                    (-not $codeProperty -or $codeProperty.Value -is [string]) -and -not $rangerCode
+                $invalidCapture = -not $rangerCode
             }
             $source = if ($rangerCode) { 'RangerDanger nginx proxy' }
                 elseif ($nginxHtml) { 'bare nginx proxy' }
                 else { 'containd/API or non-RangerDanger response' }
             $valid = $code -eq $expected -and $(if ($expected -eq 400) { $invalidCapture } else { $rangerLimit })
             if (-not $valid) {
-                $target = if ($expected -eq 400) { '400 application/json ErrorResponse for invalid capture from containd' }
+                $target = if ($expected -eq 400) { '400 application/json object for invalid capture from containd' }
                     else { "413 application/json with code=$limitCode and RangerDanger message" }
                 throw "${path}: $mib MiB upload expected $target, got HTTP $code $type ($source)"
             }
+        } catch {
+            $excerpt = [Text.Encoding]::UTF8.GetString($raw.ToArray()) -replace '[\x00-\x20\x7f]', ' '
+            $excerpt = $excerpt.Substring(0, [Math]::Min(300, $excerpt.Length))
+            throw "$_; body_excerpt=$excerpt"
         } finally {
+            $raw.Dispose()
             if ($stream) { $stream.Dispose() }
             $client.Close()
         }

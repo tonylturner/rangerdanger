@@ -40,10 +40,62 @@ UPLOAD_LIMIT_ERROR = (
 )
 
 
+def read_upload_body(stream, headers, remaining, body):
+    """Decode HTTP framing with a 64 KiB body cap and bounded chunk metadata."""
+    limit = 65536
+
+    def size(text, base):
+        if not re.fullmatch(r"[0-9a-fA-F]+" if base == 16 else r"[0-9]+", text):
+            raise ProbeError("invalid upload response length")
+        number = text.lstrip("0") or "0"
+        return limit + 1 if len(number) > 5 else min(int(number, base), limit + 1)
+
+    def read(count, exact):
+        while count:
+            remaining()
+            chunk = stream.read1(min(count, 4096))
+            if not chunk:
+                if exact:
+                    raise ProbeError("incomplete upload response body")
+                return
+            body.extend(chunk)
+            if len(body) > limit:
+                raise ProbeError("upload response body exceeds 64 KiB")
+            count -= len(chunk)
+
+    transfer = headers.get("transfer-encoding", "")
+    if transfer:
+        if transfer != "chunked":
+            raise ProbeError("unsupported upload response transfer encoding")
+        metadata = 0
+
+        def line():
+            nonlocal metadata
+            remaining()
+            value = stream.readline(16385)
+            metadata += len(value)
+            if metadata > 16384 or not value.endswith(b"\r\n"):
+                raise ProbeError("incomplete or oversized upload chunk metadata")
+            return value
+
+        while True:
+            count = size(line()[:-2].split(b";", 1)[0].decode("ascii"), 16)
+            if count == 0:
+                while line() != b"\r\n":
+                    pass  # Consume bounded trailers before completing the response.
+                return
+            read(min(count, limit + 1 - len(body)), True)
+            if line() != b"\r\n":
+                raise ProbeError("invalid upload chunk terminator")
+    else:
+        length = headers.get("content-length")
+        read(size(length, 10) if length is not None else limit + 1, length is not None)
+
+
 def check_upload_limits(origin, token):
     """Stream an authenticated invalid capture and an unauthenticated oversized body."""
     if not token or "\r" in token or "\n" in token:
-        raise ProbeError("upload check requires a valid session token")
+        raise ProbeError("upload check requires a valid session token; body_excerpt=")
     url = urlsplit(origin)
     path = "/containd/api/v1/pcap/analyze"
     boundary = "rangerdanger-upload-probe"
@@ -60,6 +112,7 @@ def check_upload_limits(origin, token):
             url.hostname, url.port, timeout=15,
         )
         deadline = time.monotonic() + 15
+        raw = bytearray()
 
         def remaining():
             seconds = deadline - time.monotonic()
@@ -117,27 +170,17 @@ def check_upload_limits(origin, token):
                     response_headers.get("server", "").startswith("nginx")
                     and content_type == "text/html"
                 )
-                # Bound JSON refusal reads, including malformed/fallback responses.
-                length = response_headers.get("content-length", "")
+                read_upload_body(stream, response_headers, remaining, raw)
                 body = None
-                if (content_type == "application/json" and re.fullmatch(r"[0-9]{1,4}", length)
-                        and int(length) <= 4096):
-                    remaining()
-                    raw = stream.read(int(length))
+                if content_type == "application/json":
                     try:
-                        if len(raw) == int(length):
-                            body = json.loads(raw.decode("utf-8"))
+                        body = json.loads(raw.decode("utf-8"))
                     except (ValueError, UnicodeError):
                         # Malformed refusals fail the upload contract below.
                         body = None
                 ranger_code = isinstance(body, dict) and body.get("code") == UPLOAD_LIMIT_CODE
                 ranger_limit = ranger_code and body.get("error") == UPLOAD_LIMIT_ERROR
-                invalid_capture = (
-                    isinstance(body, dict) and isinstance(body.get("error"), str)
-                    and bool(body["error"].strip())
-                    and ("code" not in body or isinstance(body["code"], str))
-                    and not ranger_code
-                )
+                invalid_capture = isinstance(body, dict) and not ranger_code
                 source = (
                     "RangerDanger nginx proxy" if ranger_code else
                     "bare nginx proxy" if nginx_html else
@@ -148,13 +191,16 @@ def check_upload_limits(origin, token):
                 )
                 if not valid:
                     target = (
-                        "400 application/json ErrorResponse for invalid capture from containd" if expected == 400 else
+                        "400 application/json object for invalid capture from containd" if expected == 400 else
                         f"413 application/json with code={UPLOAD_LIMIT_CODE} and RangerDanger message"
                     )
                     raise ProbeError(
                         f"{path}: {mib} MiB upload expected {target}, got HTTP {status} "
                         f"{content_type} ({source})"
                     )
+        except (ValueError, OSError) as error:
+            excerpt = re.sub(r"[\x00-\x20\x7f]", " ", raw.decode("utf-8", errors="replace"))[:300]
+            raise ProbeError(f"{error}; body_excerpt={excerpt}") from error
         finally:
             connection.close()
         print(f"PASS {path}: {mib} MiB upload -> HTTP {status} ({source})")

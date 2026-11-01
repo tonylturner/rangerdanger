@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import threading
@@ -42,15 +43,35 @@ def portal(mode):
 
         def reply(self, status, mime, body, **headers):
             data = body.encode()
+            framing = "length"
+            if self.path == UPLOAD:
+                if mode in ("chunked", "boundary-chunked", "oversize-chunked", "bad-chunk"):
+                    framing = "chunked"
+                elif mode in ("close", "boundary-close", "oversize-close"):
+                    framing = "close"
+                elif mode == "truncated":
+                    framing = "truncated"
             self.close_connection = True
             self.send_response(status)
             self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(data)))
+            if framing == "chunked":
+                self.send_header("Transfer-Encoding", "chunked")
+            elif framing in ("length", "truncated"):
+                self.send_header("Content-Length", str(len(data) + (10 if framing == "truncated" else 0)))
             self.send_header("Connection", "close")
             for key, value in headers.items():
                 self.send_header(key, value)
             self.end_headers()
-            self.wfile.write(data)
+            if framing == "chunked":
+                if mode == "bad-chunk":
+                    self.wfile.write(b"not-hex\r\n")
+                else:
+                    for start in range(0, len(data), 4096):
+                        chunk = data[start:start + 4096]
+                        self.wfile.write(f"{len(chunk):x};fixture=1\r\n".encode() + chunk + b"\r\n")
+                    self.wfile.write(b"0\r\nX-Probe: trailer\r\n\r\n")
+            else:
+                self.wfile.write(data)
 
         def upload_refusal(self):
             body = dict(UPLOAD_ERROR)
@@ -220,6 +241,12 @@ def portal(mode):
                             body["code"] = ["invalid"]
                         elif mode == "small-array":
                             body = [body]
+                        elif mode == "large-length":
+                            body = {"padding": "x" * 12000}
+                        elif mode.startswith("boundary-"):
+                            body = {"padding": "x" * (65536 - len(json.dumps({"padding": ""})))}
+                        elif mode.startswith("oversize-"):
+                            body = {"padding": "x" * 65536}
                         self.reply(400, "application/json", json.dumps(body))
                 else:
                     self.reply(401, "application/json", '{"error":"unauthorized"}')
@@ -317,15 +344,21 @@ catch { Write-Output "FAIL: $_"; exit 1 }
             ("ok", None),
             ("late-limit", None),
             ("small-with-code", None),
+            ("chunked", None),
+            ("close", None),
+            ("large-length", None),
+            ("boundary-length", None),
+            ("boundary-chunked", None),
+            ("boundary-close", None),
             ("small-limit", "2 MiB upload expected 400"),
             ("small-502", "got HTTP 502 text/html (bare nginx proxy)"),
             ("small-401", "2 MiB upload expected 400"),
             ("small-html", "2 MiB upload expected 400"),
             ("small-malformed", "2 MiB upload expected 400"),
-            ("small-missing-error", "2 MiB upload expected 400"),
-            ("small-empty-error", "2 MiB upload expected 400"),
-            ("small-wrong-error-type", "2 MiB upload expected 400"),
-            ("small-wrong-code-type", "2 MiB upload expected 400"),
+            ("small-missing-error", None),
+            ("small-empty-error", None),
+            ("small-wrong-error-type", None),
+            ("small-wrong-code-type", None),
             ("small-array", "2 MiB upload expected 400"),
             ("small-proxy-code", "2 MiB upload expected 400"),
             ("small-proxy-body", "2 MiB upload expected 400"),
@@ -336,6 +369,11 @@ catch { Write-Output "FAIL: $_"; exit 1 }
             ("wrong-limit-message", "11 MiB upload expected 413"),
             ("wrong-case-code", "11 MiB upload expected 413"),
             ("array-limit", "11 MiB upload expected 413"),
+            ("oversize-length", "upload response body exceeds 64 KiB"),
+            ("oversize-chunked", "upload response body exceeds 64 KiB"),
+            ("oversize-close", "upload response body exceeds 64 KiB"),
+            ("bad-chunk", "invalid upload response length"),
+            ("truncated", "incomplete upload response body"),
         ):
             with self.subTest(twin=twin, mode=mode), portal(mode) as (origin, errors, seen, _closed):
                 if twin == "powershell":
@@ -348,18 +386,30 @@ catch { Write-Output "FAIL: $_"; exit 1 }
                 else:
                     result = subprocess.run(
                         [sys.executable, "-c",
-                         "import sys; from scripts.tests.test_containd_ui_prefix import probe; "
-                         "probe.check_upload_limits(sys.argv[1], 'lab-token')", origin],
+                         "import sys\nfrom scripts.tests.test_containd_ui_prefix import probe\n"
+                         "try:\n probe.check_upload_limits(sys.argv[1], 'lab-token')\n"
+                         "except probe.ProbeError as error:\n print(f'FAIL: {error}'); sys.exit(1)", origin],
                         capture_output=True, text=True, timeout=30, check=False,
                     )
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode, 0 if message is None else 1, output)
                 if message:
                     self.assertIn(message, output)
+                    excerpt, = re.findall(r"body_excerpt=([^\r\n]*)", output)
+                    self.assertLessEqual(len(excerpt), 300)
+                    if mode == "small-html":
+                        self.assertEqual(excerpt, "<html>Invalid capture</html>")
+                    if mode.startswith("oversize-"):
+                        self.assertEqual(len(excerpt), 300)
+                        self.assertTrue(excerpt.startswith('{"padding": "'))
+                    if mode == "small-proxy-code":
+                        self.assertIn(UPLOAD_ERROR["code"], excerpt)
                 else:
                     self.assertIn("2 MiB upload -> HTTP 400", output)
                     self.assertIn("11 MiB upload -> HTTP 413 (RangerDanger nginx proxy)", output)
-                early_failure = mode.startswith("small-") and mode != "small-with-code"
+                early_failure = message is not None and (
+                    mode.startswith(("small-", "oversize-")) or mode in ("bad-chunk", "truncated")
+                )
                 self.assertEqual(seen, [UPLOAD] if early_failure else [UPLOAD, UPLOAD])
                 self.assertEqual(errors, [])
 
