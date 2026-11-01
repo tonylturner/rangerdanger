@@ -74,41 +74,177 @@ eu_policy_has_no_ephemeral_allow() {
 eu_nft_has_no_ephemeral_allow() {
   local nft_dump="$1"
   printf '%s\n' "$nft_dump" | python3 -c '
-import re, sys
+import ipaddress, re, sys
 low, high = map(int, sys.argv[1:3])
-lines = [line.split("#", 1)[0].strip() for line in sys.stdin]
-rules = [line for line in lines if "accept" in line]
-if not rules:
-    raise SystemExit("no nft accept rules found in effective forward chain")
-for line in rules:
-    if "ct state" in line and "established" in line and "related" in line:
+
+def refuse(message):
+    raise SystemExit(message)
+
+# This proves absence of new ephemeral-service grants, not absence of reply
+# packets addressed to client ephemeral ports. Established/related replies have
+# always been exempt here. Track service ports through the ordered dispatcher;
+# ct reply proto-src is the original-direction service destination after DNAT.
+chains = {}
+block = None
+closed = False
+lines = [line.strip() for line in sys.stdin if line.strip()]
+if not lines or lines.pop(0) != "table inet containd_policy {":
+    refuse("expected complete inet containd_policy table")
+for line in lines:
+    if closed:
+        refuse("unexpected content after nft table")
+    if line == "}":
+        if block is None:
+            closed = True
+        else:
+            block = None
         continue
-    if "!=" in line:
-        raise SystemExit("negated nft accept cannot prove absence of ephemeral destination-port access: " + line)
-    match = re.search(r"\bdport\b", line)
-    if not match:
-        raise SystemExit("unbounded nft accept may include ephemeral destination ports: " + line)
-    stops = []
-    for token in ("counter", "accept"):
-        index = line.find(token, match.end())
-        if index >= 0:
-            stops.append(index)
-    expression = line[match.end():min(stops) if stops else len(line)]
-    ports = re.findall(r"(?<![0-9])[0-9]+(?:-[0-9]+)?(?![0-9])", expression)
-    if not ports:
-        raise SystemExit("cannot parse nft destination-port accept: " + line)
-    for port in ports:
-        bounds = [int(value) for value in port.split("-")]
-        start, end = (bounds[0], bounds[-1])
-        if start <= high and end >= low:
-            raise SystemExit("nft accept includes ephemeral destination port(s): " + line)
+    if block is None:
+        match = re.fullmatch(r"(chain|counter|set) ([a-zA-Z0-9_]+) \{", line)
+        if not match:
+            refuse("unsupported nft table shape: " + line)
+        kind, name = match.groups()
+        block = (kind, name)
+        if kind == "chain":
+            if name in chains:
+                refuse("duplicate nft chain: " + name)
+            chains[name] = []
+    elif block[0] == "chain":
+        chains[block[1]].append(line)
+if not closed or block is not None or "forward" not in chains:
+    refuse("incomplete nft table or missing forward chain")
+
+number = r"(?:0x[0-9a-fA-F]+|[0-9]+)"
+quoted = r"\"[^\"\\]*\""
+port_atom = r"[0-9]+(?:-[0-9]+)?"
+port_value = rf"(?:{port_atom}|\{{\s*{port_atom}(?:\s*,\s*{port_atom})*\s*\}})"
+state_value = r"(?:[a-z]+|\{[a-z, ]+\})"
+address_value = r"(?:[0-9a-fA-F:./-]+|\{[0-9a-fA-F:./, -]+\})"
+iface_value = rf"(?:{quoted}|\{{\s*{quoted}(?:\s*,\s*{quoted})*\s*\}})"
+all_states = frozenset(("new", "established", "related", "invalid", "untracked"))
+reply_states = frozenset(("established", "related"))
+
+def port_set(value):
+    ports = set()
+    for atom in re.findall(port_atom, value):
+        bounds = list(map(int, atom.split("-")))
+        lo, hi = bounds[0], bounds[-1]
+        if not 0 <= lo <= hi <= 65535:
+            refuse("invalid nft port range: " + value)
+        ports.update(range(max(low, lo), min(high, hi) + 1))
+    return ports
+
+def parse(line):
+    rest, conditions, verdict, conditional = line, [], None, False
+    while rest:
+        def take(pattern):
+            return re.match("(?:" + pattern + r")(?= |$)", rest)
+        if (m := take(r"ct state (!= )?(" + state_value + ")")):
+            states = frozenset(re.findall(r"[a-z]+", m[2]))
+            if not states or not states <= all_states:
+                refuse("unknown nft connection state: " + line)
+            conditions.append(("state", all_states - states if m[1] else states))
+            conditional = True
+        elif (m := take(r"ct direction (original|reply)")):
+            if m[1] == "reply":
+                conditions.append(("state", reply_states))
+            conditional = True
+        elif (m := take(r"ct status assured")):
+            conditional = True
+        elif (m := take(r"(?:tcp dport|udp dport|ct reply proto-src) (" + port_value + ")")):
+            conditions.append(("port", port_set(m[1])))
+            conditional = True
+        elif (m := take(r"(?:ct (?:original|reply) )?ip6? (?:saddr|daddr) (" + address_value + ")")):
+            for address in re.findall(r"[0-9a-fA-F:./-]+", m[1]):
+                try:
+                    for endpoint in address.split("-"):
+                        ipaddress.ip_network(endpoint, strict=False)
+                except ValueError:
+                    refuse("unknown nft address expression: " + line)
+            conditional = True
+        elif (m := take(r"(?:iifname|oifname) " + iface_value)):
+            conditional = True
+        elif (m := take(r"meta l4proto (?:tcp|udp|icmp|ipv6-icmp)")):
+            conditional = True
+        elif (m := take(r"(?:ct|meta) mark & " + number + r" (?:==|!=) " + number)):
+            # Ignoring mark predicates over-approximates possible paths. A mark
+            # alone never proves a bounded service; all such accepts still fail.
+            conditional = True
+        elif (m := take(r"(?:ct mark set ct mark|meta mark set meta mark)(?: [|&] " + number + ")+")):
+            pass
+        elif (m := take(r"counter(?: name " + quoted + r"| packets [0-9]+ bytes [0-9]+)?")):
+            pass
+        elif (m := take(r"log prefix " + quoted + r" group [0-9]+")):
+            pass
+        elif (m := take(r"queue to [0-9]+")):
+            # Monitor queues can drop or continue. Treat continuation as possible.
+            pass
+        elif (m := take(r"(jump|goto) ([a-zA-Z0-9_]+)$")):
+            verdict = (m[1], m[2])
+        elif (m := take(r"(accept|drop|return|reject(?: with (?:tcp reset|icmpx admin-prohibited))?)$")):
+            verdict = (m[1], None)
+        else:
+            refuse("unsupported nft rule shape: " + line)
+        rest = rest[m.end():].lstrip()
+    return conditions, verdict, conditional
+
+parsed = {}
+visiting, visited = set(), set()
+accepts = 0
+
+def walk(name, states, ports):
+    global accepts
+    if name not in chains:
+        refuse("missing nft jump/goto target: " + name)
+    if name in visiting:
+        refuse("cyclic nft jump/goto: " + name)
+    key = (name, states, ports)
+    if key in visited:
+        return
+    visiting.add(name)
+    if name not in parsed:
+        rules = []
+        for line in chains[name]:
+            if line == "type filter hook forward priority filter; policy drop;" and name == "forward":
+                continue
+            rules.append((line, *parse(line)))
+        parsed[name] = rules
+    for line, conditions, verdict, conditional in parsed[name]:
+        matched_states, matched_ports = states, ports
+        for kind, values in conditions:
+            if kind == "state":
+                matched_states = matched_states & values
+            else:
+                matched_ports = matched_ports & values
+        if verdict:
+            action, target = verdict
+            if action in ("jump", "goto"):
+                # Validate targets even for a statically impossible state scope.
+                walk(target, matched_states, matched_ports)
+            elif action == "accept":
+                accepts += 1
+                if matched_states - reply_states and matched_ports:
+                    refuse("nft accept includes ephemeral destination port(s): " + line)
+            if not conditional and action != "jump":
+                break
+        # Unmatched conditional paths and jump returns continue conservatively.
+        # Never infer safety from a preceding conditional deny or mutable mark.
+    visiting.remove(name)
+    visited.add(key)
+
+if not chains["forward"] or chains["forward"][0] != "type filter hook forward priority filter; policy drop;":
+    refuse("forward base chain must have policy drop")
+walk("forward", all_states, frozenset(range(low, high + 1)))
+if not accepts:
+    refuse("no nft accept rules found reachable from forward")
+
 ' "$EPHEMERAL_LOW" "$EPHEMERAL_HIGH"
 }
 eu_check_nft_chain() {
   local label="$1" nft_dump
-  # containd 0.1.35 keeps every grant in containd_policy. The pre-filter
-  # table's accepts are not final across base chains; only its drops act.
-  nft_dump=$(docker exec "$FW" nft list chain inet containd_policy forward 2>"$TMP_DIR/nft.err") || {
+  # Read the whole policy table: forward dispatches to ordered/admission chains.
+  # The pre-filter table is not the final policy boundary.
+  nft_dump=$(docker exec "$FW" nft list table inet containd_policy 2>"$TMP_DIR/nft.err") || {
     fail "$label effective nft forward chain unavailable: $(cat "$TMP_DIR/nft.err")"
     return 1
   }

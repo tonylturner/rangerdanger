@@ -1,0 +1,494 @@
+table inet containd_policy {
+	counter rule_a3777f7fce253c9b {
+		packets 1 bytes 58
+	}
+
+	counter rule_279bf6d9fda59949 {
+		packets 5 bytes 320
+	}
+
+	counter rule_e5a22b8fd5672ee3 {
+		packets 1 bytes 52
+	}
+
+	counter rule_ab83b0706e7e5b3d {
+		packets 3 bytes 180
+	}
+
+	counter rule_8d65a0a22e0b53c4 {
+		packets 0 bytes 0
+	}
+
+	counter rule_3892b4a28ab18e83 {
+		packets 0 bytes 0
+	}
+
+	counter rule_07be78d930c2f120 {
+		packets 0 bytes 0
+	}
+
+	counter rule_6e2a54a8989e408a {
+		packets 0 bytes 0
+	}
+
+	counter rule_e0e7ca11941fd450 {
+		packets 0 bytes 0
+	}
+
+	counter rule_1936769d6b57d1d0 {
+		packets 0 bytes 0
+	}
+
+	counter rule_e1da780b3d078dba {
+		packets 4 bytes 370
+	}
+
+	counter rule_5d165ea7b43bf13b {
+		packets 0 bytes 0
+	}
+
+	counter rule_eac96547b5d0f078 {
+		packets 0 bytes 0
+	}
+
+	set zone_646d7a {
+		type ifname
+		elements = { "dmz" }
+	}
+
+	set zone_6c616e31 {
+		type ifname
+		elements = { "lan1" }
+	}
+
+	set zone_6c616e32 {
+		type ifname
+		elements = { "lan2" }
+	}
+
+	set zone_6c616e33 {
+		type ifname
+		elements = { "lan3" }
+	}
+
+	set zone_6c616e34 {
+		type ifname
+		elements = { "lan4" }
+	}
+
+	set zone_6c616e35 {
+		type ifname
+		elements = { "lan5" }
+	}
+
+	set zone_77616e {
+		type ifname
+		elements = { "wan" }
+	}
+
+	set local4_646d7a {
+		type ipv4_addr
+		elements = { 10.20.20.2 }
+	}
+
+	set local4_6c616e31 {
+		type ipv4_addr
+		elements = { 10.30.30.2 }
+	}
+
+	set local4_6c616e32 {
+		type ipv4_addr
+		elements = { 10.40.40.2 }
+	}
+
+	set local4_6c616e33 {
+		type ipv4_addr
+		elements = { 10.99.99.2 }
+	}
+
+	set local4_6c616e34 {
+		type ipv4_addr
+		elements = { 10.60.60.2 }
+	}
+
+	set local4_6c616e35 {
+		type ipv4_addr
+		elements = { 10.70.70.2 }
+	}
+
+	set local4_77616e {
+		type ipv4_addr
+		elements = { 10.10.10.2 }
+	}
+
+	chain deny_clean {
+		meta mark set meta mark & 0xe0ffffff
+		drop
+	}
+
+	chain reset_tcp_clean {
+		meta mark set meta mark & 0xe0ffffff
+		meta l4proto tcp reject with tcp reset
+	}
+
+	chain reset_other_clean {
+		meta mark set meta mark & 0xe0ffffff
+		reject with icmpx admin-prohibited
+	}
+
+	chain admit_clean {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		meta mark set meta mark & 0xe0ffffff
+		accept
+	}
+
+	chain related_clean {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		meta mark set meta mark & 0xe0ffffff
+		accept
+	}
+
+	chain admit_unconditional {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state != { invalid, untracked } ct mark set ct mark | 0x00000006
+		goto admit_clean
+	}
+
+	chain admit_conditional {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state != { invalid, untracked } ct mark set ct mark & 0xfffffffd
+		goto admit_clean
+	}
+
+	chain ordered_s2_rule_0 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_a3777f7fce253c9b"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_a3777f7fce253c9b"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_a3777f7fce253c9b"
+		goto admit_unconditional
+	}
+
+	chain ordered_s2_rule_1 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_279bf6d9fda59949"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_279bf6d9fda59949"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_279bf6d9fda59949"
+		goto admit_unconditional
+	}
+
+	chain ordered_s2_rule_2 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_e5a22b8fd5672ee3"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_e5a22b8fd5672ee3"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_e5a22b8fd5672ee3"
+		goto admit_unconditional
+	}
+
+	chain ordered_s2_rule_3 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_ab83b0706e7e5b3d"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_ab83b0706e7e5b3d"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_ab83b0706e7e5b3d"
+		goto admit_unconditional
+	}
+
+	chain ordered_s2_rule_4 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_8d65a0a22e0b53c4"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_8d65a0a22e0b53c4"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_8d65a0a22e0b53c4"
+		goto admit_unconditional
+	}
+
+	chain ordered_s2_rule_5 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_3892b4a28ab18e83"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_3892b4a28ab18e83"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_3892b4a28ab18e83"
+		goto admit_unconditional
+	}
+
+	chain ordered_s2_rule_6 {
+		counter name "rule_07be78d930c2f120" log prefix "containd:deny-unauthorized-historian-ingest:DENY " group 100
+		goto deny_clean
+	}
+
+	chain ordered_s2_rule_7 {
+		counter name "rule_6e2a54a8989e408a" log prefix "containd:deny-unauthorized-plc-web:DENY " group 100
+		goto deny_clean
+	}
+
+	chain ordered_s2_rule_8 {
+		counter name "rule_e0e7ca11941fd450" log prefix "containd:deny-unauthorized-iec104:DENY " group 100
+		goto deny_clean
+	}
+
+	chain ordered_s2_rule_9 {
+		counter name "rule_1936769d6b57d1d0" log prefix "containd:deny-unauthorized-modbus:DENY " group 100
+		goto deny_clean
+	}
+
+	chain ordered_s2 {
+		ct state != { invalid, untracked } ct direction original iifname "lan4" oifname "lan1" meta l4proto tcp ct reply proto-src 2404 ct original ip saddr 10.60.60.20 ct reply ip saddr 10.30.30.20 goto ordered_s2_rule_0
+		ct state != { invalid, untracked } ct direction reply iifname "lan1" oifname "lan4" meta l4proto tcp ct reply proto-src 2404 ct original ip saddr 10.60.60.20 ct reply ip saddr 10.30.30.20 goto ordered_s2_rule_0
+		ct state { invalid, untracked } iifname "lan4" oifname "lan1" tcp dport 2404 ip saddr 10.60.60.20 ip daddr 10.30.30.20 goto ordered_s2_rule_0
+		ct state != { invalid, untracked } ct direction original iifname "lan1" oifname "lan2" meta l4proto tcp ct reply proto-src 502 ct original ip saddr 10.30.30.20 ct reply ip saddr { 10.40.40.20-10.40.40.24 } goto ordered_s2_rule_1
+		ct state != { invalid, untracked } ct direction reply iifname "lan2" oifname "lan1" meta l4proto tcp ct reply proto-src 502 ct original ip saddr 10.30.30.20 ct reply ip saddr { 10.40.40.20-10.40.40.24 } goto ordered_s2_rule_1
+		ct state { invalid, untracked } iifname "lan1" oifname "lan2" tcp dport 502 ip saddr 10.30.30.20 ip daddr { 10.40.40.20-10.40.40.24 } goto ordered_s2_rule_1
+		ct state != { invalid, untracked } ct direction original iifname "lan1" oifname "lan2" meta l4proto tcp ct reply proto-src 502 ct original ip saddr 10.30.30.30 ct reply ip saddr 10.40.40.23 goto ordered_s2_rule_2
+		ct state != { invalid, untracked } ct direction reply iifname "lan2" oifname "lan1" meta l4proto tcp ct reply proto-src 502 ct original ip saddr 10.30.30.30 ct reply ip saddr 10.40.40.23 goto ordered_s2_rule_2
+		ct state { invalid, untracked } iifname "lan1" oifname "lan2" tcp dport 502 ip saddr 10.30.30.30 ip daddr 10.40.40.23 goto ordered_s2_rule_2
+		ct state != { invalid, untracked } ct direction original iifname "lan4" oifname "lan5" meta l4proto tcp ct reply proto-src 8081 ct original ip saddr 10.60.60.20 ct reply ip saddr 10.70.70.40 goto ordered_s2_rule_3
+		ct state != { invalid, untracked } ct direction reply iifname "lan5" oifname "lan4" meta l4proto tcp ct reply proto-src 8081 ct original ip saddr 10.60.60.20 ct reply ip saddr 10.70.70.40 goto ordered_s2_rule_3
+		ct state { invalid, untracked } iifname "lan4" oifname "lan5" tcp dport 8081 ip saddr 10.60.60.20 ip daddr 10.70.70.40 goto ordered_s2_rule_3
+		ct state != { invalid, untracked } ct direction original iifname "wan" oifname "lan5" meta l4proto tcp ct reply proto-src 8080 ct original ip saddr 10.10.10.0/24 ct reply ip saddr 10.70.70.40 goto ordered_s2_rule_4
+		ct state != { invalid, untracked } ct direction reply iifname "lan5" oifname "wan" meta l4proto tcp ct reply proto-src 8080 ct original ip saddr 10.10.10.0/24 ct reply ip saddr 10.70.70.40 goto ordered_s2_rule_4
+		ct state { invalid, untracked } iifname "wan" oifname "lan5" tcp dport 8080 ip saddr 10.10.10.0/24 ip daddr 10.70.70.40 goto ordered_s2_rule_4
+		ct state != { invalid, untracked } ct direction original iifname "dmz" oifname "lan1" meta l4proto tcp ct reply proto-src 8080 ct original ip saddr 10.20.20.20 ct reply ip saddr 10.30.30.30 goto ordered_s2_rule_5
+		ct state != { invalid, untracked } ct direction reply iifname "lan1" oifname "dmz" meta l4proto tcp ct reply proto-src 8080 ct original ip saddr 10.20.20.20 ct reply ip saddr 10.30.30.30 goto ordered_s2_rule_5
+		ct state { invalid, untracked } iifname "dmz" oifname "lan1" tcp dport 8080 ip saddr 10.20.20.20 ip daddr 10.30.30.30 goto ordered_s2_rule_5
+		ct state != { invalid, untracked } ct direction original iifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } oifname "lan5" meta l4proto tcp ct reply proto-src 8081 ct reply ip saddr 10.70.70.40 goto ordered_s2_rule_6
+		ct state != { invalid, untracked } ct direction reply iifname "lan5" oifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } meta l4proto tcp ct reply proto-src 8081 ct reply ip saddr 10.70.70.40 goto ordered_s2_rule_6
+		ct state { invalid, untracked } iifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } oifname "lan5" tcp dport 8081 ip daddr 10.70.70.40 goto ordered_s2_rule_6
+		ct state != { invalid, untracked } ct direction original iifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } oifname "lan1" meta l4proto tcp ct reply proto-src 8080 ct reply ip saddr 10.30.30.30 goto ordered_s2_rule_7
+		ct state != { invalid, untracked } ct direction reply iifname "lan1" oifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } meta l4proto tcp ct reply proto-src 8080 ct reply ip saddr 10.30.30.30 goto ordered_s2_rule_7
+		ct state { invalid, untracked } iifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } oifname "lan1" tcp dport 8080 ip daddr 10.30.30.30 goto ordered_s2_rule_7
+		ct state != { invalid, untracked } ct direction original iifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } oifname "lan1" meta l4proto tcp ct reply proto-src 2404 goto ordered_s2_rule_8
+		ct state != { invalid, untracked } ct direction reply iifname "lan1" oifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } meta l4proto tcp ct reply proto-src 2404 goto ordered_s2_rule_8
+		ct state { invalid, untracked } iifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } oifname "lan1" tcp dport 2404 goto ordered_s2_rule_8
+		ct state != { invalid, untracked } ct direction original iifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } oifname "lan2" meta l4proto tcp ct reply proto-src 502 goto ordered_s2_rule_9
+		ct state != { invalid, untracked } ct direction reply iifname "lan2" oifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } meta l4proto tcp ct reply proto-src 502 goto ordered_s2_rule_9
+		ct state { invalid, untracked } iifname { "dmz", "lan1", "lan2", "lan3", "lan4", "lan5", "wan" } oifname "lan2" tcp dport 502 goto ordered_s2_rule_9
+		goto deny_clean
+	}
+
+	chain gate_in_policy_rule_0 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_a3777f7fce253c9b"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_a3777f7fce253c9b"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_a3777f7fce253c9b"
+		goto admit_unconditional
+	}
+
+	chain gate_in_policy_rule_1 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_279bf6d9fda59949"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_279bf6d9fda59949"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_279bf6d9fda59949"
+		goto admit_unconditional
+	}
+
+	chain gate_in_policy_rule_2 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_e5a22b8fd5672ee3"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_e5a22b8fd5672ee3"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_e5a22b8fd5672ee3"
+		goto admit_unconditional
+	}
+
+	chain gate_in_policy_rule_3 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_ab83b0706e7e5b3d"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_ab83b0706e7e5b3d"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_ab83b0706e7e5b3d"
+		goto admit_unconditional
+	}
+
+	chain gate_in_policy_rule_4 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_8d65a0a22e0b53c4"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_8d65a0a22e0b53c4"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_8d65a0a22e0b53c4"
+		goto admit_unconditional
+	}
+
+	chain gate_in_policy_rule_5 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_3892b4a28ab18e83"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_3892b4a28ab18e83"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_3892b4a28ab18e83"
+		goto admit_unconditional
+	}
+
+	chain gate_in_policy_rule_6 {
+		counter name "rule_07be78d930c2f120" log prefix "containd:deny-unauthorized-historian-ingest:DENY " group 100
+		goto deny_clean
+	}
+
+	chain gate_in_policy_rule_7 {
+		counter name "rule_6e2a54a8989e408a" log prefix "containd:deny-unauthorized-plc-web:DENY " group 100
+		goto deny_clean
+	}
+
+	chain gate_in_policy_rule_8 {
+		counter name "rule_e0e7ca11941fd450" log prefix "containd:deny-unauthorized-iec104:DENY " group 100
+		goto deny_clean
+	}
+
+	chain gate_in_policy_rule_9 {
+		counter name "rule_1936769d6b57d1d0" log prefix "containd:deny-unauthorized-modbus:DENY " group 100
+		goto deny_clean
+	}
+
+	chain gate_in_policy {
+		goto deny_clean
+	}
+
+	chain gate_out_reply_policy_rule_0 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_a3777f7fce253c9b"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_a3777f7fce253c9b"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_a3777f7fce253c9b"
+		goto admit_unconditional
+	}
+
+	chain gate_out_reply_policy_rule_1 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_279bf6d9fda59949"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_279bf6d9fda59949"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_279bf6d9fda59949"
+		goto admit_unconditional
+	}
+
+	chain gate_out_reply_policy_rule_2 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_e5a22b8fd5672ee3"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_e5a22b8fd5672ee3"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_e5a22b8fd5672ee3"
+		goto admit_unconditional
+	}
+
+	chain gate_out_reply_policy_rule_3 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_ab83b0706e7e5b3d"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_ab83b0706e7e5b3d"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_ab83b0706e7e5b3d"
+		goto admit_unconditional
+	}
+
+	chain gate_out_reply_policy_rule_4 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_8d65a0a22e0b53c4"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_8d65a0a22e0b53c4"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_8d65a0a22e0b53c4"
+		goto admit_unconditional
+	}
+
+	chain gate_out_reply_policy_rule_5 {
+		meta mark & 0x10000000 != 0x00000000 goto deny_clean
+		ct state { invalid, untracked } counter name "rule_3892b4a28ab18e83"
+		ct state != { invalid, untracked } ct mark & 0x00000001 == 0x00000000 counter name "rule_3892b4a28ab18e83"
+		ct state != { invalid, untracked } ct mark & 0x00000001 != 0x00000000 ct mark & 0x00000006 != 0x00000006 counter name "rule_3892b4a28ab18e83"
+		goto admit_unconditional
+	}
+
+	chain gate_out_reply_policy_rule_6 {
+		counter name "rule_07be78d930c2f120" log prefix "containd:deny-unauthorized-historian-ingest:DENY " group 100
+		goto deny_clean
+	}
+
+	chain gate_out_reply_policy_rule_7 {
+		counter name "rule_6e2a54a8989e408a" log prefix "containd:deny-unauthorized-plc-web:DENY " group 100
+		goto deny_clean
+	}
+
+	chain gate_out_reply_policy_rule_8 {
+		counter name "rule_e0e7ca11941fd450" log prefix "containd:deny-unauthorized-iec104:DENY " group 100
+		goto deny_clean
+	}
+
+	chain gate_out_reply_policy_rule_9 {
+		counter name "rule_1936769d6b57d1d0" log prefix "containd:deny-unauthorized-modbus:DENY " group 100
+		goto deny_clean
+	}
+
+	chain gate_out_reply_policy {
+		goto deny_clean
+	}
+
+	chain iec104_monitor_queue {
+		ct status assured meta mark set meta mark & 0xe1ffffff | 0x01000000 queue to 101
+		ct state != { invalid, untracked } meta mark set meta mark & 0xe3ffffff | 0x03000000 queue to 101
+		meta mark set meta mark & 0xe1ffffff | 0x01000000 queue to 101
+	}
+
+	chain gate_deliver {
+		meta l4proto tcp ct mark & 0x00120000 == 0x00120000 tproxy ip to 127.0.0.1:18101 meta mark set meta mark | 0x00400000 accept
+		meta l4proto tcp ct mark & 0x00120000 == 0x00120000 tproxy ip6 to [::1]:18101 meta mark set meta mark | 0x00400000 accept
+		meta l4proto tcp ct mark & 0x00120000 == 0x00100000 tproxy ip to 127.0.0.1:18100 meta mark set meta mark | 0x00400000 accept
+		meta l4proto tcp ct mark & 0x00120000 == 0x00100000 tproxy ip6 to [::1]:18100 meta mark set meta mark | 0x00400000 accept
+	}
+
+	chain gate_ics {
+	}
+
+	chain gate_admit {
+		jump gate_deliver
+	}
+
+	chain gate_pre {
+		type filter hook prerouting priority dstnat + 10; policy accept;
+		iifname "lo" return
+		ct mark & 0x00200000 == 0x00200000 ct direction reply meta mark set meta mark | 0x00400000 accept
+		fib daddr type local return
+		ct mark & 0x00100000 == 0x00100000 jump gate_deliver
+		meta l4proto tcp ct mark & 0x00100000 == 0x00100000 reject with tcp reset
+	}
+
+	chain gate_in {
+		meta mark & 0x10000000 != 0x00000000 goto gate_in_policy
+		ct state established ct mark & 0x00000007 == 0x00000006 goto admit_clean
+		ct state != related goto gate_in_policy
+		ct state related goto related_clean
+	}
+
+	chain gate_out_reply {
+		tcp flags & rst == rst accept
+		meta mark & 0x10000000 != 0x00000000 goto gate_out_reply_policy
+		ct state established ct mark & 0x00000007 == 0x00000006 goto admit_clean
+		ct state != related goto gate_out_reply_policy
+		ct state related goto related_clean
+	}
+
+	chain output {
+		type filter hook output priority filter; policy accept;
+		ct mark & 0x00100000 == 0x00100000 ct direction reply goto gate_out_reply
+	}
+
+	chain gate_out {
+		type filter hook output priority mangle; policy accept;
+		meta mark & 0x00800000 == 0x00800000 ct mark set ct mark | 0x00200000
+	}
+
+	chain input {
+		type filter hook input priority filter; policy drop;
+		iifname "lo" accept
+		ct mark & 0x00100000 == 0x00100000 ct direction original goto gate_in
+		ct state { established, related } accept
+		ct state invalid drop
+		iifname "lan3" ip saddr { 10.99.99.3, 10.99.99.10 } ip daddr 10.99.99.2 tcp dport 8080 accept
+		ip protocol icmp icmp type { echo-reply, destination-unreachable, echo-request, time-exceeded } accept
+		icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, nd-neighbor-solicit, nd-neighbor-advert } accept
+		iifname "lan3" tcp dport 8080 accept
+		iifname "lan3" tcp dport 8443 accept
+		iifname "lan3" tcp dport 2222 accept
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+		ct mark & 0x00100000 == 0x00100000 drop
+		meta mark & 0x04000000 == 0x00000000 ct state != { invalid, untracked } ct direction original iifname "lan4" oifname "lan1" meta l4proto tcp ct reply proto-src 2404 ct original ip saddr 10.60.60.20 ct reply ip saddr 10.30.30.20 counter name "rule_e1da780b3d078dba" jump iec104_monitor_queue
+		meta mark & 0x04000000 == 0x00000000 ct state != { invalid, untracked } ct direction reply iifname "lan1" oifname "lan4" meta l4proto tcp ct reply proto-src 2404 ct original ip saddr 10.60.60.20 ct reply ip saddr 10.30.30.20 counter name "rule_e1da780b3d078dba" jump iec104_monitor_queue
+		meta mark & 0x04000000 == 0x00000000 ct state { invalid, untracked } iifname "lan4" oifname "lan1" tcp dport 2404 ip saddr 10.60.60.20 ip daddr 10.30.30.20 counter name "rule_e1da780b3d078dba" jump iec104_monitor_queue
+		meta mark & 0x04000000 == 0x00000000 ct state != { invalid, untracked } ct direction original iifname "lan4" oifname "lan1" meta l4proto tcp ct reply proto-src 2404 ct original ip saddr 10.60.60.20 ct reply ip saddr 10.30.30.20 counter name "rule_5d165ea7b43bf13b" jump iec104_monitor_queue
+		meta mark & 0x04000000 == 0x00000000 ct state != { invalid, untracked } ct direction reply iifname "lan1" oifname "lan4" meta l4proto tcp ct reply proto-src 2404 ct original ip saddr 10.60.60.20 ct reply ip saddr 10.30.30.20 counter name "rule_5d165ea7b43bf13b" jump iec104_monitor_queue
+		meta mark & 0x04000000 == 0x00000000 ct state { invalid, untracked } iifname "lan4" oifname "lan1" tcp dport 2404 ip saddr 10.60.60.20 ip daddr 10.30.30.20 counter name "rule_5d165ea7b43bf13b" jump iec104_monitor_queue
+		meta mark & 0x04000000 == 0x00000000 ct state != { invalid, untracked } ct direction original iifname "lan4" oifname "lan1" meta l4proto tcp ct reply proto-src 2404 ct original ip saddr 10.60.60.20 ct reply ip saddr 10.30.30.20 counter name "rule_eac96547b5d0f078" jump iec104_monitor_queue
+		meta mark & 0x04000000 == 0x00000000 ct state != { invalid, untracked } ct direction reply iifname "lan1" oifname "lan4" meta l4proto tcp ct reply proto-src 2404 ct original ip saddr 10.60.60.20 ct reply ip saddr 10.30.30.20 counter name "rule_eac96547b5d0f078" jump iec104_monitor_queue
+		meta mark & 0x04000000 == 0x00000000 ct state { invalid, untracked } iifname "lan4" oifname "lan1" tcp dport 2404 ip saddr 10.60.60.20 ip daddr 10.30.30.20 counter name "rule_eac96547b5d0f078" jump iec104_monitor_queue
+		meta mark & 0x10000000 != 0x00000000 goto ordered_s2
+		ct state established ct mark & 0x00000007 == 0x00000006 goto admit_clean
+		ct state != related goto ordered_s2
+		ct state related goto related_clean
+	}
+}
