@@ -23,7 +23,12 @@ eu_shadow_check() {
   }
 }
 
+eu_shadow_wait_health() {
+  python3 "$SCRIPT_DIR/lib/containd_readiness.py" --container "$FW" --token "$FW_TOKEN" --health
+}
+
 eu_shadow_health() {
+  eu_shadow_wait_health || return
   eu_shadow_get /health "$TMP_DIR/G29-health.json" || return
   eu_firewall_config >"$TMP_DIR/G29-applied.json" || return
   # Healthy inactive IEC enforcement is expected: these are monitor-only rules.

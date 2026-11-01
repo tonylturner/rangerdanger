@@ -29,6 +29,14 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      containd_source:
+        description: >-
+          Optional containd Docker build context for source mode, for a
+          candidate gate (e.g. https://github.com/tonylturner/containd.git#<full SHA>).
+          Empty builds the compose default tag.
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -38,6 +46,8 @@ permissions:
 # the DOCKERHUB_USERNAME / DOCKERHUB_TOKEN secrets (forks run anonymous).
 env:
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  # Empty unless a dispatch names a candidate; compose then uses its default.
+  CONTAIND_SOURCE: ${{ inputs.containd_source }}
 
 jobs:
   smoke:
@@ -118,7 +128,9 @@ jobs:
           done <<<"$ids"
           docker image inspect "${image_list[@]}" > build/smoke-receipts/images.json
           # Source mode builds the firewall locally; record the image it runs.
-          docker image inspect "$(docker inspect --format '{{.Image}}' rangerdanger-firewall)" > build/smoke-receipts/containd.json
+          if image=$(docker inspect --format '{{.Image}}' rangerdanger-firewall 2>/dev/null); then
+            docker image inspect "$image" > build/smoke-receipts/containd.json
+          fi
           curl -fsS --max-time 10 http://localhost:8088/api/build > build/smoke-receipts/api-build.json
           curl -fsS --max-time 10 http://localhost:8088/api/firewall/active > build/smoke-receipts/firewall-active.json
 
@@ -393,6 +405,8 @@ jobs:
         run: ./scripts/eu-iec104-smoke.sh
 
       - name: EU reviewed lab commands smoke
+        # Runs after a failed gate too, so one run reports both results.
+        if: success() || failure()
         run: ./scripts/lab-commands-smoke.sh eu-iec104-substation
         env:
           LAB_CMD_LOG_DIR: /tmp/eu-lab-commands
@@ -402,6 +416,8 @@ jobs:
         run: |
           mkdir -p /tmp/logs "$EU_GATE_EVIDENCE_DIR"
           curl -sS http://localhost:8088/api/range > /tmp/logs/range.json 2>&1 || true
+          curl -sS http://localhost:8088/api/firewall/health > /tmp/logs/firewall-health.json 2>&1 || true
+          docker image inspect "$(docker inspect --format '{{.Image}}' rangerdanger-firewall)" > /tmp/logs/containd-image.json 2>&1 || true
           for project in rangerdanger-platform rangerdanger; do
             for c in $(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Names}}'); do
               docker logs --tail=200 "$c" > "/tmp/logs/$c.log" 2>&1 || true

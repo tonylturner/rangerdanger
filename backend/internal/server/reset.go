@@ -43,12 +43,17 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 	}
 
 	// 1. Apply the default firewall policy
-	_, err = s.applyFirewallConfigInternal(ctx, gen, policy)
+	applied, applyErr := s.applyFirewallConfigInternal(ctx, gen, policy)
+	err = applyErr
 	actions = append(actions, resetAction{
 		Action:  "Apply " + policy + " firewall baseline",
 		Success: err == nil,
 		Detail:  boolDetail(err == nil, policy+" config applied", errStr(err)),
 	})
+	if applyErr != nil {
+		writeApplyError(c, applyErr, applied, gin.H{"success": false, "actions": actions})
+		return
+	}
 
 	// 2. Reset all field devices via RTAC commands
 	for _, cmd := range recipe.resetCommands {
@@ -110,8 +115,9 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		status = http.StatusBadGateway
 	}
 	c.JSON(status, gin.H{
-		"success": allSuccess,
-		"actions": actions,
+		"containd": applied.Receipt,
+		"success":  allSuccess,
+		"actions":  actions,
 	})
 }
 

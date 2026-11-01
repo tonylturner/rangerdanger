@@ -131,9 +131,9 @@ func (s *Server) handleFirewallApply(c *gin.Context) {
 		return
 	}
 
-	warnings, err := s.applyFirewallConfigInternal(c.Request.Context(), rangeOf(c), req.Config)
+	applied, err := s.applyFirewallConfigInternal(c.Request.Context(), rangeOf(c), req.Config)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		writeApplyError(c, err, applied, gin.H{})
 		return
 	}
 
@@ -141,8 +141,9 @@ func (s *Server) handleFirewallApply(c *gin.Context) {
 		"status":        "applied",
 		"active_config": req.Config,
 	}
-	if len(warnings) > 0 {
-		resp["warnings"] = warnings
+	resp["containd"] = applied.Receipt
+	if len(applied.Warnings) > 0 {
+		resp["warnings"] = applied.Warnings
 	}
 	c.JSON(http.StatusOK, resp)
 }
@@ -187,11 +188,9 @@ func readPolicyJSONWithRetry(path string) ([]byte, error) {
 }
 
 // applyFirewallConfigInternal applies a named firewall config (reusable by step
-// execution). Returns containd's commit warnings (parsed from
-// X-Containd-Warnings) so callers can surface partial failures — typical
-// causes: nft apply hit "operation not permitted", interface reconfigure
-// partial, pcap config invalid. Empty warnings + nil error = clean apply.
-func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle.Generation, configName string) ([]string, error) {
+// execution). The result carries the commit's receipt and warnings; the policy
+// label is published only after runtime protection is protecting or degraded.
+func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle.Generation, configName string) (*containd.ApplyResult, error) {
 	s.policyApplyMu.Lock()
 	defer s.policyApplyMu.Unlock()
 	configPath, err := s.policyPath(gen.Package, configName)
@@ -208,9 +207,9 @@ func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle
 	}
 
 	applyStarted := time.Now().UTC()
-	warnings, err := gen.Containd().ImportConfig(ctx, data)
+	applied, err := gen.Containd().ImportConfig(ctx, data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to apply config to containd: %w", err)
+		return applied, fmt.Errorf("failed to apply config to containd: %w", err)
 	}
 
 	if !gen.Commit(func() {
@@ -222,10 +221,10 @@ func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle
 		s.policyEvidenceSince = applyStarted
 		s.activeConfigMu.Unlock()
 	}) {
-		return nil, errRangeStopped
+		return applied, errRangeStopped
 	}
 
-	return warnings, nil
+	return applied, nil
 }
 
 // policyPath is the file of the package's named policy.

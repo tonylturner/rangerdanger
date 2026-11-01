@@ -4,7 +4,7 @@ This optional sidebar preserves the operational investigation outside the seven 
 CC→RTU TCP/2404 carries Type 46 select and execute, ACT-CON and ACT-TERM. RTU→breaker TCP/502 carries the downstream FC6 request. Correlate selected/executed times, matching feedback and the device audit revision with its first_solve acknowledgement. CLI success does not independently prove matching physical feedback. SBO is sequencing, not source authentication; direct execute, expired select and mismatched execute are rejection cases, not new authorities.
 
 ### Old session versus new connection
-A foreign monitor admitted under weak may survive a new deny because it is established. Keep its five-tuple and compare a NEW GI attempt after improved. A new timeout and continued old reception describe two different policy epochs. The [conntrack reference](#eu-established-sessions) documents exact CC tuple lookup/deletion; never flush unrelated sessions or invent a TCP reset. Removing only the CC→RTU allow in a temporary restrictive policy must precede session deletion, otherwise reconnect can succeed.
+A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. Keep the monitor's five-tuple and compare delivery with a NEW GI attempt after improved. The [conntrack reference](#eu-established-sessions) documents optional exact CC tuple revocation/deletion for clearing retained state or forcing inspection from SYN; never flush unrelated sessions or invent a TCP reset. To isolate the CC, apply a temporary restrictive policy without its allow; session deletion is not required.
 
 ### Stale cache versus local protection
 Record link_down → point_stale (IV+NT/link_lost) → local_protection_trip → first_solve → later link_up → gi_complete. A stale value is neither zero nor a current switch position. Autonomous S1 protection can trip and lock out CB1 while the CC retains its former closed indication. clear_fault removes the initiating fault but does not acknowledge lockout or restore supply. Reset is workshop restoration, not an operating switching order.
@@ -13,7 +13,7 @@ Recovery requires a later connection_seq and GI in the same cache epoch, with GO
 
 ### Reflection questions
 
-These optional questions preserve the operational investigation; they are not additional graded workshop steps. A denied path can be established by strict active probes without mandatory logged-deny evidence.
+These optional questions preserve the operational investigation; they are not additional required workshop steps. A denied path can be established by strict active probes without mandatory logged-deny evidence.
 
 #### baseline-reachable
 
@@ -25,7 +25,7 @@ Does permitting TCP/2404 distinguish an authorised open from an unauthorised clo
 
 #### existing-flow
 
-Will a new deny necessarily sever an already established connection?
+When a commit no longer admits an established connection, what stops on its next packet, and why can its Sessions entry remain visible?
 
 #### source-boundary
 

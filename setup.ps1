@@ -292,7 +292,9 @@ if ($SkipFirewallGate) {
     foreach ($cfg in @("weak", "improved")) {
         try {
             $body = @{ config = $cfg } | ConvertTo-Json -Compress
-            $applyResp = Invoke-WebRequest -Uri "http://localhost:8088/api/firewall/apply" -Method POST -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+            $applyResp = Invoke-WebRequest -Uri "http://localhost:8088/api/firewall/apply" -Method POST -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
+            $applyResult = $applyResp.Content | ConvertFrom-Json -ErrorAction Stop
+            Assert-ContaindProtection $applyResult
             # A 200 with warnings means containd committed the policy but the
             # kernel rejected part of the ruleset. On Windows/WSL2 this is the
             # CONFIG_NFT_QUEUE-missing case: the "queue num" DPI rules fail and,
@@ -310,13 +312,15 @@ if ($SkipFirewallGate) {
     }
     try {
         $resetResp = Invoke-WebRequest -Uri "http://localhost:8088/api/workshop/reset" -Method POST -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
+        $resetResult = $resetResp.Content | ConvertFrom-Json -ErrorAction Stop
+        Assert-ContaindProtection $resetResult
         # Check the TOP-LEVEL success, not a substring. The response embeds a
         # per-action array whose entries each carry their own "success":true,
         # so a naive -match '"success":true' false-passes even when the overall
         # reset failed (a sim sub-command returned success:false). Parse and
         # read the top-level field, matching test-lifecycle.ps1.
         $resetOk = $false
-        try { $resetOk = ((($resetResp.Content | ConvertFrom-Json).success) -eq $true) } catch { $resetOk = $false }
+        try { $resetOk = ($resetResult.success -eq $true) } catch { $resetOk = $false }
         if (-not $resetOk) {
             Warn "  /api/workshop/reset reported non-success -- students hitting Reset Lab will see partial state"
             $fwFail = $true

@@ -60,6 +60,17 @@ t_run eu_execute_step authored-action "ambiguous step" served-workshop
 t_expect_fails 1 "ambiguous authored IDs fail before execution"
 t_expect_eq "$POSTS" "$before" "an ambiguous step does not execute"
 
+SCENARIO='{"steps":"[{\"id\":\"authored-action\",\"action\":{\"type\":\"firewall\"}}]"}'
+for state in protecting degraded pending failed disabled missing; do
+  RESPONSE=$(jq -nc --arg state "$state" '{success:true,action_type:"firewall",results:[{success:true}],containd:{applyId:"step-id",protection:$state}} | if $state == "missing" then del(.containd) else . end')
+  before="$POSTS"
+  t_run eu_execute_step authored-action "policy step" served-workshop
+  expected=1
+  [ "$state" != protecting ] || expected=0
+  t_expect_eq "$T_STATUS" "$expected" "firewall step requires its own protecting receipt ($state)"
+  t_expect_eq "$POSTS" "$((before + 1))" "policy step is never retried ($state)"
+done
+
 # Calls without a scenario cannot silently fall back to retired curriculum.
 before="$GETS"
 t_run eu_execute_step authored-action "missing scenario"

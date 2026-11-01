@@ -6,17 +6,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/tturner/rangerdanger/backend/internal/containd/containdtest"
 )
 
 // TestImportConfigSuccess verifies config import via the candidate/commit flow.
 func TestImportConfigSuccess(t *testing.T) {
 	var candidateBody []byte
 	var sawCandidate, sawCommit bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
 		if r.Method == http.MethodGet {
 			io.WriteString(w, `{}`)
@@ -81,7 +82,7 @@ func TestImportConfigSuccess(t *testing.T) {
 // caller. Auxiliary infrastructure warnings remain visible on success;
 // ruleset apply failures instead return an error with recovery outcomes.
 func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
 		if r.Method == http.MethodGet {
 			io.WriteString(w, `{}`)
@@ -104,23 +105,23 @@ func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	warnings, err := client.ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall":{"rules":[]}}`))
+	applied, err := client.ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall":{"rules":[]}}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(warnings) != 2 {
-		t.Fatalf("expected 2 warnings, got %d: %v", len(warnings), warnings)
+	if len(applied.Warnings) != 2 {
+		t.Fatalf("expected 2 warnings, got %d: %v", len(applied.Warnings), applied.Warnings)
 	}
-	if !strings.Contains(warnings[0], "routing") {
-		t.Errorf("warning[0] missing routing hint: %q", warnings[0])
+	if !strings.Contains(applied.Warnings[0], "routing") {
+		t.Errorf("warning[0] missing routing hint: %q", applied.Warnings[0])
 	}
-	if !strings.Contains(warnings[1], "eth9 not found") {
-		t.Errorf("warning[1] missing iface hint: %q", warnings[1])
+	if !strings.Contains(applied.Warnings[1], "eth9 not found") {
+		t.Errorf("warning[1] missing iface hint: %q", applied.Warnings[1])
 	}
 }
 
 func TestImportConfigNoWarningsHeader(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
 		if r.Method == http.MethodGet {
 			io.WriteString(w, `{}`)
@@ -130,12 +131,12 @@ func TestImportConfigNoWarningsHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	warnings, err := newTestClient(srv.URL).ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall":{"rules":[]}}`))
+	applied, err := newTestClient(srv.URL).ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall":{"rules":[]}}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if warnings != nil {
-		t.Errorf("expected nil warnings for clean apply, got %v", warnings)
+	if applied.Warnings != nil {
+		t.Errorf("expected nil warnings for clean apply, got %v", applied.Warnings)
 	}
 }
 
@@ -197,7 +198,7 @@ func TestEnsureEnforcementOn_EmptyInput(t *testing.T) {
 
 // TestImportConfigFailure verifies error handling on import failure.
 func TestImportConfigFailure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`{"error":"invalid config schema"}`))
 	}))
@@ -217,7 +218,7 @@ func TestImportConfigFailure(t *testing.T) {
 // This simulates what would happen if lab mode is disabled and the
 // self-generated JWT is not accepted.
 func TestImportConfigAuth403(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte(`{"error":"password change required"}`))
 	}))
@@ -232,7 +233,7 @@ func TestImportConfigAuth403(t *testing.T) {
 
 func TestImportRejectsUnsafeBeforeAnyRequest(t *testing.T) {
 	var requests atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1) }))
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1) }))
 	defer srv.Close()
 	for _, data := range []string{`{}`, `{"interfaces":[{"name":"lan3","zone":"lan3","access":{"mgmt":false}}]}`} {
 		if _, err := newTestClient(srv.URL).ImportConfig(t.Context(), []byte(data)); err == nil {
@@ -249,7 +250,7 @@ func TestImportRequiresCandidateAndCommit(t *testing.T) {
 		for _, code := range []int{400, 401, 403, 404, 405, 409, 422, 500, 503} {
 			t.Run(fmt.Sprintf("%s/%d", phase, code), func(t *testing.T) {
 				var legacy atomic.Int32
-				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if r.Method == http.MethodGet {
 						io.WriteString(w, `{}`)
 						return
@@ -275,7 +276,7 @@ func TestImportRequiresCandidateAndCommit(t *testing.T) {
 func TestImportCommitApplyFailurePreservesRecoveryOutcomes(t *testing.T) {
 	const body = `{"error":"configuration apply failed","detail":"ruleset apply failed","restored":true,"reapplied":false,"reapplyError":"recovery failed"}`
 	var requests []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r.Method+" "+r.URL.Path)
 		switch r.URL.Path {
 		case "/api/v1/config":
@@ -290,9 +291,9 @@ func TestImportCommitApplyFailurePreservesRecoveryOutcomes(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	warnings, err := newTestClient(srv.URL).ImportConfig(t.Context(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`))
-	if err == nil || !strings.Contains(err.Error(), "commit returned 500: "+body) || warnings != nil {
-		t.Fatalf("warnings=%v, error=%v; want complete recovery response", warnings, err)
+	applied, err := newTestClient(srv.URL).ImportConfig(t.Context(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`))
+	if err == nil || !strings.Contains(err.Error(), "commit returned 500: "+body) || applied != nil {
+		t.Fatalf("warnings=%v, error=%v; want complete recovery response", applied, err)
 	}
 	if len(requests) != 3 {
 		t.Fatalf("unexpected retry/fallback: %v", requests)

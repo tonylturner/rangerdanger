@@ -104,7 +104,7 @@ steps:
 
       **Workshop note:**
       - Selections save automatically. Do not use Execute Step for this decision; click Mark Complete when you have recorded the tradeoff, then record your reflection.
-      - Apply Your Plan in Lab 2.2 to test your choices. Selecting an action alone does not apply it.
+      - Apply Your Plan in Lab 2.2 to test your choices. Selecting an action alone does not apply it. Selection order does not set rule order; compilation uses authored slots.
 
       | Kind | Actions | Effect when applied |
       |---|---|---|

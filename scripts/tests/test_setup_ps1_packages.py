@@ -128,7 +128,7 @@ function Invoke-SetupDocker($DockerArgs, $TimeoutSec) {
         self.assertEqual(set(json.loads(result.stdout)), {8088, 9080, 2222})
 
     def test_health_and_range_requests_are_bounded_and_fail_closed(self):
-        for scenario in ("ready", "default", "failed", "preflight-failed", "conflict", "wrong-then-ready", "unknown-then-ready", "timeout", "bad-post", "wrong-post"):
+        for scenario in ("ready", "default", "degraded", "missing-receipt", "pending", "failed-receipt", "failed", "preflight-failed", "conflict", "wrong-then-ready", "unknown-then-ready", "timeout", "bad-post", "wrong-post"):
             with self.subTest(scenario=scenario):
                 result = powershell(LOAD_PACKAGE + """
 class RangeConflict : System.Exception {
@@ -161,7 +161,12 @@ function Get-RangeStatus($Api) {
         return [pscustomobject]@{phase='ready';package='us'}
     }
     if ($env:SCENARIO -eq 'unknown-then-ready' -and $script:gets -eq 1) { return $null }
-    return [pscustomobject]@{phase='ready';package='eu'}
+    $status = [pscustomobject]@{phase='ready';package='eu';containd=@{applyId='start-id';protection='protecting'}}
+    if ($env:SCENARIO -eq 'degraded') { $status.containd.protection = 'degraded' }
+    if ($env:SCENARIO -eq 'missing-receipt') { $status.containd = $null }
+    if ($env:SCENARIO -eq 'pending') { $status.containd.protection = 'pending' }
+    if ($env:SCENARIO -eq 'failed-receipt') { $status.containd.protection = 'failed' }
+    return $status
 }
 Wait-SetupHealth 'http://fixture' 1
 $failed = $false
@@ -169,13 +174,61 @@ $package = if ($env:SCENARIO -eq 'default') { '' } else { 'eu' }
 $budget = if ($env:SCENARIO -eq 'timeout') { 0 } else { 1 }
 try { $result = Start-SetupRange 'http://fixture' $package $budget }
 catch { $failed = $true }
-$expectedFailure = $env:SCENARIO -in @('failed','preflight-failed','conflict','timeout','bad-post','wrong-post')
+$expectedFailure = $env:SCENARIO -in @('degraded','missing-receipt','pending','failed-receipt','failed','preflight-failed','conflict','timeout','bad-post','wrong-post')
 if ($failed -ne $expectedFailure) { throw 'incorrect range result' }
 if (-not $failed -and $result -ne 'eu') { throw 'wrong package accepted' }
 if ($env:SCENARIO -eq 'conflict' -and $script:posts -ne 3) { throw 'lost retry' }
 if ($env:SCENARIO -in @('wrong-then-ready','unknown-then-ready') -and $script:gets -ne 2) { throw 'false readiness' }
 """, SCENARIO=scenario)
                 self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_firewall_gate_requires_apply_and_reset_protection_receipts(self):
+        source = (ROOT / "setup.ps1").read_text()
+        start = source.index("if ($SkipFirewallGate) {")
+        end = source.index("# OpenPLC is used by both", start)
+        gate = source[start:end]
+        for route in ("valid", "apply", "reset"):
+            protections = ("protecting",) if route == "valid" else (
+                "empty", "missing", "pending", "degraded", "failed")
+            for protection in protections:
+                with self.subTest(route=route, protection=protection):
+                    result = powershell(LOAD_PACKAGE + r'''
+function Say($Message) { }
+function Warn($Message) { }
+function Die($Message) { throw $Message }
+$SkipFirewallGate = $false
+function Invoke-WebRequest($Uri, $Method, $ContentType, $Body, [switch]$UseBasicParsing, $TimeoutSec, $ErrorAction) {
+    if ($Uri.EndsWith('/api/firewall/health')) {
+        if ($TimeoutSec -ne 10) { throw 'unbounded health request' }
+        return [pscustomobject]@{StatusCode=200}
+    }
+    if ($Uri.EndsWith('/api/firewall/apply')) {
+        if ($TimeoutSec -ne 60 -or $Method -ne 'POST') { throw 'apply timeout or method changed' }
+        $protection = if ($env:ROUTE -eq 'apply') { $env:PROTECTION } else { 'protecting' }
+        if ($protection -eq 'empty') { return [pscustomobject]@{Content=''} }
+        $receipt = if ($protection -eq 'missing') { '' } else {
+            '"containd":{"applyId":"apply-id","protection":"' + $protection + '"}'
+        }
+        return [pscustomobject]@{Content=('{' + $receipt + '}')}
+    }
+    if ($Uri.EndsWith('/api/workshop/reset')) {
+        if ($TimeoutSec -ne 60 -or $Method -ne 'POST') { throw 'reset timeout or method changed' }
+        $protection = if ($env:ROUTE -eq 'reset') { $env:PROTECTION } else { 'protecting' }
+        if ($protection -eq 'empty') { return [pscustomobject]@{Content=''} }
+        $receipt = if ($protection -eq 'missing') { '' } else {
+            ',"containd":{"applyId":"reset-id","protection":"' + $protection + '"}'
+        }
+        return [pscustomobject]@{Content=('{"success":true' + $receipt + '}')}
+    }
+    throw "unexpected URL: $Uri"
+}
+$failed = $false
+try {
+''' + gate + r'''
+} catch { $failed = $true }
+if ($failed -ne ($env:ROUTE -ne 'valid')) { throw 'incorrect installer gate result' }
+''', ROUTE=route, PROTECTION=protection)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_setup_orders_proof_and_acquisition_before_migration_and_start(self):
         source = (ROOT / "setup.ps1").read_text()

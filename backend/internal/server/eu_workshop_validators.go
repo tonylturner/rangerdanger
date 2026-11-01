@@ -296,11 +296,12 @@ func euWorkshopDevicesFresh(ev euWorkshopEvidence) ValidationCheck {
 	return checkPass(name, "all five device revisions match solver revisions and delivery acknowledgements; CC freshness checked independently")
 }
 
-// A GI on an established pre-change connection cannot test the new policy.
+// Commit re-evaluates established traffic; this separate check requires a fresh
+// handshake to prove admission and start DPI inspection from SYN.
 func euWorkshopFreshLink(ev euWorkshopEvidence) ValidationCheck {
 	const name = "Fresh CC session admitted after policy commit"
 	if ev.cc == nil || ev.policyAt.IsZero() || !ev.cc.Link.Since.After(ev.policyAt) || ev.cc.Link.Since.After(ev.now) {
-		return checkFail(name, "CC link.since must be later than the policy commit; POST /api/operator/reconnect, wait for reconnect/GI, then validate. A GI on the old session proves nothing")
+		return checkFail(name, "CC link.since must be later than the policy commit; POST /api/operator/reconnect, wait for reconnect/GI, then validate. Delivery on an existing session tests current policy, but does not prove fresh-handshake admission or DPI inspection from SYN")
 	}
 	return euLink(ev.cc, ev.journal, ev.stationPoints, ev.cc.Link.Since, ev.now)
 }

@@ -1,4 +1,4 @@
-Default-deny means that a flow not matched by an allow rule is denied. It makes least-privilege segmentation enforceable, but the way a firewall reaches that final decision differs by implementation. Do not infer the behavior from a product label or from seeing several deny rules: identify the effective fallback for the policy path being reviewed.
+Default-deny drops traffic when no enforcing terminal rule matches. An earlier matching DENY also takes precedence over a later ALLOW. It makes least-privilege segmentation enforceable, but the way a firewall reaches that final decision differs by implementation. Do not infer the behavior from a product label or from seeing several deny rules: identify the effective fallback for the policy path being reviewed.
 
 ### Two policy patterns
 
@@ -23,4 +23,4 @@ For a proposed policy change:
 3. Test both sides from the actual source: the required exchange must still work, and an unauthorized new connection must be denied. For this range, preserve legitimate Control Centre observation and required field polling and voltage regulation while checking the intended exclusions.
 4. Record the policy identity, source/destination tuple, test time and service-level evidence. A missing log entry alone does not prove a flow was denied or allowed.
 
-An established connection can outlive a policy change, so distinguish new-connection results from existing-session behavior; see [conntrack and temporal proof](#eu-established-sessions). Pair restrictive results with evidence that required operation remains available, as described in the [policy comparison](#eu-policy-comparison).
+A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. Distinguish fresh-handshake admission from application-delivery evidence; see [conntrack and temporal proof](#eu-established-sessions). Pair restrictive results with evidence that required operation remains available, as described in the [policy comparison](#eu-policy-comparison).

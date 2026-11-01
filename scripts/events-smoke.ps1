@@ -35,6 +35,7 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
+. (Join-Path $PSScriptRoot 'lib/containd-readiness.ps1')
 
 $Api          = if ($env:RANGERDANGER_API)   { $env:RANGERDANGER_API }   else { 'http://localhost:8088' }
 $JwtSecret    = if ($env:CONTAIND_JWT_SECRET){ $env:CONTAIND_JWT_SECRET } else { 'rangerdanger-dev' }
@@ -158,13 +159,13 @@ Note "gate 1: L4 firewall.rule.hit event flow"
 try {
     $resp = Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
         -ContentType 'application/json' -Body '{"config":"improved"}' `
-        -TimeoutSec 30 -ErrorAction Stop
+        -TimeoutSec 60 -ErrorAction Stop
+    Assert-ContaindProtection $resp
     OK "apply improved: $($resp | ConvertTo-Json -Compress)"
 } catch {
     Err "apply improved failed: $_"
     exit 1
 }
-Start-Sleep -Seconds 2
 
 # Match eu_epoch_ns: use the firewall/range clock, never the Windows host
 # clock. Retained DENYs survive commits and have no age expiry.
@@ -382,11 +383,11 @@ if (-not $nfqAlive) {
     } else {
         # Re-assert the hardened policy (a later gate could have changed it).
         try {
-            Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
+            $resp = Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
                 -ContentType 'application/json' -Body '{"config":"improved"}' `
-                -TimeoutSec 30 -ErrorAction Stop | Out-Null
-        } catch { }
-        Start-Sleep -Seconds 2
+                -TimeoutSec 60 -ErrorAction Stop
+            Assert-ContaindProtection $resp
+        } catch { Err "policy apply failed: $_"; exit 1 }
 
         $dpiBoundaryRaw = docker exec rangerdanger-firewall date -u +%s%N
         if ($LASTEXITCODE -ne 0 -or "$dpiBoundaryRaw" -notmatch '^\d{19}$') {
@@ -432,11 +433,11 @@ if (-not $nfqAlive) {
         # close the relay after the dataplane has returned to weak.
         # Ending on weak also matches the lab default gate 1 moved away from.
         try {
-            Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
+            $resp = Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
                 -ContentType 'application/json' -Body '{"config":"weak"}' `
-                -TimeoutSec 30 -ErrorAction Stop | Out-Null
-        } catch { }
-        Start-Sleep -Seconds 2
+                -TimeoutSec 60 -ErrorAction Stop
+            Assert-ContaindProtection $resp
+        } catch { Err "policy apply failed: $_"; exit 1 }
         & {
             $ErrorActionPreference = 'SilentlyContinue'
             docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close *>$null

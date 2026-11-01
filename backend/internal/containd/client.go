@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -18,6 +19,8 @@ import (
 // containd rejects expired tokens, and a token minted once at startup
 // would expire 24h into a long-running workshop.
 type Client struct {
+	applyMu    sync.Mutex
+	lastApply  *ApplyReceipt
 	BaseURL    string
 	jwtSecret  string
 	now        func() time.Time

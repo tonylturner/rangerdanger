@@ -834,6 +834,96 @@ class CommandContracts(unittest.TestCase):
         self.assertIn("Re-run with `-c 6` to also see `[6]` (`recloser_shot_count`) at `1`", text)
 
 
+class FirstMatchContracts(unittest.TestCase):
+    def test_knowledge_teaches_terminal_order_not_allow_wins(self):
+        eu = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        us = ROOT / "lab-definitions/packages/us-dnp3-substation"
+        text = (eu / "knowledge/eu-containd-policy-enforcement.md").read_text()
+        for phrase in ("first matching enforcing terminal rule in listed order decides",
+                       "monitor rules never decide", "Rule IDs do not set priority",
+                       "`RATE_LIMIT` meters and `TAG` labels",
+                       "`firewall.defaultAction: DENY`",
+                       "The L4 source pin enforces; DPI detects and logs."):
+            self.assertIn(phrase, text)
+        self.assertNotIn("compiler emits `ALLOW` entries before `DENY`", text)
+        text = (eu / "knowledge/eu-default-deny.md").read_text()
+        self.assertIn("An earlier matching DENY also takes precedence over a later ALLOW", text)
+        text = (us / "knowledge/default-deny.md").read_text()
+        self.assertIn("first matching enforcing terminal rule decides", text)
+        self.assertIn("Hardened removes or narrows broad allows", text)
+        self.assertNotIn("broad ALLOW rules over the top", text)
+
+    def test_scenario_and_curriculum_both_teach_concrete_placement(self):
+        for package, path in (("us-dnp3-substation", SCENARIOS / "firewall-implementation.yml"),
+                              ("eu-iec104-substation", ROOT / "lab-definitions/packages/"
+                               "eu-iec104-substation/scenarios/eu-firewall-implementation.yml")):
+            base = ROOT / "lab-definitions/packages" / package
+            texts = [path.read_text(), (base / "curriculum/implementation.yml").read_text()]
+            for text in texts:
+                self.assertIn("first matching enforcing terminal rule decides", text)
+                self.assertIn("monitor rules never decide", text)
+                self.assertIn("Review configured order and shadow warnings before commit", text)
+                if package.startswith("us-"):
+                    self.assertIn("Keep RTAC field exceptions before `deny-ot-to-field-direct`", text)
+                    self.assertIn("Rule IDs do not set priority", text)
+                else:
+                    for phrase in ("CC allow before `deny-unauthorized-iec104`",
+                                   "Modbus allows before `deny-unauthorized-modbus`",
+                                   "CC ingest before `deny-unauthorized-historian-ingest`",
+                                   "engineering web before `deny-unauthorized-plc-web`",
+                                   "If recreating the CC allow, insert or move it before its deny",
+                                   "Review configured order and shadow warnings before commit"):
+                        self.assertIn(phrase, text)
+
+    def test_planner_selection_order_does_not_set_priority(self):
+        for path in (SCENARIOS / "remediation-planning.yml",
+                     ROOT / "lab-definitions/packages/eu-iec104-substation/"
+                     "scenarios/eu-remediation-planning.yml"):
+            self.assertIn("Selection order does not set rule order; compilation uses authored slots.",
+                          path.read_text())
+
+
+class EstablishedConnectionContracts(unittest.TestCase):
+    def test_knowledge_distinguishes_commit_enforcement_from_retained_state(self):
+        eu = ROOT / "lab-definitions/packages/eu-iec104-substation/knowledge"
+        for article in ("established-sessions", "telecontrol-deep-dive", "default-deny",
+                        "segmentation-approaches", "port-source-boundary",
+                        "tool-nmap-probes", "containd-policy-enforcement",
+                        "change-resource-plan", "policy-comparison"):
+            text = (eu / f"eu-{article}.md").read_text()
+            with self.subTest(article=article):
+                self.assertIn("re-evaluates established connections on their next packet", text)
+                self.assertIn("Sessions may still show the conntrack entry", text)
+                self.assertIn("an entry is not proof that traffic passes", text)
+        text = (eu / "eu-established-sessions.md").read_text()
+        for phrase in ("Session revocation is optional",
+                       "not needed to enforce a committed DENY",
+                       "checks handshake admission and inspection from SYN"):
+            self.assertIn(phrase, text)
+        text = (eu / "eu-containd-policy-enforcement.md").read_text()
+        self.assertIn("blob/v0.1.37/docs/mkdocs/policy-model.md"
+                      "#established-connections-and-policy-changes", text)
+        self.assertIn("The L4 source pin enforces; DPI detects and logs.", text)
+        text = (ROOT / "lab-definitions/packages/us-dnp3-substation/"
+                       "knowledge/default-deny.md").read_text()
+        self.assertIn("only admission under the current policy can preserve access", text)
+        self.assertNotIn("an established session can preserve access", text)
+
+    def test_f2_loss_needs_commit_not_session_deletion(self):
+        eu = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        for relative in ("scenarios/eu-firewall-implementation.yml",
+                         "curriculum/implementation.yml"):
+            text = (eu / relative).read_text()
+            with self.subTest(path=relative):
+                self.assertIn("Traffic no longer admitted stops without session deletion", text)
+                self.assertIn("Sessions may retain the conntrack entry until timeout", text)
+                self.assertIn("Observe loss after commit", text)
+                self.assertNotIn("instructor must cut", text)
+        text = (eu / "scenarios/eu-hardening-configurations.yml").read_text()
+        self.assertIn("Post-commit delivery on an existing connection tests the current policy", text)
+        self.assertIn("separate fresh-link check proves handshake admission", text)
+
+
 class ChangeManagementContracts(unittest.TestCase):
     def test_configuration_rollback_requires_candidate_review_commit_and_verification(self):
         text = (ROOT / "lab-definitions/packages/us-dnp3-substation/knowledge/"

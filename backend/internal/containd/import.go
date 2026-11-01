@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,31 +13,14 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
-// ImportConfig sends a full JSON config to containd using the candidate/commit flow.
-// Flow: POST /api/v1/config/candidate → POST /api/v1/config/commit
-// Both endpoints must succeed; a staged candidate is not an applied policy.
-// Before staging, appliance-owned NIC device bindings are copied from the
-// running configuration by logical interface name. No legacy import is tried.
-//
-// The lab assumes dataplane enforcement is on — without it, containd commits the
-// config to the running store but engine.ApplyRules silently no-ops (compiler is
-// nil when cfg.Enforce.Enabled is false), so the kernel's nft table is never
-// touched. The pre-canned substation policies and student-authored custom
-// policies generally don't bother setting `dataplane.enforcement: true` because
-// it's a containd implementation detail. Inject it here as a lab invariant.
-// ImportConfig returns any warnings surfaced by containd's commit handler
-// in the X-Containd-Warnings response header (one warning per line). These
-// cover auxiliary infrastructure failures that don't abort the commit.
-// Ruleset/dataplane and management service-apply failures return HTTP 500
-// with recovery outcomes (restored/reapplied), not successful commits with
-// warnings. A non-2xx does not guarantee the live firewall is unchanged.
-// Callers must propagate errors and warnings, and recheck health after apply;
-// recovery success certifies the firewall snapshot, not every side effect.
-func (c *Client) ImportConfig(ctx context.Context, configJSON []byte) ([]string, error) {
+// ImportConfig stages against the running revision, commits against the candidate
+// revision, then waits for the committed application's protection readiness.
+// It never retries a conflict or recommits a failed application.
+func (c *Client) ImportConfig(ctx context.Context, configJSON []byte) (*ApplyResult, error) {
 	if err := labs.CheckManagementSafety(configJSON); err != nil {
 		return nil, err
 	}
-	running, err := c.GetConfigDocument(ctx)
+	running, revision, err := c.getConfigDocument(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read appliance bindings: %w", err)
 	}
@@ -49,7 +33,7 @@ func (c *Client) ImportConfig(ctx context.Context, configJSON []byte) ([]string,
 		return nil, fmt.Errorf("ensure enforcement on: %w", err)
 	}
 
-	return c.importViaCandidate(ctx, patched)
+	return c.importViaCandidate(ctx, patched, revision)
 }
 
 // ensureEnforcementOn parses a containd policy JSON and returns a copy with
@@ -70,7 +54,7 @@ func ensureEnforcementOn(configJSON []byte) ([]byte, error) {
 		return nil, fmt.Errorf("parse config JSON: %w", err)
 	}
 
-	dpRaw, ok := doc["dataplane"]
+	dpRaw := doc["dataplane"]
 	dp, _ := dpRaw.(map[string]any)
 	if dp == nil {
 		dp = map[string]any{}
@@ -82,45 +66,78 @@ func ensureEnforcementOn(configJSON []byte) ([]byte, error) {
 	}
 	dp["enforcement"] = true
 	doc["dataplane"] = dp
-	_ = ok
 
 	return json.Marshal(doc)
 }
 
-// importViaCandidate uses the appliance candidate/commit flow:
-// 1. POST /api/v1/config/candidate — stages the config
-// 2. POST /api/v1/config/commit — applies it (triggers nftables compilation)
-//
-// Returns warnings parsed from the commit response's X-Containd-Warnings
-// header on success. Empty warnings do not certify continuing enforcement
-// health. A failed apply returns an error retaining the response's recovery
-// outcomes; it must never trigger an import fallback or automatic retry.
-func (c *Client) importViaCandidate(ctx context.Context, configJSON []byte) ([]string, error) {
-	// Stage the candidate config
-	resp, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/config/candidate", configJSON)
+func (c *Client) importViaCandidate(ctx context.Context, configJSON []byte, revision string) (*ApplyResult, error) {
+	resp, err := c.writeRevision(ctx, "/api/v1/config/candidate", configJSON, revision)
 	if err != nil {
-		return nil, fmt.Errorf("post candidate config: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("post candidate returned %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Commit the staged config
-	resp2, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/config/commit", nil)
+	revision = resp.Header.Get("X-Containd-Revision")
+	resp2, err := c.writeRevision(ctx, "/api/v1/config/commit", nil, revision)
 	if err != nil {
-		return nil, fmt.Errorf("commit config: %w", err)
+		return nil, err
 	}
 	defer resp2.Body.Close()
-
-	if resp2.StatusCode != http.StatusOK && resp2.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp2.Body)
-		return nil, fmt.Errorf("commit returned %d: %s", resp2.StatusCode, string(body))
+	var applied RuntimeApplyResponse
+	if err := json.NewDecoder(resp2.Body).Decode(&applied); err != nil {
+		return nil, fmt.Errorf("decode commit: %w", err)
 	}
+	if applied.ApplyID == "" || applied.Status == "" {
+		return nil, fmt.Errorf("commit missing status or applyId")
+	}
+	result := &ApplyResult{Warnings: collectWarnings(resp2.Header.Values("X-Containd-Warnings"))}
+	receipt, err := c.waitProtection(ctx, applied)
+	result.Receipt = receipt
+	c.rememberApply(receipt)
+	if receipt.Warning != "" {
+		result.Warnings = append(result.Warnings, receipt.Warning)
+	}
+	return result, err
+}
 
-	return collectWarnings(resp2.Header.Values("X-Containd-Warnings")), nil
+// ConfigWriteError preserves upstream precondition failures without retrying.
+type ConfigWriteError struct {
+	Status    int
+	Body      string
+	Operation string
+}
+
+func (e *ConfigWriteError) Error() string {
+	return fmt.Sprintf("%s returned %d: %s", e.Operation, e.Status, e.Body)
+}
+
+// ConfigConflictCode and ConfigConflictMessage are the backend's conflict contract.
+const ConfigConflictCode = "containd_config_conflict"
+const ConfigConflictMessage = "containd configuration changed since it was read; review it and apply again"
+
+func (c *Client) writeRevision(ctx context.Context, path string, body []byte, revision string) (*http.Response, error) {
+	if revision == "" {
+		return nil, fmt.Errorf("%s: missing X-Containd-Revision in preceding response", path)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Containd-If-Revision", revision)
+	resp, err := c.send(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		defer resp.Body.Close()
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+		operation := "post candidate"
+		if strings.HasSuffix(path, "/commit") {
+			operation = "commit"
+		}
+		return nil, &ConfigWriteError{Status: resp.StatusCode, Body: string(data), Operation: operation}
+	}
+	return resp, nil
 }
 
 // collectWarnings flattens repeated X-Containd-Warnings header values

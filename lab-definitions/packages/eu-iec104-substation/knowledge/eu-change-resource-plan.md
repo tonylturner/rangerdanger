@@ -28,7 +28,7 @@ Capture both operator-observed and field/process state. They answer different qu
 
 First verify the policy is actually active. Then test a new unauthorized connection, continued legitimate CC observation, and the PLC/OLTC dependency. Check enterprise historian reads independently of CC ingest. The archive's continued existence does not prove new samples are arriving.
 
-If the exercise needs an operator outage, follow the [exact-session procedure](#eu-established-sessions). Policy application alone may preserve established connections. Allow enough time for protocol failure detection and point staleness; do not shorten the observation window to obtain a green result.
+If the exercise needs an operator outage, apply a restrictive policy and follow the [commit-boundary evidence procedure](#eu-established-sessions). A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. Exact-session revocation is an optional diagnostic, not an enforcement prerequisite. Allow enough time for protocol failure detection and point staleness; do not shorten the observation window to obtain a green result.
 
 For switching, retain the command attempt and fresh completion feedback within the same window. For automatic regulation, allow the 30-second continuous out-of-band delay and two-second step motion, then observe the completed tap and bus response.
 

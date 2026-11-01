@@ -112,7 +112,12 @@ func (s *Server) handleFirewallApplyPlan(c *gin.Context) {
 	}
 	gen := rangeOf(c)
 	warnings := []string{}
+	var applied *containd.ApplyResult
 	fail := func(err error) {
+		if applied != nil {
+			writeApplyError(c, err, applied, gin.H{"warnings": warnings})
+			return
+		}
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error(), "warnings": warnings})
 	}
 	if err := labs.LintPolicy("compiled plan", plan.Config, gen.Package.ICSRules); err != nil {
@@ -126,10 +131,12 @@ func (s *Server) handleFirewallApplyPlan(c *gin.Context) {
 	s.policyApplyMu.Lock()
 	defer s.policyApplyMu.Unlock()
 	started := time.Now().UTC()
-	importedWarnings, err := gen.Containd().ImportConfig(c.Request.Context(), plan.Config)
-	warnings = append(warnings, importedWarnings...)
+	applied, err := gen.Containd().ImportConfig(c.Request.Context(), plan.Config)
+	if applied != nil {
+		warnings = append(warnings, applied.Warnings...)
+	}
 	if err != nil {
-		fail(err)
+		writeApplyError(c, err, applied, gin.H{"warnings": warnings})
 		return
 	}
 	hash, err := gen.Containd().GetFirewallHash(c.Request.Context())
@@ -157,10 +164,10 @@ func (s *Server) handleFirewallApplyPlan(c *gin.Context) {
 		snapshot := plan.CompiledPlan
 		s.appliedPlan = &snapshot
 	}) {
-		rangeUnavailable(c)
+		writeApplyError(c, errRangeStopped, applied, gin.H{"warnings": warnings})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"applied": true, "warnings": warnings, "plan": plan})
+	c.JSON(http.StatusOK, gin.H{"applied": true, "warnings": warnings, "plan": plan, "containd": applied.Receipt})
 }
 
 // judgingExpectations uses the applied snapshot only while its provenance holds.

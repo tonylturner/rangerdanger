@@ -34,10 +34,13 @@ type PlanRoute struct {
 }
 
 // Evaluate applies ordered first-match policy to a routed tuple. Empty selector
-// lists match anything. ICS and logging never affect an L4 connection verdict.
+// lists match anything. Monitor rules and non-terminal effects do not grant or
+// deny L4 admission. RATE_LIMIT can drop excess packets; this finite model does
+// not predict throughput. Other ICS and logging do not affect this L4 verdict.
 func Evaluate(rules []PlanRule, defaultAction string, tuple PlanTuple) Verdict {
 	for _, rule := range rules {
-		if rule.ICS != nil && rule.ICS.Mode == "monitor" {
+		if rule.Action == "RATE_LIMIT" || rule.Action == "TAG" ||
+			rule.ICS != nil && rule.ICS.Mode == "monitor" {
 			continue
 		}
 		if !planZoneMatches(rule.SourceZones, tuple.SrcZone) ||

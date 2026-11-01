@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.1.0",
+  "schema_version": "0.1.10",
   "interfaces": [{"name":"lan3","zone":"lan3"},{"name": "lan1", "zone": "lan1"}, {"name": "lan4", "zone": "lan4"}],
   "zones": [{"name": "lan1"}, {"name": "lan4"}],
   "firewall": {

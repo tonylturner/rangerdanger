@@ -39,11 +39,16 @@ func readEvaluatedFirewall(data []byte) (evaluatedFirewall, error) {
 	}
 	eligible := []labs.PlanRule{}
 	for i, rule := range raw.Firewall.Rules {
-		for _, key := range []string{"identities", "schedule"} {
+		for _, key := range []string{"identities", "schedule", "viaForwards"} {
 			value := string(rule[key])
 			if value != "" && value != "null" && value != "[]" && value != "{}" && value != `""` {
 				return evaluatedFirewall{}, fmt.Errorf("manual rule uses unsupported %s selector", key)
 			}
+		}
+		switch document.Firewall.Rules[i].Action {
+		case "ALLOW", "DENY", "RESET", "RATE_LIMIT", "TAG":
+		default:
+			return evaluatedFirewall{}, fmt.Errorf("manual rule uses unsupported action %q", document.Firewall.Rules[i].Action)
 		}
 		// These are new source → device connections. Established-only return
 		// rules in named Weak policies cannot match them.

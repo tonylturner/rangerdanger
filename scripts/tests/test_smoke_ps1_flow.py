@@ -42,7 +42,8 @@ function Invoke-RestMethod($Uri, $TimeoutSec, $ErrorAction) {
     switch ($path) {
         '/api/range' {
             if ($env:MODE -eq 'wrong-range') { return @{package='eu-iec104'; phase='ready'} }
-            return @{package='us-dnp3-substation'; phase='ready'}
+            $state = if ($env:MODE -eq 'degraded') { 'degraded' } else { 'protecting' }
+            return @{package='us-dnp3-substation'; phase='ready';containd=@{applyId='range-id';protection=$state}}
         }
         '/api/scenarios' {
             return @{scenarios=@($Expected | ForEach-Object {
@@ -78,13 +79,13 @@ class SmokeFlowTests(unittest.TestCase):
         source = (ROOT / "scripts/smoke-test.ps1").read_text()
         self.assertIn('. "$PSScriptRoot/lib/containd-ui-probe.ps1"', source)
         self.assertIn('. "$PSScriptRoot/substation-smoke.ps1"', source)
-        for mode in ("ok", "probe", "substation", "wrong-range"):
+        for mode in ("ok", "probe", "substation", "wrong-range", "degraded"):
             with self.subTest(mode=mode):
                 result = powershell(FLOW, MODE=mode)
                 self.assertEqual(result.returncode, 0 if mode == "ok" else 1, result.stdout + result.stderr)
                 trace = next(line[7:] for line in result.stdout.splitlines() if line.startswith("EVENTS="))
                 events = json.loads(trace)
-                if mode == "wrong-range":
+                if mode in ("wrong-range", "degraded"):
                     self.assertEqual(events, ["/api/range"])
                 else:
                     self.assertEqual(events, ["/api/range", "/api/health", "/api/build", "probe",

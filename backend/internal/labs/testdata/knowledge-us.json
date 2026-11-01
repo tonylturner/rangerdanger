@@ -107,7 +107,7 @@
       {
         "id": "default-deny",
         "title": "Default-Deny: Implicit vs Explicit Across Firewalls",
-        "sha256": "1e181d37102b6d80d8b741184fa51e2c9ca43b077c99dde52d5b1852a39cffbf"
+        "sha256": "27a70e17e5aaaa25e2ac87a03a5f66aa915fe5a2f53793baf1f07d0679d98add"
       },
       {
         "id": "vendor-remote-access",

@@ -12,7 +12,7 @@ The failure mode for explicit default-deny is silent: you build out your allow r
 
 | Firewall | Default-deny model | Notes |
 |---|---|---|
-| **containd** (this lab) | Implicit (default = DENY) | Policy has a top-level `defaultAction: DENY` field, already set out of the box. Adding broad ALLOW rules over the top creates a "weak" posture; deleting them re-exposes the implicit DENY. |
+| **containd** (this lab) | Implicit (default = DENY) | Policy has a top-level `defaultAction: DENY` field, already set out of the box. The shipped Weak policy permits these paths through broad listed ALLOW rules; fallback remains DENY. |
 | **Cisco ASA / FTD** | Implicit | Every ACL has an implicit `deny any any` at the end. Best practice still adds an explicit `deny ip any any log` for visibility. |
 | **Palo Alto NGFW** | Implicit (configurable) | Has two predefined rules at the bottom: `intrazone-default` (allow) and `interzone-default` (deny). Cannot delete them; can clone and modify (e.g., to add logging). |
 | **Fortinet FortiGate** | Implicit | Implicit deny at the end of every policy table per VDOM. `set match-vip enable` and a final explicit deny is a common audit-friendly pattern. |
@@ -36,8 +36,8 @@ Three checks that catch most default-deny misconfigurations:
 
 1. **Where is the implicit deny documented?** If it is vendor-implicit, link to the vendor's docs in your change record. If it is explicit, point at the rule by ID or line number.
 2. **What does a packet for an undocumented flow do?** Generate one and check the firewall log. If the log is silent, the firewall is probably allowing - implicit-deny vendors typically don't log implicit denies unless you turn it on (Palo Alto's interzone-default rule, for example, does not log by default).
-3. **What happens when you remove the last allow rule?** On a properly configured default-deny firewall, removing an allow rule should break the corresponding flow. If everything still works, the firewall is either bypassing the policy entirely (NAT/bridge misconfig) or has a hidden allow-all rule somewhere.
+3. **What happens when you remove the last allow rule?** After removing the last effective grant, test a fresh connection; only admission under the current policy can preserve access, for example through another matching allow. A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. Check listed rule order and the actual policy path rather than inferring a verdict from a deletion alone.
 
 ### What containd Does
 
-containd's policy schema has a top-level `defaultAction` field on the firewall object. In every shipped configuration - including the deliberately-weak `substation-weak.json` - this is set to `"DENY"`. The weak baseline is "permissive" only because it adds broad cross-zone ALLOW rules above the default. The hardened policy keeps the same `defaultAction: DENY` and trims the allow list to the six flows the substation requires. The actual transition from weak to hardened is *removing rules*, not *changing the default*. That is the model the labs are built on.
+containd's policy schema has a top-level `defaultAction` field on the firewall object. In every shipped configuration - including the deliberately-weak `substation-weak.json` - this is set to `"DENY"`. The weak baseline is "permissive" only because it adds broad cross-zone ALLOW rules above the default. Weak and Hardened both use default DENY. Hardened removes or narrows broad allows, preserves operational exceptions, and includes explicit denies in listed order. The first matching enforcing terminal rule decides; monitor rules never decide. Keep the RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority.

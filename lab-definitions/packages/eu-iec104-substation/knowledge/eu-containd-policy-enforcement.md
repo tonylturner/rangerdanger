@@ -2,7 +2,7 @@ The EU range uses containd as a stateful, L4 boundary between network zones. Its
 
 ### From policy to packet verdict
 
-containd validates the policy configuration and compiles it into a data-plane snapshot. The firewall compiler turns zone bindings, addresses, transport and port rules into nftables rules. For ordinary L4 rules in the forwarding chain, an `ALLOW` rule accepts a matching packet and a `DENY` rule drops it. Separate explicit-monitor ICS rules never admit or deny traffic, regardless of their configured action. The EU policies use a default `DENY`, so traffic that matches no allow rule is dropped. The compiler emits `ALLOW` entries before `DENY` entries, so the improved policy's named allows precede its broader denials.
+containd validates the policy configuration and compiles it into a data-plane snapshot. The firewall compiler turns zone bindings, addresses, transport and port rules into nftables rules. For ordinary L4 rules in the forwarding chain, an `ALLOW` rule accepts a matching packet and a `DENY` rule drops it. Separate explicit-monitor ICS rules never admit or deny traffic, regardless of their configured action. The first matching enforcing terminal rule in listed order decides. Put required exceptions before overlapping broader denials; monitor rules never decide. Rule IDs do not set priority. `RATE_LIMIT` meters and `TAG` labels traffic without deciding admission. If no enforcing terminal rule matches, `firewall.defaultAction: DENY` drops the traffic.
 
 The improved policy makes the boundary concrete. It allows the named Control Centre host `10.60.60.20` to open TCP/2404 sessions to the RTU at `10.30.30.20`. It also allows the RTU to reach the named breaker, RMUs and OLTC on TCP/502, while a separate rule permits the PLC to reach the OLTC on that port. The address and service limits reduce which hosts can connect; they do not authorize what a connected application asks the device to do. Separate IEC 104 monitor predicates observe selected CC requests without changing admission.
 
@@ -18,7 +18,7 @@ RangerDanger's package lint permits only explicit monitor ICS rules in EU import
 
 ### Stateful sessions and policy changes
 
-The compiled forwarding path accepts packets in established or related conntrack state before evaluating ordinary L4 rules for new traffic. Therefore, applying a new deny does not necessarily terminate a connection admitted under the previous policy. Test new connections separately from existing ones and identify the relevant five-tuple and policy-change time. [Established-session evidence](#eu-established-sessions) describes the range's bounded procedure; do not delete unrelated sessions or treat a surviving session as proof that the new rule failed.
+A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. Identify the relevant five-tuple and policy-change time. Test fresh-handshake admission separately from delivery on existing connections. [Established-session evidence](#eu-established-sessions) describes the range's bounded procedure and optional exact-tuple diagnostics; do not delete unrelated sessions. The L4 source pin enforces; DPI detects and logs.
 
 ### Firewall events are a separate evidence path
 
@@ -26,4 +26,4 @@ For a rule with logging enabled, containd adds an nftables log statement before 
 
 The improved EU policy explicitly logs selected denied cross-zone attempts, including unauthorized IEC 104 and Modbus connections. Logging is not automatic for every packet: an unmatched packet dropped by the default policy does not itself prove that a corresponding rule-hit event will be present. Conversely, a quiet event list is not proof that no traffic was blocked. Preserve the active policy, source and destination, service, test interval and event evidence together; keep missing events distinct from a demonstrated allow or deny. See [the evidence lifecycle](#eu-evidence-lifecycle) for retention and provenance limits.
 
-References: EU `firewall/weak.json` and `firewall/improved.json`; containd v0.1.36 documentation `docs/mkdocs/ics-dpi.md` and `dataplane-enforcement.md`; range event retrieval in `backend/internal/containd/events.go`.
+References: EU `firewall/weak.json` and `firewall/improved.json`; containd [v0.1.37 policy model](https://github.com/tonylturner/containd/blob/v0.1.37/docs/mkdocs/policy-model.md#established-connections-and-policy-changes) for rule order and established-connection re-evaluation; range event retrieval in `backend/internal/containd/events.go`.

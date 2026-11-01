@@ -3,7 +3,7 @@
 # Loaded by eu-iec104-smoke.sh; sourcing only defines helpers/gates.
 
 eu_gate_G11() {
-  local g11_policy g11_tuple g11_loss_started_ms stale_ms g11_before_reset g11_stale g11_stale_points \
+  local g11_policy g11_loss_started_ms stale_ms g11_before_reset g11_stale g11_stale_points \
     g11_stale_epoch g11_truth g11_after_reset g11_after_reset_points reset_truth poll_since poll_until
   g11_loss_verified=0
   # Reset restores Weak and healthy devices before installing the custom policy.
@@ -16,35 +16,35 @@ eu_gate_G11() {
   else
     fail "G11 custom policy has invalid/non-monitor IEC104 ICS, unbounded TCP allow, or ephemeral-port allow"
   fi
-  eu_commit_manual_policy "$g11_policy" "G11 improved minus RTU-to-breaker allow" || return
-  eu_check_nft_chain G11-custom || true
-  eu_get_operator || fail "G11 cannot snapshot operator points before Modbus loss"
+  eu_get_operator || { fail "G11 cannot snapshot operator points before Modbus loss"; return; }
+  printf '%s\n' "$API_BODY" >"$TMP_DIR/G11-before-state.json"
   if ! eu_read_sessions 502 "$RTU_IP" \
     || ! eu_session_tuple "$SESSION_BODY" "$RTU_IP" "$BREAKER_IP" 502; then
-    fail "G11 session lookup did not yield exactly one RTU-to-breaker tuple"
+    fail "G11 session lookup did not yield exactly one RTU-to-breaker tuple before commit"
     return
   fi
-  g11_tuple="$SESSION_TUPLE"
+  printf '%s\n' "$SESSION_TUPLE" >"$TMP_DIR/G11-before-tuple.json"
   eu_window_start G11 || return
   poll_since=$(eu_epoch_seconds) || return
-  pass "G11 exact RTU-to-breaker Modbus session exists before kill"
-  g11_loss_started_ms=$(eu_now_ms) || g11_loss_started_ms=""
-  if ! [[ "$g11_loss_started_ms" =~ ^[0-9]+$ ]]; then
-    fail "G11 cannot establish monotonic timeout before conntrack kill"
-  elif eu_kill_tuple "$g11_tuple"; then
-    stale_ms=$(jq -r '.devices[] | select(.id == "feeder-breaker") | .stale_after_ms' \
-      "$PACKAGE/protocols/points.json" 2>/dev/null) || stale_ms=""
-    if ! [[ "$stale_ms" =~ ^[0-9]+$ ]] || [ "$stale_ms" -ne 3000 ]; then
-      fail "G11 points.json stale_after_ms missing/invalid or differs from 3000: $stale_ms"
-    elif eu_wait_for_operator '.link.state == "started" and all_stale("device_unreachable") and f2_good' \
-      5 "G11 RTU device_unreachable within stale_after_ms + 2s" "$g11_loss_started_ms"; then
-      g11_loss_verified=1
-      pass "G11 four points IV+NT device_unreachable with IEC104 link started"
-    fi
+  eu_commit_manual_policy "$g11_policy" "G11 improved minus RTU-to-breaker allow" || {
+    eu_window_finish G11
+    return 1
+  }
+  g11_loss_started_ms="$EU_READY_MS"
+  eu_check_nft_chain G11-custom || { eu_window_finish G11; return 1; }
+  stale_ms=$(jq -r '.devices[] | select(.id == "feeder-breaker") | .stale_after_ms' \
+    "$PACKAGE/protocols/points.json") || return
+  if ! [[ "$stale_ms" =~ ^[0-9]+$ ]] || [ "$stale_ms" -ne 3000 ]; then
+    fail "G11 points.json stale_after_ms missing/invalid or differs from 3000: $stale_ms"
+  elif eu_wait_for_operator '.link.state == "started" and all_stale("device_unreachable") and f2_good' \
+    5 "G11 commit-only device_unreachable within stale_after_ms + 2s" "$g11_loss_started_ms"; then
+    g11_loss_verified=1
+    pass "G11 four points IV+NT device_unreachable with IEC104 link started, no session kill"
   fi
   poll_until=$(eu_epoch_seconds) || return
   eu_window_finish G11 || return
   eu_peer_poll_gaps "$TMP_DIR/G11.pcap" "$poll_since" "$poll_until" || true
+  eu_manual_policy_readback "$g11_policy" G11 || return
   g11_stale_points=""
   g11_stale_epoch=""
   if eu_get_operator; then

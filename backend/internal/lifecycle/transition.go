@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,6 +128,8 @@ func (m *Manager) switchTo(ctx context.Context, p plan) (*Generation, error) {
 	rec.Root = m.opts.Root
 	rec.Version = m.opts.Version
 	rec.Error = ""
+	rec.Code = ""
+	rec.Containd = nil
 
 	// stopping: from here on no request enters the old generation.
 	m.mu.Lock()
@@ -179,6 +182,7 @@ func (m *Manager) switchTo(ctx context.Context, p plan) (*Generation, error) {
 	if err := m.seedPolicy(ctx, gen.Containd(), p); err != nil {
 		return gen, fmt.Errorf("configuring: %w", err)
 	}
+	rec.Containd = gen.Containd().LastApply()
 	m.opts.Activate(gen)
 
 	rec.Phase = PhaseReady
@@ -207,8 +211,16 @@ func (m *Manager) fail(p plan, gen *Generation, cause error) {
 		errs = append(errs, fmt.Errorf("teardown after failure: %w", err))
 	}
 	rec := m.record()
+	if gen != nil {
+		rec.Containd = gen.Containd().LastApply()
+	}
 	rec.Phase = PhaseFailed
 	rec.Error = errors.Join(errs...).Error()
+	var upstream *containd.ConfigWriteError
+	if errors.As(cause, &upstream) && upstream.Status == http.StatusPreconditionFailed {
+		rec.Code = containd.ConfigConflictCode
+		rec.Error = containd.ConfigConflictMessage + ": " + rec.Error
+	}
 	if err := m.persist(rec); err != nil {
 		log.Printf("range: record failure: %v", err)
 	}
@@ -250,11 +262,11 @@ func (m *Manager) seedPolicy(ctx context.Context, client *containd.Client, p pla
 	if err := client.WaitReady(ctx, m.timeouts.ContaindReady); err != nil {
 		return err
 	}
-	warnings, err := client.ImportConfig(ctx, p.policy)
+	applied, err := client.ImportConfig(ctx, p.policy)
 	if err != nil {
 		return fmt.Errorf("import default policy %s: %w", p.pkg.FirewallConfigPath, err)
 	}
-	for _, warning := range warnings {
+	for _, warning := range applied.Warnings {
 		log.Printf("range: containd commit warning for %s: %s", p.pkg.FirewallConfigPath, warning)
 	}
 	return nil

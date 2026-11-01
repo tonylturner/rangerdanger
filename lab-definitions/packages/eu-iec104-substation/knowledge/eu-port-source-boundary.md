@@ -32,6 +32,6 @@ The historian's read-only property comes from its GET-only read listener and lac
 
 From Kali, attempt a new GI under weak and improved policies, preserving command output and the policy active during each attempt. Then demonstrate that legitimate CC observation and PLC regulation still work. A denied attacker connection with a broken authorized controller is not a successful operational change.
 
-Account for [established sessions](#eu-established-sessions): a connection opened before the change may survive it. Test new sessions separately from existing ones and record the exact source/destination tuple.
+Account for [established sessions](#eu-established-sessions). A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. Test new handshakes separately from delivery on existing connections and record the exact source/destination tuple.
 
 Finally, document the remaining trusted-host risk. The permitted CC still opens and closes equipment. [SBO](#iec104-sbo-commands) checks sequencing, not the operator's identity or the business purpose of the command. Review [trusted-host misuse](#eu-trusted-host-misuse) before calling a source allowlist a complete authorization solution.

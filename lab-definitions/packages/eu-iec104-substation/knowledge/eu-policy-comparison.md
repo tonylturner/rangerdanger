@@ -48,7 +48,7 @@ There is no permitted initiating path from `lan5` back toward an OT zone. Respon
 
 After applying a change, establish fresh named CC operation, healthy southbound observations, PLC control and historian feed/read behaviour. Then attempt disallowed access from the actual enterprise or other test source. Preserve policy identity, source/destination tuple, times, capture or log evidence and service result. A backend management read cannot prove an enterprise rule, and a TCP handshake cannot prove successful IEC 104 command completion.
 
-Existing sessions complicate temporal proof. Applying a deny does not itself prove an established connection stopped carrying traffic. Follow [established-session evidence](#eu-established-sessions) and use the exact session API recipe only in the optional outage investigation; do not delete unrelated conntrack entries.
+A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic the policy no longer admits stops. Sessions may still show the conntrack entry until it times out, so an entry is not proof that traffic passes. Preserve application-delivery evidence around the commit boundary; a commit acknowledgement alone does not establish operator failure detection. Follow [established-session evidence](#eu-established-sessions) and use the exact session API recipe only as an optional diagnostic; do not delete unrelated conntrack entries.
 
 ### Limits of the control
 

@@ -73,7 +73,7 @@ steps:
     Select actions in the planner below. Total labor and role caps guide the tradeoff.
     Budget overrun is a warning only. Empty, partial and over-budget plans are valid. The package curriculum is the only catalog authority.
 
-    Selected enforceable actions remove their Weak exposure. Deferred actions leave it open. Required operational conduits stay in every plan.
+    Selected enforceable actions remove their Weak exposure. Deferred actions leave it open. Required operational conduits stay in every plan. Selection order does not set rule order; compilation uses authored slots.
 
     | Kind | Actions | Effect when applied |
     |---|---|---|

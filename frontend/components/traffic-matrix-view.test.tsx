@@ -43,6 +43,8 @@ describe("TrafficMatrixView", () => {
     expect(out).toContain('aria-label="Generate Traffic"');
     expect(out).toContain("Generate + PCAP");
     expect(out).toContain("scenario traffic generator");
+    expect(out).toContain("sessions show conntrack entries, not delivery; traffic may already be blocked");
+    expect(out).not.toContain("RTAC device comms");
     expect(out).toContain("unknown");
     expect(out).toContain('value="control_centre_net"');
     expect(out).toContain('value="station_net"');
@@ -122,7 +124,7 @@ describe("TrafficMatrixView", () => {
   it("rejects stale/failed session polls while keeping the EU scenario generator", () => {
     function ReadContext() {
       const context = useNetworkFlowContext(euFixture as LabGraph, undefined)!;
-      return <span>{context.observations["attacker-rtu"].status}/{context.observations["rtu-breaker"].status}/{context.traffic ? "gen" : "none"}</span>;
+      return <span>{context.observations["attacker-rtu"].status}/{context.observations["rtu-breaker"].status}/{context.traffic ? "gen" : "none"}: {context.observations["attacker-rtu"].reason}</span>;
     }
     // SSR creates a new observer for each snapshot. Keep it from replacing
     // the fixture's in-flight retry state with a new mount-time fetch.
@@ -133,9 +135,10 @@ describe("TrafficMatrixView", () => {
     client.setQueryData(["operator", "state"], FRESH_STATE);
     client.setQueryData(sessionKey, sessionList);
     const renderContext = () => renderToStaticMarkup(<QueryClientProvider client={client}><ReadContext /></QueryClientProvider>);
-    expect(renderContext()).toContain("active/active/gen");
+    expect(renderContext()).toContain("unknown/active/gen: Conntrack entry present (ESTABLISHED); traffic may already be blocked");
     client.setQueryData(sessionKey, sessionList, { updatedAt: Date.now() - 16_000 });
     expect(renderContext()).toContain("unknown/active/gen");
+    expect(renderContext()).not.toContain("Conntrack entry present");
     client.setQueryData(sessionKey, sessionList);
     client.getQueryCache().find({ queryKey: sessionKey })!.setState({ fetchFailureCount: 1, fetchStatus: "fetching" });
     expect(renderContext()).toContain("unknown/active/gen");

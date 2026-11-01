@@ -188,7 +188,7 @@
       "entry": "",
       "action": "SKIP",
       "oracle": null,
-      "reason": "Host-only reconnect alternative; the CC wget Run contract verifies reconnect plus a fresh completed GI."
+      "reason": "Host-only reconnect alternative after committing and reading back the ordered policy; the unchanged CC wget Run contract verifies reconnect plus a fresh completed GI."
     },
     "eu-firewall-implementation|6|wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect|1": {
       "container": "rangerdanger-control-centre",

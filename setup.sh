@@ -660,6 +660,8 @@ while [ "$SECONDS" -lt "$DEADLINE" ]; do
   Logs:   docker logs rangerdanger-backend"
     fi
     if [ "$PHASE" = ready ] && { [ -z "$RANGE_TARGET" ] || [ "$RANGE_PACKAGE" = "$RANGE_TARGET" ]; }; then
+        range_has_protection "$RANGE_STATUS" || die "The range reported ready without a protecting containd receipt.
+  Status: $RANGE_STATUS"
         RANGE_OK=1
         break
     fi
@@ -692,28 +694,30 @@ else
         # returns 200 — so a gate that pipes to /dev/null passes green while
         # segmentation silently does NOT enforce (the DPI "queue num" rules need
         # nfnetlink_queue / CONFIG_NFT_QUEUE in the host kernel). Mirrors setup.ps1.
-        apply_resp=$(curl -fsS --connect-timeout 3 --max-time 30 -X POST -H 'Content-Type: application/json' \
+        apply_resp=$(curl -fsS --connect-timeout 3 --max-time 60 -X POST -H 'Content-Type: application/json' \
                 -d "{\"config\":\"$cfg\"}" \
                 http://localhost:8088/api/firewall/apply 2>/dev/null) || apply_resp=""
-        if [ -z "$apply_resp" ]; then
-            warn "  /api/firewall/apply ($cfg) failed — Lab 2.2/2.3/2.3-bonus/2.4 will not work"
+        if [ -z "$apply_resp" ] || ! range_has_protection "$apply_resp"; then
+            warn "  /api/firewall/apply ($cfg) failed or returned no protecting containd receipt — Lab 2.2/2.3/2.3-bonus/2.4 will not work"
             fw_fail=1
         elif [ "$cfg" = "improved" ] && echo "$apply_resp" | grep -qE 'nft apply failed|queue num|NFT_QUEUE'; then
             dpi_degraded=1
         fi
     done
     reset_resp=$(curl -fsS --connect-timeout 3 --max-time 60 -X POST http://localhost:8088/api/workshop/reset 2>/dev/null) || reset_resp=""
-    # Read the TOP-LEVEL "success", not a substring: the response embeds a
-    # per-action array whose entries each carry their own "success":true, so a
-    # naive grep false-passes even when the overall reset failed. Parse with
-    # python3 (present on the workshop hosts); fall back to the grep otherwise.
-    if command -v python3 >/dev/null 2>&1; then
-        reset_ok=$(echo "$reset_resp" | python3 -c 'import json,sys
-try: sys.stdout.write("1" if json.load(sys.stdin).get("success") is True else "0")
-except Exception: sys.stdout.write("0")' 2>/dev/null)
-    elif echo "$reset_resp" | grep -q '"success":true'; then reset_ok=1; else reset_ok=0; fi
-    if [ "$reset_ok" != "1" ]; then
-        warn "  /api/workshop/reset reported non-success — students hitting Reset Lab will see partial state"
+    reset_protection_ok=0
+    if [ -n "$reset_resp" ] && range_has_protection "$reset_resp"; then
+        reset_protection_ok=1
+    fi
+    # Match only the backend's compact reset envelope, not arbitrary JSON.
+    # TestInstallerReceiptEncoding pins actions/containd/success order and the
+    # final top-level boolean. Nested action successes cannot match this suffix.
+    case "$reset_resp" in
+        '{"actions":['*'],"containd":{'*'},"success":true}') reset_ok=1 ;;
+        *) reset_ok=0 ;;
+    esac
+    if [ "$reset_ok" != "1" ] || [ "$reset_protection_ok" != "1" ]; then
+        warn "  /api/workshop/reset reported non-success or returned no protecting containd receipt — students hitting Reset Lab will see partial state"
         fw_fail=1
     fi
     if [ "$dpi_degraded" = "1" ]; then

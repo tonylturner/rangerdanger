@@ -236,12 +236,12 @@ eu_monitor_finish() {
 }
 
 eu_monitor_no_asdu_after() {
-  local cutoff="$1" after_kill
+  local cutoff="$1" after_commit
   if ! eu_monitor_read; then
-    fail "monitor log was unparsable after conntrack kill"
+    fail "monitor log was unparsable after policy readiness"
     return 1
   fi
-  after_kill=$(printf '%s\n' "$MONITOR_BODY" | python3 -c '
+  after_commit=$(printf '%s\n' "$MONITOR_BODY" | python3 -c '
 import calendar, datetime, json, re, sys
 cutoff = int(sys.argv[1])
 for line in sys.stdin:
@@ -258,13 +258,13 @@ for line in sys.stdin:
     seconds = calendar.timegm(parsed.astimezone(datetime.timezone.utc).utctimetuple())
     fraction = (match.group(2) or "")[:9].ljust(9, "0")
     if seconds * 1_000_000_000 + int(fraction) > cutoff:
-        raise SystemExit("ASDU received after exact conntrack kill")
+        raise SystemExit("ASDU received after policy readiness")
 print("none")
-' "$cutoff" 2>"$TMP_DIR/post-kill-parse.err") || after_kill=""
-  if [ "$after_kill" = "none" ]; then
-    pass "G6 no ASDU was received after conntrack kill"
+' "$cutoff" 2>"$TMP_DIR/post-commit-parse.err") || after_commit=""
+  if [ "$after_commit" = "none" ]; then
+    pass "G6 no ASDU was received after policy readiness"
     return 0
   fi
-  fail "G6 post-kill monitor data was invalid or contained later ASDUs: $(cat "$TMP_DIR/post-kill-parse.err")"
+  fail "G6 post-commit monitor data was invalid or contained later ASDUs: $(cat "$TMP_DIR/post-commit-parse.err")"
   return 1
 }
