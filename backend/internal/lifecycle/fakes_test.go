@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/containd/containdtest"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
@@ -257,7 +258,7 @@ type fakeFirewall struct {
 func newFakeFirewall(t *testing.T) *fakeFirewall {
 	t.Helper()
 	fw := &fakeFirewall{build: containd.MinimumVersion}
-	fw.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fw.server = containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/health":
 			_ = json.NewEncoder(w).Encode(containd.HealthStatus{Status: "ok", Build: fw.build})

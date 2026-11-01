@@ -5,10 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tturner/rangerdanger/backend/internal/containd/containdtest"
 )
 
 // TestGenerateJWT verifies that the self-generated JWT has valid structure
@@ -88,7 +89,7 @@ func TestNewClientUsesEnvSecret(t *testing.T) {
 // a token whose expiry is measured from the request, not from NewClient.
 func TestClientMintsTokenPerRequest(t *testing.T) {
 	var tokens []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokens = append(tokens, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 		json.NewEncoder(w).Encode(HealthStatus{Status: "ok"})
 	}))
@@ -130,7 +131,7 @@ func TestNewClientSetsBaseURL(t *testing.T) {
 // TestAuthHeaderFormat verifies the Authorization header is set correctly
 // on all API requests (Bearer token format).
 func TestAuthHeaderFormat(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if auth == "" {
 			t.Error("missing Authorization header")
@@ -167,7 +168,7 @@ func TestAuthHeaderFormat(t *testing.T) {
 // TestDoRequestWithBodySetsContentType verifies POST requests include
 // Content-Type: application/json.
 func TestDoRequestWithBodySetsContentType(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			w.Write([]byte(`{}`))
 			return
@@ -180,7 +181,9 @@ func TestDoRequestWithBodySetsContentType(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	client.ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`))
+	if _, err := client.ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // --- helpers ---

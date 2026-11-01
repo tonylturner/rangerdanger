@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/models"
@@ -180,13 +181,14 @@ type scenarioTestResult struct {
 }
 
 type testSuiteResult struct {
-	Scenarios     []scenarioTestResult `json:"scenarios"`
-	TotalTests    int                  `json:"total_tests"`
-	Passed        int                  `json:"passed"`
-	Failed        int                  `json:"failed"`
-	AutoPassed    int                  `json:"auto_passed"`
-	ResetFailures int                  `json:"reset_failures"`
-	DurationMs    int64                `json:"duration_ms"`
+	Containd      *containd.ApplyReceipt `json:"containd,omitempty"`
+	Scenarios     []scenarioTestResult   `json:"scenarios"`
+	TotalTests    int                    `json:"total_tests"`
+	Passed        int                    `json:"passed"`
+	Failed        int                    `json:"failed"`
+	AutoPassed    int                    `json:"auto_passed"`
+	ResetFailures int                    `json:"reset_failures"`
+	DurationMs    int64                  `json:"duration_ms"`
 }
 
 // handleWorkshopTestSuite runs all exercises in order and reports results.
@@ -198,6 +200,15 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		return
 	}
 	suiteStart := time.Now()
+	var lastApply *containd.ApplyResult
+	remember := func(applied *containd.ApplyResult) {
+		if applied != nil && applied.Receipt != nil {
+			lastApply = applied
+		}
+	}
+	failApply := func(err error) {
+		writeApplyError(c, err, lastApply, gin.H{"context": "workshop test suite"})
+	}
 
 	// Load the active package's scenarios ordered by `order`
 	var scenarios []models.Scenario
@@ -225,7 +236,12 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		scenarioStart := time.Now()
 
 		// Reset lab before each scenario
-		preResetProblems := s.resetLabState(ctx, gen, recipe)
+		preResetProblems, resetApply, resetErr := s.resetLabState(ctx, gen, recipe)
+		remember(resetApply)
+		if resetErr != nil {
+			failApply(resetErr)
+			return
+		}
 		if err := s.waitForFirewallPolicy(ctx, gen); err != nil {
 			preResetProblems = append(preResetProblems, "firewall dataplane: "+err.Error())
 		}
@@ -245,9 +261,20 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 			s.activeConfigMu.RLock()
 			active := s.activeConfig
 			s.activeConfigMu.RUnlock()
+			var applyErr error
 			applied, prepErr := ensureHardenedPrecondition(step, active, func(name string) ([]string, error) {
-				return s.applyFirewallConfigInternal(ctx, gen, name)
+				applied, err := s.applyFirewallConfigInternal(ctx, gen, name)
+				remember(applied)
+				applyErr = err
+				if applied == nil {
+					return nil, err
+				}
+				return applied.Warnings, err
 			})
+			if applyErr != nil {
+				failApply(applyErr)
+				return
+			}
 			if prepErr == nil && applied {
 				prepErr = s.waitForFirewallPolicy(ctx, gen)
 			}
@@ -260,7 +287,14 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 					command: func(device, command, source string, value *float64) StepActionResult {
 						return s.executeCommand(ctx, gen, device, command, source, value)
 					},
-					firewall:   func(name string) StepActionResult { return s.executeFirewallAction(ctx, gen, name) },
+					firewall: func(name string) StepActionResult {
+						action := s.executeFirewallAction(ctx, gen, name)
+						if action.Containd != nil {
+							remember(&containd.ApplyResult{Receipt: action.Containd, Warnings: action.Warnings})
+						}
+						applyErr = action.applyError
+						return action
+					},
 					check:      func(expect map[string]any) []StepActionResult { return s.executeCheck(ctx, gen, expect) },
 					probe:      func(step labs.ScenarioStep) []StepActionResult { return s.executeProbe(ctx, gen, step) },
 					sessionCut: func(flow string) StepActionResult { return s.executeSessionCut(ctx, gen, flow) },
@@ -268,6 +302,10 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 						sleepCtx(ctx, 300*time.Millisecond)
 					},
 				})
+				if applyErr != nil {
+					failApply(applyErr)
+					return
+				}
 				if step.Action != nil && step.Action.Type == "firewall" && result.Passed {
 					if err := s.waitForFirewallPolicy(ctx, gen); err != nil {
 						result.Passed = false
@@ -308,7 +346,12 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		}
 
 		// Reset after scenario
-		postResetProblems := s.resetLabState(ctx, gen, recipe)
+		postResetProblems, resetApply, resetErr := s.resetLabState(ctx, gen, recipe)
+		remember(resetApply)
+		if resetErr != nil {
+			failApply(resetErr)
+			return
+		}
 		resetOK, resetDetail := aggregateResetProblems(preResetProblems, postResetProblems)
 
 		scenarioResult := scenarioTestResult{
@@ -334,11 +377,20 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		log.Printf("TEST SUITE: Scenario %s %s: %v", sc.Order, sc.Name, scenarioResult.Passed)
 	}
 	if err := ctx.Err(); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "test suite interrupted: " + err.Error()})
+		fields := gin.H{"error": "test suite interrupted: " + err.Error()}
+		if lastApply != nil {
+			fields["containd"] = lastApply.Receipt
+		}
+		c.JSON(http.StatusServiceUnavailable, fields)
 		return
 	}
 
+	var receipt *containd.ApplyReceipt
+	if lastApply != nil {
+		receipt = lastApply.Receipt
+	}
 	c.JSON(http.StatusOK, testSuiteResult{
+		Containd:      receipt,
 		Scenarios:     results,
 		TotalTests:    totalTests,
 		Passed:        totalPassed,
@@ -350,19 +402,18 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 }
 
 // resetLabState restores all devices to defaults.
-func (s *Server) resetLabState(ctx context.Context, gen *lifecycle.Generation, recipe *packageRecipe) []string {
+func (s *Server) resetLabState(ctx context.Context, gen *lifecycle.Generation, recipe *packageRecipe) ([]string, *containd.ApplyResult, error) {
 	var problems []string
 	policy, err := defaultPolicy(gen)
 	if err != nil {
-		return []string{"firewall apply: " + err.Error()}
+		return []string{"firewall apply: " + err.Error()}, nil, err
 	}
-	warnings, err := s.applyFirewallConfigInternal(ctx, gen, policy)
-	if err != nil {
-		problems = append(problems, "firewall apply: "+err.Error())
-	} else {
-		for _, warning := range warnings {
-			problems = append(problems, "firewall apply warning: "+warning)
-		}
+	applied, applyErr := s.applyFirewallConfigInternal(ctx, gen, policy)
+	if applyErr != nil {
+		return []string{"firewall apply: " + applyErr.Error()}, applied, applyErr
+	}
+	for _, warning := range applied.Warnings {
+		problems = append(problems, "firewall apply warning: "+warning)
 	}
 
 	if recipe.resetTruth != nil {
@@ -399,5 +450,5 @@ func (s *Server) resetLabState(ctx context.Context, gen *lifecycle.Generation, r
 	}
 
 	sleepCtx(ctx, 500*time.Millisecond)
-	return problems
+	return problems, applied, applyErr
 }

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
@@ -45,16 +46,18 @@ func (p Phase) persisted() bool {
 // Record is the runtime record: which range the backend last started, and
 // how far it got. It survives backend restarts.
 type Record struct {
-	Schema     int           `json:"schema"`
-	Generation uint64        `json:"generation"`
-	Phase      Phase         `json:"phase"`
-	Package    string        `json:"package"`
-	Revision   int           `json:"revision"`
-	Mode       manifest.Mode `json:"mode"`
-	Root       string        `json:"root"`
-	Version    string        `json:"version"` // backend build that wrote the record
-	Error      string        `json:"error"`
-	UpdatedAt  time.Time     `json:"updated_at"`
+	Containd   *containd.ApplyReceipt `json:"containd,omitempty"`
+	Schema     int                    `json:"schema"`
+	Generation uint64                 `json:"generation"`
+	Phase      Phase                  `json:"phase"`
+	Package    string                 `json:"package"`
+	Revision   int                    `json:"revision"`
+	Mode       manifest.Mode          `json:"mode"`
+	Root       string                 `json:"root"`
+	Version    string                 `json:"version"` // backend build that wrote the record
+	Error      string                 `json:"error"`
+	Code       string                 `json:"code,omitempty"`
+	UpdatedAt  time.Time              `json:"updated_at"`
 }
 
 // RecordStore reads and atomically replaces the record file.

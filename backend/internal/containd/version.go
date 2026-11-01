@@ -7,7 +7,7 @@ import (
 )
 
 // MinimumVersion is the oldest containd release supported by this backend.
-const MinimumVersion = "0.1.36"
+const MinimumVersion = "0.1.37"
 
 var buildVersion = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
 
