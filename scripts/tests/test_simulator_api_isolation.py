@@ -1,12 +1,16 @@
 """G3 offline contract tests. Never invoke Docker or contact the range."""
 import copy
 from datetime import timezone
+import http.client
+import http.server
 import importlib.util
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest.mock import Mock, patch
 import urllib.error
@@ -297,6 +301,15 @@ class ControlTests(unittest.TestCase):
         g3.check_listeners(cat, "control_centre", " 0: 1563630A:1F90 0:0 0A\n")
         self.assertEqual(g3.listener_ports(" 0: " + "0" * 32 + ":1F90 0:0 0A\n"), [("::", 8080)])
 
+    def test_kernel_tcp_table_headers_queues_and_non_listening_states(self):
+        raw = """  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt uid
+  0: 1563630A:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0
+  1: 1563630A:C001 0A63630A:1F90 01 00000000:00000000 00:00000000 00000000 0
+  sl  local_address                         remote_address                        st
+  2: 00000000000000000000000000000000:01F6 00000000000000000000000000000000:0000 0A
+"""
+        self.assertEqual(g3.listener_ports(raw), [("10.99.99.21", 8080), ("::", 502)])
+
     def test_widened_bind_on_known_port_is_an_unclassified_alias(self):
         cat = g3.load_inventory(EU)
         for host in ("00000000", "00000000000000000000000000000000"):
@@ -408,6 +421,18 @@ class OrchestrationTests(unittest.TestCase):
         self.io.identity["generation"] = 8
         with self.assertRaises(ValueError):
             self.gate.apply("improved")
+
+    def test_range_and_peer_envelope_json_shape_fail_closed(self):
+        for identity in (None, [], "ready"):
+            self.io.identity = identity
+            with self.assertRaisesRegex(ValueError, "identity/phase"):
+                self.gate.identity()
+        destination = self.cat["destinations"][0]
+        for envelope in (None, [], {}, {"status": "200", "body": "{}"},
+                         {"status": 200, "body": []}):
+            with patch.object(self.io, "exec", return_value=json.dumps(envelope)):
+                with self.assertRaisesRegex(ValueError, "HTTP peer failed"):
+                    self.gate.peer_control(destination)
 
     def test_missing_corporate_python_fails_preflight_then_restores(self):
         original = self.io.exec
@@ -606,6 +631,216 @@ class TransportTests(unittest.TestCase):
                 gate.return_value.run.side_effect = RuntimeError("cleanup failed")
                 self.assertEqual(module.main(), 1)
                 self.assertFalse(any("PASS" in str(c) for c in output.call_args_list))
+
+
+class LoopbackHTTPTests(unittest.TestCase):
+    """Exercise the real Request, opener, response and HTTPError implementations."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.evidence = g3.Evidence(self.temp.name, US)
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def setup(self):
+                super().setup()
+                self.connection.settimeout(2)
+
+            def handle_request(self):
+                body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                self.server.requests.append((self.command, self.path, body))
+                if self.path == "/chunked-truncated":
+                    self.send_response(200)
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.end_headers()
+                    self.wfile.write(b"5\r\nfirst\r\nA\r\nshort")
+                    self.close_connection = True
+                    return
+                status = 409 if self.path == "/conflict" else 200
+                payload = json.dumps({"method": self.command, "body": body.decode()}).encode()
+                if self.path == "/redirect":
+                    status, payload = 302, b""
+                elif self.path == "/malformed":
+                    payload = b"{"
+                elif self.path == "/invalid-utf8":
+                    payload = b"\xff"
+                elif self.path == "/truncated":
+                    payload = b'{"valid":true}'
+                elif self.path == "/large":
+                    payload = b"x" + "\u00e9".encode() * 524289
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                if status == 302:
+                    self.send_header("Location", "/json")
+                self.send_header("Content-Length", str(len(payload) +
+                                                       (10 if self.path == "/truncated" else 0)))
+                self.end_headers()
+                self.wfile.write(payload)
+                self.close_connection = True
+
+            do_GET = do_POST = handle_request
+
+            def log_message(self, *_args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.requests = []
+        self.thread = threading.Thread(target=self.server.serve_forever,
+                                       kwargs={"poll_interval": .01})
+        self.thread.start()
+        self.addCleanup(self.close_server)
+        self.base_url = f"http://127.0.0.1:{self.server.server_port}"
+        self.transport = g3.Transport(self.base_url, self.evidence)
+
+    def close_server(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+        self.assertFalse(self.thread.is_alive(), "loopback HTTP server did not stop")
+
+    def local_exec(self, command, **kwargs):
+        # Preserve real subprocess.run semantics, replacing only the Docker
+        # launch boundary. These tests never execute Docker or a range command.
+        self.assertEqual(command[:2], ["docker", "exec"])
+        self.assertGreater(kwargs["timeout"], 0)
+        return subprocess.run(command[3:], **kwargs)
+
+    def local_gate(self):
+        self.transport.run = self.local_exec
+        return g3.Gate(US, g3.load_inventory(US), self.transport, self.evidence)
+
+    def test_real_get_request_and_evidence_method(self):
+        self.assertEqual(self.transport.http("/api/range")["method"], "GET")
+        self.assertEqual(self.server.requests, [("GET", "/api/range", b"")])
+        self.assertEqual(self.evidence.record["events"][-1]["method"], "GET")
+
+    def test_real_post_request_and_evidence_method(self):
+        result = self.transport.http("/api/firewall/apply", {"config": "weak"})
+        self.assertEqual(result["method"], "POST")
+        self.assertEqual(json.loads(result["body"]), {"config": "weak"})
+        self.assertEqual(self.evidence.record["events"][-1]["method"], "POST")
+
+    def test_real_http_error_body_retained_and_not_retried(self):
+        with self.assertRaises(urllib.error.HTTPError) as failure:
+            self.transport.http("/conflict", {"config": "improved"})
+        self.assertEqual(failure.exception.code, 409)
+        self.assertTrue(failure.exception.closed)
+        self.assertEqual(len(self.server.requests), 1)
+        event = self.evidence.record["events"][-1]
+        self.assertEqual(event["status"], 409)
+        self.assertEqual(json.loads((Path(self.temp.name) / event["raw"]).read_bytes())["method"],
+                         "POST")
+
+    def test_real_get_redirect_preserved_for_portal_routes(self):
+        self.assertEqual(self.transport.http("/redirect")["method"], "GET")
+        self.assertEqual([r[:2] for r in self.server.requests],
+                         [("GET", "/redirect"), ("GET", "/json")])
+
+    def test_real_post_redirect_cannot_silently_become_get(self):
+        with self.assertRaises(urllib.error.HTTPError) as failure:
+            self.transport.http("/redirect", {"config": "improved"})
+        self.assertEqual(failure.exception.code, 302)
+        self.assertTrue(failure.exception.closed)
+        self.assertEqual([r[:2] for r in self.server.requests], [("POST", "/redirect")])
+
+    def test_real_invalid_json_and_utf8_retain_raw_bytes(self):
+        for path, payload in (("/malformed", b"{"), ("/invalid-utf8", b"\xff")):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                self.transport.http(path)
+            event = self.evidence.record["events"][-1]
+            self.assertEqual((Path(self.temp.name) / event["raw"]).read_bytes(), payload)
+
+    def test_real_short_content_length_body_cannot_prove_health(self):
+        with self.assertRaisesRegex(ValueError, "truncated"):
+            self.transport.http("/truncated")
+        event = self.evidence.record["events"][-1]
+        self.assertEqual((Path(self.temp.name) / event["raw"]).read_bytes(), b'{"valid":true}')
+
+    def test_real_incomplete_chunked_body_retains_library_partial_input(self):
+        with self.assertRaises(http.client.IncompleteRead):
+            self.transport.http("/chunked-truncated")
+        event = self.evidence.record["events"][-1]
+        self.assertEqual(event["kind"], "http-error")
+        self.assertEqual((Path(self.temp.name) / event["raw"]).read_bytes(), b"first")
+
+    def test_real_body_limit_counts_bytes_not_decoded_characters(self):
+        with self.assertRaisesRegex(ValueError, "HTTP positive/apply failed"):
+            self.transport.http("/large", json_body=False)
+        event = self.evidence.record["events"][-1]
+        self.assertEqual(len((Path(self.temp.name) / event["raw"]).read_bytes()), 1048577)
+
+    def test_real_peer_http_program_json_envelope_and_no_environment_proxy(self):
+        gate = self.local_gate()
+
+        def execute(command, **kwargs):
+            self.assertEqual(command[:2], ["docker", "exec"])
+            return subprocess.run(command[3:], env=dict(
+                os.environ, http_proxy=self.base_url, HTTP_PROXY=self.base_url,
+                no_proxy="", NO_PROXY=""), **kwargs)
+
+        self.transport.run = execute
+        gate.peer_control({"host": "127.0.0.1", "port": self.server.server_port,
+                           "control": {"service": "rtac_sim", "tool": "python3",
+                                       "path": "/json"}})
+        # A proxy request would contain an absolute URL instead of /json.
+        self.assertEqual([r[:2] for r in self.server.requests], [("GET", "/json")])
+        event = next(e for e in self.evidence.record["events"] if e["kind"] == "exec")
+        raw = json.loads((Path(self.temp.name) / event["raw"]).read_text())
+        envelope = json.loads(raw["stdout"])
+        self.assertEqual(envelope["status"], 200)
+        self.assertIsInstance(envelope["body"], str)
+        self.assertEqual(json.loads(envelope["body"])["method"], "GET")
+
+    def test_real_peer_http_program_rejects_invalid_and_truncated_responses(self):
+        gate = self.local_gate()
+        for path in ("/conflict", "/malformed", "/invalid-utf8", "/truncated", "/large"):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                gate.peer_control({"host": "127.0.0.1", "port": self.server.server_port,
+                                   "control": {"service": "rtac_sim", "tool": "python3",
+                                               "path": path}})
+        self.assertEqual(len(self.server.requests), 5)
+
+    def test_real_preflight_json_from_subprocess(self):
+        self.local_gate().preflight()
+        events = [e for e in self.evidence.record["events"] if e["kind"] == "student-preflight"]
+        self.assertEqual(len(events), 4)
+        self.assertTrue(all(e["result"]["ready"] is True for e in events))
+        self.assertTrue(all(isinstance(e["result"]["time"], float) for e in events))
+
+    def test_real_socket_program_json_through_exec_and_probe(self):
+        gate = self.local_gate()
+        gate.probe("kali", [{"id": "loopback", "host": "127.0.0.1",
+                             "port": self.server.server_port, "expected": "A"}], positive=True)
+        event = self.evidence.record["events"][-1]
+        self.assertEqual(event["kind"], "positive-tcp")
+        self.assertTrue(event["rows"][0]["passed"])
+        self.assertEqual(event["rows"][0]["local"][0], "127.0.0.1")
+
+    def test_real_subprocess_nonzero_and_signal_are_not_listener_denials(self):
+        self.local_gate()
+        for program, code in (("import sys; print('stdout'); print('stderr',file=sys.stderr);"
+                               " sys.exit(7)", 7),
+                              ("import os,signal; os.kill(os.getpid(),signal.SIGTERM)", -15)):
+            with self.subTest(code=code), self.assertRaises(ValueError):
+                self.transport.exec("not-a-container", ["python3", "-c", program])
+            event = self.evidence.record["events"][-1]
+            self.assertEqual(event["returncode"], code)
+            raw = json.loads((Path(self.temp.name) / event["raw"]).read_text())
+            if code == 7:
+                self.assertEqual(raw, {"stdout": "stdout\n", "stderr": "stderr\n"})
+
+    def test_real_subprocess_timeout_preserves_partial_byte_output(self):
+        self.local_gate()
+        with self.assertRaises(subprocess.TimeoutExpired) as failure:
+            self.transport.exec("not-a-container", ["python3", "-c",
+                                "import sys,time; print('partial',flush=True);"
+                                " print('error',file=sys.stderr,flush=True); time.sleep(10)"],
+                                timeout=1)
+        self.assertEqual(failure.exception.stdout, b"partial\n")
+        self.assertEqual(failure.exception.stderr, b"error\n")
+        event = self.evidence.record["events"][-1]
+        raw = (Path(self.temp.name) / event["raw"]).read_text()
+        self.assertIn("partial", raw)
+        self.assertIn("error", raw)
 
 
 if __name__ == "__main__":
