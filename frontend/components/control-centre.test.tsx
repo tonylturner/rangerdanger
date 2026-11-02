@@ -29,12 +29,12 @@ function screen(props: Partial<Parameters<typeof ControlCentreScreen>[0]> = {}) 
 }
 
 describe("ControlCentreScreen schema 3", () => {
-  it("shows all 42 points, per-device controls and snapshot identity", () => {
+  it("shows all 44 points, per-device controls and snapshot identity", () => {
     const html = screen();
     const out = text(html);
-    expect(FEEDER_STATE.points).toHaveLength(42);
-    expect(out).toContain("42/42 good");
-    expect(html.match(/data-condition="good"/g)).toHaveLength(42);
+    expect(FEEDER_STATE.points).toHaveLength(44);
+    expect(out).toContain("44/44 good");
+    expect(html.match(/data-condition="good"/g)).toHaveLength(44);
     for (const label of ["STARTED", "GI ok", "T1 110/20 kV", "CB1", "RMU1", "RMU2", "S1 residential", "S2 commercial", "S3 industrial", "F2 · CLOSED · GOOD", "snapshot 120", "Trends"]) expect(out).toContain(label);
     expect(out).toContain("Confirm RAISE");
     expect(out).toContain("Confirm MANUAL");
@@ -113,19 +113,19 @@ describe("CC schematic layout", () => {
   it("shows only a current-connection GI and counts current observations, not electrical validity", () => {
     const state = structuredClone(FEEDER_STATE);
     const status = (unavailable = false) => text(render(<ObservationStatus state={state} unavailable={unavailable} />));
-    expect(status()).toContain("Points current 42/42");
+    expect(status()).toContain("Points current 44/44");
     state.points[0].quality = { ...state.points[0].quality, iv: true };
     state.points[0].stale_reason = "measurement_invalid";
-    expect(status()).toContain("Points current 42/42");
+    expect(status()).toContain("Points current 44/44");
     state.points[0].quality.nt = true;
-    expect(status()).toContain("Points current 41/42");
-    expect(status(true)).toContain("Points current 0/42");
+    expect(status()).toContain("Points current 43/44");
+    expect(status(true)).toContain("Points current 0/44");
     expect(status(true)).toContain("(cached)");
     state.link.gi.state = "running";
     expect(status()).not.toContain("not completed");
     state.link.since = "2099-01-01T00:00:00Z";
     expect(status()).toContain("Current-connection GI (UTC): not completed");
-    expect(status()).toContain("Points current 0/42");
+    expect(status()).toContain("Points current 0/44");
     expect(text(render(<ObservationStatus state={STALE_STATE} unavailable={false} />))).toContain("Points current 0/4");
   });
   it("reserves upper annotation lanes clear of the RMUs and right-hand ring line", () => {

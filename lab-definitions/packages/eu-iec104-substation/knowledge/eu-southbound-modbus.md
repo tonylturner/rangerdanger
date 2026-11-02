@@ -25,7 +25,7 @@ The OLTC instead uses IR0 for signed completed tap, IR1 for authority/mode/motio
 
 ### Writes and freshness
 
-RTU commands use FC6. Switch HR0 accepts 1 open/2 close; OLTC HR0 accepts 1 lower/2 raise and HR2 accepts 1 manual/2 auto. F2 has four monitored IEC 104 points but no mapped supervisory command. The PLC separately uses FC16, quantity one, on OLTC HR1 for absolute requests. Device authority and interlocks remain authoritative even when the firewall permits Modbus.
+RTU commands use FC6. Switch HR0 accepts 1 open/2 close; OLTC HR0 accepts 1 lower/2 raise and HR2 accepts 1 manual/2 auto. F2 has five monitored IEC 104 points but no mapped supervisory command. The PLC separately uses FC16, quantity one, on OLTC HR1 for absolute requests. Device authority and interlocks remain authoritative even when the firewall permits Modbus.
 
 Electrical measurements expire three seconds after delivery by the solver. Reading the register block successfully cannot refresh that validity. For the PLC, an unchanged HR1029 heartbeat for three seconds invalidates every mapped PLC point even if the Modbus server is still reachable. The [quality article](#iec104-gi-cot-quality) explains the resulting IEC 104 flags.
 

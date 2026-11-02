@@ -59,13 +59,14 @@ describe("independent one-line sources", () => {
     delete field.devices["breaker-1"];
     expect(physicalSystemObservations(field)("feeder-breaker-position").condition).toBe("unknown");
   });
-  it("reads all four F2 channels from its device, never a process latch or the other view", () => {
+  it("reads all five F2 channels from its device, never a process latch or the other view", () => {
     const field = structuredClone(TRUTH);
     // Deliberately contradictory process data cannot override the device.
     field.process.f2_tripped = true;
     const physical = physicalSystemObservations(field);
     expect(physical("f2-position")).toMatchObject({ value: "closed", condition: "good" });
     expect(physical("f2-protection-trip")).toMatchObject({ value: false, condition: "good" });
+    expect(physical("f2-lockout")).toMatchObject({ value: false, condition: "good" });
     expect(physical("f2-current")).toMatchObject({ value: 11.2, condition: "good" });
     expect(physical("f2-p-mw")).toMatchObject({ value: 0.38, condition: "good" });
     const cc = controlCentreObservations(FEEDER_STATE.points.map((p) => p.id === "f2-position" ? { ...p, value: "open" } : p));
@@ -75,7 +76,7 @@ describe("independent one-line sources", () => {
     expect(physicalSystemObservations(field)("f2-current").condition).toBe("stale");
     expect(physicalSystemObservations(field)("f2-p-mw").condition).toBe("stale");
     expect(physicalSystemObservations(field)("f2-position").condition).toBe("good");
-    for (const id of ["f2-position", "f2-protection-trip", "f2-current", "f2-p-mw"]) {
+    for (const id of ["f2-position", "f2-protection-trip", "f2-lockout", "f2-current", "f2-p-mw"]) {
       expect(physicalSystemObservations(field, true)(id).condition).toBe("stale");
     }
     delete field.devices["f2-breaker"];

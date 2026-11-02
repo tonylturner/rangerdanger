@@ -50,7 +50,9 @@ def point_values(field):
                 values[f'{prefix}-{suffix}'] = d['measurements'][key]
     d = field['devices']['oltc-1']
     f2 = field['devices']['f2-breaker']
-    values.update({'feeder-protection-trip': field['devices']['breaker-1']['protection_tripped'],
+    values.update({'feeder-lockout': field['devices']['breaker-1']['lockout'],
+                   'f2-lockout': f2['lockout'],
+                   'feeder-protection-trip': field['devices']['breaker-1']['protection_tripped'],
                    'f2-position': f2['position'], 'f2-protection-trip': f2['protection_tripped'],
                    'f2-current': f2['measurements']['current_a'], 'f2-p-mw': f2['measurements']['p_mw'],
                    'oltc-1-tap': {'value': d['tap'], 'transient': d['moving']},
@@ -157,7 +159,7 @@ def check_data(row, field, operator, before, since, tap=0, auto=False, local=Fal
     plc = {'plc-1-running': True, 'plc-1-input-valid': True, 'plc-1-setpoint-kv': 20.4,
            'plc-1-deadband-pct': 1, 'plc-1-delay-s': 30}
     require(len(operator['points']) == ORACLE['point_count']
-            and set(points) == set(expected) | set(plc), 'CC 42-point inventory incomplete/duplicate')
+            and set(points) == set(expected) | set(plc), 'CC 44-point inventory incomplete/duplicate')
     for id, value in expected.items():
         point = points[id]
         require(timestamp(point['received_at']) >= timestamp(since), f'{id}: retained CC receipt')

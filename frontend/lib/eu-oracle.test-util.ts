@@ -51,6 +51,7 @@ export function oracleFixture(row: OracleRow) {
   if (f2.kind === "breaker") {
     f2.position = row.f2 === "tripped" ? "open" : "closed";
     f2.protection_tripped = row.f2 === "tripped";
+    f2.lockout = row.f2 === "tripped";
   }
   Object.assign(f2.measurements, { current_a: null, p_mw: null, q_mvar: null, pf: null });
   const deviceIds = ["breaker-1", "rmu-1", "rmu-2", "oltc-1"];
@@ -72,6 +73,7 @@ export function oracleFixture(row: OracleRow) {
   // CC input by reading the physical adapter under test.
   const values: Record<string, OperatorPoint["value"]> = {
     "f2-position": row.f2 === "tripped" ? "open" : "closed", "f2-protection-trip": row.f2 === "tripped",
+    "f2-lockout": row.f2 === "tripped", "feeder-lockout": false,
     "f2-current": null, "f2-p-mw": null,
     "feeder-breaker-position": positions[0], "rmu-1-position": positions[1], "rmu-2-position": positions[2],
     "feeder-voltage": row.vt, "feeder-current": cb1, "rmu-1-current": rmu1, "rmu-2-current": rmu2, "oltc-1-current": t1,

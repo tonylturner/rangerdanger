@@ -5,7 +5,7 @@
 OPERATOR=$(cat "$T_FIXTURES/operator-gi-untimed.json")
 edit() { printf '%s' "$OPERATOR" | jq -c "$1"; }
 t_run eu_assert_operator_shape "$OPERATOR" fixture
-t_expect_fails 0 "all 42 schema-3 points pass"
+t_expect_fails 0 "all 44 schema-3 points pass"
 for expression in '.schema = 1' '.schema = 2' 'del(.points[0].device)' 'del(.points[0].limits)' 'del(.snapshot_seq)' '.points |= .[0:4]' \
   '.points[2].quality.ov = null' '.points[0].quality.ov = false' \
   '(.points[] | select(.ioa == 1301) | .quality.ov) = null' \
@@ -14,14 +14,14 @@ for expression in '.schema = 1' '.schema = 2' 'del(.points[0].device)' 'del(.poi
   t_run eu_assert_operator_shape "$(edit "$expression")" fixture
   t_expect_fails 1 "invalid shape fails: $expression"
 done
-t_run jq -e "$EU_JQ_DEFS four_points and station_good" <<<"$OPERATOR"
-t_expect_eq "$T_STATUS" 0 "all 42 station points satisfy inventory identity and quality"
-stale=$(edit '(.points[] | select(.ioa == 1001 or .ioa == 1002 or .ioa == 2001 or .ioa == 2002)) |= (.quality.iv = true | .quality.nt = true | .stale_reason = "device_unreachable")')
+t_run jq -e "$EU_JQ_DEFS breaker_inventory and station_good" <<<"$OPERATOR"
+t_expect_eq "$T_STATUS" 0 "all 44 station points satisfy inventory identity and quality"
+stale=$(edit '(.points[] | select(.ioa == 1001 or .ioa == 1002 or .ioa == 1003 or .ioa == 2001 or .ioa == 2002)) |= (.quality.iv = true | .quality.nt = true | .stale_reason = "device_unreachable")')
 t_run jq -e "$EU_JQ_DEFS all_stale(\"device_unreachable\")" <<<"$stale"
 t_expect_eq "$T_STATUS" 0 "one lost breaker conduit does not require stale healthy peers"
 
 t_run jq -e "$EU_JQ_DEFS f2_good and station_good" <<<"$OPERATOR"
-t_expect_eq "$T_STATUS" 0 "all four F2 indications and full station GOOD"
+t_expect_eq "$T_STATUS" 0 "all five F2 indications and full station GOOD"
 t_run jq -e "$EU_JQ_DEFS station_good" <<<"$(edit 'del(.points[-1])')"
 t_expect_eq "$T_STATUS" 1 "an incomplete station cannot pass full recovery"
 t_run jq -e "$EU_JQ_DEFS station_good" <<<"$(edit '.points += [.points[0]]')"

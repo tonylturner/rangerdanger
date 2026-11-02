@@ -256,7 +256,7 @@ func TestLateFeedbackCannotComplete(t *testing.T) {
 	}
 }
 
-func TestAll42PointsQualityAndRecovery(t *testing.T) {
+func TestAll44PointsQualityAndRecovery(t *testing.T) {
 	c, now := model(t)
 	started(c)
 	c.tickGI(*now)
@@ -265,7 +265,7 @@ func TestAll42PointsQualityAndRecovery(t *testing.T) {
 		receive(c, typ, 20, p.IOA, e)
 	}
 	completeGI(c)
-	equal(t, c.journal[len(c.journal)-1].detail, `{"connection_seq":1,"points_good":42,"trigger":"connect"}`)
+	equal(t, c.journal[len(c.journal)-1].detail, `{"connection_seq":1,"points_good":44,"trigger":"connect"}`)
 	if c.journal[0].kind != "link_up" || c.journal[1].kind != "gi_started" {
 		t.Fatal("startup ordering")
 	}
@@ -316,13 +316,13 @@ func TestAll42PointsQualityAndRecovery(t *testing.T) {
 	seq := c.journalSeq
 	c.link.lastAt = *now
 	c.ended()
-	equal(t, c.journal[len(c.journal)-43].detail, `{"peer":"test:2404","connection_seq":1,"reason":"peer_closed"}`)
+	equal(t, c.journal[len(c.journal)-45].detail, `{"peer":"test:2404","connection_seq":1,"reason":"peer_closed"}`)
 	for i, p := range c.points {
 		if p.stale != "link_lost" || p.q != iec.Invalid|iec.NotTopical || p.received != before[i].received || p.source != before[i].source || p.typ != before[i].typ || p.cot != before[i].cot {
 			t.Fatal("loss discarded truth")
 		}
 	}
-	if c.journalSeq != seq+43 {
+	if c.journalSeq != seq+45 {
 		t.Fatal("one down then one stale per point required")
 	}
 	seq = c.journalSeq
@@ -338,6 +338,6 @@ func TestAll42PointsQualityAndRecovery(t *testing.T) {
 		receive(c, typ, 20, p.IOA, e)
 	}
 	completeGI(c)
-	equal(t, c.journal[len(c.journal)-1].detail, `{"connection_seq":2,"points_good":42,"trigger":"connect"}`)
+	equal(t, c.journal[len(c.journal)-1].detail, `{"connection_seq":2,"points_good":44,"trigger":"connect"}`)
 	equal(t, c.api(context.Background(), request{method: "POST", path: "/api/gi"}).body, `{"trigger":"operator","requested_at":"2026-10-15T12:34:57.789Z"}`)
 }

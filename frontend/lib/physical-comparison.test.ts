@@ -11,7 +11,7 @@ function compare(id: string, patch: Partial<OperatorPoint> = {}) {
 describe("physical comparison precedence", () => {
   it("compares all independently mapped points, including measurement sides", () => {
     const rows = physicalComparison(TRUTH, FEEDER_STATE);
-    expect(rows).toHaveLength(35);
+    expect(rows).toHaveLength(37);
     expect(rows.filter((r) => r.primary)).toHaveLength(6);
     expect(rows.find((r) => r.id === "rmu-2-source-kv")?.label).toContain("S3 side");
     expect(rows.find((r) => r.id === "rmu-1-source-kv")?.label).toContain("S1 side");
@@ -82,10 +82,10 @@ describe("physical comparison precedence", () => {
     expect(compare("oltc-1-tap", { value: { value: 2, transient: false } }).status).toBe("MISMATCH");
   });
   it("keeps usable SCADA quality separate from physical agreement", () => {
-    expect(scadaQualityText(FEEDER_STATE)).toBe("42/42 usable received points");
+    expect(scadaQualityText(FEEDER_STATE)).toBe("44/44 usable received points");
     const counts = comparisonCounts(physicalComparison(TRUTH, FEEDER_STATE));
     expect(counts.MISMATCH).toBeGreaterThan(0);
-    expect(agreementText(counts)).toContain("of 35");
-    expect(scadaQualityText(FEEDER_STATE, true)).toContain("0/42");
+    expect(agreementText(counts)).toContain("of 37");
+    expect(scadaQualityText(FEEDER_STATE, true)).toContain("0/44");
   });
 });

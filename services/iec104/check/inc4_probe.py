@@ -160,9 +160,11 @@ def main():
     print("PASS quiet GOOD status remains command-eligible without a new GI")
     s = get_json(CC, "/api/state")
     assert s["schema"] == 3 and s["snapshot_seq"] > 0 and s["rendered_at"].endswith("Z")
-    assert len(s["points"]) == 42 and all(good(p) for p in s["points"]), s
+    assert len(s["points"]) == 44 and all(good(p) for p in s["points"]), s
     assert pt(s, "f2-position")["value"] == "closed"
     assert pt(s, "f2-protection-trip")["value"] is False
+    assert pt(s, "feeder-lockout")["value"] is False
+    assert pt(s, "f2-lockout")["value"] is False
     assert pt(s, "f2-current")["value"] > 0
     assert pt(s, "f2-p-mw")["value"] > 0
     command("f2-command", "open", status=400)
@@ -182,7 +184,7 @@ def main():
     fixture(23, "pf_invalid=false")
     until(lambda: good(pt(get_json(CC, "/api/state"), "oltc-1-pf")))
     print("PASS schema-3 metadata, configured delay, NaN PF IV/no NT/zero and recovery")
-    f2_ids = {"f2-position", "f2-protection-trip", "f2-current", "f2-p-mw"}
+    f2_ids = {"f2-position", "f2-protection-trip", "f2-lockout", "f2-current", "f2-p-mw"}
     before = {p["id"]: p["value"] for p in get_json(CC, "/api/state")["points"] if p["id"] in f2_ids}
     fixture(25, "read_lost=true")
     def f2_lost():
@@ -197,11 +199,11 @@ def main():
     code, _ = request(CC, "POST", "/api/gi")
     assert code == 202
     until(lambda: (lambda state: state["link"]["gi"]["state"] == "complete"
-        and state["link"]["gi"]["trigger"] == "operator" and len(state["points"]) == 42
+        and state["link"]["gi"]["trigger"] == "operator" and len(state["points"]) == 44
         and all(good(p) and p["cot"] == 20 for p in state["points"]))(
             get_json(CC, "/api/state")))
     assert not fixture(25)["writes"]
-    print("PASS F2 loss retains all four values IV+NT, healthy peers GOOD, recovery/new GI, no F2 writes")
+    print("PASS F2 loss retains all five values IV+NT, healthy peers GOOD, recovery/new GI, no F2 writes")
 
     for point, op in [
         ("rmu-1-command", "raise"),

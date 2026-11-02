@@ -54,6 +54,20 @@ describe("operator observation rules", () => {
     expect(abnormalConditions({ ...state, points: state.points.filter((p) => p.id !== id) }).some((c) => c.id === id)).toBe(false);
   });
 
+  it.each(["feeder-lockout", "f2-lockout"])("alarms on independently received %s only while GOOD", (id) => {
+    const state = structuredClone(FEEDER_STATE);
+    const point = state.points.find((p) => p.id === id)!;
+    point.value = true; // Neither trip nor OPEN is a substitute for lockout telemetry.
+    expect(activeAlarms(state).map((a) => a.id)).toEqual([id]);
+    for (const flag of ["iv", "nt", "sb", "bl", "ov"] as const) {
+      const bad = { ...state, points: state.points.map((p) => p.id === id ? { ...p, quality: { ...p.quality, [flag]: true } } : p) };
+      expect(activeAlarms(bad)).toEqual([]);
+    }
+    for (const patch of [{ value: false }, { value: null }, { stale_reason: "not_updated" as const }]) {
+      expect(activeAlarms({ ...state, points: state.points.map((p) => p.id === id ? { ...p, ...patch } : p) })).toEqual([]);
+    }
+    expect(activeAlarms({ ...state, points: state.points.filter((p) => p.id !== id) })).toEqual([]);
+  });
   it("derives process alarms only from full GOOD and separates bad quality", () => {
     const state = structuredClone(FEEDER_STATE);
     for (const id of ["feeder-protection-trip", "rmu-1-earth", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-at-lower", "oltc-1-at-upper"]) {

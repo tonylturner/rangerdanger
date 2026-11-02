@@ -39,7 +39,7 @@ eu_gate_G11() {
   elif eu_wait_for_operator '.link.state == "started" and all_stale("device_unreachable") and f2_good' \
     5 "G11 commit-only device_unreachable within stale_after_ms + 2s" "$g11_loss_started_ms"; then
     g11_loss_verified=1
-    pass "G11 four points IV+NT device_unreachable with IEC104 link started, no session kill"
+    pass "G11 five breaker points IV+NT device_unreachable with IEC104 link started, no session kill"
   fi
   poll_until=$(eu_epoch_seconds) || return
   eu_window_finish G11 || return
@@ -52,8 +52,8 @@ eu_gate_G11() {
     g11_stale_points=$(eu_get_point_snapshot "$g11_stale" | jq -c 'map({id,value})') || g11_stale_points=""
     g11_stale_epoch=$(printf '%s' "$g11_stale" | jq -r '.cache_epoch // empty')
     if [ -z "$g11_stale_epoch" ] || [ -z "$g11_stale_points" ] \
-      || ! printf '%s' "$g11_stale" | jq -e "$EU_JQ_DEFS four_points" >/dev/null 2>&1; then
-      fail "G11 stale operator cache lacks its epoch or four expected points"
+      || ! printf '%s' "$g11_stale" | jq -e "$EU_JQ_DEFS breaker_inventory" >/dev/null 2>&1; then
+      fail "G11 stale operator cache lacks its epoch or five expected breaker points"
     fi
   else
     fail "G11 operator state unavailable after stale transition"
@@ -96,7 +96,7 @@ eu_gate_G11() {
   elif eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and station_good and f2_good' \
     30 "G11 Modbus recovery after improved restore"; then
     g11_loss_verified=2
-    pass "G11 four observations GOOD after restored Modbus conduit"
+    pass "G11 five breaker observations GOOD after restored Modbus conduit"
   fi
   if ! eu_get_field; then
     fail "G11 field state read after restore failed"
@@ -108,6 +108,7 @@ eu_gate_G11() {
     eu_assert_jq_truth "$API_BODY" "$reset_truth" '
       point("feeder-breaker-position").value == $truth.devices["breaker-1"].position
       and point("feeder-protection-trip").value == $truth.devices["breaker-1"].protection_tripped
+      and point("feeder-lockout").value == $truth.devices["breaker-1"].lockout
     ' "G11 recovered operator values equal reset truth"
   else
     fail "G11 operator read after restore failed"
@@ -144,7 +145,7 @@ eu_gate_G12() {
   if [ "$g12_measurement_loss_seen" -ne 1 ]; then
     fail "G12 measurement recovery not tested without the measurement_invalid transition"
   elif eu_wait_for_operator 'all(.points[]; good)' 10 "G12 measurement recovery"; then
-    pass "G12 all four points GOOD after OpenDSS resumes"
+    pass "G12 all station points GOOD after OpenDSS resumes"
   fi
 }
 

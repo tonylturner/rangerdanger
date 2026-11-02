@@ -60,7 +60,7 @@ it.each(EU_ORACLE.flatMap((row) => [false, true].map((physical) => ({ ...row, ph
       if ("fault" in row) expect(hook(root, "data-point", "rmu-1-source-kv")[0].textContent).toContain("0.00 kV");
     });
     inspect(<AbnormalSummary state={operator} />, (root) => {
-      const expected = row.f2 === "tripped" ? ["f2-protection-trip", "f2-position-off-normal"] : [];
+      const expected = row.f2 === "tripped" ? ["f2-protection-trip", "f2-lockout", "f2-position-off-normal"] : [];
       if (row.switches[0] === "O") expected.push("feeder-breaker-position-off-normal");
       if (row.switches[1] === "O") expected.push("rmu-1-position-off-normal");
       if (row.switches[2] === "C") expected.push("rmu-2-position-off-normal");

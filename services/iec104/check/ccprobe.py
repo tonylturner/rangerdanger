@@ -23,7 +23,7 @@ import time
 import urllib.parse
 
 FLOATS = ["feeder-current", "feeder-voltage", "feeder-p-mw", "feeder-q-mvar", "feeder-pf"]
-POINTS = ["feeder-breaker-position", "feeder-protection-trip", *FLOATS]
+POINTS = ["feeder-breaker-position", "feeder-protection-trip", "feeder-lockout", *FLOATS]
 
 
 def request(base, method, path, body=None, headers=None):

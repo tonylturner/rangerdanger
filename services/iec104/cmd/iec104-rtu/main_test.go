@@ -67,7 +67,7 @@ func TestCancelledShutdown(t *testing.T) {
 	cancel()
 	var out, err bytes.Buffer
 	code := run(ctx, []string{"--config", config, "--bind", "127.0.0.1", "--port", fmt.Sprint(port)}, &out, &err)
-	if code != 0 || err.Len() != 0 || !strings.Contains(out.String(), fmt.Sprintf(" rtu listening 127.0.0.1:%d ca=1 points=42 devices=6 select-timeout=5000ms\n", port)) || !strings.HasSuffix(out.String(), " rtu stopping\n") {
+	if code != 0 || err.Len() != 0 || !strings.Contains(out.String(), fmt.Sprintf(" rtu listening 127.0.0.1:%d ca=1 points=44 devices=6 select-timeout=5000ms\n", port)) || !strings.HasSuffix(out.String(), " rtu stopping\n") {
 		t.Fatalf("code=%d out=%q err=%q", code, out.String(), err.String())
 	}
 }

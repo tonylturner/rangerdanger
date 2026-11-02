@@ -241,14 +241,16 @@
       "provider": "operator-device",
       "points": [
         "feeder-breaker-position",
-        "feeder-protection-trip"
+        "feeder-protection-trip",
+        "feeder-lockout"
       ]
     },
     "rtu-f2-breaker": {
       "provider": "operator-device",
       "points": [
         "f2-position",
-        "f2-protection-trip"
+        "f2-protection-trip",
+        "f2-lockout"
       ]
     },
     "rtu-oltc-1": {

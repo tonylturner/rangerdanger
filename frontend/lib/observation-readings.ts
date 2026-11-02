@@ -28,8 +28,10 @@ type Mapping = { device: string; value: (d: DeviceState) => PointValue; measurem
 export const PHYSICAL_POINTS: Record<string, Mapping> = {
   "feeder-breaker-position": { device: "breaker-1", value: (d) => d.kind === "breaker" ? d.position : null },
   "feeder-protection-trip": { device: "breaker-1", value: (d) => d.kind === "breaker" ? d.protection_tripped : null },
+  "feeder-lockout": { device: "breaker-1", value: (d) => d.kind === "breaker" ? d.lockout : null },
   "f2-position": { device: "f2-breaker", value: (d) => d.kind === "breaker" ? d.position : null },
   "f2-protection-trip": { device: "f2-breaker", value: (d) => d.kind === "breaker" ? d.protection_tripped : null },
+  "f2-lockout": { device: "f2-breaker", value: (d) => d.kind === "breaker" ? d.lockout : null },
   "f2-current": { device: "f2-breaker", measurement: true, value: (d) => d.measurements.current_a },
   "f2-p-mw": { device: "f2-breaker", measurement: true, value: (d) => d.measurements.p_mw },
   "oltc-1-tap": { device: "oltc-1", value: (d) => d.kind === "oltc" ? { value: d.tap, transient: d.moving } : null },
