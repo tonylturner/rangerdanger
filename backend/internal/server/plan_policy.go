@@ -68,9 +68,19 @@ func readEvaluatedFirewall(data []byte) (evaluatedFirewall, error) {
 }
 
 func commandRoute(gen *lifecycle.Generation, device, command, source string) (labs.PlanRoute, error) {
+	if endpoint, err := netip.ParseAddrPort(source); err == nil {
+		source = endpoint.Addr().String()
+	}
 	from := source
 	switch source {
-	case "operator", "rtac", "rtac-sim", "rtac-auto", "reset-script":
+	case "operator", "web-ui", "rtac", "rtac-sim", "rtac-auto", "reset-script":
+		from = "rtac-1"
+	case "10.99.99.10":
+		// The platform Compose twins pin the backend to this management
+		// address; range templates/manifests and runtime config do not carry
+		// platform service addresses. Source-less API calls use this peer,
+		// but the RTAC performs the field write, just as for "operator".
+		// Do not extend this attribution to other management peers.
 		from = "rtac-1"
 	}
 	for _, node := range gen.Package.Template.Nodes {
