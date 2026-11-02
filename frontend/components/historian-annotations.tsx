@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { historyBreaks, type History, type HistorianEvent } from "../lib/historian-api";
 import { formatPointValue, formatUtcTime, pointLabel, STALE_REASON_TEXT } from "../lib/operator-format";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 const eventTime = (at: string) => formatUtcTime(at).slice(0, 8);
 
@@ -28,22 +28,70 @@ export function breakDescriptions(history: History, events: HistorianEvent[]) {
 }
 
 function Annotation({ label, description = label, left, width, event, warning }: { label: string; description?: string; left: number; width?: number; event?: boolean; warning?: boolean }) {
-  const [open, setOpen] = useState(false);
+  const id = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const tooltip = useRef<HTMLDivElement>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [mode, setMode] = useState<"hover" | "focus" | "pinned" | null>(null);
+  const [position, setPosition] = useState<CSSProperties>({});
+  const cancelHide = () => clearTimeout(hideTimer.current);
+  const show = (next: Exclude<typeof mode, null>) => {
+    cancelHide();
+    const rect = trigger.current!.getBoundingClientRect();
+    const tooltipWidth = Math.min(320, window.innerWidth - 32);
+    const above = rect.top > window.innerHeight / 2;
+    setPosition({
+      width: tooltipWidth,
+      left: Math.max(16, Math.min(rect.left + rect.width / 2 - tooltipWidth / 2, window.innerWidth - tooltipWidth - 16)),
+      ...(above ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }),
+      maxHeight: Math.max(32, (above ? rect.top : window.innerHeight - rect.bottom) - 22),
+    });
+    setMode((current) => current === "pinned" || (current === "focus" && next === "hover") ? current : next);
+  };
+  const queueHide = () => {
+    cancelHide();
+    // Let the pointer travel from the trigger into the tooltip.
+    if (mode === "hover") hideTimer.current = setTimeout(() => setMode((current) => current === "hover" ? null : current), 150);
+  };
+  useEffect(() => {
+    if (!mode) return;
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !trigger.current?.contains(event.target) && !tooltip.current?.contains(event.target)) setMode(null);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setMode(null); };
+    const reposition = (event: Event) => {
+      if (!(event.target instanceof Node) || !tooltip.current?.contains(event.target)) setMode(null);
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      clearTimeout(hideTimer.current);
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [mode]);
   return <>
     {event ? <span aria-hidden="true" data-event-guide style={{ left: `${left}%` }}
       className={`pointer-events-none absolute top-3.5 bottom-0 w-px ${warning ? "bg-rose-300/25" : "bg-slate-400/25"}`} /> :
       <span aria-hidden="true" data-break-band style={{ left: `${left}%`, width: `${width}%`, minWidth: "2px" }}
         className="pointer-events-none absolute bottom-0 h-[calc(100%-2rem)] -translate-x-1/2 bg-amber-300/20" />}
-    <Tooltip open={open} onOpenChange={setOpen}>
-    <TooltipTrigger asChild>
-      <button type="button" aria-label={label} onClick={(event) => { event.preventDefault(); setOpen(true); }}
-        style={{ left: `${left}%`, ...(width === undefined ? {} : { width: `${width}%` }) }}
-        className={`pointer-events-auto absolute flex min-w-6 -translate-x-1/2 items-center justify-center rounded-sm border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${event ? "top-0 h-7 w-7" : "bottom-0 h-[calc(100%-2rem)]"}`}>
-        {event && <span aria-hidden="true" className={`size-2.5 rounded-full border ${warning ? "border-rose-300 bg-rose-400" : "border-slate-200 bg-slate-400"}`} />}
-      </button>
-    </TooltipTrigger>
-    <TooltipContent style={{ animation: "none" }} className="max-w-[min(24rem,calc(100vw-2rem))] whitespace-pre-line wrap-anywhere">{description}</TooltipContent>
-  </Tooltip>
+    {/* A native button owns click/focus instead of a hover-only primitive
+        whose pointerdown/click handlers can dismiss a touch activation. */}
+    <button ref={trigger} type="button" aria-label={label} aria-describedby={mode ? id : undefined}
+      onClick={() => mode === "pinned" ? setMode(null) : show("pinned")}
+      onFocus={() => show("focus")} onBlur={() => setMode(null)}
+      onPointerMove={(event) => { cancelHide(); if (event.pointerType === "mouse" && !mode) show("hover"); }} onPointerLeave={queueHide}
+      style={{ left: `${left}%`, ...(width === undefined ? {} : { width: `${width}%` }) }}
+      className={`pointer-events-auto absolute flex min-w-6 -translate-x-1/2 items-center justify-center rounded-sm border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${event ? "top-0 h-7 w-7" : "bottom-0 h-[calc(100%-2rem)]"}`}>
+      {event && <span aria-hidden="true" className={`size-2.5 rounded-full border ${warning ? "border-rose-300 bg-rose-400" : "border-slate-200 bg-slate-400"}`} />}
+    </button>
+    {mode && createPortal(<div ref={tooltip} id={id} role="tooltip" style={position}
+      onPointerEnter={cancelHide} onPointerLeave={queueHide}
+      className="fixed z-50 overflow-auto rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-medium whitespace-pre-line text-slate-200 shadow-lg wrap-anywhere">{description}</div>, document.body)}
   </>;
 }
 
@@ -57,16 +105,14 @@ export function HistorianAnnotations({ history, events, xmin, xmax }: { history:
     const previous = simultaneous.get(event.at);
     simultaneous.set(event.at, previous ? `${previous}\n${description}` : description);
   }
-  return <TooltipProvider delayDuration={0}>
-    <div className="pointer-events-none absolute inset-0" aria-label="Trend annotations">
-      {breakDescriptions(history, events).map((interval, i) => <Annotation key={`break-${i}`} label={interval.text}
-        left={(percent(interval.from) + percent(interval.to)) / 2} width={percent(interval.to) - percent(interval.from)} />)}
-      {events.map((event, i) => <Annotation key={`event-${i}`} event left={percent(event.at)}
-        warning={event.to === "open" || (event.to === true && /trip|earth|fault-passage/.test(event.point))}
-        description={simultaneous.get(event.at)}
-        label={`${eventTime(event.at)} UTC ${eventDescription(event)}`} />)}
-    </div>
-  </TooltipProvider>;
+  return <div className="pointer-events-none absolute inset-0" aria-label="Trend annotations">
+    {breakDescriptions(history, events).map((interval, i) => <Annotation key={`break-${i}`} label={interval.text}
+      left={(percent(interval.from) + percent(interval.to)) / 2} width={percent(interval.to) - percent(interval.from)} />)}
+    {events.map((event, i) => <Annotation key={`event-${i}`} event left={percent(event.at)}
+      warning={event.to === "open" || (event.to === true && /trip|earth|fault-passage/.test(event.point))}
+      description={simultaneous.get(event.at)}
+      label={`${eventTime(event.at)} UTC ${eventDescription(event)}`} />)}
+  </div>;
 }
 
 export function HistorianEventList({ history, events }: { history: History; events: HistorianEvent[] }) {

@@ -8,7 +8,7 @@ import { HistoryPlot, HistorianTrend } from "./historian-trend";
 import { breakDescriptions, eventDescription } from "./historian-annotations";
 import { pointLabel } from "../lib/operator-format";
 
-const tap: HistorianEvent = { point: "oltc-1-tap", at: historySample(4).ingested_at, from: 1, to: 2, quality: historySample(1).quality };
+const tap: HistorianEvent = { point: "oltc-1-tap", at: "2026-10-15T10:00:04.787Z", from: 1, to: 2, quality: historySample(1).quality };
 afterEach(() => vi.unstubAllGlobals());
 
 describe("historian annotations", () => {
@@ -34,11 +34,12 @@ describe("historian annotations", () => {
     expect(trigger.className).toContain("bg-transparent");
     const guides = container.querySelectorAll<HTMLElement>("[data-event-guide]");
     expect(guides).toHaveLength(2);
-    expect(guides[0].style.left).toBe(`${4 / 900 * 100}%`);
+    expect(Number.parseFloat(guides[0].style.left)).toBeCloseTo(4.787 / 900 * 100);
     expect(guides[0].className).toContain("bg-slate-400/25");
     expect(guides[1].className).toContain("bg-rose-300/25");
     for (const guide of guides) expect(guide.className).toContain("top-3.5 bottom-0 w-px");
     expect(container.querySelector("time")?.textContent).toBe("10:00:04 UTC");
+    expect(container.querySelector("time")?.dateTime).toBe(tap.at);
   });
   it("opens event tooltips on keyboard focus, mouse hover and touch click, and closes on Escape", async () => {
     render(<HistoryPlot history={HISTORY} events={[tap]} />);
@@ -63,6 +64,59 @@ describe("historian annotations", () => {
     fireEvent.click(button);
     await waitFor(() => expect(screen.getByRole("tooltip").textContent).toContain("IEC 104 link to the RTU lost 10:00:03–10:00:04 UTC, around T1 tap 1 → 2"));
     expect(screen.getByText("Why the line breaks (1)")).toBeTruthy();
+  });
+  it.each(["mouse", "touch"])("pins the tooltip after %s pointerdown, pointerup and click without focus", async (pointerType) => {
+    render(<HistoryPlot history={HISTORY} events={[tap]} />);
+    const button = screen.getByRole("button", { name: "10:00:04 UTC T1 tap 1 → 2" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.pointerDown(button, { pointerType });
+    fireEvent.pointerUp(button, { pointerType });
+    fireEvent.click(button);
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip.textContent).toBe("10:00:04 UTC T1 tap 1 → 2");
+    expect(button.getAttribute("aria-describedby")).toBe(tooltip.id);
+    fireEvent.pointerLeave(button, { pointerType });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+    expect(screen.getByRole("tooltip")).toBe(tooltip);
+    fireEvent.pointerDown(document.body, { pointerType });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+  it("pins a click after pointerdown focuses the marker, and dismisses with blur or a second click", () => {
+    render(<HistoryPlot history={HISTORY} events={[tap]} />);
+    const button = screen.getByRole("button", { name: "10:00:04 UTC T1 tap 1 → 2" });
+    fireEvent.pointerDown(button, { pointerType: "mouse" });
+    fireEvent.focus(button);
+    fireEvent.pointerUp(button, { pointerType: "mouse" });
+    fireEvent.click(button);
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    fireEvent.blur(button);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.focus(button);
+    fireEvent.click(button);
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    fireEvent.pointerDown(button, { pointerType: "mouse" });
+    fireEvent.pointerUp(button, { pointerType: "mouse" });
+    fireEvent.click(button);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+  it("keeps the tooltip within a 320 px viewport and allows hovering its content", async () => {
+    vi.stubGlobal("innerWidth", 320);
+    vi.stubGlobal("innerHeight", 600);
+    render(<HistoryPlot history={HISTORY} events={[tap]} />);
+    const button = screen.getByRole("button", { name: "10:00:04 UTC T1 tap 1 → 2" });
+    vi.spyOn(button, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 550, 28, 28));
+    fireEvent.pointerMove(button, { pointerType: "mouse" });
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip.style.width).toBe("288px");
+    expect(tooltip.style.left).toBe("16px");
+    expect(tooltip.style.bottom).toBe("56px");
+    expect(tooltip.style.maxHeight).toBe("528px");
+    fireEvent.pointerLeave(button);
+    fireEvent.pointerEnter(tooltip);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+    expect(screen.getByRole("tooltip")).toBe(tooltip);
+    fireEvent.pointerLeave(tooltip);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
   });
   it("keeps simultaneous event facts available from the overlapping marker tooltip", async () => {
     render(<HistoryPlot history={HISTORY} events={[tap, { ...tap, point: "feeder-protection-trip", from: false, to: true }]} />);
