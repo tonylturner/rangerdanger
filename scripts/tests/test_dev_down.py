@@ -8,6 +8,8 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+SOURCE = (ROOT / "scripts/dev-down.sh").read_text()
+BOUNDED = (ROOT / "scripts/lib/docker-bounded.sh").read_text()
 DOCKER = r'''
 import json, os, pathlib, sys, time
 root = pathlib.Path(os.environ["FAKE_ROOT"])
@@ -66,30 +68,41 @@ class DevDownTests(unittest.TestCase):
             sleep = tools / "sleep"
             sleep.write_text(
                 '#!/bin/sh\n'
-                'printf "%s\\n" "$*" >> "$FAKE_ROOT/watchdogs"\n'
                 'if [ "$*" = 1 ]; then printf "%s\\n" "$*" >> "$FAKE_ROOT/sleeps"; fi\n'
                 'if [ "$*" = 1 ]; then exec /bin/sleep 0.02; fi\n'
-                'if [ "${FAKE_WATCHDOG_FAST:-0}" = 1 ]; then exec /bin/sleep 0.3; fi\n'
-                'exec /bin/sleep 1\n'
+                'exec /bin/sleep "$@"\n'
             )
             sleep.chmod(0o755)
+            # Record call-site budgets separately from the real poll sleeps.
+            # Keep the helper body, shortening only its deadline for stalled
+            # fake clients, just as the installer bounds fixture does.
+            instrumented = BOUNDED.replace("docker_bounded() {", "test_docker_bounded() {") + r'''
+docker_bounded() {
+    printf '%s\n' "$1" >>"$FAKE_ROOT/budgets"
+    shift
+    test_docker_bounded 1 "$@"
+}
+'''
+            source_line = '. "$SCRIPT_DIR/lib/docker-bounded.sh"'
+            self.assertIn(source_line, SOURCE)
+            script = root / "dev-down.sh"
+            script.write_text(SOURCE.replace(source_line, instrumented))
             env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
-                       FAKE_ROOT=tmp, FAKE_CONFIG=json.dumps(config or {}),
-                       FAKE_WATCHDOG_FAST="1" if (config or {}).get("stall") else "0")
-            run = subprocess.run(["bash", str(ROOT / "scripts/dev-down.sh"), *args],
+                       FAKE_ROOT=tmp, FAKE_CONFIG=json.dumps(config or {}))
+            run = subprocess.run(["bash", str(script), *args],
                                  env=env, capture_output=True, text=True, timeout=10)
             calls = [json.loads(line) for line in (root / "calls").read_text().splitlines()]
             sleeps = (root / "sleeps").read_text().splitlines() if (root / "sleeps").exists() else []
-            watchdogs = (root / "watchdogs").read_text().splitlines() \
-                if (root / "watchdogs").exists() else []
+            budgets = (root / "budgets").read_text().splitlines() \
+                if (root / "budgets").exists() else []
             polls = int((root / "polls").read_text()) if (root / "polls").exists() else 0
-            return run, calls, sleeps, watchdogs, polls
+            return run, calls, sleeps, budgets, polls
 
     def test_delayed_volume_removal_is_not_a_leak_and_teardown_order_is_preserved(self):
-        run, calls, sleeps, watchdogs, polls = self.run_down(dict(delayed_polls=2))
+        run, calls, sleeps, budgets, polls = self.run_down(dict(delayed_polls=2))
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(sleeps, ["1", "1"])
-        self.assertEqual(set(watchdogs), {"15", "1"})
+        self.assertEqual(set(budgets), {"15"})
         self.assertEqual(polls, 3)
         self.assertIn("2 anonymous volume(s) removed", run.stdout)
         compose = [call for call in calls if call["args"][0] == "compose"]
@@ -101,23 +114,23 @@ class DevDownTests(unittest.TestCase):
         self.assertFalse(any(call["args"][:2] == ["volume", "rm"] for call in calls))
 
     def test_removal_at_last_poll_succeeds(self):
-        run, _, sleeps, watchdogs, polls = self.run_down(dict(delayed_polls=10))
+        run, _, sleeps, budgets, polls = self.run_down(dict(delayed_polls=10))
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(len(sleeps), 10)
-        self.assertEqual(set(watchdogs), {"15", "1"})
+        self.assertEqual(set(budgets), {"15"})
         self.assertEqual(polls, 11)
 
     def test_real_leak_fails_after_bounded_wait_without_stopping_platform(self):
-        run, calls, sleeps, watchdogs, polls = self.run_down(dict(leak=True))
+        run, calls, sleeps, budgets, polls = self.run_down(dict(leak=True))
         self.assertNotEqual(run.returncode, 0)
         self.assertIn("2 volume(s) behind", run.stderr)
         self.assertEqual(len(sleeps), 10)
-        self.assertEqual(set(watchdogs), {"15", "1"})
+        self.assertEqual(set(budgets), {"15"})
         self.assertEqual(polls, 11)
         self.assertFalse(any("rangerdanger-platform" in call["args"] for call in calls))
 
     def test_compose_failure_is_not_hidden_even_if_resources_were_removed(self):
-        run, calls, sleeps, watchdogs, polls = self.run_down(dict(compose_error=True))
+        run, calls, sleeps, budgets, polls = self.run_down(dict(compose_error=True))
         self.assertNotEqual(run.returncode, 0)
         self.assertIn("Compose down failed", run.stderr)
         self.assertEqual(len([call for call in calls if call["args"][0] == "compose"]), 1)
@@ -161,11 +174,11 @@ class DevDownTests(unittest.TestCase):
             ("volume", "cannot verify volume removal"),
         ):
             with self.subTest(operation=operation):
-                run, _, _, watchdogs, _ = self.run_down(dict(stall=operation))
+                run, _, _, budgets, _ = self.run_down(dict(stall=operation))
                 self.assertNotEqual(run.returncode, 0)
                 self.assertIn(message, run.stderr)
                 self.assertIn(
                     "Start or restart Docker Desktop or dockerd, then re-run",
                     run.stderr,
                 )
-                self.assertIn("15", watchdogs)
+                self.assertIn("15", budgets)
