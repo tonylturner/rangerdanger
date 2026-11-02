@@ -89,8 +89,9 @@ HEADER_EXCEPTIONS = {
     "hardening-configurations": (
         'Stress-test the policy you built in Lab 2.2 against the canonical '
         'distribution-substation attack: a DNP3 Direct Operate (FC05) injection from Kali '
-        "that disables the recloser's auto-reclose and trips it, turning a brief flicker into "
-        "a sustained downstream outage. You'll run the attack under the weak baseline (it "
+        'that trips the recloser and disables auto-reclose. The remote trip stays open until '
+        'someone closes it; disabling auto-reclose removes automatic restoration after a '
+        "fault. You'll run the attack under the weak baseline (it "
         'succeeds), then under the applied plan. A selected enterprise-to-field closure '
         'denies it; a deferred closure leaves the Weak exposure open. The lesson: verify '
         'enforcement by device state, not by policy labels. Optional Modbus FC5/FC6 cases '
