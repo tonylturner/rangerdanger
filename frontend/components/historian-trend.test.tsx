@@ -125,7 +125,7 @@ describe("historian trend", () => {
   it("does not invent a zero line when every sample is unknown", () => {
     const history = { ...HISTORY, segments: [{ cache_epoch: "empty", samples: [historySample(1, { value: null })] }] };
     const html = renderToStaticMarkup(<HistoryPlot history={history} />);
-    expect(text(html)).toContain("No good numeric observations");
+    expect(text(html)).toContain("No valid numeric observations");
     expect(text(html)).toContain("not received");
     expect(html).not.toContain("polyline");
   });

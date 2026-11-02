@@ -111,7 +111,7 @@ export function HistoryPlot({ history, band, expandableSnapshots = false, journa
         <span className="whitespace-nowrap">{formatUtcTime(new Date(xmin).toISOString())} UTC</span>
         <span className="ml-auto whitespace-nowrap">{formatUtcTime(new Date(xmax).toISOString())} UTC</span>
       </div>
-    </div> : <p className="text-sm text-amber-300">No good numeric observations in this window. Unknown and stale samples are not plotted as zero. Select a numeric or single-point signal for a trend.</p>}
+    </div> : <p className="text-sm text-amber-300">No valid numeric observations in this window. Unknown and stale samples are not plotted as zero. Select a numeric or single-point signal for a trend.</p>}
     <TrendEventNotes {...eventNotes} available={Boolean(journalEvents)} />
     {band && <p className="text-xs text-slate-300">Current PLC band {band.low.toFixed(2)}–{band.high.toFixed(2)} kV, not historical setpoints.</p>}
     <ul className="text-xs text-amber-300">{history.gaps.map((gap, i) => <li key={i}>Ingest gap: {gap.from} → {gap.to}</li>)}</ul>
@@ -163,7 +163,7 @@ export function SectionHistoryPlot({ histories, journalEvents, expandableSnapsho
         <span className="whitespace-nowrap">{formatUtcTime(new Date(xmin).toISOString())} UTC</span>
         <span className="ml-auto whitespace-nowrap">{formatUtcTime(new Date(xmax).toISOString())} UTC</span>
       </div>
-    </div> : <p className="text-sm text-amber-300">No good numeric section observations in this window. Unknown and stale samples are not plotted as zero.</p>}
+    </div> : <p className="text-sm text-amber-300">No valid numeric section observations in this window. Unknown and stale samples are not plotted as zero.</p>}
     <TrendEventNotes {...eventNotes} available={Boolean(journalEvents)} />
     <p className="text-xs text-slate-400">One shared time axis; each section line independently breaks at cache epochs, ingest gaps, invalid quality or transient samples. S2 uses RMU1 section VT; the RMU2 section VT is the same S2 bus and remains selectable on its own.</p>
     {snapshotHistory
