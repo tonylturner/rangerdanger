@@ -6,6 +6,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The portal sidebar shows the running RangerDanger version and commit
+  (from `/api/build`) at its foot; a build from source shows
+  "source build". On desktop the sidebar now stays in view while the
+  page scrolls, so the version and the range control are always visible.
+
 ## [v0.2.0] - 2026-11-02
 
 Students choose the lab environment from the portal: the US DNP3
