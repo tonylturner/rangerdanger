@@ -1,7 +1,27 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { ApiError, compilePlan, applyPlan, getActiveFirewallConfig, getSubstationNetworkEvents, runValidationReport, stopTrafficGeneration, type NetworkEventsResponse, type ValidationReport } from "./api";
+import { ApiError, compilePlan, applyPlan, getActiveFirewallConfig, getSubstationNetworkEvents, runValidationReport, sendFieldAction, stopTrafficGeneration, type NetworkEventsResponse, type ValidationReport } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("posts a simulation action only to the field endpoint and returns physical state", async () => {
+  const state = { schema: 3, position: "open", lockout: false };
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(state)));
+  vi.stubGlobal("fetch", fetch);
+  const body = { device: "feeder-breaker", action: "reset_lockout" } as const;
+  await expect(sendFieldAction(body)).resolves.toEqual(state);
+  expect(fetch).toHaveBeenCalledExactlyOnceWith("/api/field/actions", expect.objectContaining({
+    method: "POST", body: JSON.stringify(body),
+  }));
+});
+
+it("preserves field action failure status and detail without a retry", async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response('{"error":"device unreachable"}', { status: 502 }));
+  vi.stubGlobal("fetch", fetch);
+  await expect(sendFieldAction({ device: "rmu-1", action: "reset_fault_passage" })).rejects.toMatchObject({
+    status: 502, detail: "device unreachable",
+  });
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
 
 it("retains monitor decision metadata and incomplete-history or engine-error evidence", async () => {
   const answer: NetworkEventsResponse = {

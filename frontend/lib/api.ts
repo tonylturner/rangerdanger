@@ -320,6 +320,17 @@ export async function getSubstationAudit() {
   return request<{ entries: AuditEntry[] }>("/substation/audit");
 }
 
+export async function sendFieldAction(body:
+  | { device: "process"; action: "fault_s1" | "fault_s2" | "clear_fault" }
+  | { device: "feeder-breaker" | "f2-breaker"; action: "reset_lockout" }
+  | { device: "rmu-1" | "rmu-2"; action: "reset_fault_passage" }
+) {
+  return request<Record<string, unknown>>("/field/actions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 // Load Simulator (training-only) load override. Fields are optional so a caller
 // can patch just the override (during a ramp) without emitting audit noise, or
 // pass audit_* on discrete user actions to log a single Command Audit entry.

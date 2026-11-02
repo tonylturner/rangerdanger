@@ -209,6 +209,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 	{
 		field.GET("/state", s.handleFieldState)
 		field.GET("/audit", s.handleFieldAudit)
+		field.POST("/actions", s.handleFieldAction)
 	}
 	historian := rng.Group("/historian")
 	{
