@@ -23,7 +23,7 @@ it.each(["control-centre", "physical-system"] as const)("keeps a single persiste
     expect(banner()?.getAttribute("role")).toBe("alert");
     expect(banner()?.className).toContain("sticky");
     expect(banner()?.querySelector("h2")?.textContent).toBe("SCADA VIEW LOST — retained values are not current");
-    expect(banner()?.querySelector("p")?.textContent).toContain("42/42 inventory points not current");
+    expect(banner()?.querySelector("p")?.textContent).toContain("44/44 inventory points not current");
     if (view === "control-centre") {
       for (const tab of tree.getAllByRole("tab")) {
         fireEvent.click(tab);
@@ -52,13 +52,13 @@ it.each(["control-centre", "physical-system"] as const)("keeps a single persiste
     tree.rerender(page(open));
     expect(banner()?.getAttribute("data-view-state")).toBe("degraded");
     expect(banner()?.getAttribute("role")).toBe("status");
-    expect(banner()?.querySelector("h2")?.textContent).toBe("SCADA VIEW DEGRADED — 1/42 points not current");
+    expect(banner()?.querySelector("h2")?.textContent).toBe("SCADA VIEW DEGRADED — 1/44 points not current");
     expect(banner()?.querySelector("p")?.textContent).toContain("Affected devices: CB1.");
     tree.rerender(page(WATCHDOG_STATE));
     expect(banner()?.getAttribute("data-view-state")).toBe("degraded");
     expect(banner()?.getAttribute("role")).toBe("status");
     expect(banner()?.className).toContain("border-amber-400");
-    expect(banner()?.querySelector("h2")?.textContent).toBe("SCADA VIEW DEGRADED — 1/42 points not current");
+    expect(banner()?.querySelector("h2")?.textContent).toBe("SCADA VIEW DEGRADED — 1/44 points not current");
     expect(banner()?.querySelector("p")?.textContent).toContain("Affected devices: T1. Retained values for these points are not current.");
     for (const device of DEVICES) {
       const degraded = structuredClone(FEEDER_STATE);
@@ -70,7 +70,7 @@ it.each(["control-centre", "physical-system"] as const)("keeps a single persiste
       tree.rerender(page(degraded));
       expect(banner()?.getAttribute("data-view-state")).toBe("degraded");
       expect(banner()?.getAttribute("role")).toBe("status");
-      expect(banner()?.querySelector("h2")?.textContent).toBe(`SCADA VIEW DEGRADED — ${points.length}/42 points not current`);
+      expect(banner()?.querySelector("h2")?.textContent).toBe(`SCADA VIEW DEGRADED — ${points.length}/44 points not current`);
       expect(banner()?.querySelector("p")?.textContent).toContain(`Affected devices: ${device}. Retained values for these points are not current.`);
       expect(banner()?.querySelector("h2")?.textContent).not.toContain("pending");
     }
@@ -104,7 +104,7 @@ it("excludes invalid-only measurements from affected device groups and counts wi
     p.stale_reason = "device_unreachable";
   }
   const html = renderToStaticMarkup(<ScadaViewBanner state={state} unavailable={false} />);
-  expect(html).toContain("SCADA VIEW DEGRADED — 5/42 points not current");
+  expect(html).toContain("SCADA VIEW DEGRADED — 6/44 points not current");
   expect(html).toContain("Affected devices: T1, F2.");
   expect(html).toContain("Retained values for these points are not current.");
   expect(html).not.toContain("pending");

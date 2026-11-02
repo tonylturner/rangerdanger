@@ -10,7 +10,7 @@ import { useNetworkFlowContext } from "../lib/network-flow-queries";
 import { resetRangeScopedQueries } from "../lib/range";
 import { TooltipProvider } from "./ui/tooltip";
 import { PolicyBadge } from "./network-drawers";
-import { US_PACKAGE, EU_PACKAGE, FRESH_STATE } from "../lib/operator-fixtures.test-util";
+import { US_PACKAGE, EU_PACKAGE, FEEDER_STATE } from "../lib/operator-fixtures.test-util";
 import { TrafficMatrixView } from "./traffic-matrix-view";
 
 vi.mock("./range-context", () => ({
@@ -132,7 +132,7 @@ describe("TrafficMatrixView", () => {
     const sessionKey = ["firewall-sessions", "all"];
     const sessionList = { sessions: [{ proto: "tcp", src: "10.10.10.50", dst: "10.30.30.20", dport: 2404, sport: null, state: "ESTABLISHED", timeout: 60 }], count: 1 };
     client.setQueryData(["traffic-status"], { generating: true });
-    client.setQueryData(["operator", "state"], FRESH_STATE);
+    client.setQueryData(["operator", "state"], FEEDER_STATE);
     client.setQueryData(sessionKey, sessionList);
     const renderContext = () => renderToStaticMarkup(<QueryClientProvider client={client}><ReadContext /></QueryClientProvider>);
     expect(renderContext()).toContain("unknown/active/gen: Conntrack entry present (ESTABLISHED); traffic may already be blocked");

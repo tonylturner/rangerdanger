@@ -154,7 +154,7 @@ describe("operator workstation interactions", () => {
     expect(tree.container.querySelectorAll("tbody tr")).toHaveLength(1);
     expect(output(tree)).toContain("not_updated");
     fireEvent.change(tree.container.querySelector("select")!, { target: { value: "status" } });
-    expect(tree.container.querySelectorAll("tbody tr")).toHaveLength(21);
+    expect(tree.container.querySelectorAll("tbody tr")).toHaveLength(23);
   });
   it("marks the complete cached surface and shows journal failures, without rewriting GOOD", () => {
     const state = structuredClone(FEEDER_STATE);

@@ -68,7 +68,7 @@ describe("Physical System presentation", () => {
     const body = <PhysicalSystemScreen {...props} field={field} operator={operator} />;
     const html = renderToStaticMarkup(<ControlCentreScreen state={operator} stateError={null} stateUpdatedAt={NOW} journal={JOURNAL} now={NOW} view="physical-system" physicalSystem={body} />);
     const out = text(html);
-    for (const value of ["Physical System State", "Live electrical and device conditions from the simulation, independent of SCADA communications.", "This is privileged simulation truth, not available to the SCADA operator.", "Simulation observations · Independent of IEC 104", "No active physical abnormalities", "CB1 — Feeder breaker", "T1 — Transformer / OLTC", "RMU1", "RMU2 · NOP", "SCADA data quality:", "Physical agreement: 35 matched / 0 mismatched", "CC alarm limits 19.8–21.0 kV"]) expect(out).toContain(value);
+    for (const value of ["Physical System State", "Live electrical and device conditions from the simulation, independent of SCADA communications.", "This is privileged simulation truth, not available to the SCADA operator.", "Simulation observations · Independent of IEC 104", "No active physical abnormalities", "CB1 — Feeder breaker", "T1 — Transformer / OLTC", "RMU1", "RMU2 · NOP", "SCADA data quality:", "Physical agreement: 37 matched / 0 mismatched", "CC alarm limits 19.8–21.0 kV"]) expect(out).toContain(value);
     const sections = ["Physical abnormalities", "System overview", "Physical system vs. Control Centre", "Electrical network overview", "Equipment overview", "Advanced diagnostics"];
     const indices = sections.map((label) => html.indexOf(`aria-label="${label}"`));
     expect(indices.every((i) => i >= 0)).toBe(true);
@@ -145,7 +145,7 @@ describe("Physical System presentation", () => {
     const row = tree.container.querySelector(`[data-comparison="${p.id}"]`)!;
     expect(row.getAttribute("data-status")).toBe("STALE");
     expect(output(tree)).toContain("CC↔RTU link lost");
-    expect(button(tree, "All comparable points (35)").getAttribute("aria-expanded")).toBe("false");
+    expect(button(tree, "All comparable points (37)").getAttribute("aria-expanded")).toBe("false");
   });
   it("never turns null into zero and distinguishes validity, freshness, energization and known positions", () => {
     const field = structuredClone(TRUTH);
@@ -254,7 +254,7 @@ describe("Physical System interactions", () => {
     expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
     expect(scrollTargets).toHaveLength(calls);
     fireEvent.click(button(tree, "SCADA agreement"));
-    expect(button(tree, "All comparable points (35)").getAttribute("aria-expanded")).toBe("true");
+    expect(button(tree, "All comparable points (37)").getAttribute("aria-expanded")).toBe("true");
   });
   it("shares device selection across views in both directions", async () => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : url.includes("journal") ? JOURNAL : FEEDER_STATE)));
