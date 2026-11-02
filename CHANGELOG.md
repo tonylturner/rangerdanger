@@ -6,6 +6,29 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Lab instructions follow containd 0.1.38, the current `latest`. In the
+  fw-1 terminal, type `exit` to leave the configuration CLI for the Linux
+  shell (`shell` no longer works there), and `containd cli` to return. The
+  prompt reads `containd(config)#`. Configuration review, commit, export,
+  PCAP staging and candidate-discard steps name the 0.1.38 controls.
+- Source mode builds the firewall from containd `v0.1.38`. The minimum
+  supported containd stays 0.1.37.
+
+### Fixed
+
+- The lab Run log keeps each command's stdout and stderr in full, so
+  protocol traces and timeout messages are no longer hidden.
+- US Lab 2.3 validation no longer fails on commands that the HMI or the
+  backend sent through the RTAC.
+- The US Lab 2.3 introduction gives the correct cause of the outage: the
+  remote trip stays open until someone closes it.
+- EU required-conduit answer keys include the F2 breaker (`10.40.40.24`).
+- The EU validation report names the EU capture directory on the host.
+- The lab-command smoke fails a firewall step when the CLI rejects the
+  command that should open the Linux shell, instead of passing it.
+
 ## [v0.2.0-rc.6] - 2026-11-01
 
 Sixth release candidate for v0.2.0. It moves the firewall to containd
