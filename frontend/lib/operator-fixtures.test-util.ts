@@ -267,8 +267,10 @@ export const SESSIONS: FirewallSessionList = {
   ],
 };
 
-// Full schema-3 snapshot: all 42 monitored points, including indication-only F2.
+// Full schema-3 snapshot: all 44 monitored points, including indication-only F2.
 const EXTRA_POINTS: [string, number, OperatorPoint["value"], string][] = [
+  ["feeder-lockout", 1003, false, "M_SP_TB_1"],
+  ["f2-lockout", 1503, false, "M_SP_TB_1"],
   ["f2-position", 1501, "closed", "M_DP_TB_1"],
   ["f2-protection-trip", 1502, false, "M_SP_TB_1"],
   ["f2-current", 2501, 11.2, "M_ME_NC_1"],

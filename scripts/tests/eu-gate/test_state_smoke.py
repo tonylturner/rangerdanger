@@ -315,10 +315,10 @@ assert.equal(captureDom(root, 'physical').abnormalStrip, null);
                 mutation(f, o)
                 with self.assertRaises(AssertionError):
                     check.check_data(row, f, o, before, since)
-        for id in ['f2-position', 'f2-protection-trip', 'f2-current', 'f2-p-mw']:
+        for id in ['feeder-lockout', 'f2-position', 'f2-protection-trip', 'f2-lockout', 'f2-current', 'f2-p-mw']:
             for change in [{'quality': {'iv': True, 'nt': False, 'sb': False, 'bl': False, 'ov': False}},
                            {'received_at': '2026-10-18T17:00:00Z'},
-                           {'value': 'open' if id == 'f2-position' else True if id == 'f2-protection-trip' else 100}]:
+                           {'value': 'open' if id == 'f2-position' else True if id in ('feeder-lockout', 'f2-protection-trip', 'f2-lockout') else 100}]:
                 with self.subTest(point=id, change=change):
                     f, o, before, since = data_fixture(row)
                     next(p for p in o['points'] if p['id'] == id).update(change)
@@ -345,10 +345,10 @@ assert.equal(captureDom(root, 'physical').abnormalStrip, null);
     def test_f2_inventory_and_wire_mapping(self):
         field, operator, _, _ = data_fixture(check.ROWS['CCO-normal'])
         self.assertEqual(len(field['devices']), 5)
-        self.assertEqual(len(operator['points']), 42)
+        self.assertEqual(len(operator['points']), 44)
         protocol = json.loads((ROOT / 'lab-definitions/packages/eu-iec104-substation/protocols/points.json').read_text())
         points = {p['id']: p for p in protocol['points']}
-        for id, ioa in [('f2-position', 1501), ('f2-protection-trip', 1502),
+        for id, ioa in [('f2-position', 1501), ('f2-protection-trip', 1502), ('f2-lockout', 1503),
                         ('f2-current', 2501), ('f2-p-mw', 2502)]:
             self.assertEqual(points[id]['ioa'], ioa)
             self.assertEqual(points[id]['source']['device'], 'f2-breaker')

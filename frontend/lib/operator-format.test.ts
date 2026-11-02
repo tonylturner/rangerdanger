@@ -25,6 +25,11 @@ describe("point condition and value", () => {
     expect(formatPointValue("feeder-breaker-position", "closed")).toBe("CLOSED");
     expect(formatPointValue("feeder-protection-trip", true)).toBe("TRIPPED");
     expect(formatPointValue("feeder-protection-trip", false)).toBe("NORMAL");
+    for (const id of ["feeder-lockout", "f2-lockout"]) {
+      expect(formatPointValue(id, true)).toBe("LOCKED OUT");
+      expect(formatPointValue(id, false)).toBe("NORMAL");
+      expect(formatPointValue(id, null)).toBe("not received");
+    }
     expect(formatPointValue("feeder-current", 28.93)).toBe("28.9 A");
     expect(formatPointValue("feeder-voltage", 19.94)).toBe("19.94 kV");
     expect(formatPointValue("other", true)).toBe("ON");

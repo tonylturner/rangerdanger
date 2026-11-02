@@ -57,6 +57,12 @@ t_expect_out 'F2 position' "F2 position is compared independently"
 t_run eu_baseline_mismatches "$OPERATOR" "$(edit_truth '.devices["f2-breaker"].measurements.p_mw = 9')"
 t_expect_out 'F2 p-mw' "F2 MW is compared independently"
 
+for pair in 'breaker-1 feeder' 'f2-breaker f2'; do
+  read -r device prefix <<<"$pair"
+  t_run eu_baseline_mismatches "$OPERATOR" "$(edit_truth ".devices[\"$device\"].lockout = true")"
+  t_expect_out "$prefix lockout" "breaker lockout is compared independently of trip and position"
+done
+
 # Isolate convergence from the separately tested GI barrier.
 eu_settle_for_gi() { :; }
 eu_interrogate_since() { :; }

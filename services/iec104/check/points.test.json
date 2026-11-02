@@ -769,6 +769,32 @@
         "address": 11,
         "format": "f32"
       }
+    },
+    {
+      "id": "feeder-lockout",
+      "ioa": 1003,
+      "kind": "single-point",
+      "asdu": "M_SP_TB_1",
+      "source": {
+        "device": "feeder-breaker",
+        "table": "input",
+        "address": 1,
+        "format": "bit",
+        "bit": 1
+      }
+    },
+    {
+      "id": "f2-lockout",
+      "ioa": 1503,
+      "kind": "single-point",
+      "asdu": "M_SP_TB_1",
+      "source": {
+        "device": "f2-breaker",
+        "table": "input",
+        "address": 1,
+        "format": "bit",
+        "bit": 1
+      }
     }
   ],
   "commands": [

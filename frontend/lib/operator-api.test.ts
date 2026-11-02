@@ -198,7 +198,7 @@ describe("step-position QDS regression", () => {
   it("accepts the GI regression payload extended with synthetic F2 contract points without rewriting the tap's OV", async () => {
     const { default: live } = await import("./fixtures/operator-state-live.json");
     const { getOperatorState, validOperatorState } = await import("./operator-api");
-    expect(live.points).toHaveLength(42);
+    expect(live.points).toHaveLength(44);
     expect(live.points.find((p) => p.id === "oltc-1-tap")).toMatchObject({
       kind: "step-position", asdu: "M_ST_NA_1", quality: { ov: false }, value: { value: 0, transient: false },
     });

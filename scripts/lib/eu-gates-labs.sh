@@ -305,7 +305,7 @@ eu_lab_g22_event() {
 eu_lab_g22_wait_cc() {
   local since="$1" position="${2:-open}"
   eu_wait_for_operator ".link.state == \"started\"
-    and four_points and (point(\"feeder-breaker-position\") |
+    and breaker_inventory and (point(\"feeder-breaker-position\") |
       good and .value == \"$position\" and (.received_at | epoch) >= (\"$since\" | epoch))" \
     15 "G22 fresh GOOD CC breaker $position feedback"
 }
@@ -340,7 +340,7 @@ eu_lab_g22_walk() {
     15 "G22 closed supplied baseline" || return
   eu_lab_g22_event baseline-field "$WAIT_BODY" || return
   baseline_revision=$(printf '%s' "$WAIT_BODY" | jq -er '.devices["breaker-1"].revision | numbers') || return
-  eu_wait_for_operator '.link.state == "started" and four_points
+  eu_wait_for_operator '.link.state == "started" and breaker_inventory
     and (point("feeder-breaker-position") | good and .value == "closed")' \
     15 "G22 independent GOOD closed CC baseline" || return
   eu_lab_g22_event baseline-cc "$WAIT_BODY" || return

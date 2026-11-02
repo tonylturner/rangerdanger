@@ -199,7 +199,7 @@ func TestTCPReconnectAndHTTP(t *testing.T) {
 	if c.link.seq != 14 {
 		t.Fatal(c.link.seq)
 	}
-	down, up, complete := 0, 0, 0
+	down, up, complete, giStarted, leadingCompletion := 0, 0, 0, 0, 0
 	for i, e := range c.journal {
 		switch e.kind {
 		case "link_down":
@@ -209,12 +209,18 @@ func TestTCPReconnectAndHTTP(t *testing.T) {
 			}
 		case "link_up":
 			up++
+		case "gi_started":
+			giStarted++
 		case "gi_complete":
+			// The larger inventory can trim the first retained GI start from the ring.
+			if giStarted == 0 {
+				leadingCompletion++
+			}
 			complete++
 		}
 	}
-	if down < 1 || up < 1 || complete != up+1 || len(c.journal) != 500 || c.journal[0].seq != c.journalSeq-499 {
-		t.Fatal(down, up, complete)
+	if down < 1 || up < 1 || complete != giStarted+leadingCompletion || leadingCompletion > 1 || len(c.journal) != 500 || c.journal[0].seq != c.journalSeq-499 {
+		t.Fatal(down, up, complete, giStarted, leadingCompletion)
 	}
 }
 

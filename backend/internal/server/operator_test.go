@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -76,6 +77,51 @@ func TestOperatorState(t *testing.T) {
 	want["range_generation"] = float64(7)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("operator state = %s", rec.Body)
+	}
+}
+
+func TestOperatorLockoutRelay(t *testing.T) {
+	data, err := os.ReadFile("../../../services/historian-eu/testdata/cc-state.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	points := state["points"].([]any)
+	if len(points) != 44 {
+		t.Fatalf("inventory = %d", len(points))
+	}
+	for _, value := range []bool{true, false} {
+		for _, item := range points {
+			p := item.(map[string]any)
+			if p["id"] == "feeder-lockout" || p["id"] == "f2-lockout" {
+				p["value"] = value
+			}
+		}
+		body, err := json.Marshal(state)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, cc := newUpstreamStub(t, map[string]stubResponse{"GET /api/state": {http.StatusOK, string(body)}})
+		s := rangeServer(euGeneration(t, nil, map[string]string{"control_centre": cc.URL}), "weak")
+		rec := callRoute(s, s.handleOperatorState, http.MethodGet, "/api/operator/state", "/api/operator/state", "")
+		if rec.Code != http.StatusOK {
+			t.Fatal(rec.Code, rec.Body)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]any{}
+		for key, value := range state {
+			want[key] = value
+		}
+		want["package_id"], want["range_generation"] = euPackageID, float64(7)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatal("relay changed IEC observations", rec.Body)
+		}
 	}
 }
 
