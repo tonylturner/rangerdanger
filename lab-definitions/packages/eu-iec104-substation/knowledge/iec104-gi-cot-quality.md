@@ -16,6 +16,8 @@ The value deadbands are 0.1 kV (0.5% of 20 kV, below a roughly 0.24–0.25 kV ta
 
 `GOOD` means a value is present, no quality flag is true and `stale_reason` is null. IV means invalid, NT not topical, SB substituted, BL blocked and OV overflow. The range preserves these fields but does not generate every possible quality condition.
 
+The portal calls this condition **valid** in Points, faceplates and N/M summaries, and omits normal-quality suffixes on values. A valid OPEN, TRIPPED or zero-kV observation is still abnormal plant state. Flag labels are **INVALID** (IV), **NOT TOPICAL** (NT), **SUBSTITUTED** (SB), **BLOCKED** (BL) and **OVERFLOW** (OV); **STALE** includes its reason and **UNKNOWN** means no value. GOOD remains the protocol/tool term, not an electrical all-clear.
+
 The implemented distinctions are important:
 
 - No successful Modbus poll for more than the configured three-second threshold produces IV+NT. The CC labels it `device_unreachable`.
@@ -29,7 +31,7 @@ A physical switch position can remain observable when its electrical measurement
 
 ### How to demonstrate recovery honestly
 
-Export `GET /api/operator/state` before the change. Record `cache_epoch`, `snapshot_seq`, link/GI information and the selected point's value, quality, `received_at`, COT and stale reason. The displayed `asdu` is the last type actually received (null before first receipt), not the configured event type; `kind` is stable identity. Float `reporting` exposes `cyclic_ms` and `deadband`; status `reporting` is null. Capture the relevant traffic inside the same attempt window. Integrity means `link.gi.last_complete_at` is non-null on this connection, even during a later GI; it certifies positive ACT-TERM, not coverage or quality. For lab acceptance, retain a matched GI start/completion within ten minutes and after the attempt boundary, plus all 44 non-null GOOD points received at or after its start. If missing, press **Interrogate station** in the **Control Centre** and validate again. After restoration, require new IEC 104 reports or GI and inspect their quality; do not substitute `/api/field/state` for missing CC evidence.
+Export `GET /api/operator/state` before the change. Record `cache_epoch`, `snapshot_seq`, link/GI information and the selected point's value, quality, `received_at`, COT and stale reason. The displayed `asdu` is the last type actually received (null before first receipt), not the configured event type; `kind` is stable identity. Float `reporting` exposes `cyclic_ms` and `deadband`; status `reporting` is null. Capture the relevant traffic inside the same attempt window. Integrity means `link.gi.last_complete_at` is non-null on this connection, even during a later GI; it certifies positive ACT-TERM, not coverage or quality. For lab acceptance, retain a matched GI start/completion within ten minutes and after the attempt boundary, plus all inventory points non-null and valid (GOOD in protocol terms) received at or after its start. If missing, press **Interrogate station** in the **Control Centre** and validate again. After restoration, require new IEC 104 reports or GI and inspect their quality; do not substitute `/api/field/state` for missing CC evidence.
 
 Use [monitoring recipes](#tool-iec104cmd) to inspect point objects. A one-shot GI command's summary is not itself a complete point listing. Quality changes are reported spontaneously even when the value is unchanged; floating-point value changes can be suppressed by their configured deadband.
 
