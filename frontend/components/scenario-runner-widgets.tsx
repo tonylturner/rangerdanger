@@ -96,11 +96,13 @@ export function MiniStatus({ label, value, ok }: { label: string; value: string;
 export function ExerciseSummary({
   scenario,
   completedStepIds,
+  skippedStepIds,
   notes,
   activeConfig,
 }: {
   scenario: Scenario;
   completedStepIds: Set<string>;
+  skippedStepIds: Set<string>;
   notes: string;
   activeConfig: string | null;
 }) {
@@ -114,7 +116,7 @@ export function ExerciseSummary({
     `Date: ${timestamp}`,
     "",
     ...scenario.steps.map((s, i) => {
-      const done = completedStepIds.has(s.id) ? "[x]" : "[ ]";
+      const done = completedStepIds.has(s.id) ? "[x]" : skippedStepIds.has(s.id) ? "[skipped]" : "[ ]";
       return `${done} Step ${i + 1}: ${s.title}`;
     }),
     ...(notes ? ["", "Notes:", notes] : []),
@@ -167,10 +169,11 @@ export function ExerciseSummary({
               <div key={i} className={`rounded-sm border p-3 ${done ? "border-green-800/50 bg-green-950/10" : "border-slate-800 bg-slate-950/50"}`}>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs font-bold ${done ? "text-green-400" : "text-slate-600"}`}>
-                    {done ? "\u2713" : "\u2022"}
+                    {done ? "\u2713" : skippedStepIds.has(s.id) ? "↷" : "\u2022"}
                   </span>
                   <span className={`text-xs font-medium ${done ? "text-slate-300" : "text-slate-500"}`}>
                     Step {i + 1}: {s.title}
+                    {skippedStepIds.has(s.id) && " — Skipped"}
                   </span>
                 </div>
               </div>

@@ -23,7 +23,7 @@
       {
         "id": "reclosers",
         "title": "Reclosers",
-        "sha256": "21874d4ffbe73f7340c950dbccacf0e245a78a8aa3febd79139d72223298a521"
+        "sha256": "0ce27b9fcbfb2302e8b741e5b6dc09f0f47af300f7eb558b5d29808691efc47b"
       },
       {
         "id": "voltage-regulators",
@@ -77,17 +77,17 @@
       {
         "id": "purdue-model",
         "title": "Purdue Model Levels (L0–L5)",
-        "sha256": "dcdfe032a9414e9ce2a8a1b619c7aa94d917dd36be0e4d197b0547a3353fc853"
+        "sha256": "77dc54a03436a91b616e4a6afc6c65eeddd545d5a40d8484888da361b77c8c41"
       },
       {
         "id": "iec-62443-zones-conduits",
         "title": "IEC 62443 Zones and Conduits",
-        "sha256": "42658615c3184dcad1e04ff5f00df3a682ba1e0c23e490f94ec84c6eba3f0616"
+        "sha256": "a2fd4e93b8322f7bceee77edc20a01e371cf780e3c2524c2f3210ecfdbc09c60"
       },
       {
         "id": "iec-62443-security-levels",
         "title": "IEC 62443 Security Levels Explained",
-        "sha256": "16f12189b45ea60ded66ae671386cd5441126027db7be77698b5e59aa1d5550b"
+        "sha256": "dd46c9a88479ff07d272fc687470809e57acb53fb29325ed6d4a203ced97f5dd"
       },
       {
         "id": "nerc-cip-segmentation",

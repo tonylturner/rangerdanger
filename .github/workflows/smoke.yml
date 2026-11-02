@@ -204,6 +204,13 @@ jobs:
           healthy=$(ps_all --format '{{.Status}}' | grep -c '(healthy)')
           [ "$healthy" -ge 8 ] || { echo "expected >=8 healthy services, got $healthy"; exit 1; }
 
+      - name: US RTAC transit resistance
+        # Reads the RTAC's effective forwarding, FORWARD/INPUT rules and
+        # field routes, then proves a frame sent through the RTAC from its
+        # OT leg never reaches the physics leg. Observation only.
+        timeout-minutes: 2
+        run: ./scripts/us-rtac-smoke.sh
+
       - name: Firewall traffic enforcement smoke
         # scripts/firewall-smoke.sh applies weak then improved via the
         # lab API and probes a positive+negative traffic matrix from
@@ -213,6 +220,13 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/firewall-smoke.sh
+
+      - name: US simulator API isolation smoke
+        # Probes every simulator, solver, device and management API alias
+        # from each student host under Weak and Improved, bracketed by
+        # positive controls, then restores Weak.
+        timeout-minutes: 10
+        run: python3 scripts/simulator-api-isolation-smoke.py us-dnp3-substation --evidence-dir build/smoke-receipts/g3-us
 
       - name: Lab commands smoke
         # Reviewed YAML examples, including hints and appliance commands.
@@ -229,8 +243,9 @@ jobs:
         # scripts/events-smoke.sh covers the v0.1.25 firewall.rule.hit
         # pipeline (kali probe → DENY event in engine + backend), ICS
         # template name normalization (hyphen ↔ underscore at the
-        # apply boundary), and ICS DPI function-code allowlist
-        # enforcement (RTAC FC8 → block_flows nft set entry). These
+        # apply boundary), and ICS DPI function-code detection (RTAC FC8
+        # → a fresh decoded DPI event). The L4 source pin enforces; DPI
+        # detects and logs. These
         # have their own failure modes the traffic-matrix and lab-doc
         # gates won't catch: backend Event JSON schema drift, NFQUEUE
         # library compat, chain ordering vs ct established fast-path,
@@ -248,6 +263,13 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/substation-smoke.sh
+
+      - name: US DNP3 consequence chain smoke
+        # Kali trips the feeder breaker over DNP3 under Weak, a fresh solve
+        # shows the outage, the feeder recovers, and the identical command
+        # times out under Hardened while the RTAC still polls the relay.
+        timeout-minutes: 6
+        run: ./scripts/us-chain-smoke.sh
 
       - name: Workshop test-suite
         # Exercises every workshop scenario through the backend's test
@@ -403,6 +425,12 @@ jobs:
 
       - name: EU IEC104 smoke gate
         run: ./scripts/eu-iec104-smoke.sh
+
+      - name: EU simulator API isolation smoke
+        # Runs after a failed gate too, so one run reports every gate.
+        if: success() || failure()
+        timeout-minutes: 10
+        run: python3 scripts/simulator-api-isolation-smoke.py eu-iec104-substation --evidence-dir "$EU_GATE_EVIDENCE_DIR/G3"
 
       - name: EU reviewed lab commands smoke
         # Runs after a failed gate too, so one run reports both results.

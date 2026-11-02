@@ -26,6 +26,11 @@ T_STATUS=0
 t_cleanup_hook() {
   :
 }
+# Only call inside a docker stub run by docker_bounded's owned child.
+# exec leaves no grandchild holding a command-substitution pipe after timeout.
+t_hang_docker() {
+  exec python3 -c 'import time; time.sleep(120)'
+}
 t_cleanup() {
   t_cleanup_hook
   rm -rf "$TMP_DIR"

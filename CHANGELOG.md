@@ -8,6 +8,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Release gates that prove the attack-to-consequence chain end to end. In
+  the EU, one capture ties Kali's IEC 104 command to the RTU's Modbus write
+  to the breaker, records the control centre's view at attack time, and
+  keeps a correlated evidence record. In the US, Kali trips the feeder
+  breaker over DNP3, a fresh solve shows the outage, the feeder recovers,
+  and the identical command times out under Hardened.
+- A simulator API isolation gate for both packages: every simulator,
+  solver, device and management API is probed from each student host under
+  Weak and Improved, with positive controls before and after.
+- A US RTAC gate that checks the RTAC's effective forwarding, firewall and
+  route settings and proves traffic cannot transit the RTAC between legs.
 - EU lab command smoke with reviewed semantic oracles and an offline
   all-package command inventory guard. PowerShell now uses the same reviewed
   contracts and verdicts.
@@ -44,6 +55,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - EU firewall gates trace ordered nftables admission chains and keep the
   ephemeral-port guard. Manual policy evaluation treats RATE_LIMIT and TAG as
   non-terminal and refuses unsupported viaForwards selectors.
+- Lab text and the segmentation view no longer claim an achieved IEC 62443
+  security level or function-code filtering. The badge shows the design
+  target and whether the segmentation criteria are met, have a gap or are
+  not assessed.
+- A validator PASS no longer ticks every exercise step. Completed, skipped
+  and validated are separate, and survive refresh, lab reset, package switch
+  and a second validation attempt.
+- The recloser lesson gives the correct cause: auto-reclose restores only
+  after an injected fault; a remote trip stays open until someone closes it.
+- The Physical System view is labelled as simulation truth that SCADA does
+  not see, and the RTAC polling label no longer implies a firewall path.
+- Lab command steps and lab checks no longer pass on an RTAC HTTP error or a
+  malformed reply. They need a 2xx status and valid JSON, and RTAC replies
+  are capped at 1 MiB.
 - The containd portal's proxy upload cap is now 10 MB instead of 1 MiB, with a RangerDanger-specific JSON error for larger uploads; containd's own limits remain unchanged.
 - Lab Run buttons honor per-command source terminals and keep host commands
   and tools the backend cannot run copy-only. The EU baseline capture again

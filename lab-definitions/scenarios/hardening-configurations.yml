@@ -86,9 +86,10 @@ steps:
       From Kali (`10.10.10.50`, enterprise zone), under the weak
       baseline, send a DNP3 Direct Operate (FC05) to the recloser
       (`10.40.40.21`, DNP3 outstation address 2). Two CROB writes:
-      first disable auto-reclose, then trip the recloser. Without
-      auto-reclose, the trip becomes a sustained outage instead of
-      a recoverable flicker.
+      first disable auto-reclose, then trip the recloser. Disabling
+      auto-reclose removes automatic restoration attempts after an
+      injected fault. The remote trip itself stays open until someone
+      closes it, even with auto-reclose enabled.
 
       The CROB (Control Relay Output Block) targets binary outputs.
       Index 1 on the recloser maps to `reclose_enabled`. Index 0

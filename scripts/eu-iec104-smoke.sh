@@ -30,6 +30,8 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PACKAGE="$ROOT/lab-definitions/packages/$PACKAGE_ID"
 # shellcheck source-path=SCRIPTDIR source=lib/range.sh
 . "$SCRIPT_DIR/lib/range.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/docker-bounded.sh
+. "$SCRIPT_DIR/lib/docker-bounded.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/eu-range.sh
 . "$SCRIPT_DIR/lib/eu-range.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/eu-monitor.sh

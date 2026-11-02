@@ -9,8 +9,10 @@
 . "$T_REPO/scripts/lib/eu-range.sh"
 CLOCK_LOG="$TMP_DIR/clock.log"
 CLOCK_RC=0
+CLOCK_HANG=0
 docker() {
   printf '%s\n' "$*" >>"$CLOCK_LOG"
+  if [ "$CLOCK_HANG" -eq 1 ]; then t_hang_docker; fi
   [ "$CLOCK_RC" -eq 0 ] || return "$CLOCK_RC"
   case "$*" in
     "exec $FW date -u +%Y-%m-%dT%H:%M:%S.%NZ")
@@ -34,11 +36,26 @@ t_expect_eq "$T_OUT" 1760529600.123456789 "packet windows use range epoch second
 t_run eu_epoch_ns
 t_expect_eq "$T_OUT" 1760529600123456789 "event cutoffs retain integer nanoseconds"
 CLOCK_RC=17
+clock_to_file() { "$1" >"$TMP_DIR/clock.stdout"; }
 for clock in eu_utc eu_epoch_seconds eu_epoch_ns; do
-  t_run "$clock"
+  t_run clock_to_file "$clock"
   t_expect_eq "$T_STATUS" 17 "$clock failure propagates without host fallback"
-  t_expect_eq "$T_OUT" "" "$clock never manufactures a host boundary"
+  t_expect_fails 1 "$clock records the Docker failure"
+  t_expect_out "$clock docker exec $FW date failed (exit 17)" "$clock names its failed call"
+  t_expect_eq "$(cat "$TMP_DIR/clock.stdout")" "" "$clock never manufactures a host boundary"
 done
+CLOCK_RC=0 CLOCK_HANG=1
+# Exercise the real watchdog and the $(...) form used at evidence boundaries.
+clock_boundary() {
+  local boundary
+  boundary=$(eu_utc) || return
+  printf '%s\n' "$boundary"
+}
+t_run clock_boundary
+t_expect_eq "$T_STATUS" 124 "a hung clock fails the evidence boundary at its real five-second limit"
+t_expect_out "FAIL eu_utc docker exec $FW date failed (exit 124)" "clock timeout names the call on stderr"
+t_expect_no_out "2026-" "timed-out command substitution emits no timestamp"
+CLOCK_HANG=0 CLOCK_RC=17
 
 # A clock failure cannot execute a command or validate it with an empty window.
 eu_wait_valid_device() { :; }
@@ -89,7 +106,7 @@ eu_assert_jq() { :; }
 eu_window_start() { :; }
 eu_window_finish() { return 1; } # stop before packet decoding
 eu_unpause_owned() { :; }
-sleep() { :; }
+sleep() { case "$1" in 5|15|60) command sleep "$1" ;; esac; }
 eu_api_get() { printf '%s\n' "$1" >>"$TMP_DIR/api-paths"; API_BODY='{}'; }
 eu_historian_gap() { return 0; }
 : >"$CLOCK_LOG"

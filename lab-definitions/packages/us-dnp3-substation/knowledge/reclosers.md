@@ -24,3 +24,5 @@ The recloser simulator (`recloser-sim`) runs at **10.40.40.21** on `field_net`. 
 - **DNP3**: Direct Operate command to outstation address **2** on port 20000
 
 One of the lab exercises demonstrates how an attacker on the enterprise network (10.10.10.50) can reach through the weak firewall policy to disable auto-reclose. The change has no immediate observable effect but degrades grid resilience for the next fault event.
+
+In this simulator, a DNP3 remote trip stays open until someone closes it, even with auto-reclose enabled. Only an injected fault starts the automatic reclose sequence. Disabling auto-reclose removes those fault-restoration attempts; it does not change the remote trip from a flicker into an outage.

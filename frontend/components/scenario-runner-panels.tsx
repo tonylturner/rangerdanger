@@ -9,12 +9,14 @@ import { actionLabel } from "../lib/scenario-runner-logic";
 export function StepNavigator({
   scenario,
   completedStepIds,
+  skippedStepIds,
   currentStep,
   setCurrentStep,
   setStepResult,
 }: {
   scenario: Scenario;
   completedStepIds: Set<string>;
+  skippedStepIds: Set<string>;
   currentStep: number;
   setCurrentStep: Dispatch<SetStateAction<number>>;
   setStepResult: Dispatch<SetStateAction<import("../lib/api").StepExecutionResult | null>>;
@@ -45,6 +47,7 @@ export function StepNavigator({
               {done ? "\u2713" : i + 1}
             </span>
             <span className="truncate font-medium">{s.title}</span>
+            {skippedStepIds.has(s.id) && <span className="text-[8px] text-slate-500">Skipped</span>}
             {s.action && (
               <span className="ml-auto text-[8px] text-slate-600 uppercase">{actionLabel(s.action.type)}</span>
             )}
