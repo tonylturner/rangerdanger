@@ -12,9 +12,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (from `/api/build`) at its foot; a build from source shows
   "source build". On desktop the sidebar now stays in view while the
   page scrolls, so the version and the range control are always visible.
+- EU: the Control Centre receives CB1 and F2 breaker lockout over IEC 104
+  (IOAs 1003 and 1503), so the station inventory is now 44 points.
+- EU: the Physical System tab can inject or clear a fault on S1 or S2,
+  reset breaker lockout and reset an RMU fault passage indicator. These
+  are simulation actions, not operator commands.
 
 ### Changed
 
+- EU: the feeder one-line shows consequences. A dead section is drawn
+  red and dashed with NO SUPPLY; CB1 and F2 show TRIPPED and LOCKED OUT;
+  RMUs show FAULT PASSED and EARTHED; T1 shows AT LIMIT, BLOCKED and
+  PLC DOWN.
+- EU: normal data quality is no longer printed as "GOOD" beside every
+  value. Only flagged quality is shown; tables say "valid", summaries
+  say "N/M valid" and device comms say "reporting".
+- EU: the dashboard voltage trend plots S1, S2 and S3 together, with
+  markers for switching, trip, lockout and fault-passage events.
 - The overview voltage trend lists the 5 newest snapshots, with a button
   to show the last 30. The Control Centre Trends tab still lists 30.
 
