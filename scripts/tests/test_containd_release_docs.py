@@ -53,7 +53,17 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                                "containd 0.1.36 cannot read"):
                     self.assertIn(phrase, text)
         text = (ROOT / "docs/architecture.md").read_text()
-        self.assertIn("containd `v0.1.37` git ref", text)
+        self.assertIn("containd `v0.1.38` git ref", text)
+
+    def test_source_builds_and_release_guidance_use_current_containd_tag(self):
+        for package in ("us-dnp3-substation", "eu-iec104-substation"):
+            path = ROOT / "lab-definitions/packages" / package / "compose.source.yml"
+            with self.subTest(package=package):
+                self.assertIn(
+                    'context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/'
+                    'containd.git#v0.1.38}"', path.read_text())
+        text = " ".join((ROOT / "RELEASING.md").read_text().split())
+        self.assertIn("release tag pinned by the package (`v0.1.38`)", text)
 
     def test_upgrade_guides_require_matching_full_storage_and_image(self):
         for path in ("RELEASING.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
