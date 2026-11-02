@@ -6,6 +6,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.0] - 2026-11-02
+
+Students choose the lab environment from the portal: the US DNP3
+distribution substation, or the new EU IEC 104 telecontrol substation
+with its own seven-exercise workshop. This release adds the changes
+below to v0.2.0-rc.6, includes every change listed for rc.1 to rc.6, and
+moves `latest`. It needs containd 0.1.37 or later and was tested on 0.1.38,
+the current `latest`. It also needs Docker Desktop 4.42 or later
+(Compose 2.36.0, Engine 28.1). On an existing install, back up the
+complete firewall data before the first start: the containd 0.1.37
+schema migration is one-way (see
+[Upgrading to v0.2.0](https://github.com/tonylturner/rangerdanger/blob/v0.2.0/docs/quickstart.md#upgrading-to-v020)). Native
+Windows installs are not yet validated for this release. Fixes from
+further QA ship as v0.2.x patch releases.
+
 ### Changed
 
 - Lab instructions follow containd 0.1.38, the current `latest`. In the
@@ -3463,7 +3478,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.6...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0...HEAD
+[v0.2.0]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0
 [v0.2.0-rc.6]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.6
 [v0.2.0-rc.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.5
 [v0.2.0-rc.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.4
