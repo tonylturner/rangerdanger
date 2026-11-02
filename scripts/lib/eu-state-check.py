@@ -315,11 +315,10 @@ def check_dom(row, dom, view, expected, tap=0):
         for id, wording in off_normal_conditions.items():
             require(any(c['id'] == id and wording in c['text'] for c in off_entries), f'CC missing off-normal {id}')
         text = ' '.join(v['text'].lower() for v in conditions)
-        if expected.get('feeder-protection-trip'):
-            require(any('protection trip' in v['text'].lower() and 'asserted' in v['text'].lower() for v in conditions), 'CC asserted trip summary absent')
-        if row['f2'] == 'tripped':
-            require(any(v['id'] == 'f2-protection-trip' and 'asserted' in v['text'].lower() for v in conditions),
-                    'CC F2 asserted trip summary absent')
+        for entry in alarm_entries:
+            if entry['id'] in PRESENTATION['alarm_text']:
+                require(entry['text'] == PRESENTATION['alarm_text'][entry['id']],
+                        f'CC formatted alarm text differs for {entry["id"]}')
         abnormal = False
         for name, switch, normal in zip(['CB1', 'RMU1', 'RMU2'], row['switches'], 'CCO'):
             if switch != normal:

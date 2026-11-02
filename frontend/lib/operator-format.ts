@@ -30,8 +30,8 @@ type PointMeta = {
 // CC reports that is not listed here shows under its id.
 export const POINT_META: Record<string, PointMeta> = {
   "feeder-breaker-position": { label: "Feeder breaker position" },
-  "feeder-protection-trip": { label: "Protection trip", states: ["NORMAL", "TRIPPED"] },
-  "feeder-lockout": { label: "Breaker lockout", states: ["NORMAL", "LOCKED OUT"] },
+  "feeder-protection-trip": { label: "CB1 protection trip", states: ["NORMAL", "TRIPPED"] },
+  "feeder-lockout": { label: "CB1 lockout", states: ["NORMAL", "LOCKED OUT"] },
   "feeder-current": { label: "CB1 current", unit: "A", digits: 1 },
   "feeder-voltage": { label: "CB1 line-side VT", unit: "kV", digits: 2 },
   "f2-position": { label: "F2 breaker position" },

@@ -77,7 +77,7 @@ export function PhysicalSystemScreen({ field, stateError, operator, operatorUnav
           const live = read(`${id.toLowerCase()}-live`), path = sectionSupplyPath(read, id);
           return <div key={id} className="min-w-0 text-slate-300 wrap-anywhere">
             <h3 className="font-semibold">{id} · physical energization</h3>
-            <p className="font-mono">{live.condition === "good" ? live.value ? "ENERGIZED" : "NOT ENERGIZED" : "UNKNOWN"} · solver bus live</p>
+            <p className="font-mono">{live.condition === "good" ? live.value ? "ENERGIZED" : "NOT ENERGIZED" : "UNKNOWN"} · solver energization flag</p>
             <p className="font-mono">Measured kV: {read(SECTION_VOLTAGE[id]).shortText}</p>
             <p className="font-mono">Physical topology path: {field.process.truth_stale || unavailable ? "unknown" : path.state}</p>
             <p className="text-slate-400">{path.reason}</p>

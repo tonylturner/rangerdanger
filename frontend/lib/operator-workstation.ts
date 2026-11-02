@@ -1,5 +1,5 @@
 import type { ControlCentreLink, OperatorPoint, OperatorState } from "./operator-api";
-import { pointCondition, pointLabel } from "./operator-format";
+import { formatPointValue, pointCondition, pointLabel } from "./operator-format";
 import { LIVE_KV, voltageState } from "./electrical-state";
 import { controlCentreObservations, type Readings } from "./observation-readings";
 import { SECTION_VOLTAGE } from "./operator-supply-path";
@@ -57,7 +57,7 @@ export function activeAlarms(state: OperatorState): { id: string; text: string }
       alarms.push({ id: `${p.id}-voltage-limit`, text: `${pointLabel(p.id)}: voltage limit (${p.value.toFixed(2)} kV; ${p.limits.low.toFixed(2)}–${p.limits.high.toFixed(2)} kV)` });
     }
     if ((asserted.includes(p.id) && p.value === true) || (["plc-1-running", "plc-1-input-valid"].includes(p.id) && p.value === false)) {
-      alarms.push({ id: p.id, text: `${pointLabel(p.id)}: ${p.value ? "asserted" : p.id.endsWith("running") ? "stopped" : "invalid"}` });
+      alarms.push({ id: p.id, text: `${pointLabel(p.id)}: ${formatPointValue(p.id, p.value, p.quality)}` });
     }
   }
   return alarms;

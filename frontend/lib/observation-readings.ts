@@ -71,8 +71,8 @@ export function physicalSystemObservations(field: FieldState, unavailable = fals
     const condition = value === null || value === undefined ? "unknown" : invalid || stale ? "stale" : "good";
     const staleReason = unavailable ? "field API unavailable · retained snapshot" : invalid ? "measurements invalid · last values, not current" : stale ? "device input stale" : null;
     const transient = typeof value === "object" && value !== null ? value.transient : false;
-    const quality = condition === "good" ? "" : ` · ${condition === "unknown" ? "UNKNOWN" : invalid ? "INVALID" : "STALE"}${staleReason ? ` (${staleReason})` : ""}`;
-    const shortText = `${value === null || value === undefined ? "unknown" : formatPointValue(id, value)}${quality} · sim`;
+    const quality = condition === "good" ? "" : `${condition === "unknown" ? "" : ` · ${invalid ? "INVALID" : "STALE"}`}${staleReason ? ` (${staleReason})` : ""}`;
+    const shortText = `${value === null || value === undefined ? "UNKNOWN" : formatPointValue(id, value)}${quality} · sim`;
     return { value, condition, shortText, text: shortText, flags: [], staleReason, transient };
   };
 }

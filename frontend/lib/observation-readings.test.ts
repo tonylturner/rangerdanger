@@ -65,11 +65,19 @@ describe("independent one-line sources", () => {
     field.process.truth_stale = true;
     const read = physicalSystemObservations(field);
     expect(read("feeder-current")).toMatchObject({ value: null, condition: "unknown" });
+    expect(read("feeder-current").shortText).toBe("UNKNOWN (device input stale) · sim");
     expect(read("rmu-1-section-kv").text).toContain("INVALID");
     expect(read("f2-position").condition).toBe("good");
     expect(read("rmu-1-position").condition).toBe("good");
     delete field.devices["breaker-1"];
     expect(physicalSystemObservations(field)("feeder-breaker-position").condition).toBe("unknown");
+  });
+  it("uses one UNKNOWN for undefined physical PF without dropping sim provenance", () => {
+    const field = structuredClone(TRUTH);
+    field.devices["breaker-1"].measurements.pf = null;
+    expect(physicalSystemObservations(field)("feeder-pf")).toMatchObject({
+      condition: "unknown", value: null, shortText: "UNKNOWN · sim", text: "UNKNOWN · sim",
+    });
   });
   it("reads all five F2 channels from its device, never a process latch or the other view", () => {
     const field = structuredClone(TRUTH);

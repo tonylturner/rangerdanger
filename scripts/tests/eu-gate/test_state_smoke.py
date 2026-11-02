@@ -74,8 +74,7 @@ def add_presentation(dom, expected):
             alarms.append({'id': id + '-voltage-limit', 'text': f'{id}: voltage limit'})
     for id in rules['asserted_alarms'] + rules['false_alarms']:
         if expected[id] is (id in rules['asserted_alarms']):
-            label = 'Protection trip' if id == 'feeder-protection-trip' else 'F2 protection trip' if id == 'f2-protection-trip' else id
-            alarms.append({'id': id, 'text': f'{label}: asserted'})
+            alarms.append({'id': id, 'text': rules['alarm_text'][id]})
     for device, spec in rules['switches'].items():
         value = expected[spec['point']]
         if value != spec['normal']:
@@ -588,6 +587,24 @@ assert.equal(captureDom(root, 'physical').abnormalStrip, null);
             dom['conditions'] = conditions
             with self.assertRaises(AssertionError):
                 check.check_dom(row, dom, 'cc', expected)
+
+    def test_alarm_wording_requires_named_breaker_and_formatted_state(self):
+        for name in ['S1-lockout', 'CCO-tripped']:
+            row = check.ROWS[name]
+            dom, expected = fixture(row, 'cc')
+            for entry in dom['conditions']:
+                if entry['id'] not in check.PRESENTATION['alarm_text']:
+                    continue
+                for wrong in [entry['text'].split(':')[0] + ': asserted',
+                              entry['text'].replace('CB1 ', '').replace('F2 ', ''),
+                              entry['text'] + ' extra']:
+                    if wrong == entry['text']:
+                        continue
+                    with self.subTest(row=name, point=entry['id'], text=wrong):
+                        bad = copy.deepcopy(dom)
+                        next(c for c in bad['conditions'] if c['id'] == entry['id'])['text'] = wrong
+                        with self.assertRaisesRegex(AssertionError, 'formatted alarm text'):
+                            check.check_dom(row, bad, 'cc', expected)
 
     def test_zero_power_pf_expected_invalid_not_unknown(self):
         row = check.ROWS['OOO-tripped']

@@ -15,6 +15,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
   const drawingText = (id: string) => {
     const r = read(id);
     if (r.condition === "good") return r.shortText;
+    if (physical && r.condition === "unknown") return "UNKNOWN · sim";
     const parts = r.shortText.split(" · ");
     const flag = (parts[r.transient ? 2 : 1] ?? "UNKNOWN").split(" (")[0];
     return `${parts[0]}${r.transient ? " · TRANSIENT" : ""} · ${flag}${physical ? " · sim" : ""}`;
@@ -190,8 +191,10 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
         <div key={section} className={cluster} style={at([410, 700, 710][i], i === 2 ? 414 : 89)}>
           {badge(`${section}-no-supply`, "NO SUPPLY", true, SECTION_VOLTAGE[section])}
         </div>)}
-      <div className={cluster} style={at(405, 205)}>{breakerBadges("feeder")}</div>
-      <div className={cluster} style={at(440, 340)}>{breakerBadges("f2")}</div>
+      {/* One row below the VT value and above the F2 conductor: two latches
+          must not grow down into the line-side VT annotation. */}
+      <div data-breaker-badges="CB1" className="absolute flex h-6 w-[210px] -translate-x-1/2 flex-row items-center justify-center gap-1" style={at(400, 292)}>{breakerBadges("feeder")}</div>
+      <div data-breaker-badges="F2" className={cluster} style={at(440, 340)}>{breakerBadges("f2")}</div>
       {(["rmu-1", "rmu-2"] as const).map((prefix, i) => <div key={prefix} className={cluster} style={at(i === 0 ? 690 : 925, 235)}>
         {asserted(`${prefix}-fault-passage`) && badge(`${prefix}-fault-passage`, "FAULT PASSED")}
         {asserted(`${prefix}-earth`) && badge(`${prefix}-earth`, "EARTHED")}

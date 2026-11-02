@@ -26,7 +26,7 @@ it.each(EU_ORACLE)("$switches / F2 $f2 / $supply / VT $vt: both adapters match t
     }
   }
   const tripped = row.f2 === "tripped";
-  const expectedConditions: string[] = tripped ? ["F2 lockout: asserted", "F2 protection trip: asserted", "F2: OPEN (normal CLOSED)"] : [];
+  const expectedConditions: string[] = tripped ? ["F2 lockout: LOCKED OUT", "F2 protection trip: TRIPPED", "F2: OPEN (normal CLOSED)"] : [];
   const expectedPhysical: string[] = [];
   if (row.switches[0] === "O") { expectedConditions.push("CB1: OPEN (normal CLOSED)"); expectedPhysical.push("breaker-1-open"); }
   if (row.switches[1] === "O") { expectedConditions.push("RMU1 · NC: OPEN (normal CLOSED)"); expectedPhysical.push("rmu-1-switch"); }

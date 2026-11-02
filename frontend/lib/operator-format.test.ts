@@ -154,6 +154,8 @@ describe("journalSummary", () => {
 });
 
 it.each([
+  ["feeder-protection-trip", "CB1 protection trip"],
+  ["feeder-lockout", "CB1 lockout"],
   ["oltc-1-bus-kv", "20 kV busbar (T1 secondary)"],
   ["oltc-1-current", "T1 20 kV terminal current"],
   ["oltc-1-p-mw", "T1 20 kV terminal active power P"],

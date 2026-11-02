@@ -30,6 +30,22 @@
     },
     "asserted_alarms": ["feeder-lockout", "f2-lockout", "feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-overcurrent-block", "oltc-1-at-lower", "oltc-1-at-upper"],
     "false_alarms": ["plc-1-running", "plc-1-input-valid"],
+    "alarm_text": {
+      "feeder-lockout": "CB1 lockout: LOCKED OUT",
+      "f2-lockout": "F2 lockout: LOCKED OUT",
+      "feeder-protection-trip": "CB1 protection trip: TRIPPED",
+      "f2-protection-trip": "F2 protection trip: TRIPPED",
+      "rmu-1-earth": "RMU-1 earth switch: CLOSED",
+      "rmu-2-earth": "RMU-2 earth switch: CLOSED",
+      "rmu-1-fault-passage": "RMU-1 fault passage: LATCHED",
+      "rmu-2-fault-passage": "RMU-2 fault passage: LATCHED",
+      "oltc-1-blocked": "OLTC blocked: BLOCKED",
+      "oltc-1-overcurrent-block": "OLTC overcurrent block: BLOCKED",
+      "oltc-1-at-lower": "OLTC lower limit: AT LIMIT",
+      "oltc-1-at-upper": "OLTC upper limit: AT LIMIT",
+      "plc-1-running": "OpenPLC running: STOPPED",
+      "plc-1-input-valid": "OpenPLC input: INVALID"
+    },
     "switches": {
       "CB1": {"point": "feeder-breaker-position", "label": "CB1", "normal": "closed"},
       "RMU1": {"point": "rmu-1-position", "label": "RMU1 · NC", "normal": "closed"},
