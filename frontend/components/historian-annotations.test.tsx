@@ -6,23 +6,45 @@ import { HISTORY, historySample } from "../lib/historian-fixtures.test-util";
 import type { HistorianEvent } from "../lib/historian-api";
 import { HistoryPlot, HistorianTrend } from "./historian-trend";
 import { breakDescriptions, eventDescription } from "./historian-annotations";
+import { pointLabel } from "../lib/operator-format";
 
 const tap: HistorianEvent = { point: "oltc-1-tap", at: historySample(4).ingested_at, from: 1, to: 2, quality: historySample(1).quality };
 afterEach(() => vi.unstubAllGlobals());
 
 describe("historian annotations", () => {
   it("labels settled tap values and nearby invalid observations without claiming causality", () => {
-    expect(eventDescription(tap)).toBe("T1 completed tap 1 → 2");
+    expect(eventDescription(tap)).toBe("T1 tap 1 → 2");
+    expect(pointLabel(tap.point)).toBe("T1 completed tap");
     const history = { ...HISTORY, segments: [{ cache_epoch: "a", samples: [historySample(2), historySample(3, { stale_reason: "measurement_invalid" }), historySample(4)] }] };
-    expect(breakDescriptions(history, [tap])[0].text).toContain("Measurement invalid 10:00:03.000–10:00:04.000 UTC");
-    expect(breakDescriptions(history, [tap])[0].text).toContain("near T1 completed tap 1 → 2 (time correlation, not proven cause)");
-    expect(breakDescriptions(history, [{ ...tap, at: historySample(10).ingested_at }])[0].text).not.toContain("near");
+    expect(breakDescriptions(history, [tap])[0].text).toBe("Measurement invalid 10:00:03–10:00:04 UTC, around T1 tap 1 → 2");
+    expect(breakDescriptions(history, [tap])[0].text).toContain("around T1 tap 1 → 2");
+    expect(breakDescriptions(history, [tap])[0].text).not.toMatch(/observed interval|time correlation|\.\d{3}/);
+    expect(breakDescriptions(history, [{ ...tap, at: historySample(10).ingested_at }])[0].text).not.toContain("around");
+  });
+  it("separates true break widths and event guides from transparent touch targets", () => {
+    const { container } = render(<HistoryPlot history={HISTORY} events={[tap, { ...tap, point: "feeder-protection-trip", from: false, to: true }]}
+      window={{ since: historySample(0).ingested_at, until: "2026-10-15T10:15:00Z" }} />);
+    const band = container.querySelector<HTMLElement>("[data-break-band]")!;
+    const trigger = screen.getByRole("button", { name: /IEC 104 link to the RTU lost/ });
+    expect(Number.parseFloat(band.style.width)).toBeCloseTo(100 / 900);
+    expect(band.style.minWidth).toBe("2px");
+    expect(band.className).not.toMatch(/min-w-6|border-dashed/);
+    expect(trigger.style.width).toBe(band.style.width);
+    expect(trigger.className).toContain("min-w-6");
+    expect(trigger.className).toContain("bg-transparent");
+    const guides = container.querySelectorAll<HTMLElement>("[data-event-guide]");
+    expect(guides).toHaveLength(2);
+    expect(guides[0].style.left).toBe(`${4 / 900 * 100}%`);
+    expect(guides[0].className).toContain("bg-slate-400/25");
+    expect(guides[1].className).toContain("bg-rose-300/25");
+    for (const guide of guides) expect(guide.className).toContain("top-3.5 bottom-0 w-px");
+    expect(container.querySelector("time")?.textContent).toBe("10:00:04 UTC");
   });
   it("opens event tooltips on keyboard focus, mouse hover and touch click, and closes on Escape", async () => {
     render(<HistoryPlot history={HISTORY} events={[tap]} />);
-    const button = screen.getByRole("button", { name: "10:00:04.000 UTC T1 completed tap 1 → 2" });
+    const button = screen.getByRole("button", { name: "10:00:04 UTC T1 tap 1 → 2" });
     fireEvent.focus(button);
-    await waitFor(() => expect(screen.getByRole("tooltip").textContent).toContain("T1 completed tap 1 → 2"));
+    await waitFor(() => expect(screen.getByRole("tooltip").textContent).toContain("T1 tap 1 → 2"));
     fireEvent.keyDown(button, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
     fireEvent.blur(button);
@@ -37,17 +59,17 @@ describe("historian annotations", () => {
   });
   it("makes line-break reasons focusable and touch accessible too", async () => {
     render(<HistoryPlot history={HISTORY} events={[tap]} />);
-    const button = screen.getByRole("button", { name: /IEC 104 link to the RTU lost.*near T1 completed tap/ });
+    const button = screen.getByRole("button", { name: /IEC 104 link to the RTU lost.*around T1 tap/ });
     fireEvent.click(button);
-    await waitFor(() => expect(screen.getByRole("tooltip").textContent).toContain("observed interval"));
+    await waitFor(() => expect(screen.getByRole("tooltip").textContent).toContain("IEC 104 link to the RTU lost 10:00:03–10:00:04 UTC, around T1 tap 1 → 2"));
     expect(screen.getByText("Why the line breaks (1)")).toBeTruthy();
   });
   it("keeps simultaneous event facts available from the overlapping marker tooltip", async () => {
     render(<HistoryPlot history={HISTORY} events={[tap, { ...tap, point: "feeder-protection-trip", from: false, to: true }]} />);
-    fireEvent.click(screen.getByRole("button", { name: "10:00:04.000 UTC Protection trip NORMAL → TRIPPED" }));
+    fireEvent.click(screen.getByRole("button", { name: "10:00:04 UTC Protection trip NORMAL → TRIPPED" }));
     await waitFor(() => {
       const tooltip = screen.getByRole("tooltip");
-      expect(tooltip.textContent).toContain("T1 completed tap 1 → 2");
+      expect(tooltip.textContent).toContain("T1 tap 1 → 2");
       expect(tooltip.textContent).toContain("Protection trip NORMAL → TRIPPED");
     });
   });
