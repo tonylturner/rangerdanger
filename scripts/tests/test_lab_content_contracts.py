@@ -458,9 +458,12 @@ class EnforcementContracts(unittest.TestCase):
                                "no queue bypass", "if the engine is down, the CC conduit drops",
                                "withheld", "SBO sequences, setpoint values/QL and bitstrings",
                                "not graded", "does not grade anything", "PCAP Analysis", "Generate suggestions", "Review",
-                               "Stage selected", "Commit is a separate deliberate step",
+                               "Stage N selected", "selected revision count", "Commit is a separate deliberate step",
+                               "Configuration → Staged config", "Copy running → staged", "Save staged config",
+                               "config diff shows no changes",
                                "discarding the candidate", "running policy/hash is unchanged"):
                     self.assertIn(phrase.casefold(), text.casefold())
+                self.assertNotIn("Stage selected", text)
                 self.assertNotIn("would have blocked", text)
 
     def test_eu_content_does_not_retain_dpi_disabled_qualifications(self):
