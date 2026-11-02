@@ -23,7 +23,7 @@ func TestListenerRouteAndMethodIsolation(t *testing.T) {
 	defer read.Close()
 	accepted := uint64(0)
 	for _, route := range []string{
-		"/api/ingest", "/api/points", "/api/history" + historyQuery, "/api/health",
+		"/api/ingest", "/api/points", "/api/history" + historyQuery, "/api/events?since=2026-10-15T09:00:00Z&until=2026-10-15T11:00:00Z", "/api/health",
 		"/api/commands", "/api/reset", "/api/state", "/api/ingest/", "/", "//api/ingest",
 	} {
 		for _, verb := range []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"} {
@@ -35,7 +35,7 @@ func TestListenerRouteAndMethodIsolation(t *testing.T) {
 				t.Run(listener.name+"-"+verb+"-"+route, func(t *testing.T) {
 					want := http.StatusNotFound
 					known := route == "/api/ingest" && !listener.read ||
-						listener.read && (route == "/api/points" || route == "/api/health" || strings.HasPrefix(route, "/api/history?"))
+						listener.read && (route == "/api/points" || route == "/api/health" || strings.HasPrefix(route, "/api/history?") || strings.HasPrefix(route, "/api/events?"))
 					allowed := http.MethodPost
 					if listener.read {
 						allowed = http.MethodGet

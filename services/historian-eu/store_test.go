@@ -197,6 +197,7 @@ func TestConcurrentIngestAndRead(t *testing.T) {
 				s.health()
 				s.points()
 				s.history("oltc-1-tap", time.Time{}, time.Now())
+				s.events(time.Time{}, time.Now())
 			}
 		}()
 	}

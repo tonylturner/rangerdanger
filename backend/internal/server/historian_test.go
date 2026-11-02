@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,12 @@ func TestHistorianProxy(t *testing.T) {
 			stubResponse{200, `[]`}, 200, `[]`},
 		{"history", "/history" + query, "/api/history" + query, func(s *Server) gin.HandlerFunc { return s.handleHistorianHistory },
 			stubResponse{200, history}, 200, history},
+		{"events", "/events?since=x&until=y", "/api/events?since=x&until=y", func(s *Server) gin.HandlerFunc { return s.handleHistorianEvents },
+			stubResponse{200, `{"events":[{"point":"oltc-1-tap","from":1,"to":2}],"gaps":[]}`}, 200, `{"events":[{"point":"oltc-1-tap","from":1,"to":2}],"gaps":[]}`},
+		{"invalid events query", "/events", "/api/events", func(s *Server) gin.HandlerFunc { return s.handleHistorianEvents },
+			stubResponse{400, `{"error":"invalid window"}`}, 400, `{"error":"invalid window"}`},
+		{"malformed events", "/events", "/api/events", func(s *Server) gin.HandlerFunc { return s.handleHistorianEvents },
+			stubResponse{200, `null`}, 502, `{"error":"historian returned an invalid read response"}`},
 		{"invalid query", "/history", "/api/history", func(s *Server) gin.HandlerFunc { return s.handleHistorianHistory },
 			stubResponse{400, `{"error":"point is required"}`}, 400, `{"error":"point is required"}`},
 		{"unknown point", "/history?point=unknown", "/api/history?point=unknown", func(s *Server) gin.HandlerFunc { return s.handleHistorianHistory },
@@ -46,10 +53,7 @@ func TestHistorianProxy(t *testing.T) {
 				"GET /historian-1" + test.upstreamPath: test.upstream,
 			})
 			s := rangeServer(multiDeviceGeneration(t, upstream.URL), "weak")
-			pattern := "/api/historian/points"
-			if test.path != "/points" {
-				pattern = "/api/historian/history"
-			}
+			pattern := "/api/historian" + strings.Split(test.path, "?")[0]
 			rec := callRoute(s, test.handler(s), http.MethodGet, pattern, "/api/historian"+test.path, "")
 			if rec.Code != test.code || rec.Body.String() != test.want {
 				t.Fatalf("proxy = %d %s; want %d %s", rec.Code, rec.Body, test.code, test.want)
