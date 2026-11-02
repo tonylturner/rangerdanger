@@ -9,11 +9,14 @@ import { regulationBand, type VoltageBand } from "../lib/operator-workstation";
 import { isRangeNotReady } from "../lib/range";
 import { errorMessage } from "../lib/utils";
 
-export function HistoryPlot({ history, band }: { history: History; band?: VoltageBand | null }) {
+export function HistoryPlot({ history, band, expandableSnapshots = false }: { history: History; band?: VoltageBand | null; expandableSnapshots?: boolean }) {
+  const [snapshotsExpanded, setSnapshotsExpanded] = useState(false);
   const samples = history.segments.flatMap((s) => s.samples);
   const times = samples.map((s) => Date.parse(s.ingested_at)).filter(Number.isFinite);
   const runs = historyRuns(history);
   const values = runs.flat().map((s) => numericSample(s)!);
+  const snapshotLimit = expandableSnapshots && !snapshotsExpanded ? 5 : 30;
+  const snapshots = history.segments.flatMap((segment, i) => segment.samples.map((sample) => ({ sample, epoch: segment.cache_epoch, segment: i }))).slice(-snapshotLimit).reverse();
   const xmin = Math.min(...times), xmax = Math.max(...times);
   const ymin = Math.min(...values, ...(band ? [band.low] : [])), ymax = Math.max(...values, ...(band ? [band.high] : []));
   const x = (t: string) => (Date.parse(t) - xmin) / (xmax - xmin || 1) * 840;
@@ -44,10 +47,13 @@ export function HistoryPlot({ history, band }: { history: History; band?: Voltag
     <ul className="text-xs text-amber-300">{history.gaps.map((gap, i) => <li key={i}>Ingest gap: {gap.from} → {gap.to}</li>)}</ul>
     <p className="text-xs text-slate-400">{history.segments.length} cache-epoch segment(s). Lines never cross an epoch or a gap. Invalid, substituted, blocked, overflow and transient samples break the line.</p>
     <div role="region" aria-label="Latest snapshots" tabIndex={0} className="max-w-full overflow-x-auto">
+      {expandableSnapshots && <button type="button" aria-expanded={snapshotsExpanded} className="mb-2 text-xs text-slate-300 underline decoration-slate-500 underline-offset-2 hover:text-slate-100 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-sky-400" onClick={() => setSnapshotsExpanded((expanded) => !expanded)}>
+        Show last {snapshotsExpanded ? 5 : 30}
+      </button>}
       <table className="w-full min-w-3xl text-left text-xs text-slate-300">
-        <caption className="pb-2 text-left text-slate-400">Latest 30 snapshots, newest first · full timestamps in UTC</caption>
+        <caption className="pb-2 text-left text-slate-400">Latest {snapshots.length} snapshots, newest first · full timestamps in UTC</caption>
         <thead><tr>{["CC epoch / seq", "Value", "Quality / reason", "Source time", "CC received", "Ingested"].map((h) => <th className="px-2 py-1" key={h}>{h}</th>)}</tr></thead>
-        <tbody>{history.segments.flatMap((segment, i) => segment.samples.map((sample) => ({ sample, epoch: segment.cache_epoch, segment: i }))).slice(-30).reverse().map(({ sample: s, epoch, segment }) => <tr key={`${segment}-${s.snapshot_seq}`} className="border-t border-slate-800">
+        <tbody>{snapshots.map(({ sample: s, epoch, segment }) => <tr key={`${segment}-${s.snapshot_seq}`} className="border-t border-slate-800">
           <td className="px-2 py-1">{epoch} / {s.snapshot_seq}</td>
           <td className="px-2 py-1">{formatPointValue(history.point, s.value, s.quality)}</td>
           <td className="px-2 py-1">{qualityFlags(s.quality).join(" ") || "no flags"} {s.stale_reason ?? ""}</td>
@@ -60,7 +66,7 @@ export function HistoryPlot({ history, band }: { history: History; band?: Voltag
   </div>;
 }
 
-export function HistorianTrend({ points = [], voltageOnly = false }: { points?: OperatorPoint[]; voltageOnly?: boolean }) {
+export function HistorianTrend({ points = [], voltageOnly = false, expandableSnapshots = false }: { points?: OperatorPoint[]; voltageOnly?: boolean; expandableSnapshots?: boolean }) {
   const [point, setPoint] = useState("oltc-1-bus-kv");
   const catalogue = useQuery({ queryKey: ["historian", "points"], queryFn: getHistorianPoints, refetchInterval: 10000 });
   const history = useQuery({
@@ -83,6 +89,6 @@ export function HistorianTrend({ points = [], voltageOnly = false }: { points?: 
       </select>
     </label>
     {error ? <p role="alert" className="text-xs text-amber-300">{isRangeNotReady(error) ? "History shows once the range is ready." : `Historian unavailable: ${errorMessage(error)}. ${history.data ? "Showing the last answer, not a live feed." : "No history received."}`}</p> : null}
-    {history.data ? <HistoryPlot history={history.data} band={point === "oltc-1-bus-kv" ? regulationBand(points) : null} /> : !error ? <p className="text-sm text-slate-400">Waiting for historian snapshots…</p> : null}
+    {history.data ? <HistoryPlot history={history.data} band={point === "oltc-1-bus-kv" ? regulationBand(points) : null} expandableSnapshots={expandableSnapshots} /> : !error ? <p className="text-sm text-slate-400">Waiting for historian snapshots…</p> : null}
   </section>;
 }

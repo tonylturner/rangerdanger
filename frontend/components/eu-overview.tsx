@@ -76,7 +76,7 @@ export function EuDashboard({ title }: { title: string }) {
       </div>
 
       <DeviceComms state={operator} unavailable={operatorDown} />
-      <HistorianTrend points={operator?.points} voltageOnly />
+      <HistorianTrend points={operator?.points} voltageOnly expandableSnapshots />
       <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
         <h2 className="mb-3 text-sm font-bold text-white">Workshop Quick Start</h2>
         <div className="grid gap-3 sm:grid-cols-3">
