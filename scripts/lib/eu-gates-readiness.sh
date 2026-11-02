@@ -241,7 +241,7 @@ eu_gate_G1() {
   # The reset always bumps the device revision; the solver and the RTU's next
   # Modbus poll follow asynchronously, so poll until every view agrees.
   if eu_wait_for_baseline "G1 GOOD baseline" 30; then
-    pass "G1 link started, GI complete, four GOOD points; operator = truth = solver generation/revision"
+    pass "G1 link started, GI complete, all station points GOOD; operator = truth = solver generation/revision"
   fi
   if [ -z "$BASELINE_TRUTH" ]; then
     fail "G1 physical state/process state is unavailable or unparsable"
