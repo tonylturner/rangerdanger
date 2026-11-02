@@ -210,6 +210,12 @@ export async function getActivePackage(): Promise<PackageSummary> {
   return active;
 }
 
+export type BuildInfo = { version: string; commit: string; date: string };
+
+export async function getBuild(): Promise<BuildInfo> {
+  return request<BuildInfo>("/build");
+}
+
 export async function getRange() {
   return request<RangeStatus>("/range");
 }
