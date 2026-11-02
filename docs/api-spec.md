@@ -524,9 +524,12 @@ containd appliance CLI, and only drops into bash after the CLI exits:
 sh -c "containd cli; exec bash -il || exec sh -i"
 ```
 
-So when you open the `fw-1` terminal you'll see the `containd# `
-prompt first. Type `shell` (or `exit`) to drop into the underlying
-Linux bash. SSH is different: the host port mapping
+So the `fw-1` terminal opens the configuration CLI first. The prompt uses
+`config`, `config*`, or `config?` for clean, pending, or unavailable candidate
+status; none proves live traffic protection. Type `exit` to end the CLI;
+the RangerDanger wrapper then starts Linux bash. Run `containd cli` to return.
+Leaving never commits or discards candidate edits; Linux commands act
+immediately. SSH is different: the host port mapping
 `127.0.0.1:2222:2222` exposes containd's SSH server
 (`ssh -p 2222 containd@localhost`, password `containd`), and an
 interactive SSH login opens the Linux bash directly, because containd

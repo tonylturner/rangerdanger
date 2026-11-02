@@ -55,7 +55,7 @@ steps:
   title: Verify access to containd
   expected_config: weak
   description: |
-    Open containd through the portal's `/containd/` link; lab credentials are containd / containd. Alternatively use **fw-1**, enter `containd cli`, then `show running-config`. Retain weak as rollback before edits.
+    Open containd through the portal's `/containd/` link; lab credentials are containd / containd. Alternatively **fw-1** initially opens the configuration CLI: run `show running-config`. If already in Linux, first run `containd cli`. Retain weak as rollback before edits.
 
     :::hint Do not move management
     Management is out of band. Do not add teaching-to-management allows, routing exceptions or new host ports to make a test pass.
@@ -95,6 +95,9 @@ steps:
   expected_config: weak
   description: |
     Remove broad trust and use default **DENY** for cross-zone traffic. Do not drop the legitimate allows first and strand operations.
+    Inspect the final **Default** row; both reference policies already use DENY.
+    Only if needed, use **Change default** → **DENY** → **Stage default**.
+    Review consequences and the complete candidate diff before commit.
 
     :::guided
     Use Apply Hardened for the reference, or Apply Your Plan for your funded subset in the next step. Inspect which deferred exposures remain before claiming success.
@@ -129,6 +132,7 @@ steps:
 
     :::technical
     Author these six intents with source and destination pins in containd. Keep historian read 8080 separate from CC ingest 8081. Engineering PLC web is 10.20.20.20 only. Do not grant the vendor zone field control or enterprise access to RTU. The first matching enforcing terminal rule decides; monitor rules never decide. Put the CC allow before `deny-unauthorized-iec104`, RTU and PLC Modbus allows before `deny-unauthorized-modbus`, CC ingest before `deny-unauthorized-historian-ingest`, and engineering web before `deny-unauthorized-plc-web`. If recreating the CC allow, insert or move it before its deny. Review configured order and shadow warnings before commit, then inspect running order. Commit, then read back running configuration.
+    On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
     :::
 
     :::hint No semantic enforcement claim
@@ -180,6 +184,7 @@ steps:
     ### Verify applied IEC 104 observations
 
     For Hardened, or a plan selecting `iec104-dpi`, inspect the embedded containd **Firewall/ICS tables** and running configuration. Confirm DPI and the IEC 104 decoder are healthy, NFQUEUE is **101**, and all three separate rules are applied with `protocol: iec104`, explicit `mode: monitor`, `direction: request`, CA **1**, and CC **10.60.60.20** → RTU **10.30.30.20 TCP/2404** (lan4→lan1):
+    Expand **Inspect rule** for Conditions, ICS Filter and full Shadow matches. On ICS, inspect **Active inspection**, **Why?** and **Inspection details**; **Technical details** retains queue/interface values.
 
     | Rule ID | Configured action | Selectors |
     |---|---|---|
@@ -303,7 +308,7 @@ steps:
   title: Export your policy
   expected_config: hardened
   description: |
-    Export the running configuration from containd's configuration UI, or in **fw-1**'s `containd cli` use `export config`. Retain policy identity, UTC bounds, positive/negative results and PCAP. Run Validate while your evidence is fresh.
+    Export the running configuration from containd's **Configuration** → **Overview**, or in **fw-1**'s configuration CLI use `export config` (redacted running JSON, not a file). Full export requires explicit administrator intent. Retain policy identity, UTC bounds, positive/negative results and PCAP. Run RangerDanger's step **Validate** while your evidence is fresh; containd's JSON **Validate** only checks editor text without staging it and does not run the lab's live acceptance checks.
 
     :::hint Next break point
     Keep the intended policy and rollback. Lab 2.3 will restore weak deliberately to demonstrate unauthorized wire control, then restore service and repeat under the applied plan or Hardened reference. A policy file alone is not acceptance evidence.

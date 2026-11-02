@@ -268,7 +268,8 @@ class ErrataContracts(unittest.TestCase):
             text = doc["description"] + "\n" + "\n".join(s["description"] for s in doc["steps"])
             self.assertNotRegex(text, r"export config\s*>")
             self.assertNotIn("cat /tmp/student-policy.json", text)
-            self.assertIn("Copy that JSON to your evidence document", text)
+            self.assertIn("Copy that redacted running JSON to your evidence document",
+                          " ".join(text.split()))
         text = " ".join(scenario("firewall-implementation")["steps"][8]["description"].split())
         self.assertIn("does not support shell redirection", text)
         self.assertIn("CLI JSON-file edit/import exercise is deferred", text)
@@ -646,9 +647,10 @@ class BaselineContracts(unittest.TestCase):
 
     def test_first_capture_teaches_prompt_transition(self):
         text = scenario("baseline-assessment")["steps"][2]["description"]
-        self.assertIn("containd#", text)
-        self.assertIn("Type `shell` to enter bash", text)
-        self.assertLess(text.index("Type `shell`"), text.index("tcpdump -i"))
+        self.assertIn("configuration CLI", text)
+        self.assertIn("Type `exit` to leave it", text)
+        self.assertLess(text.index("Type `exit`"), text.index("tcpdump -i"))
+        self.assertNotRegex(text, r"containd#|`(?:shell|bash)`")
         self.assertIn("containd cli", text)
         self.assertIn("| Prompt |", text)
 
@@ -901,7 +903,7 @@ class EstablishedConnectionContracts(unittest.TestCase):
                        "checks handshake admission and inspection from SYN"):
             self.assertIn(phrase, text)
         text = (eu / "eu-containd-policy-enforcement.md").read_text()
-        self.assertIn("blob/v0.1.37/docs/mkdocs/policy-model.md"
+        self.assertIn("blob/v0.1.38/docs/mkdocs/policy-model.md"
                       "#established-connections-and-policy-changes", text)
         self.assertIn("The L4 source pin enforces; DPI detects and logs.", text)
         text = (ROOT / "lab-definitions/packages/us-dnp3-substation/"

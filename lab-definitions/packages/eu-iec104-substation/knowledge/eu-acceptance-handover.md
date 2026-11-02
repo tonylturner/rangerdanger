@@ -17,6 +17,7 @@ Save **Export plan record** alongside **Export compiled config**. The record con
 ### Retain applied shadow evidence separately
 
 Keep the three rule IDs (`observe-cc-breaker-command`, `observe-cc-oltc-step`, `observe-cc-oltc-raise-only`), running predicates, healthy decoder/engine, fresh post-apply CC SYN/GI, and embedded containd Firewall/ICS table baseline/deltas. Record `available`, `snapshotVersion`, `since`, `unit`, `shadowMatches`, `wouldAllow`, `wouldDeny` and matching `ics.decision` rule/mode/time evidence. Successful apply resets counters; restart loses them. `available:false`, missing rules, changed snapshot/since or retention gaps are limitations, never zero. A would-deny match is not a denied command or whole-policy prediction. Counts are matching rule × decoded message, normally two per matching rule for a fully decoded SBO action but not guaranteed; require ≥1 and retain independent field feedback.
+Expand **Inspect rule** for Conditions, ICS Filter and full Shadow matches. On ICS, inspect **Active inspection**, **Why?** and **Inspection details**; **Technical details** retains queue/interface values.
 
 Monitor traffic traverses NFQUEUE 101, adds latency and has no queue bypass: if the engine is down, the CC conduit drops. Name this forwarding dependency, rollback owner and GI/PLC/historian continuity evidence. Optional instructor-led [PCAP Analysis](#eu-ics-dpi) certification is not graded, not permission or delivery proof, and ends by discarding the staged candidate without commit.
 

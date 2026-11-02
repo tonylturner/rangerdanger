@@ -15,11 +15,12 @@ phases:
     :::technical
     For a plan, use the compiled rule order without adding broad allows.
     The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
+    On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
     For manual work, use Hardened as the judging target. With
     `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
     access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
     remain reachable. **Create rule** and **Delete** do not reload the firewall.
-    Run `commit` at `containd#` or **Commit** on the **Configuration** page.
+    Run `commit` in the configuration CLI or **Commit** on the **Configuration** page.
     After commit, run `nmap -Pn -p 3389,5900 10.20.20.10` from Kali.
     For the manual Hardened target, both ports must be `filtered`; if not,
     fix the rule and commit again. A plan uses its compiled verdict instead.
@@ -30,11 +31,12 @@ phases:
     and HMI operations. These operational paths cannot be deferred.
 
     :::hint Policy evidence at the containd CLI
-    At `containd#`, `export config` prints JSON; it does not create a file:
+    In the configuration CLI, `export config` prints redacted running JSON; it does not create a file:
 
         export config
 
     Copy the output into your evidence. Do not use shell redirection.
+    Full export requires explicit administrator intent; do not share secrets.
     This reference example includes detection; it is not the whole policy:
 
         {

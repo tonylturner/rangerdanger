@@ -67,7 +67,7 @@
       "container": "rangerdanger-firewall",
       "policy": "weak",
       "prompt": "shell",
-      "entry": "shell",
+      "entry": "exit",
       "action": "RUN",
       "oracle": {
         "intent": "capture",
@@ -978,7 +978,7 @@
       "container": "rangerdanger-firewall",
       "policy": "hardened",
       "prompt": "shell",
-      "entry": "shell",
+      "entry": "exit",
       "action": "RUN",
       "oracle": {
         "intent": "capture",
@@ -990,7 +990,7 @@
       "container": "rangerdanger-firewall",
       "policy": "hardened",
       "prompt": "shell",
-      "entry": "shell",
+      "entry": "exit",
       "action": "RUN",
       "oracle": {
         "intent": "read",

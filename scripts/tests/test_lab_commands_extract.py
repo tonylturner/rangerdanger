@@ -71,7 +71,7 @@ class ExtractTests(unittest.TestCase):
 
     def test_cli_and_continuations(self):
         commands = extract.extract_step_commands(
-            "    show audit\n    shell # leave CLI\n"
+            "    show audit\n    exit # leave CLI\n"
             "    dnp3poll -a 2 \\\n      10.40.40.21:20000\n"
             "    export config > /tmp/policy.json\n")
         self.assertEqual([c for c, _ in commands], [
@@ -187,7 +187,7 @@ class ExtractTests(unittest.TestCase):
             if row["node"] == "fw-1":
                 self.assertNotEqual(row["command"], "containd cli")
                 if row["command"].startswith("tcpdump "):
-                    self.assertEqual((row["prompt"], row["entry"]), ("shell", "shell"))
+                    self.assertEqual((row["prompt"], row["entry"]), ("shell", "exit"))
 
     def test_manual_default_deny_probe_checks_reference_end_state_not_weak_read(self):
         rows = extract.extract(ROOT)
@@ -299,10 +299,10 @@ class ExtractTests(unittest.TestCase):
         self.assertEqual(argv[4:8], ["timeout", "-s", "INT", "5"])
         self.assertEqual(argv[-2:], ["containd", "cli"])
         self.assertEqual(stdin, "tcpdump -i any\nexit\n")
-        row.update(prompt="shell", entry="shell")
+        row.update(prompt="shell", entry="exit")
         argv, stdin = extract.invocation(row, 5)
         self.assertIn("containd cli", argv[-1])
-        self.assertEqual(stdin, "shell\ntcpdump -i any\nexit\n")
+        self.assertEqual(stdin, "exit\ntcpdump -i any\nexit\n")
 
     def test_execute_preserves_both_streams(self):
         row = {"scenario": "fixture", "step": 1, "container": "fixture",
@@ -340,32 +340,54 @@ class ExtractTests(unittest.TestCase):
     def test_staged_transition_preserves_shell_input(self):
         fixture = (
             "import sys\n"
-            "assert sys.stdin.readline().strip() == 'shell'\n"
+            "assert sys.stdin.readline().strip() == 'exit'\n"
             "print('__RD_SHELL_READY__', flush=True)\n"
             "assert sys.stdin.readline().strip() == 'echo evidence'\n"
             "print('evidence', flush=True)\n")
         result = extract.run_staged_shell(
-            [sys.executable, "-c", fixture], {"entry": "shell", "command": "echo evidence"}, 2)
+            [sys.executable, "-c", fixture], {"entry": "exit", "command": "echo evidence"}, 2)
         self.assertEqual(result.returncode, 0)
         self.assertIn("evidence", result.stdout)
 
     def test_staged_transition_drains_stderr_and_fails_without_shell_marker(self):
         fixture = (
             "import sys\n"
-            "assert sys.stdin.readline().strip() == 'shell'\n"
+            "assert sys.stdin.readline().strip() == 'exit'\n"
             "sys.stderr.write('diagnostic\\n' * 20000); sys.stderr.flush()\n"
             "print('__RD_SHELL_READY__', flush=True)\n"
             "assert sys.stdin.readline().strip() == 'echo evidence'\n"
             "print('evidence', flush=True)\n")
         result = extract.run_staged_shell(
-            [sys.executable, "-c", fixture], {"entry": "shell", "command": "echo evidence"}, 2)
+            [sys.executable, "-c", fixture], {"entry": "exit", "command": "echo evidence"}, 2)
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stderr, "diagnostic\n" * 20000)
         result = extract.run_staged_shell(
             [sys.executable, "-c", "print('CLI failed')"],
-            {"entry": "shell", "command": "must not execute"}, 2)
+            {"entry": "exit", "command": "must not execute"}, 2)
         self.assertEqual(result.returncode, 125)
         self.assertIn("documented shell transition failed", result.stderr)
+
+    def test_shell_input_that_stays_in_cli_cannot_pass(self):
+        # Real pipe boundary: the local executable rejects shell and stays in
+        # the CLI. Even output matching the oracle must not let OS input through.
+        fixture = (
+            "import sys\n"
+            "assert sys.stdin.readline().strip() == 'shell'\n"
+            "print('Unknown command: shell; evidence', flush=True)\n"
+            "sys.stdin.readline()\n"
+            "print('OS command received', flush=True)\n")
+        row = {"scenario": "fixture", "step": 1,
+               "container": "rangerdanger-firewall", "prompt": "shell",
+               "entry": "shell", "command": "echo evidence"}
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                extract, "invocation", return_value=([sys.executable, "-c", fixture], None)), \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertFalse(extract.execute_command(
+                row, {"intent": "read", "match": "evidence"}, Path(directory), 0))
+            self.assertNotIn("OS command received",
+                             (Path(directory) / "command.stdout").read_text())
+            self.assertIn("documented shell transition failed",
+                          (Path(directory) / "command.stderr").read_text())
 
     def test_no_ack_requires_weak_state_change_and_denied_state_preservation(self):
         row = {"scenario": "fixture", "step": 1, "command": "dnp3cmd fixture -no-ack"}

@@ -10,7 +10,7 @@ import { curriculumKey, decisionName, REMEDIATION_PLAN, writeCurriculum } from "
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { US_PLANS, EU_PLANS } from "../lib/plan-fixtures.test-util";
 import { CompiledPlanSummary } from "./compiled-plan-summary";
-import { PlanCoveragePanel } from "./scenario-description-blocks";
+import { CommandBlock, PlanCoveragePanel } from "./scenario-description-blocks";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { TooltipProvider } from "./ui/tooltip";
@@ -39,6 +39,24 @@ function render(binding?: CurriculumBinding) {
     </CurriculumScopeProvider>,
   );
 }
+
+describe("configuration CLI command blocks", () => {
+  it("uses a neutral marker, stays copy-only and copies only the command", () => {
+    const writeText = vi.fn();
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const onRun = vi.fn();
+    const { container } = rtlRender(
+      <CommandBlock cmd="show running-config" runId="cli" runningId={null} onRun={onRun} cli />,
+    );
+    expect(container.textContent).toContain("CLI · ");
+    expect(container.textContent).not.toMatch(/containd(?:#|\(config)/);
+    expect(screen.getByText("containd cli")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "copy" }));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("show running-config");
+    expect(onRun).not.toHaveBeenCalled();
+  });
+});
 
 describe("package-bound curriculum presentation", () => {
   it("renders the EU catalog, capacities, role links and truthful effects", () => {
