@@ -120,8 +120,9 @@ steps:
 
           mbpoll -a 1 -t 3 -r 1 -c 6 -1 10.30.30.20
 
-      `[2]` (`downstream_voltage_v × 10`) and `[4]`
-      (`feeder_current_a × 10`) both read `0` - the loads
+      `[2]` (`downstream_voltage_v × 10`) reads `0`, while `[4]`
+      (`feeder_current_a × 10`) drops to about zero (for example,
+      `1` means 0.1 A). The loads
       downstream of the recloser are unenergized. Hospital and fire
       station are dark. The substation bus (`[1]`) is
       still energized at the source side because the substation

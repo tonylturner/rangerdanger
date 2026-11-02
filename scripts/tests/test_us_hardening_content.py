@@ -18,6 +18,18 @@ class USHardeningContentContracts(unittest.TestCase):
                     text,
                 )
 
+    def test_outage_current_is_near_zero_not_exactly_zero(self):
+        lab = scenario("hardening-configurations")
+        step = lab["steps"][1]
+        text = " ".join(step["description"].split())
+        self.assertIn("`[2]` (`downstream_voltage_v × 10`) reads `0`", text)
+        self.assertIn(
+            "`[4]` (`feeder_current_a × 10`) drops to about zero", text
+        )
+        self.assertIn("`1` means 0.1 A", text)
+        self.assertNotIn("both read `0`", text)
+        self.assertIn("downstream of the recloser are unenergized", text)
+
 
 if __name__ == "__main__":
     unittest.main()
