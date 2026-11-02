@@ -437,6 +437,18 @@ class EnforcementContracts(unittest.TestCase):
         self.assertIn("observe", curriculum["groups"]["iec104-dpi"]["description"].lower())
         self.assertIn("Planning-only", curriculum["groups"]["modbus-dpi"]["description"])
 
+    def test_eu_rtu_conduit_keys_cover_every_field_device(self):
+        package = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        topology = yaml.safe_load((package / "topology.yml").read_text())
+        field = {node["ip"] for node in topology["nodes"] if node["networks"] == ["field_net"]}
+        for name in ("eu-baseline-assessment", "eu-segmentation-requirements", "eu-firewall-implementation"):
+            text = (package / "scenarios" / f"{name}.yml").read_text()
+            match = re.search(r"\| RTU→field \| 10\.30\.30\.20→10\.40\.40\.(\d+)…(\d+) \| TCP/502 \|", text)
+            with self.subTest(scenario=name):
+                self.assertIsNotNone(match)
+                low, high = map(int, match.groups())
+                self.assertEqual({f"10.40.40.{n}" for n in range(low, high + 1)}, field)
+
     def test_eu_shadow_handover_and_optional_pcap_review_have_limits(self):
         package = ROOT / "lab-definitions/packages/eu-iec104-substation"
         for rel in ("scenarios/eu-validation-evidence.yml", "knowledge/eu-ics-dpi.md"):
