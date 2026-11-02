@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.0-rc.6] - 2026-11-01
+
+Sixth release candidate for v0.2.0. It moves the firewall to containd
+0.1.37, fixes the teaching defects found in the rc.5 audit, and adds four
+release gates that prove the attack-to-consequence chain, simulator API
+isolation and RTAC bypass resistance. The pre-release publishes images
+under its own tag and does not move `latest`; install it with
+`./setup.sh --version v0.2.0-rc.6`.
+
 ### Added
 
 - Release gates that prove the attack-to-consequence chain end to end. In
@@ -3431,7 +3440,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.5...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0-rc.6...HEAD
+[v0.2.0-rc.6]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.6
 [v0.2.0-rc.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.5
 [v0.2.0-rc.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.4
 [v0.2.0-rc.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.3
