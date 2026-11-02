@@ -19,6 +19,7 @@ phases:
 
     :::technical
     Author these six intents with source and destination pins in containd. Keep historian read 8080 separate from CC ingest 8081. Engineering PLC web is 10.20.20.20 only. Do not grant the vendor zone field control or enterprise access to RTU. The first matching enforcing terminal rule decides; monitor rules never decide. Put the CC allow before `deny-unauthorized-iec104`, RTU and PLC Modbus allows before `deny-unauthorized-modbus`, CC ingest before `deny-unauthorized-historian-ingest`, and engineering web before `deny-unauthorized-plc-web`. If recreating the CC allow, insert or move it before its deny. Review configured order and shadow warnings before commit, then inspect running order. Commit, then read back running configuration.
+    On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
     :::
 
     :::hint No semantic enforcement claim
@@ -48,6 +49,7 @@ phases:
     ### Verify applied IEC 104 observations
 
     For Hardened, or a plan selecting `iec104-dpi`, inspect the embedded containd **Firewall/ICS tables** and running configuration. Confirm DPI and the IEC 104 decoder are healthy, NFQUEUE is **101**, and all three separate rules are applied with `protocol: iec104`, explicit `mode: monitor`, `direction: request`, CA **1**, and CC **10.60.60.20** → RTU **10.30.30.20 TCP/2404** (lan4→lan1):
+    Expand **Inspect rule** for Conditions, ICS Filter and full Shadow matches. On ICS, inspect **Active inspection**, **Why?** and **Inspection details**; **Technical details** retains queue/interface values.
 
     | Rule ID | Configured action | Selectors |
     |---|---|---|

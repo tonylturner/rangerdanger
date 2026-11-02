@@ -89,8 +89,9 @@ HEADER_EXCEPTIONS = {
     "hardening-configurations": (
         'Stress-test the policy you built in Lab 2.2 against the canonical '
         'distribution-substation attack: a DNP3 Direct Operate (FC05) injection from Kali '
-        "that disables the recloser's auto-reclose and trips it, turning a brief flicker into "
-        "a sustained downstream outage. You'll run the attack under the weak baseline (it "
+        'that trips the recloser and disables auto-reclose. The remote trip stays open until '
+        'someone closes it; disabling auto-reclose removes automatic restoration after a '
+        "fault. You'll run the attack under the weak baseline (it "
         'succeeds), then under the applied plan. A selected enterprise-to-field closure '
         'denies it; a deferred closure leaves the Weak exposure open. The lesson: verify '
         'enforcement by device state, not by policy labels. Optional Modbus FC5/FC6 cases '
@@ -268,7 +269,8 @@ class ErrataContracts(unittest.TestCase):
             text = doc["description"] + "\n" + "\n".join(s["description"] for s in doc["steps"])
             self.assertNotRegex(text, r"export config\s*>")
             self.assertNotIn("cat /tmp/student-policy.json", text)
-            self.assertIn("Copy that JSON to your evidence document", text)
+            self.assertIn("Copy that redacted running JSON to your evidence document",
+                          " ".join(text.split()))
         text = " ".join(scenario("firewall-implementation")["steps"][8]["description"].split())
         self.assertIn("does not support shell redirection", text)
         self.assertIn("CLI JSON-file edit/import exercise is deferred", text)
@@ -436,6 +438,18 @@ class EnforcementContracts(unittest.TestCase):
         self.assertIn("observe", curriculum["groups"]["iec104-dpi"]["description"].lower())
         self.assertIn("Planning-only", curriculum["groups"]["modbus-dpi"]["description"])
 
+    def test_eu_rtu_conduit_keys_cover_every_field_device(self):
+        package = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        topology = yaml.safe_load((package / "topology.yml").read_text())
+        field = {node["ip"] for node in topology["nodes"] if node["networks"] == ["field_net"]}
+        for name in ("eu-baseline-assessment", "eu-segmentation-requirements", "eu-firewall-implementation"):
+            text = (package / "scenarios" / f"{name}.yml").read_text()
+            match = re.search(r"\| RTU→field \| 10\.30\.30\.20→10\.40\.40\.(\d+)…(\d+) \| TCP/502 \|", text)
+            with self.subTest(scenario=name):
+                self.assertIsNotNone(match)
+                low, high = map(int, match.groups())
+                self.assertEqual({f"10.40.40.{n}" for n in range(low, high + 1)}, field)
+
     def test_eu_shadow_handover_and_optional_pcap_review_have_limits(self):
         package = ROOT / "lab-definitions/packages/eu-iec104-substation"
         for rel in ("scenarios/eu-validation-evidence.yml", "knowledge/eu-ics-dpi.md"):
@@ -445,9 +459,12 @@ class EnforcementContracts(unittest.TestCase):
                                "no queue bypass", "if the engine is down, the CC conduit drops",
                                "withheld", "SBO sequences, setpoint values/QL and bitstrings",
                                "not graded", "does not grade anything", "PCAP Analysis", "Generate suggestions", "Review",
-                               "Stage selected", "Commit is a separate deliberate step",
+                               "Stage N selected", "selected revision count", "Commit is a separate deliberate step",
+                               "Configuration → Staged config", "Copy running → staged", "Save staged config",
+                               "config diff shows no changes",
                                "discarding the candidate", "running policy/hash is unchanged"):
                     self.assertIn(phrase.casefold(), text.casefold())
+                self.assertNotIn("Stage selected", text)
                 self.assertNotIn("would have blocked", text)
 
     def test_eu_content_does_not_retain_dpi_disabled_qualifications(self):
@@ -646,9 +663,10 @@ class BaselineContracts(unittest.TestCase):
 
     def test_first_capture_teaches_prompt_transition(self):
         text = scenario("baseline-assessment")["steps"][2]["description"]
-        self.assertIn("containd#", text)
-        self.assertIn("Type `shell` to enter bash", text)
-        self.assertLess(text.index("Type `shell`"), text.index("tcpdump -i"))
+        self.assertIn("configuration CLI", text)
+        self.assertIn("Type `exit` to leave it", text)
+        self.assertLess(text.index("Type `exit`"), text.index("tcpdump -i"))
+        self.assertNotRegex(text, r"containd#|`(?:shell|bash)`")
         self.assertIn("containd cli", text)
         self.assertIn("| Prompt |", text)
 
@@ -901,7 +919,7 @@ class EstablishedConnectionContracts(unittest.TestCase):
                        "checks handshake admission and inspection from SYN"):
             self.assertIn(phrase, text)
         text = (eu / "eu-containd-policy-enforcement.md").read_text()
-        self.assertIn("blob/v0.1.37/docs/mkdocs/policy-model.md"
+        self.assertIn("blob/v0.1.38/docs/mkdocs/policy-model.md"
                       "#established-connections-and-policy-changes", text)
         self.assertIn("The L4 source pin enforces; DPI detects and logs.", text)
         text = (ROOT / "lab-definitions/packages/us-dnp3-substation/"

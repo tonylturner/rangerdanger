@@ -5,7 +5,7 @@
 tcpdump runs in the firewall's Linux shell. Two ways in:
 
 - **SSH:** `ssh -p 2222 containd@localhost` (password `containd`) opens a Linux bash prompt directly.
-- **`fw-1` terminal:** opens at the `containd#` appliance CLI. Type `shell` to reach the Linux bash prompt.
+- **`fw-1` terminal:** opens in the configuration CLI. Type `exit` to leave it; RangerDanger then starts Linux bash. Run `containd cli` to return. Leaving never commits or discards candidate edits; Linux commands act immediately.
 
 ### Interfaces Are Named After Their Zones
 

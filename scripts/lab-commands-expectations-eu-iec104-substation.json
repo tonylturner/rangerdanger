@@ -36,7 +36,7 @@
       "container": "rangerdanger-firewall",
       "policy": "weak",
       "prompt": "shell",
-      "entry": "shell",
+      "entry": "exit",
       "action": "RUN",
       "oracle": {
         "intent": "capture",

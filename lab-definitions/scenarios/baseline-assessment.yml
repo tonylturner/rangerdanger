@@ -177,14 +177,14 @@ steps:
 
       Open the firewall terminal (the **Show terminal** button above, or
       `fw-1` on the [Network Map](/console)). The firewall terminal opens the
-      containd appliance CLI (`containd#`). Type `shell` to enter bash, then run
-      tcpdump below. To return from bash use `containd cli`; never start the
-      containd daemon.
+      configuration CLI. Type `exit` to leave it; RangerDanger then starts
+      the Linux shell. Run tcpdump there. To return from bash use `containd cli`.
+      Leaving the CLI never commits or discards pending edits.
 
       | Prompt | What you can run | How you got here |
       |---|---|---|
-      | `containd#` | `show *`, `set *`, `commit`, `export config` - appliance commands | Default; opens here |
-      | `$` (bash) | `tcpdump`, `nft`, `ip`, generic Linux | Type `shell`, `bash`, or `exit` from `containd#` |
+      | Configuration CLI | `show *`, `set *`, `commit`, `export config` - appliance commands | Default; opens here |
+      | Linux shell (bash) | `tcpdump`, `nft`, `ip`, generic Linux - acts immediately | Type `exit` from the configuration CLI |
 
       Start a 60-second capture across all interfaces from bash:
 

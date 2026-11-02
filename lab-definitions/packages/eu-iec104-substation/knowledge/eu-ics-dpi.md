@@ -19,6 +19,7 @@ Monitor traffic traverses **NFQUEUE 101**, adds engine processing latency and ha
 ### Read shadow evidence in containd
 
 After every successful apply, **reconnect CC first** (`POST /api/operator/reconnect`), wait for connect GI and then take the baseline. Inspection starts only at a fresh SYN; a pre-apply session is not an inspection baseline. Read the embedded containd **Firewall/ICS tables**, not the RangerDanger event strip, for applied shadow counters. The underlying containd endpoint is `GET /api/v1/firewall/shadow-counters`.
+Expand **Inspect rule** for Conditions, ICS Filter and full Shadow matches. On ICS, inspect **Active inspection**, **Why?** and **Inspection details**; **Technical details** retains queue/interface values.
 
 Retain `available`, `snapshotVersion`, `since`, `unit`, and each rule's `ruleId`, `shadowMatches`, `wouldAllow`, `wouldDeny`. One hit means **one matching rule × one decoded message**, not an object, successful operation or prediction of the whole policy. All three applied monitor rules must be listed. A candidate-only rule is not applied, not zero. **`available:false` is never zero.** Successful apply resets counters; failed apply does not; engine restart loses them. If snapshotVersion or since changes, discard the comparison and reconnect/GI before a new baseline. Missing rules or unavailable counters are evidence gaps.
 
@@ -34,11 +35,13 @@ Type 47 RCS **1 is lower, 2 is raise**; Type 45 mode states instead use **0 manu
 
 The instructor demonstrates and does not grade anything in this optional sidebar. Begin with a clean candidate and a classic PCAP covering SYN through an already approved controlled command. In embedded containd **PCAP Analysis**:
 
-1. Import with **Analyze**. Inspect the sealed dataset, capture hash, decoder/profile/snapshot fingerprints, record counts, gaps and expiry. Analyze alone does not generate rules.
-2. Explicitly **Generate suggestions**. Inspect certified frozen evidence, limitations and withheld reasons. Supported state/QU command tuples can certify; **SBO sequences, setpoint values/QL and bitstrings remain withheld**. Monitoring ASDUs/startup do not become command ALLOWs. Dataset gaps are limitations, not a blanket bar: retained complete eligible parents may certify.
-3. An authenticated administrator must **Review** the exact IEC revision and acknowledge captured wire/NAT scope. Review is approval, not selection, staging or application. Select the reviewed revisions, then **Stage selected** atomically as explicit **`mode: monitor` only**.
+Follow **Collect → Generate → Review → Stage**:
+
+1. Open **Import capture** and import with **Analyze**. Inspect the sealed dataset, capture hash, decoder/profile/snapshot fingerprints, record counts, gaps and expiry. Analyze alone does not generate rules.
+2. Explicitly **Generate suggestions**. Expand **Inspect suggestion** and **Checks on saved evidence** for checks, limitations and withheld reasons. Supported state/QU command tuples can certify; **SBO sequences, setpoint values/QL and bitstrings remain withheld**. Monitoring ASDUs/startup do not become command ALLOWs. Dataset gaps are limitations, not a blanket bar: retained complete eligible parents may certify.
+3. An authenticated administrator must **Review** the exact IEC revision and acknowledge captured wire/NAT scope. Review is approval, not selection, staging or application. Select the reviewed revisions, then **Stage N selected** (where N is the selected revision count) atomically as explicit **`mode: monitor` only**.
 4. Inspect the candidate diff and verify running policy remains unchanged. Certification is bounded evaluator evidence, not permission, delivery proof or universal protocol proof. A staged receipt does not prove an active rule; global enforce cannot override an explicit monitor mode.
-5. **Commit is a separate deliberate step, not performed in this sidebar. End by discarding the candidate**, checking no uncommitted diff remains and the running policy/hash is unchanged. Starting with a clean candidate avoids discarding someone else's work.
+5. **Commit is a separate deliberate step, not performed in this sidebar. End by discarding the candidate**: open **Configuration → Staged config**, choose **Copy running → staged**, then **Save staged config**. Confirm the config diff shows no changes and the running policy/hash is unchanged. **Discard receipt** does not undo staged rules; verify the candidate diff is actually empty. Starting with a clean candidate avoids discarding someone else's work.
 
 Keep dataset/hash/revision/proof and withheld reasons separate from the 37-row L4 report. Analysis, generation and staging alone do not change the running policy. Monitoring alone does not start learning or collect a dataset.
 
@@ -46,4 +49,4 @@ Keep dataset/hash/revision/proof and withheld reasons separate from the 37-row L
 
 Keep applied policy/plan identity, source/destination/service, fresh-session boundary, counter lifetimes, rule-local deltas/events and independent command/device outcomes. Preserve the NFQUEUE forwarding dependency and rollback owner. Neither TCP proof nor decoded capture certifies command prevention. See [acceptance and handover](#eu-acceptance-handover), [established sessions](#eu-established-sessions) and [GI/quality](#iec104-gi-cot-quality).
 
-References: containd v0.1.36 `docs/mkdocs/ics-dpi.md` (modes, shadow counters, IEC selectors, PCAP Analysis); EU `firewall/improved.json`, `curriculum/plan.yml`, `protocols/points.json`.
+References: containd [v0.1.38 ICS DPI guide](https://github.com/tonylturner/containd/blob/v0.1.38/docs/mkdocs/ics-dpi.md) (modes, shadow counters, IEC selectors, PCAP Analysis); EU `firewall/improved.json`, `curriculum/plan.yml`, `protocols/points.json`.

@@ -175,7 +175,7 @@
       {
         "id": "tool-tcpdump",
         "title": "tcpdump - Packet Capture",
-        "sha256": "85b434daf5f5e1f674443bfe166fa1879095db63874e9e85f4118d03493a1d66"
+        "sha256": "3acd2fe139e92a09648c23d642fb36335bb747d668c2932f6d1e614a30e56bb8"
       },
       {
         "id": "tool-curl",
@@ -248,7 +248,7 @@
       {
         "id": "change-management-firewall-rules",
         "title": "Change Management for Substation Firewall Rules",
-        "sha256": "6c20ea1f5ad9ba361133ada0beaee18466cf64355ffaf1138c1e23099768da35"
+        "sha256": "e5f4deded5b0e92a675c8037bb7cac82ebcb02715696c4e364d27f035047d696"
       },
       {
         "id": "outage-costs-saidi-saifi",

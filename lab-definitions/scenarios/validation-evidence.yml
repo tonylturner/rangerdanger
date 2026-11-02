@@ -54,9 +54,11 @@ steps:
       either interface:
 
       - **Web UI:** [http://localhost:9080](http://localhost:9080),
-        Policy & Rules → Firewall Rules (or Configuration → Running).
+        Configuration → Running config shows committed policy.
+        Firewall Rules edits and its Default row describe the candidate;
+        applied counters are separate evidence, not candidate activation.
         Log in with `containd` / `containd` if the session has expired.
-      - **CLI:** the `fw-1` terminal opens at `containd#`; run:
+      - **CLI:** the `fw-1` terminal opens in the configuration CLI; run:
 
             show running-config
 
@@ -177,7 +179,8 @@ steps:
       `fw-1` terminal, captures on `lan2`, the firewall's field-zone
       interface:
 
-      At `containd#`, type `shell` before these Linux commands.
+      In the configuration CLI, type `exit` before these Linux commands.
+      RangerDanger then starts bash; use `containd cli` to return.
 
           tcpdump -i lan2 -nn 'tcp port 502 or tcp port 20000' -w /data/captures/validation.pcap
 
@@ -200,13 +203,14 @@ steps:
       and proof it's the one running. From the `fw-1` terminal:
 
       If still in bash after the capture, type `containd cli` to return
-      to `containd#` before these appliance commands.
+      to the configuration CLI before these appliance commands.
 
           export config
           show audit
 
-      Copy that JSON to your evidence document; the appliance CLI prints JSON
-      only and does not create a file through redirection.
+      Copy that redacted running JSON to your evidence document; the appliance
+      CLI does not create a file through redirection. Full export requires
+      explicit administrator intent.
 
       `export config` is the change-board-ready record of the running rule
       set; the recent `config.commit` entries in `show audit` prove the

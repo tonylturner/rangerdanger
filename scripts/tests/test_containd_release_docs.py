@@ -7,6 +7,45 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ContaindReleaseDocsTests(unittest.TestCase):
+    def test_local_cli_guidance_uses_exit_and_separates_candidate_status(self):
+        for path in ("docs/quickstart.md", "docs/api-spec.md"):
+            text = " ".join((ROOT / path).read_text().split())
+            with self.subTest(path=path):
+                for phrase in ("configuration CLI", "`exit`", "`containd cli`",
+                               "`config`", "`config*`", "`config?`",
+                               "Linux commands act immediately"):
+                    self.assertIn(phrase, text)
+                self.assertNotRegex(text, r"containd#|Type `shell`|type `shell`")
+                self.assertIn("prompt reads `containd(config)#`", text)
+        text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
+        self.assertIn("Current containd 0.1.38:", text)
+        self.assertIn("rule edits stage the candidate", text)
+
+    def test_lab_guidance_separates_running_proof_and_validation_surfaces(self):
+        us = ROOT / "lab-definitions/scenarios"
+        access = " ".join((us / "firewall-implementation.yml").read_text().split())
+        self.assertIn("prompt reads `containd(config)#`", access)
+        for phrase in ("`configure` is also a supported CLI entry point",
+                       "`wizard` belongs to SSH-appliance guided setup",
+                       "both reference policies already use DENY",
+                       "**Review changes**", "**Advanced**"):
+            self.assertIn(phrase, access)
+        proof = " ".join((us / "validation-evidence.yml").read_text().split())
+        self.assertIn("Configuration → Running config shows committed policy", proof)
+        self.assertIn("Default row describe the candidate", proof)
+        eu = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        text = (eu / "scenarios/eu-firewall-implementation.yml").read_text()
+        self.assertIn("RangerDanger's step **Validate**", text)
+        self.assertIn("JSON **Validate** only checks editor text without staging", text)
+        for relative in ("knowledge/eu-ics-dpi.md", "scenarios/eu-validation-evidence.yml"):
+            text = (eu / relative).read_text()
+            with self.subTest(path=relative):
+                for phrase in ("Collect → Generate → Review → Stage",
+                               "**Inspect suggestion**", "**Checks on saved evidence**",
+                               "**Discard receipt** does not undo staged rules",
+                               "verify the candidate diff is actually empty"):
+                    self.assertIn(phrase, text)
+
     def test_overviews_state_floor_and_one_way_storage_migration(self):
         for path in ("README.md", "docs/architecture.md"):
             text = " ".join((ROOT / path).read_text().split())
@@ -16,7 +55,17 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                                "containd 0.1.36 cannot read"):
                     self.assertIn(phrase, text)
         text = (ROOT / "docs/architecture.md").read_text()
-        self.assertIn("containd `v0.1.37` git ref", text)
+        self.assertIn("containd `v0.1.38` git ref", text)
+
+    def test_source_builds_and_release_guidance_use_current_containd_tag(self):
+        for package in ("us-dnp3-substation", "eu-iec104-substation"):
+            path = ROOT / "lab-definitions/packages" / package / "compose.source.yml"
+            with self.subTest(package=package):
+                self.assertIn(
+                    'context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/'
+                    'containd.git#v0.1.38}"', path.read_text())
+        text = " ".join((ROOT / "RELEASING.md").read_text().split())
+        self.assertIn("release tag pinned by the package (`v0.1.38`)", text)
 
     def test_upgrade_guides_require_matching_full_storage_and_image(self):
         for path in ("RELEASING.md", "docs/quickstart.md", "docs/workshop-ssd.md"):

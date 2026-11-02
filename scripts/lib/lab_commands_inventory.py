@@ -134,8 +134,8 @@ def extract(root=ROOT, target="", package_id=US):
                 if node != "host" and node not in nodes:
                     raise ValueError(f"{package_id}/{scenario}/{step['id']}: unknown source {node}")
                 preceding = "\n".join(desc.splitlines()[:line])
-                entry = "shell" if node == "fw-1" and kind != "cli" and (
-                    package_id != US or re.search(r"`(?:shell|bash|exit)`", preceding)) else ""
+                entry = "exit" if node == "fw-1" and kind != "cli" and (
+                    package_id != US or re.search(r"`exit`", preceding)) else ""
                 prompt = "cli" if kind == "cli" or (node == "fw-1" and not entry) else "shell"
                 skip = (kind == "copy" or node == "host" or
                         re.search(r"/api/firewall/apply|^docker |^ssh\b", command) or

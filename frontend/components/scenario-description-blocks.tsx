@@ -58,7 +58,7 @@ type CommandBlockProps = {
   onRun: ((cmd: string, runId: string, sourceNode?: string) => void) | null;
   sourceNode?: string;
   // cli = a containd appliance-CLI command: copy-only (no Run), prefixed
-  // with the containd# prompt and badged so it's clear the student runs
+  // with a neutral CLI marker and badged so it's clear the student runs
   // it in the fw-1 containd terminal, not via the lab's per-node exec.
   cli?: boolean;
   // copyOnly = a host-side or interactive/GUI command: copy button only,
@@ -71,7 +71,7 @@ export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly, sour
   return (
     <div className="group relative rounded-sm border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
       <span className="block whitespace-pre-wrap break-all pb-7 sm:pb-0 sm:pr-28">
-        {cli && <span className="select-none text-sky-700">containd# </span>}
+        {cli && <span className="select-none text-sky-700">CLI · </span>}
         {cmd}
       </span>
       <div className="absolute bottom-1.5 right-2 flex items-center gap-1.5 sm:bottom-auto sm:top-1.5">

@@ -382,12 +382,14 @@ Most "doesn't start" issues fall into one of these:
 
 ### "the firewall (`fw-1`) terminal says command not found"
 
-The `fw-1` in-app terminal lands directly in the **containd
-appliance CLI** (you'll see the `containd# ` prompt). If you
+The `fw-1` in-app terminal lands directly in the **configuration CLI**.
+The prompt reads `containd(config)#` for a clean candidate (`config`); the mode
+changes to `config*` for pending edits or `config?` when candidate status is
+unavailable. These markers do not prove live traffic protection. If you
 typed a Linux command like `ls` or `tcpdump` and got "command
-not found", you're in the appliance shell - type `shell` (or
-`exit`) to drop to bash. Type `containd cli` from bash to come
-back.
+not found", type `exit` to leave the CLI; RangerDanger then starts bash.
+Type `containd cli` from bash to come back. Leaving never commits or
+discards candidate edits; Linux commands act immediately.
 
 ### "exercises won't load / `/api/scenarios` returns no labs"
 

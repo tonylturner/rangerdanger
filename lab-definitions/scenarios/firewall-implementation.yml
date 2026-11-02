@@ -88,9 +88,11 @@ steps:
       **Option 2: containd CLI**
 
       The `fw-1` terminal tab on the [Network Map](/console) opens
-      directly into the **containd appliance CLI**. You'll see the
-      `containd# ` prompt. List the interfaces and the running
-      policy:
+      directly into the **configuration CLI**. Its prompt reads
+      `containd(config)#` for a clean candidate (`config`); the mode changes to
+      `config*` for pending edits or `config?` when candidate status is unavailable.
+      These markers do not prove live traffic protection.
+      List the interfaces and the running policy:
 
           show interfaces
           show running-config
@@ -107,13 +109,14 @@ steps:
 
       | Prompt | What you can run | How you got here |
       |---|---|---|
-      | `containd#` | `show *`, `set *`, `commit`, `export config` - appliance commands | Default; opens here |
-      | `$` (bash) | `tcpdump`, `nft`, `ip`, generic Linux | Type `shell`, `bash`, or `exit` from `containd#` |
+      | Configuration CLI | `show *`, `set *`, `commit`, `export config` - appliance commands | Default; opens here |
+      | Linux shell (bash) | `tcpdump`, `nft`, `ip`, generic Linux - acts immediately | Type `exit` from the configuration CLI |
 
-      **From bash back to the CLI: type `containd cli`.** (`config` and
-      `configure` look like they should work but are unrelated - they
-      run the containd daemon binary. Only `containd cli` enters the
-      appliance shell.)
+      `exit` ends the CLI process; RangerDanger's terminal wrapper then starts
+      Linux bash. Leaving never commits or discards the shared candidate.
+      **From bash back to the CLI: type `containd cli`.** `configure` is also
+      a supported CLI entry point. `wizard` belongs to SSH-appliance guided
+      setup, not the local CLI.
 
   - id: phase-1-verify-current-access-under-the-weak-baseline
     title: "Phase 1 - Verify current access under the weak baseline"
@@ -169,6 +172,9 @@ steps:
       A selected enforceable action closes its exposure. A deferred action keeps
       that Weak path open. Default DENY is the backstop, not proof that a deferred
       path closed. Preserve management and required operational allows.
+      Inspect the final **Default** row: both reference policies already use
+      DENY. Only if needed, use **Change default** → **DENY** → **Stage default**.
+      Review consequences and the complete candidate diff before commit.
 
       :::guided
       Apply Your Plan in the next step. Use Apply Hardened only for the reference.
@@ -217,11 +223,12 @@ steps:
       :::technical
       For a plan, use the compiled rule order without adding broad allows.
       The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
+      On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
       For manual work, use Hardened as the judging target. With
       `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
       access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
       remain reachable. **Create rule** and **Delete** do not reload the firewall.
-      Run `commit` at `containd#` or **Commit** on the **Configuration** page.
+      Run `commit` in the configuration CLI or **Commit** on the **Configuration** page.
       After commit, run `nmap -Pn -p 3389,5900 10.20.20.10` from Kali.
       For the manual Hardened target, both ports must be `filtered`; if not,
       fix the rule and commit again. A plan uses its compiled verdict instead.
@@ -232,11 +239,12 @@ steps:
       and HMI operations. These operational paths cannot be deferred.
 
       :::hint Policy evidence at the containd CLI
-      At `containd#`, `export config` prints JSON; it does not create a file:
+      In the configuration CLI, `export config` prints redacted running JSON; it does not create a file:
 
           export config
 
       Copy the output into your evidence. Do not use shell redirection.
+      Full export requires explicit administrator intent; do not share secrets.
       This reference example includes detection; it is not the whole policy:
 
           {
@@ -279,7 +287,7 @@ steps:
       can provide tuple evidence. Default DENY is a silent backstop. A missing
       event does not prove that no attempt occurred.
 
-      At `containd#`, inspect administrative evidence:
+      In the configuration CLI, inspect administrative evidence:
 
           show audit
 
@@ -387,16 +395,16 @@ steps:
       edits. If you authored the policy in containd, the export is the artifact you hand
       to change management.
 
-      **Web UI:** go to **Configuration** in the left nav and click
+      **Web UI:** go to **Configuration** → **Overview** and click
       **Download full** to save the running config as JSON (**Download
       redacted** strips secrets if you're sharing it).
 
-      **CLI:** the `fw-1` terminal opens at `containd#`; run:
+      **CLI:** the `fw-1` terminal opens in the configuration CLI; run:
 
           export config
 
       **Workshop note:**
-      - Copy that JSON to your evidence document; the appliance CLI does not support shell redirection. Validate the saved copy on your workstation with `python3 -m json.tool`.
+      - Copy that redacted running JSON to your evidence document; the appliance CLI does not support shell redirection. Full export requires explicit administrator intent. Validate the saved copy on your workstation with `python3 -m json.tool`.
       - The CLI JSON-file edit/import exercise is deferred. Author/review in **Configuration** at http://localhost:9080; do not edit a file the CLI never created.
       - Browser export is optional; the copied CLI JSON is your evidence.
 

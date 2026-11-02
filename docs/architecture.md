@@ -184,7 +184,7 @@ DNP3 outstation addresses (the five that expose DNP3): relay=1, recloser=2, regu
 
 [containd](https://github.com/tonylturner/containd) is pulled as
 `ghcr.io/tonylturner/containd:latest` in release mode. Source mode builds
-`rangerdanger-firewall` from the containd `v0.1.37` git ref (or the
+`rangerdanger-firewall` from the containd `v0.1.38` git ref (or the
 `CONTAIND_SOURCE` override). Policies are declared by each package's
 `package.yml`: US uses `lab-definitions/firewall/`, EU uses
 `lab-definitions/packages/eu-iec104-substation/firewall/`.

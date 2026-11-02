@@ -35,5 +35,5 @@ var euReport = reportSpec{
 	captureIntro:  "Sources observed forwarded toward EU field devices during the capture window (best-effort tcpdump summary):",
 	captureLimits: "Expected operational sources include the RTU and PLC; the pinned PLC-to-OLTC conduit crosses the firewall from station to field. Absence here is not proof of denial. Retain and inspect the raw PCAP separately.",
 	limits:        "- PASS covers only this TCP matrix. A refused connection proves reachability, not a functioning application, and fails an unauthorized row. A timeout does not identify a decoded command or prove the firewall caused the loss. Missing tools are untested, not denied. Capture availability and stable hash are required by acceptance; PCAP completeness is not certified. Continuity and fresh observations require the scenario validator. No DPI or regulatory conformance is certified.\n",
-	captureDir:    "/data/captures", hostCaptureDir: "data/firewall/captures",
+	captureDir:    "/data/captures", hostCaptureDir: "data/eu-iec104-substation/firewall/captures",
 }

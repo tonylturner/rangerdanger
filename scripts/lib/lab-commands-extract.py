@@ -40,6 +40,9 @@ BAD_OUTPUT = re.compile(
 FIREWALL_DENIAL = re.compile(r"(?:timed? out|timeout|filtered)", re.I)
 NO_ACK_STATE_SEND = re.compile(r"Result: SENT \(no acknowledgement requested\)", re.I)
 NON_DENIAL_OUTPUT = re.compile(r"(?:connection refused|no route to host)", re.I)
+SHELL_READY = b"__RD_SHELL_READY__\n"
+CLI_TRANSITION_ERROR = re.compile(
+    rb"unknown command|one or more CLI commands failed", re.I)
 
 
 def key(row):
@@ -154,8 +157,10 @@ def invocation(row, timeout):
             return prefix + ["containd", "cli"], command + "\nexit\n"
         # Model the actual terminal's first prompt and only the documented
         # transition. Do not execute Linux tools behind the student's back.
+        # Order CLI stderr before the stdout marker, eliminating cross-pipe
+        # reader races. The subsequent Linux command keeps separate streams.
         return (prefix + ["bash", "-c",
-                         "containd cli; printf '__RD_SHELL_READY__\\n'; exec bash -o pipefail"],
+                         "containd cli 2>&1; printf '__RD_SHELL_READY__\\n'; exec bash -o pipefail"],
                 row["entry"] + "\n" + command + "\nexit\n")
     return prefix + ["bash", "-o", "pipefail", "-c", command], None
 
@@ -164,7 +169,9 @@ def run_staged_shell(argv, row, timeout):
     """Portable pipe readers: Windows selectors cannot monitor subprocess pipes.
 
     Wait for the CLI-to-shell marker before sending command input, so the CLI's
-    buffered reader cannot swallow it. Drain both streams throughout the run.
+    buffered reader cannot swallow it. Reject CLI errors before the marker:
+    the wrapper can reach bash even after an unsuccessful CLI exit.
+    Drain both streams throughout the run.
     """
     with subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE) as process:
@@ -177,7 +184,7 @@ def run_staged_shell(argv, row, timeout):
             try:
                 while chunk := stream.read1(65536):
                     buffer.extend(chunk)
-                    if watch and b"__RD_SHELL_READY__\n" in buffer:
+                    if watch and SHELL_READY in buffer:
                         ready.set()
             except OSError as exc:
                 reader_errors.append(str(exc))
@@ -198,7 +205,8 @@ def run_staged_shell(argv, row, timeout):
             while not ready.wait(0.1):
                 if stdout_finished.is_set() or time.monotonic() >= deadline:
                     break
-            if not ready.is_set():
+            cli_output = bytes(output).partition(SHELL_READY)[0]
+            if not ready.is_set() or CLI_TRANSITION_ERROR.search(cli_output):
                 diagnostic = "\ndocumented shell transition failed"
                 if process.poll() is None:
                     process.kill()

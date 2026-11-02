@@ -49,9 +49,10 @@ func (o *Orchestrator) ExecShell(ctx context.Context, containerID string, applia
 
 	// The firewall container lands directly in the containd appliance CLI
 	// — that's the experience labs are written against (`show running-config`,
-	// `set firewall rule`, `commit`, etc.). Type `shell` from the CLI to drop
-	// to bash and `exit` to return. If the CLI errors (e.g., daemon not yet
-	// up, stale users.db), the wrapper falls through to bash so students
+	// `show diff`, `commit`, etc.). Type `exit` to end the CLI; this wrapper
+	// then starts bash. Run `containd cli` from bash to return to configuration.
+	// If the CLI errors (e.g., daemon not yet up, stale users.db),
+	// the wrapper falls through to bash so students
 	// aren't locked out of low-level diagnostics.
 	//
 	// All other containers default to bash (or sh fallback). The -il flags
