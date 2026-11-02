@@ -16,6 +16,7 @@ import { PhysicalComparison } from "./physical-system-comparison";
 import { PhysicalDiagnostics } from "./physical-system-diagnostics";
 import { PhysicalEquipment } from "./physical-system-equipment";
 import { PhysicalOverview } from "./physical-system-overview";
+import { PhysicalSystemControls } from "./physical-system-controls";
 import { ACTION, PANEL } from "./physical-system-parts";
 
 export const PHYSICAL_DESCRIPTION = "Live electrical and device conditions from the simulation, independent of SCADA communications. This is privileged simulation truth, not available to the SCADA operator. Compare these values with the Control Centre to identify missing, delayed, or incorrect observations.";
@@ -85,6 +86,7 @@ export function PhysicalSystemScreen({ field, stateError, operator, operatorUnav
         <p className="mt-2 text-xs text-slate-400">Physical topology paths use simulation switch states; CC paths are inferred from IEC observations. No source is substituted for the other. Energization is the solver&apos;s live flag, not a calculation from the displayed kV.</p>
       </section>
       <PhysicalEquipment field={field} expanded={expanded} onToggle={(id) => { if (!expanded[id]) onSelect(id); toggle(id); }} unavailable={unavailable} />
+      <PhysicalSystemControls unavailable={unavailable || field.process.truth_stale} />
       <section aria-label="Advanced diagnostics" className={`${PANEL} border-slate-700`}>
         <button type="button" className={ACTION} aria-expanded={!!expanded.diagnostics} aria-controls="physical-diagnostics" onClick={() => toggle("diagnostics")}>{expanded.diagnostics ? "−" : "+"} Advanced diagnostics</button>
         {expanded.diagnostics && <div id="physical-diagnostics"><PhysicalDiagnostics field={field} audit={audit} /></div>}
