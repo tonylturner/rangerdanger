@@ -168,8 +168,8 @@ describe("Physical System presentation", () => {
     const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} field={field} />);
     expect(html).toContain("S3 industrial · LIVE");
     expect(html).toContain("NOT ENERGIZED · solver bus live");
-    expect(html.match(/<line x1="337"[^>]*>/)?.[0]).toContain('stroke="#94a3b8"');
-    expect(html.match(/<line x1="337"[^>]*>/)?.[0]).not.toContain("stroke-dasharray");
+    expect(html.match(/<line x1="337"[^>]*>/)?.[0]).toContain('stroke="#fb7185"');
+    expect(html.match(/<line x1="337"[^>]*>/)?.[0]).toContain('stroke-dasharray="10 6"');
     field.process.truth_stale = true;
     const stale = renderToStaticMarkup(<PhysicalSystemScreen {...props} field={field} />);
     expect(stale.match(/<line x1="337"[^>]*>/)?.[0]).toContain('stroke="#fbbf24"');

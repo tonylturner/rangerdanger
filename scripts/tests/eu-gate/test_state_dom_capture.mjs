@@ -31,7 +31,7 @@ const root = element([
   ...devices, ...sections, ...measurements, ...conditions,
 ], { cached: 'false' });
 const f2 = devices.find(node => node.dataset.device === 'F2');
-f2.closest = () => ({ querySelectorAll: () => [element(['F2 · IEC 104 · indication only: ', element(['NORMAL']), ' · I 11.2 A · P 0.33 MW'])] });
+f2.closest = () => ({ querySelectorAll: () => [element(['F2 · IEC 104 · indication only: I ', element(['11.2 A']), ' · P 0.33 MW'])] });
 const collections = {
   '[data-device]': devices, '[data-section]': sections, '[data-point]': measurements,
   '[aria-label="Abnormal conditions"] [data-condition]': conditions,
@@ -58,7 +58,7 @@ assert.equal(captured.devices.find(d => d.device === 'T1').text,
 assert.match(captured.text, /^Protection TRIPPED lockout CB1/); // HTML + SVG.
 assert.equal(captured.authorities[0].text, 'RMU1 LOCAL');
 assert.equal(captured.sections[0].text, 'S1 · LIVE 19.80 kV via CB1');
-assert.equal(captured.f2Telemetry, 'F2 · IEC 104 · indication only: NORMAL · I 11.2 A · P 0.33 MW');
+assert.equal(captured.f2Telemetry, 'F2 · IEC 104 · indication only: I 11.2 A · P 0.33 MW');
 assert.equal(captured.measurements[0].text, fixture.measurements[0].text);
 assert.equal(captured.conditions[0].text, fixture.conditions[0].text);
 assert.equal(captured.text.includes('  '), false);
@@ -66,4 +66,11 @@ assert.equal(captured.text.includes('  '), false);
 t1.childNodes[2] = element(['AUTO']);
 assert.match(t1.textContent, /0AUTO/);
 assert.match(captureDom(root, 'physical').devices.find(d => d.device === 'T1').text, /\bAUTO\b/);
+// The same capture path reads fixed-size HTML consequence badges as well as
+// SVG measurements. This keeps the live gate independent of tag names.
+measurements.push(element(['LOCKED OUT'], { point: 'f2-lockout', state: 'LOCKED OUT', condition: 'asserted' }));
+assert.deepEqual(captureDom(root, 'cc').measurements.at(-1), {
+  point: 'f2-lockout', state: 'LOCKED OUT', text: 'LOCKED OUT', visible: true,
+});
+measurements.pop();
 console.log(JSON.stringify(captured));

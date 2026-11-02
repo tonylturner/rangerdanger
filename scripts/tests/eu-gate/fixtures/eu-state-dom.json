@@ -143,7 +143,7 @@
   "comparisons": [],
   "viewState": "ok",
   "observationUncertainty": "0",
-  "f2Telemetry": "F2 · IEC 104 · indication only: NORMAL · I 11.2 A · P 0.33 MW. Alternative feeder from the same T1 / bus20.",
+  "f2Telemetry": "F2 · IEC 104 · indication only: I 11.2 A · P 0.33 MW. Alternative feeder from the same T1 / bus20.",
   "textNodes": [
     "Protection ",
     "TRIPPED",

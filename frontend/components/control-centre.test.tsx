@@ -203,7 +203,7 @@ describe("CC schematic layout", () => {
 
   it.each([1280, 1440, 1536, 1920])("fits the SVG with at least 12px labels at %ipx", (viewport) => {
     const html = render(<ControlCentreOneLine points={FEEDER_STATE.points} />);
-    expect(html).toContain('viewBox="0 0 1060 410"');
+    expect(html).toContain('viewBox="0 0 1060 460"');
     expect(html).toContain('class="w-full min-w-[1060px]"');
     const fonts = [...html.matchAll(/font-size="(\d+)"/g)].map((m) => Number(m[1]));
     // Match the shell's 12rem sidebar, max-w-[1600px], px-6, gap-4 and

@@ -248,12 +248,29 @@ def check_dom(row, dom, view, expected, tap=0):
             and devices['F2']['quality'] == 'good', f'{view} F2 position/quality')
     require(dom['f2Line'] == ('DEAD' if row['supply'][2] == 'D' else 'LIVE'), f'{view} F2 lower-run state')
     telemetry = dom['f2Telemetry']
-    require(('TRIPPED' if row['f2'] == 'tripped' else 'NORMAL') in telemetry, f'{view}: F2 trip text')
     for id, unit, tolerance in [('f2-current', 'A', 2.05), ('f2-p-mw', 'MW', .055)]:
         numbers = re.findall(r'(-?\d+(?:\.\d+)?)\s*' + unit + r'\b', telemetry)
         require(bool(numbers), f'{view}: F2 {unit} reading absent')
         near(float(numbers[-1]), expected[id], tolerance, f'{view}: displayed {id}')
     measurements = {v['point']: v for v in dom['measurements']}
+    for section, supply in zip(SECTIONS, row['supply']):
+        badge = measurements.get(section + '-no-supply')
+        require(bool(badge) == (supply == 'D'), f'{view} {section}: NO SUPPLY badge presence')
+        if badge:
+            require(badge['visible'] and badge['state'] == 'NO SUPPLY' and badge['text'] == 'NO SUPPLY',
+                    f'{view} {section}: visible NO SUPPLY badge')
+    for rule in PRESENTATION['consequence_badges']:
+        # Physical API does not expose PLC status or OLTC limit indications.
+        ids = rule['points']
+        active = [] if view == 'physical' and rule.get('cc_only') else [
+            id for id in ids if expected.get(id) is rule['value']]
+        chosen = active[0] if active else None
+        for id in ids:
+            badge = measurements.get(id)
+            require(bool(badge) == (id == chosen), f'{view} {id}: consequence badge presence')
+            if badge:
+                require(badge['visible'] and badge['state'] == rule['label'] and badge['text'] == rule['label'],
+                        f'{view} {id}: visible {rule["label"]} badge')
     for id in ['oltc-1-current', 'oltc-1-bus-kv', 'feeder-current', 'feeder-voltage', 'rmu-1-current', 'rmu-2-current', 'rmu-2-section-kv']:
         require(id in measurements and measurements[id]['visible'] and measurements[id]['text'].strip(), f'{view} missing visible measurement {id}')
         voltage = id.endswith('-kv') or id == 'feeder-voltage'

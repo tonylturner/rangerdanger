@@ -18,13 +18,13 @@ it.each(EU_ORACLE)("$switches / F2 $f2 / VT $vt: physical source stubs stay live
   }
   expect(physical).toContain(row.f2 === "tripped" ? "F2 · OPEN · sim" : "F2 · CLOSED · sim");
   const s3Live = row.supply.split("/")[2] !== "D";
-  expect(line(physical, "337", "325")).toContain(`stroke="${s3Live ? "#38bdf8" : "#94a3b8"}"`);
-  expect(line(cc, "337", "325")).toContain(`stroke="${s3Live ? "#38bdf8" : "#94a3b8"}"`);
-  expect(line(cc, "337", "325")).not.toContain("stroke-dasharray");
+  expect(line(physical, "337", "325")).toContain(`stroke="${s3Live ? "#38bdf8" : "#fb7185"}"`);
+  expect(line(cc, "337", "325")).toContain(`stroke="${s3Live ? "#38bdf8" : "#fb7185"}"`);
+  expect(line(cc, "337", "325").includes("stroke-dasharray")).toBe(!s3Live);
 });
 
 it.each([
-  [false, false, "#94a3b8", false], [null, false, "#fbbf24", true], [true, true, "#fbbf24", true],
+  [false, false, "#fb7185", true], [null, false, "#fbbf24", true], [true, true, "#fbbf24", true],
 ] as const)("marks physical source stubs from bus20 live=%s, truth stale=%s", (live, stale, color, dashed) => {
   const { field } = oracleFixture(EU_ORACLE[12]);
   field.process.buses.bus20.live = live;

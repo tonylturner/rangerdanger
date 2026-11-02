@@ -1,6 +1,19 @@
 {
   "schema": 2,
   "presentation": {
+    "consequence_badges": [
+      {"points": ["feeder-protection-trip"], "value": true, "label": "TRIPPED"},
+      {"points": ["feeder-lockout"], "value": true, "label": "LOCKED OUT"},
+      {"points": ["f2-protection-trip"], "value": true, "label": "TRIPPED"},
+      {"points": ["f2-lockout"], "value": true, "label": "LOCKED OUT"},
+      {"points": ["rmu-1-fault-passage"], "value": true, "label": "FAULT PASSED"},
+      {"points": ["rmu-2-fault-passage"], "value": true, "label": "FAULT PASSED"},
+      {"points": ["rmu-1-earth"], "value": true, "label": "EARTHED"},
+      {"points": ["rmu-2-earth"], "value": true, "label": "EARTHED"},
+      {"points": ["oltc-1-at-lower", "oltc-1-at-upper"], "value": true, "label": "AT LIMIT", "cc_only": true},
+      {"points": ["oltc-1-blocked", "oltc-1-overcurrent-block"], "value": true, "label": "BLOCKED"},
+      {"points": ["plc-1-running", "plc-1-input-valid"], "value": false, "label": "PLC DOWN", "cc_only": true}
+    ],
     "supply_nodes": {
       "rmu-1-source-kv": {"id": "S1-no-supply", "label": "S1 residential"},
       "rmu-1-section-kv": {"id": "S2-no-supply", "label": "S2 commercial"},

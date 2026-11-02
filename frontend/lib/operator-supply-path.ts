@@ -29,7 +29,7 @@ export function sectionSupplyPath(read: Readings, section: SectionId): SupplyPat
   if (typeof kv !== "number" || !Number.isFinite(kv) || kv < 0) {
     return result("unknown", `${pointLabel(voltageId)} voltage is unavailable or invalid`);
   }
-  if (kv < LIVE_KV) return result("no supply", `${pointLabel(voltageId)} voltage is GOOD and below ${LIVE_KV} kV (${kv} kV measured)`);
+  if (kv < LIVE_KV) return result("no supply", `${pointLabel(voltageId)} voltage is valid and below ${LIVE_KV} kV (${kv} kV measured)`);
 
   const bus = goodValue("oltc-1-bus-kv");
   const index = SECTION_INDEX[section];
@@ -40,7 +40,7 @@ export function sectionSupplyPath(read: Readings, section: SectionId): SupplyPat
   if (f2 === "closed" || f2 === "open") {
     const cb1Path = busLive && unproven.length === 0;
     const f2Switches = SWITCHES.slice(index + 1);
-    if (!busLive) return result("path unknown", "20 kV busbar voltage is not confirmed GOOD and live");
+    if (!busLive) return result("path unknown", "20 kV busbar voltage is not confirmed valid and live");
     const f2Path = f2 === "closed" && f2Switches.every((id) => goodValue(id) === "closed");
     if (cb1Path && f2Path) return result("via CB1 + F2", "Both observed switch paths connect the T1 / bus20 source to this live section");
     if (cb1Path) return result("via CB1", "Observed CB1 path connects to this live section");

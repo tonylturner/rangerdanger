@@ -39,12 +39,23 @@ def fixture(row, view):
         d['position'] = 'closed' if s == 'C' else 'open'
     dom['devices'][4]['position'] = 'open' if row['f2'] == 'tripped' else 'closed'
     dom['f2Line'] = 'DEAD' if row['supply'][2] == 'D' else 'LIVE'
-    dom['f2Telemetry'] = f'F2 · indication only: {"TRIPPED" if row["f2"] == "tripped" else "NORMAL"} · I {row["f2_current_a"]:.1f} A · P {row["f2_p_mw"]:.2f} MW'
+    dom['f2Telemetry'] = f'F2 · indication only: I {row["f2_current_a"]:.1f} A · P {row["f2_p_mw"]:.2f} MW'
     for m in dom['measurements']:
         m['text'] = f'{expected[m["point"]]:.2f} {"kV" if m["point"].endswith("-kv") or m["point"] == "feeder-voltage" else "A"}'
         if m['point'].endswith('-kv') or m['point'] == 'feeder-voltage':
             m['state'] = 'LIVE' if expected[m['point']] >= .1 else 'DEAD'
     add_presentation(dom, expected)
+    for section, supply in zip(check.SECTIONS, row['supply']):
+        if supply == 'D':
+            dom['measurements'].append({'point': section + '-no-supply', 'state': 'NO SUPPLY',
+                                        'text': 'NO SUPPLY', 'visible': True})
+    for rule in check.ORACLE['presentation']['consequence_badges']:
+        if view == 'physical' and rule.get('cc_only'):
+            continue
+        active = [id for id in rule['points'] if expected.get(id) is rule['value']]
+        if active:
+            dom['measurements'].append({'point': active[0], 'state': rule['label'],
+                                        'text': rule['label'], 'visible': True})
     if view == 'physical':
         dom['comparisons'] = [{'point': id, 'status': 'INVALID' if v is None else 'MATCH'}
                               for id, v in check.comparison_values(expected).items()]
@@ -529,7 +540,11 @@ assert.equal(captureDom(root, 'physical').abnormalStrip, null);
                      lambda d: d['devices'][3].update(tap='1'),
                      lambda d: d['devices'][4].update(position='closed'),
                      lambda d: d['devices'][4].update(quality='unknown'),
-                     lambda d: d.update(f2Telemetry='F2 indication only: NORMAL · I 0 A · P 0 MW'),
+                     lambda d: d['measurements'].remove(next(m for m in d['measurements'] if m['point'] == 'f2-protection-trip')),
+                     lambda d: d['measurements'].remove(next(m for m in d['measurements'] if m['point'] == 'f2-lockout')),
+                     lambda d: d['measurements'].remove(next(m for m in d['measurements'] if m['point'] == 'S2-no-supply')),
+                     lambda d: next(m for m in d['measurements'] if m['point'] == 'S2-no-supply').update(text='LIVE'),
+                     lambda d: next(m for m in d['measurements'] if m['point'] == 'f2-lockout').update(visible=False),
                      lambda d: d.update(f2Telemetry='F2 indication only: TRIPPED · I 20 A · P 0 MW'),
                      lambda d: d.update(f2Telemetry='F2 indication only: TRIPPED · I 0 A · P 1 MW'),
                      lambda d: d.update(f2Line='LIVE'),
