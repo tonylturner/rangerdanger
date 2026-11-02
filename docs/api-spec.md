@@ -524,9 +524,10 @@ containd appliance CLI, and only drops into bash after the CLI exits:
 sh -c "containd cli; exec bash -il || exec sh -i"
 ```
 
-So the `fw-1` terminal opens the configuration CLI first. The prompt uses
-`config`, `config*`, or `config?` for clean, pending, or unavailable candidate
-status; none proves live traffic protection. Type `exit` to end the CLI;
+So the `fw-1` terminal opens the configuration CLI first. The prompt reads
+`containd(config)#` for a clean candidate (`config`); the mode changes to
+`config*` for pending edits or `config?` when candidate status is unavailable.
+None of these markers proves live traffic protection. Type `exit` to end the CLI;
 the RangerDanger wrapper then starts Linux bash. Run `containd cli` to return.
 Leaving never commits or discards candidate edits; Linux commands act
 immediately. SSH is different: the host port mapping

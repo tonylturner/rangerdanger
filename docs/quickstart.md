@@ -383,8 +383,9 @@ Most "doesn't start" issues fall into one of these:
 ### "the firewall (`fw-1`) terminal says command not found"
 
 The `fw-1` in-app terminal lands directly in the **configuration CLI**.
-The prompt uses `config`, `config*`, or `config?` for clean, pending, or
-unavailable candidate status, not proof of live traffic protection. If you
+The prompt reads `containd(config)#` for a clean candidate (`config`); the mode
+changes to `config*` for pending edits or `config?` when candidate status is
+unavailable. These markers do not prove live traffic protection. If you
 typed a Linux command like `ls` or `tcpdump` and got "command
 not found", type `exit` to leave the CLI; RangerDanger then starts bash.
 Type `containd cli` from bash to come back. Leaving never commits or

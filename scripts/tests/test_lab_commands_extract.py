@@ -389,6 +389,61 @@ class ExtractTests(unittest.TestCase):
             self.assertIn("documented shell transition failed",
                           (Path(directory) / "command.stderr").read_text())
 
+    def test_cli_error_exit_at_eof_does_not_authorize_shell_commands(self):
+        # Reproduce the live CLI boundary: a piped command errors, EOF ends the
+        # CLI with rc=1, but the real terminal wrapper still prints its marker.
+        for message in ("unknown command: shell",
+                        'fatal error {"error": "one or more CLI commands failed"}'):
+            for stream in ("stdout", "stderr"):
+                with self.subTest(message=message, stream=stream):
+                    cli = (
+                        "import sys\n"
+                        "assert sys.stdin.readline().strip() == 'shell'\n"
+                        f"print({message!r}, file=sys.{stream}, flush=True)\n"
+                        "assert sys.stdin.read() == ''\n"
+                        "print('__CLI_EXIT_AT_EOF__=1', flush=True)\n"
+                        "sys.exit(1)\n")
+                    # Feed only the transition line to the CLI child, giving
+                    # it real EOF while the outer terminal input stays open.
+                    feeder = (
+                        "import subprocess, sys\n"
+                        f"result = subprocess.run([sys.executable, '-c', {cli!r}], "
+                        "input=sys.stdin.readline(), text=True, timeout=3)\n"
+                        "sys.exit(result.returncode)\n")
+                    row = {"scenario": "fixture", "step": 1,
+                           "container": "rangerdanger-firewall", "prompt": "shell",
+                           "entry": "shell", "command": "echo OS_COMMAND_EXECUTED"}
+                    argv, _ = extract.invocation(row, 3)
+                    script = argv[-1].replace(
+                        "containd cli",
+                        f"{shlex.quote(sys.executable)} -c {shlex.quote(feeder)}")
+                    with tempfile.TemporaryDirectory() as directory, patch.object(
+                            extract, "invocation",
+                            return_value=(["bash", "-c", script], None)), \
+                            redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                        self.assertFalse(extract.execute_command(
+                            row, {"intent": "read", "match": "OS_COMMAND_EXECUTED"},
+                            Path(directory), 3))
+                        output = (Path(directory) / "command.stdout").read_text()
+                        self.assertIn("__CLI_EXIT_AT_EOF__=1", output)
+                        self.assertIn("__RD_SHELL_READY__", output)
+                        self.assertNotIn("OS_COMMAND_EXECUTED", output)
+                        self.assertIn("documented shell transition failed",
+                                      (Path(directory) / "command.stderr").read_text())
+
+    def test_linux_output_after_marker_is_not_a_cli_transition_error(self):
+        row = {"container": "rangerdanger-firewall", "prompt": "shell",
+               "entry": "exit",
+               "command": "printf 'one or more CLI commands failed\\n' >&2; echo evidence"}
+        argv, _ = extract.invocation(row, 3)
+        # A successful CLI consumes the transition line, then exits normally.
+        script = argv[-1].replace("containd cli", "read -r entry")
+        result = extract.run_staged_shell(["bash", "-c", script], row, 3)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("evidence", result.stdout)
+        self.assertEqual(result.stderr, "one or more CLI commands failed\n")
+        self.assertNotIn("documented shell transition failed", result.stderr)
+
     def test_no_ack_requires_weak_state_change_and_denied_state_preservation(self):
         row = {"scenario": "fixture", "step": 1, "command": "dnp3cmd fixture -no-ack"}
         state = {"field": "reclose_enabled", "initial": True, "allowed": False, "denied": True}

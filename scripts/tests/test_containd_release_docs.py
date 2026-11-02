@@ -16,6 +16,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                                "Linux commands act immediately"):
                     self.assertIn(phrase, text)
                 self.assertNotRegex(text, r"containd#|Type `shell`|type `shell`")
+                self.assertIn("prompt reads `containd(config)#`", text)
         text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
         self.assertIn("Current containd 0.1.38:", text)
         self.assertIn("rule edits stage the candidate", text)
@@ -23,6 +24,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
     def test_lab_guidance_separates_running_proof_and_validation_surfaces(self):
         us = ROOT / "lab-definitions/scenarios"
         access = " ".join((us / "firewall-implementation.yml").read_text().split())
+        self.assertIn("prompt reads `containd(config)#`", access)
         for phrase in ("`configure` is also a supported CLI entry point",
                        "`wizard` belongs to SSH-appliance guided setup",
                        "both reference policies already use DENY",
