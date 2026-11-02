@@ -187,14 +187,16 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
     try {
       const result = await execOnNode(nodeId, cmd, 30);
-      const lines = (result.stdout || result.stderr || "").split("\n").filter(Boolean);
-      const output = lines.length > 20
-        ? [...lines.slice(0, 18), `... (${lines.length - 18} more lines)`]
-        : lines;
       const status = result.exit_code === 0 ? "OK" : `EXIT ${result.exit_code}`;
-      setCmdLog((prev) => [
+      // Keep each completion intact: the history cap evicts old entries,
+      // never diagnostic lines within the latest command's two streams.
+      const output = [
         `[${status}] completed in ${result.duration_ms}ms`,
-        ...output.map((l) => "  " + l),
+        ...(result.stdout ? [`[stdout]\n${result.stdout}`] : []),
+        ...(result.stderr ? [`[stderr]\n${result.stderr}`] : []),
+      ].join("\n");
+      setCmdLog((prev) => [
+        output,
         ...prev,
       ].slice(0, 100));
       setTimeout(refreshLive, 500);
@@ -817,7 +819,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             )}
           </div>
 
-          <CommandAuditPanels cmdLog={cmdLog} setCmdLog={setCmdLog} recentAudit={recentAudit} />
+          <div className="whitespace-pre-wrap break-words">
+            <CommandAuditPanels cmdLog={cmdLog} setCmdLog={setCmdLog} recentAudit={recentAudit} />
+          </div>
 
           {/* Validation - only on labs whose validator checks meaningful live
               state (see showsValidateButton). Hidden on planning/analysis

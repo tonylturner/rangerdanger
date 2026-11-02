@@ -31,8 +31,9 @@ vi.mock("../lib/live-queries", async (importOriginal) => ({
 }));
 vi.mock("./runner-operator-status", () => ({ RunnerOperatorStatus: () => null }));
 
-vi.mock("./scenario-runner-panels", () => ({
-  CommandAuditPanels: () => null, StepNavigator: () => null, TerminalPanel: () => null,
+vi.mock("./scenario-runner-panels", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./scenario-runner-panels")>(),
+  StepNavigator: () => null, TerminalPanel: () => null,
 }));
 vi.mock("./ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
@@ -104,10 +105,11 @@ function authoredScenario(name: string, eu = true): Scenario {
   return load(readFileSync(resolve(__dirname, "../..", directory, `${name}.yml`), "utf8")) as Scenario;
 }
 
-function renderStep(authored: Scenario, stepId: string, binding: CurriculumBinding) {
+function renderStep(authored: Scenario, stepId: string, binding: CurriculumBinding, cmdLog: string[] = []) {
   scope.packageId = binding === EU ? "eu-iec104-substation" : "us-dnp3-substation";
   scope.curriculum = binding;
   Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
+  saveProgress(scope, authored.id, { completedStepIds: [], skippedStepIds: [], notes: "", cmdLog });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const step = authored.steps.find((s) => s.id === stepId);
   if (!step) throw new Error(`Missing authored step ${stepId}`);
@@ -228,5 +230,62 @@ describe("validation is separate from self-attested progress", () => {
       fireEvent.click(tree.getByRole("button", { name: "View Summary" }));
       expect(tree.container.textContent).toContain("1/3 steps marked complete");
     } finally { tree.unmount(); client.clear(); }
+  });
+});
+
+// Captured exec response bodies from the EU walkthrough (both streams retained).
+const walkthroughResults = [
+  {
+    "stdout": "{\"event\":\"result\",\"at\":\"2026-11-02T05:22:39.609Z\",\"op\":\"dc\",\"status\":\"ok\"}\n",
+    "stderr": "2026-11-02T05:22:38.742Z iec104cmd connecting to 10.30.30.20:2404 oa=1 ca=1\n2026-11-02T05:22:38.742Z iec104cmd link opened\n2026-11-02T05:22:38.742Z iec104cmd link startdt-con\n2026-11-02T05:22:38.742Z iec104cmd link started\n2026-11-02T05:22:38.742Z iec104cmd SELECT ioa=3001 val=1\n2026-11-02T05:22:38.743Z iec104cmd rx ASDU type=C_DC_NA_1(46) cot=actcon(7) neg=0 test=0 oa=1 ca=1 objects=1\n2026-11-02T05:22:38.743Z iec104cmd rx   ioa=3001 dcs=1(OFF) qu=0 se=SELECT\n2026-11-02T05:22:38.743Z iec104cmd select confirmed\n2026-11-02T05:22:38.743Z iec104cmd EXECUTE ioa=3001 val=1\n2026-11-02T05:22:39.097Z iec104cmd rx ASDU type=C_DC_NA_1(46) cot=actcon(7) neg=0 test=0 oa=1 ca=1 objects=1\n2026-11-02T05:22:39.097Z iec104cmd rx   ioa=3001 dcs=1(OFF) qu=0 se=EXECUTE\n2026-11-02T05:22:39.097Z iec104cmd execute confirmed\n2026-11-02T05:22:39.609Z iec104cmd rx ASDU type=M_DP_TB_1(31) cot=spont(3) neg=0 test=0 oa=0 ca=1 objects=1\n2026-11-02T05:22:39.609Z iec104cmd rx   ioa=1001 value=OFF q=GOOD time=2026-11-02T05:22:39.607Z\n2026-11-02T05:22:39.609Z iec104cmd rx ASDU type=M_ME_NC_1(13) cot=spont(3) neg=0 test=0 oa=0 ca=1 objects=1\n2026-11-02T05:22:39.609Z iec104cmd rx   ioa=2001 value=33.593 q=IV\n2026-11-02T05:22:39.609Z iec104cmd rx ASDU type=M_ME_NC_1(13) cot=spont(3) neg=0 test=0 oa=0 ca=1 objects=1\n2026-11-02T05:22:39.609Z iec104cmd rx   ioa=2002 value=20.500 q=IV\n2026-11-02T05:22:39.609Z iec104cmd rx ASDU type=M_ME_NC_1(13) cot=spont(3) neg=0 test=0 oa=0 ca=1 objects=1\n2026-11-02T05:22:39.609Z iec104cmd rx   ioa=2003 value=0.000 q=IV\n2026-11-02T05:22:39.609Z iec104cmd rx ASDU type=M_ME_NC_1(13) cot=spont(3) neg=0 test=0 oa=0 ca=1 objects=1\n2026-11-02T05:22:39.609Z iec104cmd rx   ioa=2004 value=0.000 q=IV\n2026-11-02T05:22:39.609Z iec104cmd rx ASDU type=M_ME_NC_1(13) cot=spont(3) neg=0 test=0 oa=0 ca=1 objects=1\n2026-11-02T05:22:39.609Z iec104cmd rx   ioa=2005 value=0.000 q=IV\n2026-11-02T05:22:39.609Z iec104cmd rx ASDU type=M_DP_TB_1(31) cot=retrem(11) neg=0 test=0 oa=0 ca=1 objects=1\n2026-11-02T05:22:39.609Z iec104cmd rx   ioa=1001 value=OFF q=GOOD time=2026-11-02T05:22:39.607Z\n2026-11-02T05:22:39.609Z iec104cmd rx ASDU type=C_DC_NA_1(46) cot=actterm(10) neg=0 test=0 oa=1 ca=1 objects=1\n2026-11-02T05:22:39.609Z iec104cmd rx   ioa=3001 dcs=1(OFF) qu=0 se=EXECUTE\n2026-11-02T05:22:39.609Z iec104cmd execute terminated (ACT-TERM) negative=0\n2026-11-02T05:22:39.610Z iec104cmd link closed\n",
+    "exit_code": 0,
+    "duration_ms": 898
+  },
+  {
+    "stdout": "mbpoll 1.0-0 - ModBus(R) Master Simulator\nCopyright (c) 2015-2023 Pascal JEAN, https://github.com/epsilonrt/mbpoll\nThis program comes with ABSOLUTELY NO WARRANTY.\nThis is free software, and you are welcome to redistribute it\nunder certain conditions; type 'mbpoll -w' for details.\n\n",
+    "stderr": "mbpoll: Connection failed: Connection timed out.\n",
+    "exit_code": 1,
+    "duration_ms": 523
+  }
+];
+
+describe("Run output evidence", () => {
+  it.each([EU, US_CURRICULUM])("retains both real command streams in $roles.implementation", async (binding) => {
+    const authored = { ...scenario, nodes: ["kali-1"], steps: [{ id: "run", title: "Run evidence", description: "From Kali:\n    curl fixture" }] };
+    const exec = vi.spyOn(api, "execOnNode");
+    const tree = renderStep(authored, "run", binding);
+    try {
+      for (const result of walkthroughResults) {
+        exec.mockResolvedValueOnce(result);
+        fireEvent.click(tree.getByRole("button", { name: "Run" }));
+        await waitFor(() => expect(loadProgress(scope, authored).cmdLog[0]).toContain(result.stderr));
+        const entry = loadProgress(scope, authored).cmdLog[0];
+        expect(entry).toBe(`[${result.exit_code === 0 ? "OK" : `EXIT ${result.exit_code}`}] completed in ${result.duration_ms}ms\n[stdout]\n${result.stdout}\n[stderr]\n${result.stderr}`);
+        const displayed = tree.getByText((_, element) => element?.textContent === entry);
+        expect(displayed.closest(".whitespace-pre-wrap")).not.toBeNull();
+        await waitFor(() => expect(tree.queryByRole("button", { name: "Running..." })).toBeNull());
+      }
+    } finally { tree.close(); }
+  });
+
+  it.each([
+    { stdout: Array.from({ length: 150 }, (_, i) => `line ${i}`).join("\n"), stderr: "last diagnostic" },
+    { stdout: "stdout only\n\nfinal line\n", stderr: "" },
+    { stdout: "", stderr: "stderr only\n" },
+    { stdout: "", stderr: "" },
+  ])("keeps a complete result and caps history at 100 entries %#", async (streams) => {
+    const authored = { ...scenario, nodes: ["kali-1"], steps: [{ id: "run", title: "Run evidence", description: "From Kali:\n    curl fixture" }] };
+    vi.spyOn(api, "execOnNode").mockResolvedValue({ ...streams, exit_code: 0, duration_ms: 1 });
+    const tree = renderStep(authored, "run", EU, Array.from({ length: 100 }, (_, i) => `old ${i}`));
+    try {
+      fireEvent.click(tree.getByRole("button", { name: "Run" }));
+      await waitFor(() => expect(loadProgress(scope, authored).cmdLog[0]).toContain("[OK]"));
+      const log = loadProgress(scope, authored).cmdLog;
+      expect(log).toHaveLength(100);
+      expect(log[0]).toBe(["[OK] completed in 1ms", ...(streams.stdout ? [`[stdout]\n${streams.stdout}`] : []), ...(streams.stderr ? [`[stderr]\n${streams.stderr}`] : [])].join("\n"));
+      expect(log[1]).toContain("[RUN on Kali]");
+      expect(log.at(-1)).toBe("old 97");
+      expect(tree.container.textContent).not.toContain("more lines");
+    } finally { tree.close(); }
   });
 });
