@@ -25,7 +25,7 @@ def fixture(row, view):
     dom['text'] = 'Protection TRIPPED · LOCKOUT' if row.get('lockout') else ''
     dom['authorities'] = []
     dom['observationUncertainty'] = '0'
-    dom['devices'][3]['text'] = 'Tap 0 · GOOD · MANUAL'
+    dom['devices'][3]['text'] = 'Tap 0 · MANUAL'
     expected = check.point_values(data_fixture(row)[0])
     expected.update({'plc-1-running': True, 'plc-1-input-valid': True,
                      'plc-1-setpoint-kv': 20.4, 'plc-1-deadband-pct': 1, 'plc-1-delay-s': 30})
@@ -41,7 +41,7 @@ def fixture(row, view):
     dom['f2Line'] = 'DEAD' if row['supply'][2] == 'D' else 'LIVE'
     dom['f2Telemetry'] = f'F2 · indication only: {"TRIPPED" if row["f2"] == "tripped" else "NORMAL"} · I {row["f2_current_a"]:.1f} A · P {row["f2_p_mw"]:.2f} MW'
     for m in dom['measurements']:
-        m['text'] = f'{expected[m["point"]]:.2f} {"kV" if m["point"].endswith("-kv") or m["point"] == "feeder-voltage" else "A"} · GOOD'
+        m['text'] = f'{expected[m["point"]]:.2f} {"kV" if m["point"].endswith("-kv") or m["point"] == "feeder-voltage" else "A"}'
         if m['point'].endswith('-kv') or m['point'] == 'feeder-voltage':
             m['state'] = 'LIVE' if expected[m['point']] >= .1 else 'DEAD'
     add_presentation(dom, expected)
@@ -82,8 +82,8 @@ def add_presentation(dom, expected):
         d['offNormal'] = str(position_bad or local or device == 'T1' and expected['oltc-1-auto'] is False).lower()
     dom['conditions'] = [dict(c, kind='alarm') for c in alarms] + [dict(c, kind='off-normal') for c in off]
     if not dom['conditions']:
-        dom['conditions'] = [{'id': 'none', 'text': 'No alarms in GOOD observations'}]
-    headline = f'{len(alarms)} {"alarm" if len(alarms) == 1 else "alarms"} · {len(off)} off-normal' if alarms or off else 'No alarms in GOOD observations'
+        dom['conditions'] = [{'id': 'none', 'text': 'No alarms in valid observations'}]
+    headline = f'{len(alarms)} {"alarm" if len(alarms) == 1 else "alarms"} · {len(off)} off-normal' if alarms or off else 'No alarms in valid observations'
     dom['abnormalStrip'] = {'visible': True, 'beforeSchematic': True, 'alarmCount': str(len(alarms)),
                             'offNormalCount': str(len(off)), 'text': headline}
 
@@ -213,7 +213,7 @@ class StateSmoke(unittest.TestCase):
             for view in ['cc', 'physical']:
                 dom, expected = fixture(row, view)
                 expected.update({'oltc-1-auto': auto, 'rmu-1-remote': not local})
-                next(d for d in dom['devices'] if d['device'] == 'T1')['text'] = 'Tap 0 · GOOD · ' + ('AUTO' if auto else 'MANUAL')
+                next(d for d in dom['devices'] if d['device'] == 'T1')['text'] = 'Tap 0 · ' + ('AUTO' if auto else 'MANUAL')
                 dom['authorities'] = [{'point': 'rmu-1-remote', 'text': 'RMU1 authority: LOCAL'}] if local else []
                 add_presentation(dom, expected)
                 self.assertEqual(dom['abnormalStrip']['offNormalCount'], str(int(not auto) + int(local)))
@@ -230,7 +230,7 @@ const element = (dataset = {}, value = '', localName = 'span') => ({
   getAttribute: name => dataset[name.replace(/^data-/, '').replace(/-([a-z])/g, (_, c) => c.toUpperCase())] ?? null,
   getClientRects: () => [{}],
 });
-const device = element({device: 'CB1', offNormal: 'true', position: 'open', quality: 'good'}, 'OPEN · GOOD');
+const device = element({device: 'CB1', offNormal: 'true', position: 'open', quality: 'good'}, 'OPEN');
 device.childNodes.push(element({}, 'IEC tooltip must not be visible plant text', 'title'));
 const condition = element({condition: 'S1-no-supply', conditionKind: 'alarm'}, 'S1 residential: loss of supply');
 const strip = element({alarmCount: '1', offNormalCount: '1'}, '1 alarm · 1 off-normal');
@@ -249,7 +249,7 @@ globalThis.location = {href: 'offline:test'};
 let dom = captureDom(root, 'cc');
 assert.deepEqual(dom.abnormalStrip, {visible: true, beforeSchematic: true, alarmCount: '1', offNormalCount: '1', text: '1 alarm · 1 off-normal'});
 assert.equal(dom.devices[0].offNormal, 'true');
-assert.equal(dom.devices[0].text, 'OPEN · GOOD');
+assert.equal(dom.devices[0].text, 'OPEN');
 assert.deepEqual(dom.conditions, [{id: condition.dataset.condition, kind: 'alarm', text: 'S1 residential: loss of supply'}]);
 strip.compareDocumentPosition = () => 2;
 assert.equal(captureDom(root, 'cc').abnormalStrip.beforeSchematic, false);
@@ -492,7 +492,7 @@ assert.equal(captureDom(root, 'physical').abnormalStrip, null);
             'oltc-1-current': 72.3, 'feeder-current': 61.4, 'rmu-1-current': 18.7, 'rmu-2-current': 0,
             'oltc-1-auto': False})
         # Raw fixture preserves the real SVG sibling concatenation, not spaces
-        # hand-inserted between Tap/GOOD/MANUAL. The checker must stay strict.
+        # hand-inserted between Tap/MANUAL. The checker must stay strict.
         with self.assertRaisesRegex(AssertionError, 'cc T1: displayed mode'):
             check.check_dom(check.ROWS['CCO-normal'], FIXTURE, 'cc', expected)
         captured = subprocess.run(['node', str(Path(__file__).with_name('test_state_dom_capture.mjs'))],
@@ -535,7 +535,7 @@ assert.equal(captureDom(root, 'physical').abnormalStrip, null);
                      lambda d: d.update(f2Line='LIVE'),
                      lambda d: d['measurements'][3].update(state='DEAD'),
                      lambda d: d['measurements'][0].update(visible=False),
-                     lambda d: d['measurements'][0].update(text='9999.0 A · GOOD'),
+                     lambda d: d['measurements'][0].update(text='9999.0 A'),
                      lambda d: d['comparisons'][0].update(status='UNKNOWN'),
                      lambda d: d['comparisons'].pop()]
         for i, mutation in enumerate(mutations):

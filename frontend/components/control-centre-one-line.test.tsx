@@ -104,7 +104,7 @@ describe("functional one-line observations", () => {
   it("establishes a GOOD F2 path separately from measured voltage", () => {
     const tree = schematic();
     const s3 = one(tree, 'g[aria-label^="S3 industrial:"]');
-    expect(s3.getAttribute("aria-label")).toContain("GOOD");
+    expect(s3.getAttribute("aria-label")).not.toContain("· GOOD");
     expect([...s3.querySelectorAll("text")].map((n) => n.textContent).join("|")).toContain("via F2");
     expect(s3.querySelector("title")?.textContent).toContain("Observed F2 path");
     expect(all(tree, 'text[data-supply-path="via CB1"]')).toHaveLength(2);
@@ -120,7 +120,7 @@ describe("functional one-line observations", () => {
     for (const selected of DEVICES) {
       const html = faceplate({ state: LOST_LINK_STATE, selected, unavailable: false });
       // The explanatory "not GOOD" regulation message is not a GOOD badge.
-      expect(html).not.toContain("✓</span>GOOD");
+      expect(html).not.toContain("✓</span>valid");
     }
   });
 
@@ -155,7 +155,7 @@ describe("functional one-line observations", () => {
       ? { ...p, quality: { ...p.quality, iv: true, nt: true }, stale_reason: "link_lost" as const } : p);
     const tree = schematic(points);
     const cb1 = one(tree, 'g[role="button"][aria-label^="CB1:"]');
-    expect(cb1.getAttribute("aria-label")).toContain("CLOSED · STALE · IV NT");
+    expect(cb1.getAttribute("aria-label")).toContain("CLOSED · INVALID · NOT TOPICAL · STALE (IEC 104 link to the RTU lost)");
     const symbol = one(cb1, 'rect[width="40"]');
     expect(symbol.getAttribute("fill")).toBe("url(#cc-unknown)");
     expect(symbol.getAttribute("stroke")).toBe("#fbbf24");

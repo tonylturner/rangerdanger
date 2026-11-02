@@ -82,7 +82,7 @@ export function pointLabel(id: string): string {
 export type PointCondition = "good" | "stale" | "never";
 
 export const QUALITY_DEFINITIONS = {
-  GOOD: "IEC 104 data quality: the value is valid and current. It does not say the plant is in its normal state.",
+  GOOD: "IEC 104 data quality: GOOD means no quality flags set and no stale reason. The value is valid/current, not a statement of plant state.",
   STALE: "IEC 104 data quality: the retained value is not established as valid and current; inspect its flags and stale reason.",
   UNKNOWN: "IEC 104 data quality: no value has been received; the plant state is not established.",
   INVALID: "IEC 104 data quality: the source marks the value invalid; it cannot establish the plant state.",
@@ -106,6 +106,19 @@ export function qualityFlags(quality: PointQuality): string[] {
   if (quality.bl) flags.push("BL");
   if (quality.ov === true) flags.push("OV");
   return flags;
+}
+
+// Operator-facing labels, separate from the IEC abbreviations used in records.
+export function qualityLabels(quality: PointQuality): string[] {
+  const labels = { IV: "INVALID", NT: "NOT TOPICAL", SB: "SUBSTITUTED", BL: "BLOCKED", OV: "OVERFLOW" };
+  return qualityFlags(quality).map((flag) => labels[flag as keyof typeof labels]);
+}
+
+export function pointQualityText(point: OperatorPoint | undefined): string {
+  if (!point || point.value === null) return "UNKNOWN";
+  const labels = qualityLabels(point.quality);
+  if (point.stale_reason) labels.push(`STALE (${staleReasonText(point.stale_reason)})`);
+  return labels.join(" · ");
 }
 
 export const STALE_REASON_TEXT: Record<StaleReason, string> = {
@@ -268,7 +281,7 @@ export function journalSummary(kind: string, detail: Record<string, unknown>): s
     case "gi_started":
       return `General interrogation (${str(detail, "trigger")}) started on link #${str(detail, "connection_seq")}`;
     case "gi_complete":
-      return `General interrogation (${str(detail, "trigger")}) complete on link #${str(detail, "connection_seq")}, ${str(detail, "points_good")} points good`;
+      return `General interrogation (${str(detail, "trigger")}) complete on link #${str(detail, "connection_seq")}, ${str(detail, "points_good")} points valid`;
     case "status_event":
       return `${pointLabel(str(detail, "id"))}: ${formatPointValue(str(detail, "id"), detail.value as PointValue)} · ${str(detail, "asdu")} COT ${str(detail, "cot")} · RTU ${detail.source_time ?? "untimed"}${detail.source_time_invalid ? " · time IV" : ""}`;
     case "point_stale": {
@@ -276,7 +289,7 @@ export function journalSummary(kind: string, detail: Record<string, unknown>): s
       return `${pointLabel(str(detail, "point"))} STALE (${staleReasonText(reason as StaleReason | null) || "—"}), keeps ${journalValue(detail)}`;
     }
     case "point_good":
-      return `${pointLabel(str(detail, "point"))} good: ${journalValue(detail)}`;
+      return `${pointLabel(str(detail, "point"))} valid: ${journalValue(detail)}`;
     case "command":
       // The contract freezes POST results, not journal command details.
       // Preserve the complete record instead of inventing phase semantics.
@@ -309,8 +322,8 @@ export function telemetrySummary(points: OperatorPoint[]): TelemetrySummary {
 
 export function telemetryText(summary: TelemetrySummary): string {
   if (summary.total === 0) return "no points";
-  if (summary.good === summary.total) return `${summary.good}/${summary.total} good`;
-  const parts = [`${summary.good}/${summary.total} good`];
+  if (summary.good === summary.total) return `${summary.good}/${summary.total} valid`;
+  const parts = [`${summary.good}/${summary.total} valid`];
   if (summary.stale > 0) parts.push(`${summary.stale} STALE`);
   if (summary.never > 0) parts.push(`${summary.never} not received`);
   return parts.join(" · ");

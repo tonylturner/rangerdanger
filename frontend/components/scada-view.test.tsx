@@ -34,7 +34,7 @@ it.each(["control-centre", "physical-system"] as const)("keeps a single persiste
     recovering.link.gi.last_complete_at = null;
     tree.rerender(page(recovering));
     expect(banner()?.getAttribute("data-view-state")).toBe("recovering");
-    expect(banner()?.querySelector("h2")?.textContent).toBe("VIEW RECOVERING — GI/GOOD observations pending");
+    expect(banner()?.querySelector("h2")?.textContent).toBe("VIEW RECOVERING — GI/valid observations pending");
     const open = structuredClone(FEEDER_STATE);
     open.points.find((p) => p.id === "feeder-breaker-position")!.value = "open";
     open.points.find((p) => p.id === "feeder-current")!.value = 0;
@@ -46,7 +46,7 @@ it.each(["control-centre", "physical-system"] as const)("keeps a single persiste
     expect(banner()?.getAttribute("data-view-state")).toBe("ok");
     expect(banner()?.children).toHaveLength(0);
     if (view === "control-centre") {
-      expect(tree.container.querySelector("[data-observation-uncertainty='1']")?.textContent).toContain("1 non-GOOD measurement");
+      expect(tree.container.querySelector("[data-observation-uncertainty='1']")?.textContent).toContain("1 non-valid measurement");
     }
     pf.stale_reason = "device_unreachable";
     tree.rerender(page(open));
@@ -114,7 +114,7 @@ it("separates uncertain measurements from the GOOD-observation empty summary", (
   const state = { ...FEEDER_STATE, points: FEEDER_STATE.points.map((p) => p.id === "oltc-1-bus-kv" ? { ...p, quality: { ...p.quality, iv: true } } : p) };
   const html = renderToStaticMarkup(<AbnormalSummary state={state} />);
   expect(html).toContain('data-condition="none"');
-  expect(html).toContain("No alarms in GOOD observations");
+  expect(html).toContain("No alarms in valid observations");
   expect(html).toContain('data-observation-uncertainty="1"');
-  expect(html).toContain("1 non-GOOD measurement");
+  expect(html).toContain("1 non-valid measurement");
 });

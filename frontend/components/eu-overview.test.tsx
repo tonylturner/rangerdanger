@@ -37,7 +37,7 @@ describe("EU overview and workshop comms", () => {
   it.each([false, true])("shows source-device comms in workshop=%s", (workshop) => {
     const html = render(workshop);
     expect(html).toContain('aria-label="Device comms health"');
-    for (const device of ["feeder-breaker", "rmu-1", "rmu-2", "oltc-1", "plc-1"]) expect(html).toContain(`<dt class="text-slate-400">${device}</dt><dd class="text-slate-200">ok</dd>`);
+    for (const device of ["feeder-breaker", "rmu-1", "rmu-2", "oltc-1", "plc-1"]) expect(html).toContain(`<dt class="text-slate-400">${device}</dt><dd class="text-slate-200">reporting</dd>`);
     expect(render(workshop, LOST_LINK_STATE)).toContain("link down");
   });
   it("offers only historian bus and section voltage signals on Overview", () => {

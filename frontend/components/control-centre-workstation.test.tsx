@@ -144,8 +144,8 @@ describe("operator workstation interactions", () => {
     const tree = mount(screen({ state }));
     expect(button(tree, "Confirm RAISE")?.hasAttribute("disabled")).toBe(false);
     expect(button(tree, "Interrogate station")?.hasAttribute("disabled")).toBe(true);
-    expect(renderToStaticMarkup(<LinkDetails link={state.link} now={NOW} />)).toContain("GI ok");
-    expect(renderToStaticMarkup(<ControlCentreMiniStatus state={state} waiting={false} />)).toContain("GI ok");
+    expect(renderToStaticMarkup(<LinkDetails link={state.link} now={NOW} />)).toContain("GI complete");
+    expect(renderToStaticMarkup(<ControlCentreMiniStatus state={state} waiting={false} />)).toContain("GI complete");
   });
   it("opens bad-quality Points without turning an uncertain bus into a process alarm", () => {
     const tree = mount(screen({ state: WATCHDOG_STATE }));

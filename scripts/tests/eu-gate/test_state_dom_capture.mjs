@@ -51,19 +51,19 @@ globalThis.getComputedStyle = () => ({ visibility: 'visible' });
 
 const t1 = devices.find(node => node.dataset.device === 'T1');
 assert.equal(t1.textContent, fixture.devices.find(d => d.device === 'T1').text);
-assert.match(t1.textContent, /GOODMANUAL/);
+assert.match(t1.textContent, /0MANUAL/);
 const captured = captureDom(root, 'cc');
 assert.equal(captured.devices.find(d => d.device === 'T1').text,
-  'T1 110/20 kV · OLTC Tap 0 · GOOD MANUAL · GOOD');
+  'T1 110/20 kV · OLTC Tap 0 MANUAL');
 assert.match(captured.text, /^Protection TRIPPED lockout CB1/); // HTML + SVG.
 assert.equal(captured.authorities[0].text, 'RMU1 LOCAL');
-assert.equal(captured.sections[0].text, 'S1 · LIVE 19.80 kV · GOOD via CB1');
+assert.equal(captured.sections[0].text, 'S1 · LIVE 19.80 kV via CB1');
 assert.equal(captured.f2Telemetry, 'F2 · IEC 104 · indication only: NORMAL · I 11.2 A · P 0.33 MW');
 assert.equal(captured.measurements[0].text, fixture.measurements[0].text);
 assert.equal(captured.conditions[0].text, fixture.conditions[0].text);
 assert.equal(captured.text.includes('  '), false);
 // The other mode has exactly the same adjacent-SVG-node failure.
-t1.childNodes[2] = element(['AUTO · GOOD']);
-assert.match(t1.textContent, /GOODAUTO/);
+t1.childNodes[2] = element(['AUTO']);
+assert.match(t1.textContent, /0AUTO/);
 assert.match(captureDom(root, 'physical').devices.find(d => d.device === 'T1').text, /\bAUTO\b/);
 console.log(JSON.stringify(captured));

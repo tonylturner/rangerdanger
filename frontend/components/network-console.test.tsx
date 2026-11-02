@@ -58,7 +58,7 @@ describe("NetworkConsole IEC 104 explanation", () => {
     expect(html).toContain("CC→RTU TCP/2404");
     expect(html).toContain("spontaneous status events, cyclic/deadband measurands and commands");
     expect(html).toContain("GI runs on connect, every 15 minutes or via Interrogate station");
-    expect(html).toContain("Quiet GOOD status does not expire");
+    expect(html).toContain("Quiet valid status does not expire");
     expect(html).toContain("link loss marks retained values stale");
     expect(html).not.toContain("RTAC polls");
   });

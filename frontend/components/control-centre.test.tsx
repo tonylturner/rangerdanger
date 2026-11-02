@@ -33,9 +33,9 @@ describe("ControlCentreScreen schema 3", () => {
     const html = screen();
     const out = text(html);
     expect(FEEDER_STATE.points).toHaveLength(44);
-    expect(out).toContain("44/44 good");
+    expect(out).toContain("44/44 valid");
     expect(html.match(/data-condition="good"/g)).toHaveLength(44);
-    for (const label of ["STARTED", "GI ok", "T1 110/20 kV", "CB1", "RMU1", "RMU2", "S1 residential", "S2 commercial", "S3 industrial", "F2 · CLOSED · GOOD", "snapshot 120", "Trends"]) expect(out).toContain(label);
+    for (const label of ["STARTED", "GI complete", "T1 110/20 kV", "CB1", "RMU1", "RMU2", "S1 residential", "S2 commercial", "S3 industrial", "F2 · CLOSED", "snapshot 120", "Trends"]) expect(out).toContain(label);
     expect(out).toContain("Confirm RAISE");
     expect(out).toContain("Confirm MANUAL");
   });
@@ -45,16 +45,16 @@ describe("ControlCentreScreen schema 3", () => {
     const out = text(html);
     expect(out).toContain("SCADA VIEW LOST — retained values are not current");
     expect(html.match(/data-condition="stale"/g)).toHaveLength(4);
-    for (const value of ["CLOSED", "28.9 A", "19.94 kV", "IV NT", "29 s", "0/4 good · 4 STALE"]) expect(out).toContain(value);
+    for (const value of ["CLOSED", "28.9 A", "19.94 kV", "IV NT", "29 s", "0/4 valid · 4 STALE"]) expect(out).toContain(value);
     expect(out).not.toContain("0.0 A");
     expect(out).not.toContain("0.00 kV");
-    expect(html).toContain("CB1: CLOSED · STALE · IV NT · link_lost");
+    expect(html).toContain("CB1: CLOSED · INVALID · NOT TOPICAL · STALE (IEC 104 link to the RTU lost)");
   });
 
   it("disables every control when CC API fails and marks the entire cached snapshot without rewriting IEC flags", () => {
     const html = screen({ stateError: new ApiError(502, "control centre unreachable") });
     expect(text(html)).toContain("Showing the last answer");
-    expect(html).toContain("CB1: CLOSED · GOOD · cached snapshot · CC API unavailable");
+    expect(html).toContain("CB1: CLOSED · cached snapshot · CC API unavailable");
     expect(html.match(/disabled=""/g)).toHaveLength(5);
   });
 
@@ -191,7 +191,7 @@ describe("CC schematic layout", () => {
     expect(list).not.toMatch(/max-h-|overflow-/);
     expect(list?.match(/<dt /g)).toHaveLength(devicePoints(FEEDER_STATE.points, "T1").length);
     expect(list?.match(/✓/g)).toHaveLength(devicePoints(FEEDER_STATE.points, "T1").length);
-    expect(text(list!)).toContain("OLTC lower limit CLEAR ✓ GOOD on change · timed event; GI untimed");
+    expect(text(list!)).toContain("OLTC lower limit CLEAR ✓ valid on change · timed event; GI untimed");
     expect(text(list!)).toContain("Configured delay 30 s");
   });
 
@@ -252,11 +252,11 @@ describe("CC one-line observation integrity", () => {
       return p;
     });
     const html = render(<ControlCentreOneLine points={mixed} />);
-    expect(html).toContain("CB1: CLOSED · GOOD");
-    expect(html).toContain("RMU1 · NC: CLOSED · STALE · IV NT · device_unreachable");
+    expect(html).toContain("CB1: CLOSED");
+    expect(html).toContain("RMU1 · NC: CLOSED · INVALID · NOT TOPICAL · STALE (RTU cannot reach the device (Modbus))");
     expect(html).toContain("RMU2 · NOP: not received · UNKNOWN");
-    expect(html).toContain("T1 OLTC: -3 · TRANSIENT · STALE · SB");
-    expect(controlCentreObservations(mixed)("plc-1-running").text).toContain("IV · heartbeat");
+    expect(html).toContain("T1 OLTC: -3 · TRANSIENT · SUBSTITUTED");
+    expect(controlCentreObservations(mixed)("plc-1-running").text).toContain("INVALID · STALE (PLC heartbeat stopped)");
     expect(controlCentreObservations(mixed)("oltc-1-tap").transient).toBe(true);
   });
 });
@@ -327,7 +327,7 @@ describe("select-then-execute controls", () => {
 
 describe("ControlCentreMiniStatus", () => {
   it("preserves the runner summary", () => {
-    expect(text(render(<ControlCentreMiniStatus state={FRESH_STATE} waiting={false} />))).toContain("4/4 good");
+    expect(text(render(<ControlCentreMiniStatus state={FRESH_STATE} waiting={false} />))).toContain("4/4 valid");
     expect(text(render(<ControlCentreMiniStatus state={STALE_STATE} waiting={false} />))).toContain("CLOSED ⚠ STALE");
   });
 });
@@ -356,13 +356,13 @@ describe("realism presentation", () => {
     state.points.find((p) => p.id === id)!.value = false;
     const out = text(render(<AbnormalSummary state={state} />));
     expect(out).toContain(label);
-    expect(out).not.toContain("No alarms in GOOD observations");
+    expect(out).not.toContain("No alarms in valid observations");
     expect(text(screen({ state }))).toContain("0 alarms · 1 off-normal");
     expect(render(<ControlCentreOneLine points={state.points} />)).toContain(`data-authority="${id}"`);
   });
 
   it("places the abnormal strip after observation status and before the schematic", () => {
-    expect(text(render(<AbnormalSummary state={FEEDER_STATE} />))).toContain("No alarms in GOOD observations");
+    expect(text(render(<AbnormalSummary state={FEEDER_STATE} />))).toContain("No alarms in valid observations");
     const html = screen();
     expect(html.indexOf('aria-label="Abnormal conditions"')).toBeGreaterThan(html.indexOf('aria-label="Observation status"'));
     expect(html.indexOf('aria-label="Abnormal conditions"')).toBeLessThan(html.indexOf('aria-label="Feeder schematic"'));
@@ -377,7 +377,7 @@ describe("realism presentation", () => {
     const out = text(screen({ state }));
     expect(out).toContain("T1 20 kV terminal active power P 3.05 MW");
     expect(out).toContain("T1 20 kV terminal reactive power Q 0.92 Mvar");
-    expect(out).toContain("T1 20 kV terminal power factor PF — ⚠ STALE IV measurement_invalid");
+    expect(out).toContain("T1 20 kV terminal power factor PF — ⚠ INVALID · STALE (Device reports measurements invalid) IV measurement_invalid");
     expect(out).toContain("Configured delay 30 s");
   });
   it("keeps S3 unknown when its own received kV is invalid despite a good F2-side switch", () => {

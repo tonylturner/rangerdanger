@@ -8,10 +8,10 @@
       "state": "LIVE",
       "path": "via CB1",
       "kv": "19.8",
-      "text": "S1 · LIVE19.80 kV · GOODvia CB1",
+      "text": "S1 · LIVE19.80 kVvia CB1",
       "textNodes": [
         "S1 · LIVE",
-        "19.80 kV · GOOD",
+        "19.80 kV",
         "via CB1"
       ]
     },
@@ -20,10 +20,10 @@
       "state": "LIVE",
       "path": "via CB1",
       "kv": "19.7",
-      "text": "S2 · LIVE19.70 kV · GOODvia CB1",
+      "text": "S2 · LIVE19.70 kVvia CB1",
       "textNodes": [
         "S2 · LIVE",
-        "19.70 kV · GOOD",
+        "19.70 kV",
         "via CB1"
       ]
     },
@@ -32,10 +32,10 @@
       "state": "LIVE",
       "path": "via F2",
       "kv": "19.9",
-      "text": "S3 · LIVE19.90 kV · GOODvia F2",
+      "text": "S3 · LIVE19.90 kVvia F2",
       "textNodes": [
         "S3 · LIVE",
-        "19.90 kV · GOOD",
+        "19.90 kV",
         "via F2"
       ]
     }
@@ -45,44 +45,44 @@
       "device": "CB1",
       "position": "closed",
       "quality": "good",
-      "text": "CB1: CLOSED · GOODCB1CLOSED · GOOD",
+      "text": "CB1: CLOSEDCB1CLOSED",
       "textNodes": [
-        "CB1: CLOSED · GOOD",
+        "CB1: CLOSED",
         "CB1",
-        "CLOSED · GOOD"
+        "CLOSED"
       ]
     },
     {
       "device": "RMU1",
       "position": "closed",
       "quality": "good",
-      "text": "RMU1 · NC: CLOSED · GOODRMU1 · NCCLOSED · GOOD",
+      "text": "RMU1 · NC: CLOSEDRMU1 · NCCLOSED",
       "textNodes": [
-        "RMU1 · NC: CLOSED · GOOD",
+        "RMU1 · NC: CLOSED",
         "RMU1 · NC",
-        "CLOSED · GOOD"
+        "CLOSED"
       ]
     },
     {
       "device": "RMU2",
       "position": "open",
       "quality": "good",
-      "text": "RMU2 · NOP: OPEN · GOODRMU2 · NOPOPEN · GOOD",
+      "text": "RMU2 · NOP: OPENRMU2 · NOPOPEN",
       "textNodes": [
-        "RMU2 · NOP: OPEN · GOOD",
+        "RMU2 · NOP: OPEN",
         "RMU2 · NOP",
-        "OPEN · GOOD"
+        "OPEN"
       ]
     },
     {
       "device": "T1",
       "tap": "0",
       "quality": "good",
-      "text": "T1 110/20 kV · OLTCTap 0 · GOODMANUAL · GOOD",
+      "text": "T1 110/20 kV · OLTCTap 0MANUAL",
       "textNodes": [
         "T1 110/20 kV · OLTC",
-        "Tap 0 · GOOD",
-        "MANUAL · GOOD"
+        "Tap 0",
+        "MANUAL"
       ]
     },
     {
@@ -97,47 +97,47 @@
   "measurements": [
     {
       "point": "oltc-1-current",
-      "text": "T1 current 72.3 A GOOD",
+      "text": "T1 current 72.3 A",
       "visible": true
     },
     {
       "point": "oltc-1-bus-kv",
       "state": "LIVE",
-      "text": "20 kV GOOD",
+      "text": "20 kV",
       "visible": true
     },
     {
       "point": "feeder-current",
-      "text": "61.4 A GOOD",
+      "text": "61.4 A",
       "visible": true
     },
     {
       "point": "feeder-voltage",
       "state": "LIVE",
-      "text": "19.91 kV GOOD",
+      "text": "19.91 kV",
       "visible": true
     },
     {
       "point": "rmu-1-current",
-      "text": "18.7 A GOOD",
+      "text": "18.7 A",
       "visible": true
     },
     {
       "point": "rmu-2-current",
-      "text": "0 A GOOD",
+      "text": "0 A",
       "visible": true
     },
     {
       "point": "rmu-2-section-kv",
       "state": "LIVE",
-      "text": "19.7 kV GOOD",
+      "text": "19.7 kV",
       "visible": true
     }
   ],
   "conditions": [
     {
       "id": "none",
-      "text": "No alarms in GOOD observations"
+      "text": "No alarms in valid observations"
     }
   ],
   "comparisons": [],

@@ -9,13 +9,25 @@ import { FeederOneLine } from "../components/feeder-one-line";
 describe("independent one-line sources", () => {
   it("pins GOOD CC observation values and text", () => {
     expect(controlCentreObservations(FEEDER_STATE.points)("feeder-breaker-position")).toEqual({
-      value: "closed", condition: "good", text: "CLOSED · GOOD", shortText: "CLOSED · GOOD",
+      value: "closed", condition: "good", text: "CLOSED", shortText: "CLOSED",
       flags: [], staleReason: null, transient: false,
     });
   });
+  it.each([
+    ["iv", "INVALID"], ["nt", "NOT TOPICAL"], ["sb", "SUBSTITUTED"],
+    ["bl", "BLOCKED"], ["ov", "OVERFLOW"],
+  ] as const)("names the %s quality flag without implying plant state", (flag, label) => {
+    const points = structuredClone(FEEDER_STATE.points);
+    const point = points.find((p) => p.id === "feeder-protection-trip")!;
+    point.value = true;
+    point.quality = { ...point.quality, [flag]: true };
+    expect(controlCentreObservations(points)(point.id).shortText).toBe(`TRIPPED · ${label}`);
+    point.quality = { ...point.quality, [flag]: false };
+    expect(controlCentreObservations(points)(point.id).shortText).toBe("TRIPPED");
+  });
   it("pins stale CC text, IEC flag order and the stale reason", () => {
     expect(controlCentreObservations(STALE_STATE.points)("feeder-breaker-position")).toEqual({
-      value: "closed", condition: "stale", text: "CLOSED · STALE · IV NT · link_lost", shortText: "CLOSED · STALE · IV NT",
+      value: "closed", condition: "stale", text: "CLOSED · INVALID · NOT TOPICAL · STALE (IEC 104 link to the RTU lost)", shortText: "CLOSED · INVALID · NOT TOPICAL · STALE (IEC 104 link to the RTU lost)",
       flags: ["IV", "NT"], staleReason: "link_lost", transient: false,
     });
   });
@@ -27,7 +39,7 @@ describe("independent one-line sources", () => {
   });
   it("pins the cached CC snapshot suffix without rewriting IEC quality", () => {
     expect(controlCentreObservations(FEEDER_STATE.points, true)("feeder-breaker-position")).toEqual({
-      value: "closed", condition: "good", text: "CLOSED · GOOD · cached snapshot · CC API unavailable", shortText: "CLOSED · GOOD",
+      value: "closed", condition: "good", text: "CLOSED · cached snapshot · CC API unavailable", shortText: "CLOSED",
       flags: [], staleReason: null, transient: false,
     });
   });
@@ -41,8 +53,8 @@ describe("independent one-line sources", () => {
     expect(read("f2-position").value).toBe("closed");
     expect(read("feeder-current").flags).toEqual([]);
     const html = renderToStaticMarkup(createElement(FeederOneLine, { read, physical: true }));
-    expect(html).toContain("CB1: OPEN · GOOD · sim");
-    expect(html).toContain("F2 · CLOSED · GOOD · sim");
+    expect(html).toContain("CB1: OPEN · sim");
+    expect(html).toContain("F2 · CLOSED · sim");
     expect(html).toContain("Simulation-observed · independent of IEC 104");
     expect(html).not.toContain("faceplate");
   });

@@ -29,7 +29,7 @@ export function LinkDetails({ link, now }: { link: ControlCentreLink; now: numbe
       <Cell label="RTU peer">{link.peer}</Cell>
       <Cell label="Since (UTC)">{formatUtcTime(link.since)}</Cell>
       <Cell label="Last frame age">{formatAge(ageMs(link.last_rx_at, now))}</Cell>
-      <Cell label="Integrity">{integrity ? "GI ok" : "No completed GI"}</Cell>
+      <Cell label="Integrity">{integrity ? "GI complete" : "No completed GI"}</Cell>
       <Cell label="GI last complete (UTC)">{formatUtcTime(link.gi.last_complete_at)}</Cell>
       <Cell label="GI trigger / state">{link.gi.trigger ?? "—"} / {link.gi.state === "running" ? "RUNNING" : link.gi.state}</Cell>
       <Cell label="GI next due (UTC)">{formatUtcTime(link.gi.next_due_at)}</Cell>
@@ -42,7 +42,7 @@ export function ScadaViewBanner({ state, unavailable }: { state: OperatorState |
   const affected = state ? DEVICES.filter((device) => devicePoints(state.points, device).some(pointObservationNotCurrent)) : [];
   const messages = {
     lost: "SCADA VIEW LOST — retained values are not current",
-    recovering: "VIEW RECOVERING — GI/GOOD observations pending",
+    recovering: "VIEW RECOVERING — GI/valid observations pending",
     degraded: `SCADA VIEW DEGRADED — ${notCurrent}/${state?.points.length ?? 0} points not current`,
     "not-established": "SCADA VIEW NOT ESTABLISHED — no established view yet",
     unavailable: "SCADA VIEW UNAVAILABLE — API unavailable; cached state cannot establish current observations",
@@ -80,9 +80,9 @@ export function AbnormalSummary({ state, cached = false }: { state: OperatorStat
   const offNormal = conditions.filter((c) => !alarmIds.has(c.id));
   const uncertain = state.points.filter((p) => p.kind === "float" && pointCondition(p) !== "good").length;
   return <section aria-label="Abnormal conditions" data-alarm-count={alarms.length} data-off-normal-count={offNormal.length} className={`rounded-lg border p-3 text-sm ${alarms.length ? "border-rose-700 bg-rose-950/30" : conditions.length ? "border-amber-700 bg-amber-950/30" : "border-slate-700"} text-slate-300`}>
-    <p className="font-semibold">{conditions.length ? `${alarms.length} ${alarms.length === 1 ? "alarm" : "alarms"} · ${offNormal.length} off-normal` : <span data-condition="none">No alarms in GOOD observations</span>}{cached ? " in cached snapshot" : ""}</p>
+    <p className="font-semibold">{conditions.length ? `${alarms.length} ${alarms.length === 1 ? "alarm" : "alarms"} · ${offNormal.length} off-normal` : <span data-condition="none">No alarms in valid observations</span>}{cached ? " in cached snapshot" : ""}</p>
     {conditions.length > 0 && <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-2">{[...alarms, ...offNormal].map((c) => <li key={c.id} data-condition={c.id} data-condition-kind={alarmIds.has(c.id) ? "alarm" : "off-normal"} className={alarmIds.has(c.id) ? "text-rose-300" : "text-amber-200"}>⚠ {c.text}</li>)}</ul>}
-    <p data-observation-uncertainty={uncertain} className={`mt-2 text-xs ${uncertain ? "text-amber-200" : "text-slate-400"}`}>Observation uncertainty: {uncertain} non-GOOD {uncertain === 1 ? "measurement" : "measurements"} · separate from process alarms.</p>
+    <p data-observation-uncertainty={uncertain} className={`mt-2 text-xs ${uncertain ? "text-amber-200" : "text-slate-400"}`}>Observation uncertainty: {uncertain} non-valid {uncertain === 1 ? "measurement" : "measurements"} · separate from process alarms.</p>
   </section>;
 }
 export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal, journalError, now, physicalSystem, view = "control-centre", onViewChange = () => {}, initialTab = "Alarms", selected = "T1", onSelect = () => {} }: {

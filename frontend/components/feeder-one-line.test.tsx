@@ -16,7 +16,7 @@ it.each(EU_ORACLE)("$switches / F2 $f2 / VT $vt: physical source stubs stay live
     expect(line(cc, "80", y)).toContain(y === "45" ? 'stroke="#94a3b8"' : 'stroke="#38bdf8"');
     expect(line(cc, "80", y).includes("stroke-dasharray")).toBe(y === "45");
   }
-  expect(physical).toContain(row.f2 === "tripped" ? "F2 · OPEN · GOOD · sim" : "F2 · CLOSED · GOOD · sim");
+  expect(physical).toContain(row.f2 === "tripped" ? "F2 · OPEN · sim" : "F2 · CLOSED · sim");
   const s3Live = row.supply.split("/")[2] !== "D";
   expect(line(physical, "337", "325")).toContain(`stroke="${s3Live ? "#38bdf8" : "#94a3b8"}"`);
   expect(line(cc, "337", "325")).toContain(`stroke="${s3Live ? "#38bdf8" : "#94a3b8"}"`);

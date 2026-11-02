@@ -7,7 +7,7 @@ import { SupervisoryControls } from "./control-centre-command";
 import { ConditionBadge, STALE_HATCH } from "./control-centre-points";
 
 export function RegulationBand({ band }: { band: VoltageBand | null }) {
-  if (!band) return <p className="text-xs text-amber-300">Current regulation band unavailable: setpoint or deadband is not GOOD.</p>;
+  if (!band) return <p className="text-xs text-amber-300">Current regulation band unavailable: setpoint or deadband is not valid.</p>;
   const span = Math.max(band.high - band.low, 0.2);
   const min = Math.min(band.low - span / 2, band.bus ?? band.low), max = Math.max(band.high + span / 2, band.bus ?? band.high);
   const x = (n: number) => 20 + (n - min) / (max - min) * 260;
@@ -36,7 +36,7 @@ export function DeviceFaceplate({ state, selected, unavailable }: { state: Opera
     <dl className="text-xs">
       {devicePoints(state.points, selected).map((p) => <div key={p.id} className={`grid gap-x-4 gap-y-1 border-t border-slate-800 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] ${pointCondition(p) !== "good" ? `border-dashed ${STALE_HATCH}` : ""}`}>
         <dt className="text-slate-400">{pointLabel(p.id)}</dt>
-        <dd className="flex min-w-0 flex-wrap items-center gap-2 text-slate-100"><span className="font-mono">{formatPointValue(p.id, p.value, p.quality)}</span><ConditionBadge condition={pointCondition(p)} /><span className="wrap-break-word">{qualityFlags(p.quality).join(" ")} {p.stale_reason}</span></dd>
+        <dd className="flex min-w-0 flex-wrap items-center gap-2 text-slate-100"><span className="font-mono">{formatPointValue(p.id, p.value, p.quality)}</span><ConditionBadge condition={pointCondition(p)} point={p} /><span className="wrap-break-word">{qualityFlags(p.quality).join(" ")} {p.stale_reason}</span></dd>
         <dd className="text-slate-400 sm:col-start-2">{reportingText(p)}</dd>
       </div>)}
     </dl>

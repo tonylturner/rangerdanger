@@ -129,8 +129,8 @@ describe("Physical System presentation", () => {
   it("promotes a genuine mismatch with a red text-and-symbol badge and independent physical values", () => {
     const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} />);
     expect(html).toContain("≠ MISMATCH"); expect(html).toContain("border-red-700");
-    expect(html).toContain("CB1: OPEN · GOOD · sim");
-    expect(html).toContain("F2 · CLOSED · GOOD · sim");
+    expect(html).toContain("CB1: OPEN · sim");
+    expect(html).toContain("F2 · CLOSED · sim");
     expect(html).toContain("Physical topology path: via F2");
     expect(html).toContain("ENERGIZED"); expect(html).toContain("solver bus live");
     expect(html).toContain("received 29 s ago"); expect(html).toContain("Source UTC");
@@ -158,7 +158,7 @@ describe("Physical System presentation", () => {
     expect(html).toContain("I unknown"); expect(html).toContain("Bus voltage");
     expect(html).toContain("CB1: unknown · UNKNOWN · sim");
     expect(html).toContain("INVALID · retained measurements");
-    expect(html).toContain("F2 · CLOSED · GOOD · sim");
+    expect(html).toContain("F2 · CLOSED · sim");
     expect(html).toContain("Physical topology path: unknown");
     expect(html).toContain("UNKNOWN · solver bus live");
   });
@@ -177,7 +177,7 @@ describe("Physical System presentation", () => {
   it("distinguishes completed tap, target tap and motion", () => {
     const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} />);
     expect(text(html)).toContain("Completed tap 1 MANUAL · moving · target 2");
-    expect(html).toContain("Tap 1 · TRANSIENT · GOOD · sim");
+    expect(html).toContain("Tap 1 · TRANSIENT · sim");
   });
   it("retains every engineering group and applies only fields meaningful to the equipment", () => {
     const render = (id: string) => renderToStaticMarkup(<EquipmentCard id="CB1" title={id} device={TRUTH.devices[id]} open onToggle={() => {}} stale={false} />);
