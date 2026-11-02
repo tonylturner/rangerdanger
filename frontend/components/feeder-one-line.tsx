@@ -159,7 +159,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
         {measure(175, 245, "oltc-1-current")}
         {measure(175, 285, "oltc-1-bus-kv")}
         {measure(310, 110, "feeder-current")}
-        {measure(400, 260, "feeder-voltage")}
+        {measure(400, 280, "feeder-voltage")}
         {measure(570, 95, "rmu-1-current")}
         {measure(850, 95, "rmu-2-current")}
         {measure(925, 35, "rmu-2-section-kv")}
@@ -191,10 +191,10 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
         <div key={section} className={cluster} style={at([410, 700, 710][i], i === 2 ? 414 : 89)}>
           {badge(`${section}-no-supply`, "NO SUPPLY", true, SECTION_VOLTAGE[section])}
         </div>)}
-      {/* One row below the VT value and above the F2 conductor: two latches
-          must not grow down into the line-side VT annotation. */}
-      <div data-breaker-badges="CB1" className="absolute flex h-6 w-[210px] -translate-x-1/2 flex-row items-center justify-center gap-1" style={at(400, 292)}>{breakerBadges("feeder")}</div>
-      <div data-breaker-badges="F2" className={cluster} style={at(440, 340)}>{breakerBadges("f2")}</div>
+      {/* Keep CB1's latches directly below its status, on the CB1 side of
+          the gap to F2. The line-side VT has its own annotation lane below. */}
+      <div data-breaker-badges="CB1" className="absolute flex h-6 w-[210px] -translate-x-1/2 flex-row items-center justify-center gap-1" style={at(395, 230)}>{breakerBadges("feeder")}</div>
+      <div data-breaker-badges="F2" className={cluster} style={at(455, 340)}>{breakerBadges("f2")}</div>
       {(["rmu-1", "rmu-2"] as const).map((prefix, i) => <div key={prefix} className={cluster} style={at(i === 0 ? 690 : 925, 235)}>
         {asserted(`${prefix}-fault-passage`) && badge(`${prefix}-fault-passage`, "FAULT PASSED")}
         {asserted(`${prefix}-earth`) && badge(`${prefix}-earth`, "EARTHED")}
