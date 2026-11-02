@@ -16,6 +16,8 @@ TMP_DIR="$CASE_DIR"
 failures=0; passes=0
 pass() { printf 'PASS %s\n' "$1"; passes=$((passes + 1)); }
 fail() { printf 'FAIL %s\n' "$1" >&2; failures=$((failures + 1)); }
+# shellcheck source=lib/docker-bounded.sh
+. "$SCRIPT_DIR/lib/docker-bounded.sh"
 # shellcheck source=lib/eu-range.sh
 . "$SCRIPT_DIR/lib/eu-range.sh"
 # shellcheck source=lib/eu-evidence.sh

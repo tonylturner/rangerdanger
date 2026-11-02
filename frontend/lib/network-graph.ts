@@ -1,5 +1,5 @@
 import { getBezierPath, Position, type Edge, type Node } from "reactflow";
-import type { GraphNode as ApiGraphNode, LabGraph, ZoneRuleSummary } from "./api";
+import type { GraphNode as ApiGraphNode, LabGraph, PolicySource, ZoneRuleSummary } from "./api";
 import { aggregateFlows, nodeZone, type FlowContext, type FlowFilter } from "./observed-flows";
 import {
   ViewMode,
@@ -55,6 +55,7 @@ export function buildStyledGraph(
   firewallOnline?: boolean,
   trafficFilter?: { zone: string; crossZoneOnly: boolean },
   highlightedTrafficPair?: string | null,
+  activePolicy?: { active_config: string; policy_source: PolicySource },
 ) {
     if (!graph) return { nodes: [] as Node[], edges: [] as Edge[] };
 
@@ -115,17 +116,9 @@ export function buildStyledGraph(
     // overlay rendered alongside each conduit. Both frameworks are in
     // play here, but the *band layout* is Purdue-driven.
     if (viewMode.iec62443) {
-      // Horizontal Purdue-level bands stacked top-to-bottom, each
-      // showing the IEC 62443 Security Level (SL) it should achieve.
-      // The firewall/conduit sits to the RIGHT of the bands so the
-      // student can evaluate whether the conduit's SL meets the target
-      // SL (= max of the two connected zones).
-      // all connected zone SLs). Conduit lines run horizontally
-      // from each band's right edge to the firewall.
-      //
-      // In the weak baseline the conduit is SL 1 (pass-through),
-      // which fails the SL 3 target set by OT Operations. In the
-      // hardened config it's SL 3 (deny-default, DPI, source-pin).
+      // Zone numbers are illustrative design targets, never measured security levels.
+      // Active-policy identity, not the absence of WEAK labels, owns the
+      // bounded reference-policy criteria status below.
 
       const NODE_SPACING_X = Math.max(130, HOST_ENVELOPE.width + LABEL_GAP + sameZone.count * (sameZone.maxWidth + LABEL_GAP));
       const BAND_WIDTH = Math.max(700, 60 + HOST_ENVELOPE.width +
@@ -136,7 +129,7 @@ export function buildStyledGraph(
       const NODE_START_X_OFFSET = 30;
       const FW_X = BAND_START_X + BAND_WIDTH + 120; // firewall to the right of bands
 
-      // IEC 62443 Security Level assignments for each zone.
+      // Illustrative IEC 62443 design targets for the US workshop zones.
       // SL 0 = none, SL 1 = casual, SL 2 = intentional/simple,
       // SL 3 = sophisticated, SL 4 = state-sponsored.
       const ZONE_SL: Record<string, number> = {
@@ -171,7 +164,7 @@ export function buildStyledGraph(
           position: { x: BAND_START_X, y: curY },
           data: {
             zone: level.zone,
-            label: architecturalOnly ? level.label : `${level.label}  \u00B7  SL-${sl}`,
+            label: architecturalOnly ? level.label : `${level.label}  \u00B7  Target SL-${sl}`,
             subnet: graph.networks.find((n) => n.id === level.zone)?.subnet ?? graph.networks.find((n) => n.id === level.zone)?.cidr,
             width: BAND_WIDTH,
             height: BAND_HEIGHT,
@@ -235,20 +228,26 @@ export function buildStyledGraph(
         curY += BAND_HEIGHT + BAND_GAP;
       }
 
-      // Conduit Security Level assessment. The conduit (firewall)
-      // must meet or exceed the highest SL of any zone it connects.
-      // In the weak baseline it's SL 1 (pass-through, no DPI);
-      // in the hardened config it's SL 3 (deny-default, source-pin,
-      // protocol-aware DPI). This drives the green/red indicator
-      // on the firewall label.
       const targetSL = Math.max(...activeLevels.map((l) => ZONE_SL[l.zone] ?? 0));
-      const isHardened = firewallOnline !== undefined
-        ? (ruleSummaries || []).every((r) =>
-            !r.rule_details.some((d) => d.trim().toUpperCase().startsWith("WEAK:")),
-          )
-        : false;
-      const conduitSL = isHardened ? 3 : 1;
-      const conduitMet = conduitSL >= targetSL;
+      // Summaries cannot establish source pinning or a security level. Only a
+      // backend-reported named reference policy can identify the scoped criteria;
+      // missing/contradictory summaries withhold even that bounded status.
+      const summariesPresent = !!ruleSummaries?.length && ruleSummaries.every((r) =>
+        r.rule_details.length > 0 && r.rule_details.every((d) => d.trim().length > 0),
+      );
+      const weakSummary = ruleSummaries?.some((r) =>
+        r.rule_details.some((d) => d.trim().toUpperCase().startsWith("WEAK:")),
+      );
+      const referenceCovered = [
+        ["wan", "lan2", "DENY"], ["dmz", "lan2", "DENY"], ["lan1", "lan2", "MIXED"],
+      ].every(([source, destination, action]) => ruleSummaries?.some((r) =>
+        r.source_zone === source && r.dest_zone === destination && r.action === action,
+      ));
+      const segmentationStatus = firewallOnline === true && summariesPresent
+        ? activePolicy?.active_config === "improved" && activePolicy.policy_source === "hardened-reference" && referenceCovered && !weakSummary
+          ? "met"
+          : activePolicy?.active_config === "weak" && activePolicy.policy_source === "weak" && weakSummary ? "gap" : "unknown"
+        : "unknown";
 
       // Firewall positioned to the RIGHT of all bands, vertically
       // centered, so conduit lines run horizontally from each band.
@@ -260,7 +259,7 @@ export function buildStyledGraph(
           type: "firewall",
           position: { x: FW_X, y: fwCenterY },
           data: {
-            label: architecturalOnly ? "Segmentation conduit" : `Conduit \u00B7 SL-${conduitSL}`,
+            label: "Segmentation conduit",
             nodeType: firewallNode.type,
             zone: "enterprise_net",
             status: firewallNode.data.status || "running",
@@ -272,9 +271,8 @@ export function buildStyledGraph(
             health: fwHealth.health,
             healthSource: fwHealth.healthSource,
             // Extra 62443 fields for the label area
-            conduitSL: architecturalOnly ? undefined : conduitSL,
             targetSL: architecturalOnly ? undefined : targetSL,
-            conduitMet: architecturalOnly ? undefined : conduitMet,
+            segmentationStatus,
           },
           draggable: true,
         });
@@ -284,7 +282,7 @@ export function buildStyledGraph(
       // zone-colored lines with a glow. The policy state (allowed /
       // over-permissive / blocked) is NOT encoded on individual
       // conduit lines because the 62443 view expresses policy
-      // compliance as the SL assessment on the firewall/conduit
+      // criteria status on the firewall/conduit
       // node itself. Edges run from the zone's RIGHT handle to the
       // firewall's LEFT handle so they converge on one side.
       const styledEdges: Edge[] = [];

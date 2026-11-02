@@ -229,3 +229,17 @@ func TestCountAuditByZoneAndCommand_BlockedNotCounted(t *testing.T) {
 		t.Errorf("blocked entries must not count, got %d", got)
 	}
 }
+
+func TestValidationEvidencePollingLabel(t *testing.T) {
+	state := substationState(healthyOpts())
+	state["device_comms"] = map[string]any{"relay": true, "recloser": true, "regulator": true}
+	check := findCheckMatching(t, validateValidationEvidence(state), "RTAC→field comms")
+	if check.Status != "pass" || check.Detail != "RTAC reports polling all field devices" {
+		t.Fatalf("polling check = %+v", check)
+	}
+	state["device_comms"] = map[string]any{"relay": true, "recloser": false, "regulator": true}
+	check = findCheckMatching(t, validateValidationEvidence(state), "RTAC→field comms")
+	if check.Status != "fail" {
+		t.Fatalf("missing polling must fail: %+v", check)
+	}
+}

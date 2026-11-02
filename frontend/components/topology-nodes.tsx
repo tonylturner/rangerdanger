@@ -172,11 +172,9 @@ type HostNodeData = {
   // stacked-band layout). When false/absent, side handles are
   // used (for default policy view column layout).
   verticalOnly?: boolean;
-  // IEC 62443 conduit assessment (firewall node only, set when
-  // the 62443 layout is active).
-  conduitSL?: number;
+  // Bounded segmentation criteria, separate from illustrative SL targets.
   targetSL?: number;
-  conduitMet?: boolean;
+  segmentationStatus?: "met" | "gap" | "unknown";
 };
 
 const HIDDEN_HANDLE: React.CSSProperties = {
@@ -366,52 +364,29 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
         <div className="text-[10px] text-slate-500">NGFW</div>
       </div>
 
-      {/* IEC 62443 conduit SL assessment - only rendered when the
-          62443 layout passes conduitSL/targetSL in the data. Shows
-          whether the conduit meets the required SL of the zones it
-          connects. Green = met, red = gap. Tooltip explains why. */}
-      {data.conduitSL != null && data.targetSL != null && (
+      {data.segmentationStatus && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <div
-              className={`mt-2 cursor-help rounded border px-2 py-1 text-center text-[9px] font-bold uppercase tracking-wider ${
-                data.conduitMet
-                  ? "border-green-700/60 bg-green-950/30 text-green-400"
-                  : "border-red-700/60 bg-red-950/30 text-red-400"
-              }`}
-            >
-              <div>Target SL-{data.targetSL}</div>
-              <div className="mt-0.5">
-                {data.conduitMet ? "MET" : "GAP"} · SL-{data.conduitSL}
-              </div>
+            <div className={`mt-2 cursor-help rounded border px-2 py-1 text-center text-[9px] font-bold uppercase tracking-wider ${
+              data.segmentationStatus === "met"
+                ? "border-green-700/60 bg-green-950/30 text-green-400"
+                : data.segmentationStatus === "gap"
+                  ? "border-red-700/60 bg-red-950/30 text-red-400"
+                  : "border-slate-700 bg-slate-900/30 text-slate-400"
+            }`}>
+              {data.targetSL != null && <div>Design target SL-{data.targetSL}</div>}
+              <div className="mt-0.5">Segmentation criteria: {data.segmentationStatus === "unknown" ? "NOT ASSESSED" : data.segmentationStatus === "met" ? "MET" : "GAP"}</div>
             </div>
           </TooltipTrigger>
           <TooltipContent className="max-w-[280px]">
-            {data.conduitMet ? (
-              <>
-                <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-green-300">
-                  SL-{data.targetSL} Target Met
-                </div>
-                <div className="text-[10px] leading-snug">
-                  Conduit achieves SL-{data.conduitSL}: deny-default policy,
-                  protocol-aware DPI (Modbus/DNP3 function code filtering),
-                  source-IP pinning to RTAC only. Enterprise and vendor zones
-                  blocked from direct field device access.
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-red-300">
-                  SL-{data.targetSL} Target Not Met
-                </div>
-                <div className="text-[10px] leading-snug">
-                  Conduit only achieves SL-{data.conduitSL}: all zones can
-                  communicate freely, no DPI, no source restriction. The weak
-                  baseline allows enterprise→field and vendor→field paths that
-                  should be blocked. Apply the hardened policy to reach SL-{data.targetSL}.
-                </div>
-              </>
-            )}
+            <div className="text-[10px] leading-snug">
+              Selected segmentation criteria: restrict enterprise/vendor direct field access
+              and source-pin permitted cross-zone field traffic to approved sources. Status follows the
+              backend-reported active reference policy, not a packet-path test.
+              {data.segmentationStatus === "unknown" && " Empty, custom, partial or unknown policy summaries do not establish these criteria."}
+              {data.targetSL != null && " The SL number is a design target only."}
+              {" This is not an IEC 62443 SL assessment. The L4 source pin enforces; DPI detects and logs."}
+            </div>
           </TooltipContent>
         </Tooltip>
       )}
@@ -456,7 +431,7 @@ type ZoneBoundaryData = {
   subnet?: string;
   width: number;
   height: number;
-  securityLevel?: number; // IEC 62443 SL (0-4), shown when present
+  securityLevel?: number; // Illustrative design target (0-4), shown when present
 };
 
 export const ZoneBoundaryNode = memo(({ data }: NodeProps<ZoneBoundaryData>) => {

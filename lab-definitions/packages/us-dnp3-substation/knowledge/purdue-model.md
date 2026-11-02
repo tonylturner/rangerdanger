@@ -41,9 +41,9 @@ L0 (the physical process - the actual breaker mechanism, the feeder conductor, t
 When you produce evidence for a change board:
 
 1. **Purdue** answers *"is your design layered correctly?"* - does every cross-tier flow terminate in the L3.5 DMZ? Are there any L4-to-L1 direct paths that bypass L3?
-2. **IEC 62443** answers *"is the security strength per zone proportional to the risk?"* - is your L1 conduit enforcing SL-3 controls (protocol-aware filtering, source restriction, logging) or just port filtering?
+2. **IEC 62443** answers *"is the security strength per zone proportional to the risk?"* - what security requirements follow from the risks to the connected zones, and what evidence would establish them? Source restriction and monitoring are selected controls, not proof of an achieved Security Level.
 
-A correct design needs both. A flat network can be technically "secured" with strong controls on every host (high SL-A everywhere) but still violate Purdue layering because there's no architectural firebreak. Conversely, a beautifully Purdue-layered network with no controls at any layer fails IEC 62443 SL assessment.
+A correct design needs both. Strong host controls do not by themselves establish an achieved SL or provide an architectural firebreak in a flat network. Conversely, a beautifully Purdue-layered network with no controls at any layer fails IEC 62443 SL assessment.
 
 ### A Common Mistake
 

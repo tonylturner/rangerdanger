@@ -290,27 +290,115 @@ eu_lab_implementation_prepare() {
   eu_lab_positive_conduits
 }
 
+# Incremental raw snapshots survive any early return. The reducer writes a FAIL
+# record for incomplete walks too; cleanup still owns Weak/reset restoration.
+eu_lab_g22_event() {
+  local name="$1" body="${2:-}"
+  G22_TIME=$(eu_utc) || return
+  if [ -n "$body" ]; then
+    printf '%s\n' "$body" >"$TMP_DIR/G22-$name.json" || return
+  fi
+  jq -nc --arg event "$name" --arg at "$G22_TIME" \
+    '{event:$event,at:$at}' >>"$TMP_DIR/G22-events.jsonl"
+}
+
+eu_lab_g22_wait_cc() {
+  local since="$1" position="${2:-open}"
+  eu_wait_for_operator ".link.state == \"started\"
+    and four_points and (point(\"feeder-breaker-position\") |
+      good and .value == \"$position\" and (.received_at | epoch) >= (\"$since\" | epoch))" \
+    15 "G22 fresh GOOD CC breaker $position feedback"
+}
+
+eu_lab_g22_write_evidence() {
+  if ! python3 "$SCRIPT_DIR/lib/eu-g22-evidence.py" record "$TMP_DIR" "$1" "$2" \
+    2>"$TMP_DIR/G22-evidence.err"; then
+    fail "G22 correlated evidence failed: $(cat "$TMP_DIR/G22-evidence.err")"
+    return 1
+  fi
+}
+
 eu_lab_hardening_walk() {
-  local scenario="$1" revision
+  local scenario="$1" result=0
+  python3 -c 'import json,sys,uuid; print(json.dumps({"attempt_id":str(uuid.uuid4()),
+    "scenario":sys.argv[1]}))' "$scenario" >"$TMP_DIR/G22-context.json" || return
+  : >"$TMP_DIR/G22-events.jsonl" || return
+  eu_lab_g22_walk "$scenario" || result=1
+  eu_lab_g22_write_evidence "$scenario" "$result" || result=1
+  eu_save_evidence || result=1
+  return "$result"
+}
+
+eu_lab_g22_walk() {
+  local scenario="$1" revision baseline_revision start end restore_start command_status
   eu_lab_step "$scenario" verify-normal-operations || return
-  eu_lab_step "$scenario" attack-iec104-breaker-open || return
-  eu_lab_exec kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || return
-  eu_wait_for_field '.devices["breaker-1"].position == "open"
-    and .process.buses.s1.live == false
+  eu_wait_for_field '.devices["breaker-1"].position == "closed"
+    and .devices["breaker-1"].protection_tripped == false
+    and .process.buses.s1.live == true and .process.truth_stale == false
     and .process.devices["feeder-breaker"].delivered == true
     and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision' \
+    15 "G22 closed supplied baseline" || return
+  eu_lab_g22_event baseline-field "$WAIT_BODY" || return
+  baseline_revision=$(printf '%s' "$WAIT_BODY" | jq -er '.devices["breaker-1"].revision | numbers') || return
+  eu_wait_for_operator '.link.state == "started" and four_points
+    and (point("feeder-breaker-position") | good and .value == "closed")' \
+    15 "G22 independent GOOD closed CC baseline" || return
+  eu_lab_g22_event baseline-cc "$WAIT_BODY" || return
+  eu_lab_step "$scenario" attack-iec104-breaker-open || return
+  eu_window_start G22-weak || return
+  eu_lab_g22_event start || return
+  start="$G22_TIME"
+  command_status=0
+  eu_lab_exec kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || command_status=$?
+  eu_lab_g22_event weak-command "$API_BODY" || return
+  [ "$command_status" -eq 0 ] || return "$command_status"
+  eu_wait_for_field ".devices[\"breaker-1\"].position == \"open\"
+    and .process.buses.s1.live == false
+    and .process.truth_stale == false
+    and .devices[\"breaker-1\"].revision > $baseline_revision
+    and (.process.solved_at | epoch) >= (\"$start\" | epoch)
+    and .process.devices[\"feeder-breaker\"].delivered == true
+    and .process.devices[\"feeder-breaker\"].solved_revision == .devices[\"breaker-1\"].revision" \
     15 "student IEC104 attack opens the breaker and drops section supply" || return
+  eu_lab_g22_event consequence-field "$WAIT_BODY" || return
+  eu_lab_g22_wait_cc "$start" || return
+  eu_lab_g22_event consequence-cc "$WAIT_BODY" || return
+  eu_lab_g22_event end || return
+  end="$G22_TIME"
+  eu_window_finish G22-weak || return
+  eu_g22_capture_chain "$TMP_DIR/G22-weak.pcap" "$start" "$end" "$TMP_DIR/G22-packets.json" || return
+  eu_lab_g22_event decoded || return
+  eu_lab_g22_event restore-start || return
+  restore_start="$G22_TIME"
   eu_lab_step "$scenario" restore-the-substation || return
   eu_wait_for_field '.devices["breaker-1"].position == "closed" and .devices["breaker-1"].protection_tripped == false
+    and .process.buses.s1.live == true and .process.truth_stale == false
+    and .process.devices["feeder-breaker"].delivered == true
     and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision' \
     15 "student breaker restore and process solve" || return
+  eu_lab_g22_event restoration-field "$WAIT_BODY" || return
+  eu_lab_g22_wait_cc "$restore_start" closed || return
+  eu_lab_g22_event restoration-cc "$WAIT_BODY" || return
   eu_lab_step "$scenario" apply-the-hardened-policy || return
+  eu_lab_g22_event improved-apply "$API_BODY" || return
   eu_lab_reconnect_cc || return
+  eu_lab_g22_event improved-control-before "$WAIT_BODY" || return
   eu_lab_step "$scenario" re-test-the-attack-under-the-hardened-policy || return
   revision=$(eu_get_field && printf '%s' "$API_BODY" | jq -er '.devices["breaker-1"].revision') || return
-  eu_lab_exec_denied kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || return
+  eu_lab_g22_event improved-start || return
+  command_status=0
+  eu_lab_exec_denied kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || command_status=$?
+  eu_lab_g22_event improved-command "$API_BODY" || return
+  [ "$command_status" -eq 0 ] || return "$command_status"
   eu_assert_unchanged_breaker "$revision" "student hardened IEC104 retest" || return
-  eu_lab_step "$scenario" validate
+  eu_lab_g22_event improved-held-field "$API_BODY" || return
+  eu_lab_g22_event improved-end || return
+  # Reconnect is a positive listener control, not a substitute for weak-command
+  # feedback (which was observed without a forced GI above).
+  eu_lab_reconnect_cc || return
+  eu_lab_g22_event improved-control-after "$WAIT_BODY" || return
+  eu_lab_step "$scenario" validate || return
+  eu_lab_g22_event completed
 }
 
 eu_assert_unchanged_breaker() {

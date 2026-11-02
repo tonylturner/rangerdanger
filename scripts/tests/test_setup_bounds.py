@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import os
+import signal
 import subprocess
 import tempfile
 import unittest
@@ -62,21 +63,23 @@ class SetupBoundsTests(unittest.TestCase):
         docker = tools / "docker"
         docker.write_text(f"#!{os.sys.executable}\n" + FAKE_DOCKER)
         docker.chmod(0o755)
-        sleep = tools / "sleep"
-        sleep.write_text(
-            '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_ROOT/sleeps"\n'
-            'if [ "$*" = 1 ]; then exec /bin/sleep 0.02; fi\n'
-            'if [ "${FAKE_WATCHDOG_FAST:-0}" = 1 ]; then exec /bin/sleep 0.3; fi\n'
-            'exec /bin/sleep 1\n'
-        )
-        sleep.chmod(0o755)
         return dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
-                    FAKE_ROOT=str(root), FAKE_CONFIG=json.dumps(config or {}),
-                    FAKE_WATCHDOG_FAST="1" if (config or {}).get("stall") else "0")
+                    FAKE_ROOT=str(root), FAKE_CONFIG=json.dumps(config or {}))
 
     def fake_run(self, root, script, config=None):
         env = self.fake_docker_env(root, config)
         env["ROOT"] = str(ROOT)
+        # Record the actual call-site budgets independently of polling sleeps.
+        # Exercise the unchanged helper body with a short, real deadline so
+        # stalled-client tests do not wait 15/20/30 seconds per probe.
+        instrumented = BOUNDED.replace("docker_bounded() {", "test_docker_bounded() {") + r'''
+docker_bounded() {
+    printf '%s\n' "$1" >>"$FAKE_ROOT/budgets"
+    shift
+    test_docker_bounded 1 "$@"
+}
+'''
+        script = script.replace('. "$ROOT/scripts/lib/docker-bounded.sh"', instrumented)
         result = subprocess.run(
             ["bash", "-c", "set -euo pipefail\n" + script],
             env=env,
@@ -85,9 +88,9 @@ class SetupBoundsTests(unittest.TestCase):
         calls_path = root / "calls"
         calls = [json.loads(line) for line in calls_path.read_text().splitlines()] \
             if calls_path.exists() else []
-        sleeps_path = root / "sleeps"
-        sleeps = sleeps_path.read_text().splitlines() if sleeps_path.exists() else []
-        return result, calls, sleeps
+        budgets_path = root / "budgets"
+        budgets = budgets_path.read_text().splitlines() if budgets_path.exists() else []
+        return result, calls, budgets
 
     def test_docker_watchdog_preserves_output_status_and_kills_stalled_client(self):
         function = BOUNDED
@@ -116,6 +119,51 @@ class SetupBoundsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "2.36.0")
 
+    def test_docker_watchdog_leaves_no_live_sleep_processes(self):
+        for status in (0, 19, 124):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                sleep = root / "sleep"
+                sleep.write_text(
+                    f"#!{os.sys.executable}\n"
+                    "import os, sys, time\n"
+                    'with open(os.environ["SLEEP_PIDS"], "a") as log:\n'
+                    '    log.write(str(os.getpid()) + "\\n")\n'
+                    "time.sleep(float(sys.argv[1]))\n"
+                )
+                sleep.chmod(0o755)
+                pids_path = root / "pids"
+                command = "exec /bin/sleep 20" if status == 124 else (
+                    # Ensure a timer has started even for immediate-return clients.
+                    'while [ ! -s "$SLEEP_PIDS" ]; do /bin/sleep 0.01; done; '
+                    f"return {status}"
+                )
+                live = []
+                try:
+                    result = run_bash(
+                        BOUNDED + "\ndocker() { " + command + "; }\n"
+                        "docker_bounded 1 inspect",
+                        PATH=str(root) + os.pathsep + os.environ["PATH"],
+                        SLEEP_PIDS=str(pids_path),
+                    )
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    pids = [int(pid) for pid in pids_path.read_text().splitlines()]
+                    self.assertTrue(pids, "regression must exercise a watchdog sleep")
+                    for pid in pids:
+                        try:
+                            os.kill(pid, 0)
+                        except ProcessLookupError:
+                            continue
+                        live.append(pid)
+                    self.assertEqual(live, [], "watchdog sleep survived docker_bounded")
+                finally:
+                    # Only the fixture's recorded processes belong to this test.
+                    for pid in live:
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+
     def test_setup_preflight_bounds_and_runs_each_version_probe(self):
         start = SOURCE.index("# Docker engine reachable")
         end = SOURCE.index("# Architecture", start)
@@ -128,13 +176,13 @@ class SetupBoundsTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            result, calls, sleeps = self.fake_run(root, preflight, {"networks_present": True})
+            result, calls, budgets = self.fake_run(root, preflight, {"networks_present": True})
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(calls, [
                 ["info"], ["compose", "version"], ["compose", "version", "--short"],
                 ["version", "--format", "{{.Server.APIVersion}}"],
             ])
-            self.assertEqual(sleeps, ["30", "20", "20", "20"])
+            self.assertEqual(budgets, ["30", "20", "20", "20"])
 
     def test_setup_preflight_stall_prints_recovery_guidance(self):
         start = SOURCE.index("# Docker engine reachable")
@@ -150,11 +198,11 @@ class SetupBoundsTests(unittest.TestCase):
                                (["compose", "version"], ["30", "20"])):
             with self.subTest(prefix=prefix), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                result, calls, sleeps = self.fake_run(root, preflight, {"stall": [prefix]})
+                result, calls, budgets = self.fake_run(root, preflight, {"stall": [prefix]})
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("Start or restart Docker Desktop or dockerd, then re-run",
                               result.stderr)
-                self.assertEqual(sleeps, limits)
+                self.assertEqual(budgets, limits)
 
     def test_timeout_guidance_survives_caller_stderr_redirect(self):
         script = (
@@ -165,10 +213,10 @@ class SetupBoundsTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            result, calls, sleeps = self.fake_run(root, script, {"stall": [["info"]]})
+            result, calls, budgets = self.fake_run(root, script, {"stall": [["info"]]})
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(calls, [["info"]])
-            self.assertEqual(sleeps, ["30"])
+            self.assertEqual(budgets, ["30"])
             self.assertIn("Start or restart Docker Desktop or dockerd, then re-run",
                           result.stderr)
 
@@ -228,7 +276,7 @@ class SetupBoundsTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            result, calls, sleeps = self.fake_run(root, script)
+            result, calls, budgets = self.fake_run(root, script)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(calls, [
                 ["info", "--format", "{{.MemTotal}}"],
@@ -238,7 +286,7 @@ class SetupBoundsTests(unittest.TestCase):
                 ["ps", "--filter", "label=com.docker.compose.project=rangerdanger-platform",
                  "--format", "{{.Ports}}"],
             ])
-            self.assertEqual(sleeps, ["30", "30", "15", "15"])
+            self.assertEqual(budgets, ["30", "30", "15", "15"])
 
     def test_setup_network_queries_distinguish_absent_and_daemon_errors(self):
         start = SOURCE.index("for DELIVERY_NET in rangerdanger_desk_corp")
@@ -252,19 +300,19 @@ class SetupBoundsTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            result, calls, sleeps = self.fake_run(root, network_checks)
+            result, calls, budgets = self.fake_run(root, network_checks)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(len(calls), 4)
             self.assertTrue(all(call[:2] == ["network", "ls"] for call in calls))
-            self.assertEqual(sleeps, ["15"] * 4)
+            self.assertEqual(budgets, ["15"] * 4)
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            result, calls, sleeps = self.fake_run(
+            result, calls, budgets = self.fake_run(
                 root, network_checks, {"networks_present": True})
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(sum(call[:2] == ["network", "inspect"] for call in calls), 4)
-            self.assertEqual(sleeps, ["15"] * 8)
+            self.assertEqual(budgets, ["15"] * 8)
 
         for config, diagnostic, calls_expected in (
             ({"fail": [(["network", "ls"], 7)]}, "Could not query network", 1),
@@ -288,13 +336,13 @@ class SetupBoundsTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            result, calls, sleeps = self.fake_run(root, script)
+            result, calls, budgets = self.fake_run(root, script)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(calls, [[
                 "ps", "-aq", "--filter", "label=com.docker.compose.project=rangerdanger",
                 "--filter", "label=com.docker.compose.service=backend",
             ]])
-            self.assertEqual(sleeps, ["15"])
+            self.assertEqual(budgets, ["15"])
 
     def test_health_fails_closed_and_uses_elapsed_time_budget(self):
         start = SOURCE.index('HEALTH_OK=0')

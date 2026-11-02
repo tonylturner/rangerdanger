@@ -1,0 +1,1826 @@
+{
+  "schema": 1,
+  "packages": {
+    "us-dnp3-substation": {
+      "sources": [
+        "kali",
+        "corp_ws",
+        "vendor_jump",
+        "eng_workstation"
+      ],
+      "services": [
+        {
+          "key": "firewall",
+          "container": "rangerdanger-firewall",
+          "node": "fw-1",
+          "roles": [
+            "firewall"
+          ],
+          "interfaces": [
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.2"
+            },
+            {
+              "network": "enterprise_net",
+              "ipv4": "10.10.10.2"
+            },
+            {
+              "network": "vendor_net",
+              "ipv4": "10.20.20.2"
+            },
+            {
+              "network": "ot_ops_net",
+              "ipv4": "10.30.30.2"
+            },
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.2"
+            }
+          ],
+          "endpoints": {
+            "api": "http://10.99.99.2:8080"
+          }
+        },
+        {
+          "key": "corp_ws",
+          "container": "rangerdanger-corp-ws",
+          "node": "corp-ws-1",
+          "roles": [
+            "corporate-ws"
+          ],
+          "interfaces": [
+            {
+              "network": "enterprise_net",
+              "ipv4": "10.10.10.10"
+            },
+            {
+              "network": "desk_corp_net",
+              "ipv4": "10.98.1.3"
+            }
+          ]
+        },
+        {
+          "key": "kali",
+          "container": "rangerdanger-kali",
+          "node": "kali-1",
+          "roles": [
+            "attacker"
+          ],
+          "interfaces": [
+            {
+              "network": "enterprise_net",
+              "ipv4": "10.10.10.50"
+            }
+          ]
+        },
+        {
+          "key": "vendor_jump",
+          "container": "rangerdanger-vendor-jump",
+          "node": "vendor-jump-1",
+          "roles": [
+            "jump-host"
+          ],
+          "interfaces": [
+            {
+              "network": "vendor_net",
+              "ipv4": "10.20.20.10"
+            },
+            {
+              "network": "desk_vendor_net",
+              "ipv4": "10.98.2.3"
+            }
+          ]
+        },
+        {
+          "key": "eng_workstation",
+          "container": "rangerdanger-eng-ws",
+          "node": "eng-ws-1",
+          "roles": [
+            "engineering-ws"
+          ],
+          "interfaces": [
+            {
+              "network": "vendor_net",
+              "ipv4": "10.20.20.20"
+            },
+            {
+              "network": "desk_eng_net",
+              "ipv4": "10.98.3.3"
+            }
+          ]
+        },
+        {
+          "key": "fuxa_hmi",
+          "container": "rangerdanger-fuxa-hmi",
+          "node": "hmi-1",
+          "roles": [
+            "hmi"
+          ],
+          "interfaces": [
+            {
+              "network": "ot_ops_net",
+              "ipv4": "10.30.30.10"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.50"
+            }
+          ]
+        },
+        {
+          "key": "hmi_poller",
+          "container": "rangerdanger-hmi-poller",
+          "roles": [
+            "hmi-poller"
+          ],
+          "interfaces": []
+        },
+        {
+          "key": "rtac_sim",
+          "container": "rangerdanger-rtac-sim",
+          "node": "rtac-1",
+          "roles": [
+            "rtac"
+          ],
+          "interfaces": [
+            {
+              "network": "ot_ops_net",
+              "ipv4": "10.30.30.20"
+            },
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.10"
+            },
+            {
+              "network": "physics_net",
+              "ipv4": "10.50.50.10"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.20"
+            }
+          ],
+          "endpoints": {
+            "api": "http://10.99.99.20:8080"
+          }
+        },
+        {
+          "key": "openplc",
+          "container": "rangerdanger-openplc",
+          "node": "openplc-1",
+          "roles": [
+            "plc"
+          ],
+          "interfaces": [
+            {
+              "network": "ot_ops_net",
+              "ipv4": "10.30.30.30"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.30"
+            }
+          ]
+        },
+        {
+          "key": "relay_sim",
+          "container": "rangerdanger-relay-sim",
+          "node": "relay-1",
+          "roles": [
+            "field-device"
+          ],
+          "interfaces": [
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.20"
+            }
+          ]
+        },
+        {
+          "key": "recloser_sim",
+          "container": "rangerdanger-recloser-sim",
+          "node": "recloser-1",
+          "roles": [
+            "field-device"
+          ],
+          "interfaces": [
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.21"
+            }
+          ]
+        },
+        {
+          "key": "regulator_sim",
+          "container": "rangerdanger-regulator-sim",
+          "node": "regulator-1",
+          "roles": [
+            "field-device"
+          ],
+          "interfaces": [
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.22"
+            }
+          ]
+        },
+        {
+          "key": "capbank_sim",
+          "container": "rangerdanger-capbank-sim",
+          "node": "capbank-1",
+          "roles": [
+            "field-device"
+          ],
+          "interfaces": [
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.23"
+            }
+          ]
+        },
+        {
+          "key": "historian_sim",
+          "container": "rangerdanger-historian-sim",
+          "node": "historian-1",
+          "roles": [
+            "historian"
+          ],
+          "interfaces": [
+            {
+              "network": "ot_ops_net",
+              "ipv4": "10.30.30.40"
+            }
+          ]
+        },
+        {
+          "key": "gps_sim",
+          "container": "rangerdanger-gps-sim",
+          "node": "gps-1",
+          "roles": [
+            "time-source"
+          ],
+          "interfaces": [
+            {
+              "network": "ot_ops_net",
+              "ipv4": "10.30.30.50"
+            }
+          ]
+        },
+        {
+          "key": "opendss_sim",
+          "container": "rangerdanger-opendss-sim",
+          "roles": [
+            "process-solver"
+          ],
+          "interfaces": [
+            {
+              "network": "physics_net",
+              "ipv4": "10.50.50.20"
+            }
+          ]
+        }
+      ],
+      "reviewed_inputs": {
+        "compose.source.yml": "94975ebf06c1b4d1897da477903a2722f2a8e1490dfc9356ad31a10a08625523",
+        "compose.release.yml": "49c02bec2eac53d4cf3b883f7ed587f2e9b229c91745300779e82061a51b5456"
+      },
+      "destinations": [
+        {
+          "service": "rtac_sim",
+          "host": "10.30.30.20",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.30.30.20",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.30.30.20",
+          "port": 20000,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.30.30.20",
+          "port": 443,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          },
+          "overrides": {
+            "vendor_jump": {
+              "weak": "A",
+              "improved": "A"
+            },
+            "eng_workstation": {
+              "weak": "A",
+              "improved": "A"
+            }
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.40.40.10",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.40.40.10",
+          "port": 502,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.40.40.10",
+          "port": 20000,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.40.40.10",
+          "port": 443,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.50.50.10",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.50.50.10",
+          "port": 502,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.50.50.10",
+          "port": 20000,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.50.50.10",
+          "port": 443,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.99.99.20",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.99.99.20",
+          "port": 502,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.99.99.20",
+          "port": 20000,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "rtac_sim",
+          "host": "10.99.99.20",
+          "port": 443,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "relay_sim",
+          "host": "10.40.40.20",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "relay_sim",
+          "host": "10.40.40.20",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "relay_sim",
+          "host": "10.40.40.20",
+          "port": 20000,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "recloser_sim",
+          "host": "10.40.40.21",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "recloser_sim",
+          "host": "10.40.40.21",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "recloser_sim",
+          "host": "10.40.40.21",
+          "port": 20000,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "regulator_sim",
+          "host": "10.40.40.22",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "regulator_sim",
+          "host": "10.40.40.22",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "regulator_sim",
+          "host": "10.40.40.22",
+          "port": 20000,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "capbank_sim",
+          "host": "10.40.40.23",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "capbank_sim",
+          "host": "10.40.40.23",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "capbank_sim",
+          "host": "10.40.40.23",
+          "port": 20000,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "historian_sim",
+          "host": "10.30.30.40",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "historian_sim",
+          "host": "10.30.30.40",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "gps_sim",
+          "host": "10.30.30.50",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "gps_sim",
+          "host": "10.30.30.50",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "opendss_sim",
+          "host": "10.50.50.20",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": "/api/health",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "openplc",
+          "host": "10.30.30.30",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "openplc",
+          "host": "10.30.30.30",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "openplc",
+          "host": "10.99.99.30",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "openplc",
+          "host": "10.99.99.30",
+          "port": 502,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "fuxa_hmi",
+          "host": "10.30.30.10",
+          "port": 1881,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "fuxa_hmi",
+          "host": "10.99.99.50",
+          "port": 1881,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "rtac_sim",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        }
+      ],
+      "excluded_listeners": [
+        {
+          "service": "rtac_sim",
+          "port": 22,
+          "reason": "SSH management is outside the requested simulator protocol set."
+        }
+      ]
+    },
+    "eu-iec104-substation": {
+      "sources": [
+        "kali",
+        "vendor_jump",
+        "eng_workstation"
+      ],
+      "services": [
+        {
+          "key": "firewall",
+          "container": "rangerdanger-firewall",
+          "node": "fw-1",
+          "roles": [
+            "firewall"
+          ],
+          "interfaces": [
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.2"
+            },
+            {
+              "network": "enterprise_net",
+              "ipv4": "10.10.10.2"
+            },
+            {
+              "network": "vendor_net",
+              "ipv4": "10.20.20.2"
+            },
+            {
+              "network": "station_net",
+              "ipv4": "10.30.30.2"
+            },
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.2"
+            },
+            {
+              "network": "control_centre_net",
+              "ipv4": "10.60.60.2"
+            },
+            {
+              "network": "ops_dmz_net",
+              "ipv4": "10.70.70.2"
+            }
+          ],
+          "endpoints": {
+            "api": "http://10.99.99.2:8080"
+          }
+        },
+        {
+          "key": "kali",
+          "container": "rangerdanger-kali",
+          "node": "kali-1",
+          "roles": [
+            "attacker"
+          ],
+          "interfaces": [
+            {
+              "network": "enterprise_net",
+              "ipv4": "10.10.10.50"
+            }
+          ]
+        },
+        {
+          "key": "vendor_jump",
+          "container": "rangerdanger-vendor-jump",
+          "node": "vendor-jump-1",
+          "roles": [
+            "jump-host"
+          ],
+          "interfaces": [
+            {
+              "network": "vendor_net",
+              "ipv4": "10.20.20.10"
+            },
+            {
+              "network": "desk_vendor_net",
+              "ipv4": "10.98.2.3"
+            }
+          ]
+        },
+        {
+          "key": "eng_workstation",
+          "container": "rangerdanger-eng-ws",
+          "node": "eng-ws-1",
+          "roles": [
+            "engineering-ws"
+          ],
+          "interfaces": [
+            {
+              "network": "vendor_net",
+              "ipv4": "10.20.20.20"
+            },
+            {
+              "network": "desk_eng_net",
+              "ipv4": "10.98.3.3"
+            }
+          ]
+        },
+        {
+          "key": "gps_sim",
+          "container": "rangerdanger-gps-sim",
+          "node": "gps-1",
+          "roles": [
+            "time-source"
+          ],
+          "interfaces": [
+            {
+              "network": "station_net",
+              "ipv4": "10.30.30.50"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.27"
+            }
+          ],
+          "endpoints": {
+            "sim": "http://10.99.99.27:8080"
+          }
+        },
+        {
+          "key": "iec104_rtu",
+          "container": "rangerdanger-iec104-rtu",
+          "node": "rtu-1",
+          "roles": [
+            "rtu"
+          ],
+          "interfaces": [
+            {
+              "network": "station_net",
+              "ipv4": "10.30.30.20"
+            }
+          ]
+        },
+        {
+          "key": "control_centre",
+          "container": "rangerdanger-control-centre",
+          "node": "cc-1",
+          "roles": [
+            "control-centre"
+          ],
+          "interfaces": [
+            {
+              "network": "control_centre_net",
+              "ipv4": "10.60.60.20"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.21"
+            }
+          ],
+          "endpoints": {
+            "api": "http://10.99.99.21:8080"
+          }
+        },
+        {
+          "key": "feeder_breaker",
+          "container": "rangerdanger-feeder-breaker",
+          "node": "breaker-1",
+          "roles": [
+            "field-device"
+          ],
+          "interfaces": [
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.20"
+            },
+            {
+              "network": "process_net",
+              "ipv4": "10.50.50.30"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.22"
+            }
+          ],
+          "endpoints": {
+            "sim": "http://10.99.99.22:8080"
+          }
+        },
+        {
+          "key": "opendss_sim",
+          "container": "rangerdanger-opendss-sim",
+          "roles": [
+            "process-solver"
+          ],
+          "interfaces": [
+            {
+              "network": "process_net",
+              "ipv4": "10.50.50.20"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.23"
+            }
+          ],
+          "endpoints": {
+            "api": "http://10.99.99.23:8080"
+          }
+        },
+        {
+          "key": "rmu_1",
+          "container": "rangerdanger-rmu-1",
+          "node": "rmu-1",
+          "roles": [
+            "field-device"
+          ],
+          "interfaces": [
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.21"
+            },
+            {
+              "network": "process_net",
+              "ipv4": "10.50.50.31"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.24"
+            }
+          ],
+          "endpoints": {
+            "sim": "http://10.99.99.24:8080"
+          }
+        },
+        {
+          "key": "rmu_2",
+          "container": "rangerdanger-rmu-2",
+          "node": "rmu-2",
+          "roles": [
+            "field-device"
+          ],
+          "interfaces": [
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.22"
+            },
+            {
+              "network": "process_net",
+              "ipv4": "10.50.50.32"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.25"
+            }
+          ],
+          "endpoints": {
+            "sim": "http://10.99.99.25:8080"
+          }
+        },
+        {
+          "key": "oltc_1",
+          "container": "rangerdanger-oltc-1",
+          "node": "oltc-1",
+          "roles": [
+            "field-device"
+          ],
+          "interfaces": [
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.23"
+            },
+            {
+              "network": "process_net",
+              "ipv4": "10.50.50.33"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.26"
+            }
+          ],
+          "endpoints": {
+            "sim": "http://10.99.99.26:8080"
+          }
+        },
+        {
+          "key": "openplc_eu",
+          "container": "rangerdanger-openplc",
+          "node": "plc-1",
+          "roles": [
+            "plc"
+          ],
+          "interfaces": [
+            {
+              "network": "station_net",
+              "ipv4": "10.30.30.30"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.30"
+            }
+          ]
+        },
+        {
+          "key": "historian_eu",
+          "container": "rangerdanger-historian",
+          "node": "historian-1",
+          "roles": [
+            "historian"
+          ],
+          "interfaces": [
+            {
+              "network": "ops_dmz_net",
+              "ipv4": "10.70.70.40"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.40"
+            }
+          ],
+          "endpoints": {
+            "api": "http://10.99.99.40:8080"
+          }
+        },
+        {
+          "key": "f2_breaker",
+          "container": "rangerdanger-f2-breaker",
+          "node": "f2-breaker",
+          "roles": [
+            "field-device"
+          ],
+          "interfaces": [
+            {
+              "network": "field_net",
+              "ipv4": "10.40.40.24"
+            },
+            {
+              "network": "process_net",
+              "ipv4": "10.50.50.34"
+            },
+            {
+              "network": "mgmt_net",
+              "ipv4": "10.99.99.28"
+            }
+          ],
+          "endpoints": {
+            "sim": "http://10.99.99.28:8080"
+          }
+        }
+      ],
+      "reviewed_inputs": {
+        "compose.source.yml": "5f3f4642f3953f56e11476a6451a1ddee131a2b3b02b1b66b509876fd1f4b03c",
+        "compose.release.yml": "406f0709b1d14061e14d309fa6fc3fbe5d80d4830f885f9421ebf640bbf81f37"
+      },
+      "destinations": [
+        {
+          "service": "control_centre",
+          "host": "10.99.99.21",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "feeder_breaker",
+          "host": "10.40.40.20",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "iec104_rtu",
+            "tool": "nc",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "feeder_breaker",
+          "host": "10.50.50.30",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "opendss_sim",
+            "tool": "python3",
+            "path": "/api/truth",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "feeder_breaker",
+          "host": "10.99.99.22",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "rmu_1",
+          "host": "10.40.40.21",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "iec104_rtu",
+            "tool": "nc",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "rmu_1",
+          "host": "10.50.50.31",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "opendss_sim",
+            "tool": "python3",
+            "path": "/api/truth",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "rmu_1",
+          "host": "10.99.99.24",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "rmu_2",
+          "host": "10.40.40.22",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "iec104_rtu",
+            "tool": "nc",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "rmu_2",
+          "host": "10.50.50.32",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "opendss_sim",
+            "tool": "python3",
+            "path": "/api/truth",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "rmu_2",
+          "host": "10.99.99.25",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "oltc_1",
+          "host": "10.40.40.23",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "iec104_rtu",
+            "tool": "nc",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "oltc_1",
+          "host": "10.50.50.33",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "opendss_sim",
+            "tool": "python3",
+            "path": "/api/truth",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "oltc_1",
+          "host": "10.99.99.26",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "f2_breaker",
+          "host": "10.40.40.24",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "iec104_rtu",
+            "tool": "nc",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "f2_breaker",
+          "host": "10.50.50.34",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "opendss_sim",
+            "tool": "python3",
+            "path": "/api/truth",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "f2_breaker",
+          "host": "10.99.99.28",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "opendss_sim",
+          "host": "10.50.50.20",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "feeder_breaker",
+            "tool": "wget",
+            "path": "/api/health",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "opendss_sim",
+          "host": "10.99.99.23",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": "/api/health",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "gps_sim",
+          "host": "10.30.30.50",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          },
+          "overrides": {
+            "vendor_jump": {
+              "weak": "A"
+            },
+            "eng_workstation": {
+              "weak": "A"
+            }
+          }
+        },
+        {
+          "service": "gps_sim",
+          "host": "10.30.30.50",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "gps_sim",
+          "host": "10.99.99.27",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": "/api/state",
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "gps_sim",
+          "host": "10.99.99.27",
+          "port": 502,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "iec104_rtu",
+          "host": "10.30.30.20",
+          "port": 2404,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "control_centre",
+            "tool": "nc",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "openplc_eu",
+          "host": "10.30.30.30",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          },
+          "overrides": {
+            "vendor_jump": {
+              "weak": "A"
+            },
+            "eng_workstation": {
+              "weak": "A",
+              "improved": "A"
+            }
+          }
+        },
+        {
+          "service": "openplc_eu",
+          "host": "10.30.30.30",
+          "port": 502,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "openplc_eu",
+          "host": "10.99.99.30",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "openplc_eu",
+          "host": "10.99.99.30",
+          "port": 502,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": null,
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          }
+        },
+        {
+          "service": "historian_eu",
+          "host": "10.70.70.40",
+          "port": 8080,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "A",
+            "improved": "D"
+          },
+          "control": {
+            "service": "historian_eu",
+            "tool": "wget",
+            "path": "/api/points",
+            "label": "existing-service self-listener exact-address control; not backend reachability"
+          },
+          "overrides": {
+            "kali": {
+              "improved": "A"
+            }
+          }
+        },
+        {
+          "service": "historian_eu",
+          "host": "10.70.70.40",
+          "port": 8081,
+          "purpose": "teaching interface (existing coverage repeated with strict transport oracle)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "control_centre",
+            "tool": "nc",
+            "path": null,
+            "label": "existing-peer exact-address read-only control"
+          }
+        },
+        {
+          "service": "historian_eu",
+          "host": "10.99.99.40",
+          "port": 8080,
+          "purpose": "simulator isolation alias (management/process/RTAC field boundary)",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "control": {
+            "service": "openplc_eu",
+            "tool": "python3",
+            "path": "/api/points",
+            "label": "existing-peer exact-address read-only control"
+          }
+        }
+      ],
+      "excluded_listeners": [],
+      "point_ids": [
+        "feeder-breaker-position",
+        "feeder-protection-trip",
+        "feeder-current",
+        "feeder-voltage",
+        "rmu-1-position",
+        "rmu-1-remote",
+        "rmu-1-earth",
+        "rmu-1-fault-passage",
+        "rmu-1-current",
+        "rmu-1-section-kv",
+        "rmu-1-source-kv",
+        "rmu-2-position",
+        "rmu-2-remote",
+        "rmu-2-earth",
+        "rmu-2-fault-passage",
+        "rmu-2-current",
+        "rmu-2-section-kv",
+        "rmu-2-source-kv",
+        "oltc-1-tap",
+        "oltc-1-remote",
+        "oltc-1-auto",
+        "oltc-1-at-lower",
+        "oltc-1-at-upper",
+        "oltc-1-blocked",
+        "oltc-1-bus-kv",
+        "oltc-1-current",
+        "plc-1-running",
+        "plc-1-input-valid",
+        "plc-1-setpoint-kv",
+        "plc-1-deadband-pct",
+        "plc-1-delay-s",
+        "feeder-p-mw",
+        "feeder-q-mvar",
+        "feeder-pf",
+        "oltc-1-p-mw",
+        "oltc-1-q-mvar",
+        "oltc-1-pf",
+        "oltc-1-overcurrent-block",
+        "f2-position",
+        "f2-protection-trip",
+        "f2-current",
+        "f2-p-mw"
+      ]
+    }
+  }
+}

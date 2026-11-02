@@ -69,15 +69,15 @@ steps:
 
       :::hint Optional: see the Security Level target for the firewall
       With the **Purdue Model view** toggled on in [/console](/console),
-      hover the **firewall node** - the tooltip shows a `Target SL-3 ·
-      MET` (green) or `Target SL-3 · GAP` (red) badge derived from
-      the active policy. Under the weak baseline you'll see `GAP`
-      with a write-up of *why* (no DPI, no source pin, etc.). Under
-      Hardened it shifts to `MET`. The SL-3 *target* comes from
-      **IEC 62443** - the capability rating the conduit must meet -
-      and is overlaid on the Purdue band layout the view renders.
-      The SL maps to the sophistication a moderately-skilled attacker
-      would bring - see [IEC 62443 Security Levels Explained](/knowledge#iec-62443-security-levels)
+      hover the **firewall node**. The SL-3 number is a design target only.
+      The badge reports selected segmentation criteria for the conduit:
+      restricted enterprise/vendor direct field access and source-pinned
+      permitted cross-zone field traffic. `MET` follows the backend-reported active Hardened
+      reference policy, not a packet-path test. Empty, custom, partial or
+      unknown summaries show `NOT ASSESSED`, never `MET`.
+      This is not an IEC 62443 SL assessment.
+      The L4 source pin enforces; DPI detects and logs.
+      See [IEC 62443 Security Levels Explained](/knowledge#iec-62443-security-levels)
       for what SL-1 through SL-4 mean, and
       [Purdue Model Levels (L0–L5)](/knowledge#purdue-model)
       for the architectural levels the bands represent.

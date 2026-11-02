@@ -18,7 +18,7 @@ import { PhysicalEquipment } from "./physical-system-equipment";
 import { PhysicalOverview } from "./physical-system-overview";
 import { ACTION, PANEL } from "./physical-system-parts";
 
-export const PHYSICAL_DESCRIPTION = "Live electrical and device conditions from the simulation, independent of SCADA communications. Compare these values with the Control Centre to identify missing, delayed, or incorrect observations.";
+export const PHYSICAL_DESCRIPTION = "Live electrical and device conditions from the simulation, independent of SCADA communications. This is privileged simulation truth, not available to the SCADA operator. Compare these values with the Control Centre to identify missing, delayed, or incorrect observations.";
 
 type Selection = { selected?: DeviceId; onSelect?: (id: DeviceId) => void; revealSelected?: boolean };
 export function PhysicalSystem({ operator, operatorUnavailable = false, now, ...selection }: Selection & { operator: OperatorState | undefined; operatorUnavailable?: boolean; now: number }) {
