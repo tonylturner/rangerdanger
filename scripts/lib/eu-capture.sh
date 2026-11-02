@@ -4,24 +4,45 @@
 
 eu_stop_capture() {
   [ "$capture_running" -eq 1 ] || return 0
+  local rc
   if [ -z "$CAPTURE_PID" ] && [ -n "$CAPTURE_PID_FILE" ]; then
     local attempt
     for ((attempt = 0; attempt < 20; attempt++)); do
-      CAPTURE_PID=$(docker exec "${CAPTURE_HOST:-$FW}" cat "$CAPTURE_PID_FILE" 2>/dev/null) || CAPTURE_PID=""
+      if CAPTURE_PID=$(docker_bounded 5 exec "${CAPTURE_HOST:-$FW}" cat "$CAPTURE_PID_FILE"); then
+        :
+      else
+        rc=$?
+        CAPTURE_PID=""
+        if [ "$rc" -eq 124 ]; then
+          fail "docker exec ${CAPTURE_HOST:-$FW} cat $CAPTURE_PID_FILE timed out"
+          return 1
+        fi
+      fi
       [[ "$CAPTURE_PID" =~ ^[0-9]+$ ]] && break
       sleep 0.1
     done
   fi
-  if [ -z "$CAPTURE_PID" ] || ! docker exec "${CAPTURE_HOST:-$FW}" sh -c "kill -INT '$CAPTURE_PID'" \
+  if ! [[ "$CAPTURE_PID" =~ ^[0-9]+$ ]]; then
+    fail "docker exec ${CAPTURE_HOST:-$FW} cat $CAPTURE_PID_FILE did not yield an owned tcpdump PID"
+    return 1
+  fi
+  if ! docker_bounded 5 exec "${CAPTURE_HOST:-$FW}" sh -c "kill -INT '$CAPTURE_PID'" \
     >/dev/null 2>"$TMP_DIR/capture-kill.err"; then
-    fail "could not stop owned tcpdump capture: $(cat "$TMP_DIR/capture-kill.err")"
+    fail "docker exec ${CAPTURE_HOST:-$FW} kill -INT $CAPTURE_PID failed: $(cat "$TMP_DIR/capture-kill.err")"
     return 1
   fi
   local i
   for ((i = 0; i < 40; i++)); do
-    if ! docker exec "${CAPTURE_HOST:-$FW}" sh -c "kill -0 '$CAPTURE_PID'" >/dev/null 2>&1; then
-      capture_running=0
-      return 0
+    if docker_bounded 5 exec "${CAPTURE_HOST:-$FW}" sh -c "kill -0 '$CAPTURE_PID'" >/dev/null 2>&1; then
+      :
+    else
+      rc=$?
+      if [ "$rc" -eq 1 ]; then
+        capture_running=0
+        return 0
+      fi
+      fail "docker exec ${CAPTURE_HOST:-$FW} kill -0 $CAPTURE_PID failed (exit $rc)"
+      return 1
     fi
     sleep 0.25
   done
@@ -208,45 +229,60 @@ eu_check_timed_status() {
 eu_window_start() {
   local label="$1" peer="$FW" image platform
   case "$label" in G11|G17) peer="$RTU" ;; esac
+  if ! image=$(docker_bounded 5 inspect -f '{{.Image}}' "$FW"); then
+    fail "$label docker inspect $FW failed"; return 1
+  fi
+  if ! platform=$(docker_bounded 5 image inspect -f '{{.Os}}/{{.Architecture}}' "$image"); then
+    fail "$label docker image inspect $image failed"; return 1
+  fi
   CAPTURE_HOST="rdinc4-i-window-$$"
   CAPTURE_PATH=/tmp/window.pcap CAPTURE_PID=1
   CAPTURE_PID_FILE="" CAPTURE_LOG=""
   # shellcheck disable=SC2034 # read by shared capture teardown
   capture_running=1
-  image=$(docker inspect -f '{{.Image}}' "$FW") || return
-  platform=$(docker image inspect -f '{{.Os}}/{{.Architecture}}' "$image") || return
   # Reuse the already-running image, without pulling/tagging it. Sharing the
   # RTU namespace is necessary to observe its same-subnet PLC polls too.
   # Docker veths carry GRO/GSO segments far above the MTU (7,312 bytes seen in
   # CI), so the snaplen must hold the largest one: 65,535-byte IP + 20-byte SLL2.
   # Measured on tcpdump 4.99.7/libpcap 1.11.0 (TPACKET_V2, immediate mode):
   # 512 frames of 65,648 bytes in 128 KiB blocks, 64 MiB.
-  if ! docker run -d --platform "$platform" --name "$CAPTURE_HOST" --network "container:$peer" \
+  if ! docker_bounded 15 run -d --platform "$platform" --name "$CAPTURE_HOST" --network "container:$peer" \
     --cap-add NET_RAW --entrypoint tcpdump "$image" --immediate-mode -i any -s 65560 -B 32768 -U -w "$CAPTURE_PATH" \
     'tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081' >"$TMP_DIR/$label-capture.id"; then
-    fail "$label cannot start owned capture container"; return 1
+    fail "$label docker run tcpdump failed"
+    eu_window_remove "$label" || true
+    return 1
   fi
   sleep 1
 }
-eu_window_finish() {
-  local label="$1" stats
-  stats="$TMP_DIR/$label-tcpdump.log"
-  eu_stop_capture || return
-  docker cp "$CAPTURE_HOST:$CAPTURE_PATH" "$TMP_DIR/$label.pcap" >/dev/null || {
-    fail "$label cannot retrieve attempt capture"; return 1;
-  }
-  # tcpdump writes its statistics to stderr, which docker logs keeps separate.
-  if ! docker logs "$CAPTURE_HOST" >"$stats" 2>&1; then
-    fail "$label cannot retrieve tcpdump statistics: $(cat "$stats")"
-    docker rm "$CAPTURE_HOST" >/dev/null || return
-    CAPTURE_HOST=""
-    CAPTURE_PATH="" CAPTURE_PID_FILE="" CAPTURE_LOG="" CAPTURE_PID=""
-    return 1
+# Force removal also covers a run/stop timeout that left tcpdump running.
+# Always clear shared ownership, even when Docker cannot confirm removal.
+eu_window_remove() {
+  local label="$1" rc=0
+  if [ -n "$CAPTURE_HOST" ] && ! docker_bounded 15 rm -f "$CAPTURE_HOST" >/dev/null; then
+    fail "$label docker rm -f $CAPTURE_HOST failed"
+    rc=1
   fi
-  docker rm "$CAPTURE_HOST" >/dev/null || return
   CAPTURE_HOST=""
   # shellcheck disable=SC2034 # shared with capture teardown
-  CAPTURE_PATH="" CAPTURE_PID_FILE="" CAPTURE_LOG="" CAPTURE_PID=""
+  CAPTURE_PATH="" CAPTURE_PID_FILE="" CAPTURE_LOG="" CAPTURE_PID="" capture_running=0
+  return "$rc"
+}
+eu_window_finish() {
+  local label="$1" stats rc=0
+  stats="$TMP_DIR/$label-tcpdump.log"
+  eu_stop_capture || rc=1
+  if [ "$rc" -eq 0 ] && ! docker_bounded 60 cp "$CAPTURE_HOST:$CAPTURE_PATH" "$TMP_DIR/$label.pcap" >/dev/null; then
+    fail "$label docker cp $CAPTURE_HOST:$CAPTURE_PATH failed"
+    rc=1
+  fi
+  # tcpdump writes its statistics to stderr, which docker logs keeps separate.
+  if [ "$rc" -eq 0 ] && ! docker_bounded 5 logs "$CAPTURE_HOST" >"$stats" 2>&1; then
+    fail "$label docker logs $CAPTURE_HOST failed: $(cat "$stats")"
+    rc=1
+  fi
+  eu_window_remove "$label" || rc=1
+  [ "$rc" -eq 0 ] || return "$rc"
   eu_check_capture_integrity "$TMP_DIR/$label.pcap" "$stats" "$label"
 }
 
