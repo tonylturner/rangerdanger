@@ -78,16 +78,19 @@ export function AbnormalSummary({ state, cached = false }: { state: OperatorStat
   const alarmIds = new Set(alarms.map((a) => a.id));
   const conditions = abnormalConditions(state);
   const offNormal = conditions.filter((c) => !alarmIds.has(c.id));
-  const undefinedAtZeroCurrent = new Set(state.points.filter((p) => {
+  const undefinedAtNoLoad = new Set(state.points.filter((p) => {
     if (!p.id.endsWith("-pf") || p.stale_reason !== "measurement_invalid" || pointObservationNotCurrent(p) || p.quality.sb || p.quality.bl || p.quality.ov || state.link.state !== "started" || !hasCurrentConnectionGi(state.link)) return false;
     const current = state.points.find((other) => other.id === p.id.replace(/-pf$/, "-current"));
-    return current?.value === 0 && pointCondition(current) === "good";
+    // The device invalidates PF alone near zero apparent power; invalid
+    // device measurements invalidate current too. Trust that quality
+    // distinction, not exact zero or a UI threshold on solver residuals.
+    return current !== undefined && pointCondition(current) === "good";
   }).map((p) => p.id));
-  const uncertain = state.points.filter((p) => p.kind === "float" && pointCondition(p) !== "good" && !undefinedAtZeroCurrent.has(p.id)).length;
+  const uncertain = state.points.filter((p) => p.kind === "float" && pointCondition(p) !== "good" && !undefinedAtNoLoad.has(p.id)).length;
   return <section aria-label="Abnormal conditions" data-alarm-count={alarms.length} data-off-normal-count={offNormal.length} className={`rounded-lg border p-3 text-sm ${alarms.length ? "border-rose-700 bg-rose-950/30" : conditions.length ? "border-amber-700 bg-amber-950/30" : "border-slate-700"} text-slate-300`}>
     <p className="font-semibold">{conditions.length ? `${alarms.length} ${alarms.length === 1 ? "alarm" : "alarms"} · ${offNormal.length} off-normal` : <span data-condition="none">No alarms in valid observations</span>}{cached ? " in cached snapshot" : ""}</p>
     {conditions.length > 0 && <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-2">{[...alarms, ...offNormal].map((c) => <li key={c.id} data-condition={c.id} data-condition-kind={alarmIds.has(c.id) ? "alarm" : "off-normal"} className={alarmIds.has(c.id) ? "text-rose-300" : "text-amber-200"}>⚠ {c.text}</li>)}</ul>}
-    {undefinedAtZeroCurrent.size > 0 && <p data-undefined-measurements={undefinedAtZeroCurrent.size} className="mt-2 text-xs text-slate-300">{undefinedAtZeroCurrent.size} power-factor {undefinedAtZeroCurrent.size === 1 ? "measurement" : "measurements"} undefined at zero current · not observation uncertainty.</p>}
+    {undefinedAtNoLoad.size > 0 && <p data-undefined-measurements={undefinedAtNoLoad.size} className="mt-2 text-xs text-slate-300">{undefinedAtNoLoad.size} power-factor {undefinedAtNoLoad.size === 1 ? "measurement" : "measurements"} undefined at no load · not observation uncertainty.</p>}
     <p data-observation-uncertainty={uncertain} className={`mt-2 text-xs ${uncertain ? "text-amber-200" : "text-slate-400"}`}>Observation uncertainty: {uncertain} non-valid {uncertain === 1 ? "measurement" : "measurements"} · separate from process alarms.</p>
   </section>;
 }

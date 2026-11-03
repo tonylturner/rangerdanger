@@ -47,7 +47,7 @@ it.each(["control-centre", "physical-system"] as const)("keeps a single persiste
     expect(banner()?.children).toHaveLength(0);
     if (view === "control-centre") {
       expect(tree.container.querySelector("[data-observation-uncertainty='0']")?.textContent).toContain("0 non-valid measurements");
-      expect(tree.container.querySelector("[data-undefined-measurements='1']")?.textContent).toContain("1 power-factor measurement undefined at zero current");
+      expect(tree.container.querySelector("[data-undefined-measurements='1']")?.textContent).toContain("1 power-factor measurement undefined at no load");
     }
     pf.stale_reason = "device_unreachable";
     tree.rerender(page(open));
@@ -120,7 +120,58 @@ it("separates uncertain measurements from the GOOD-observation empty summary", (
   expect(html).toContain("1 non-valid measurement");
 });
 
-it.each(["link_lost", "device_unreachable", "not_updated", "measurement_invalid"] as const)("does not misclassify %s as zero-current undefined when current is not valid", (reason) => {
+it.each([0, 1.1655077e-8, 28.93])("uses PF/current validity rather than a current threshold (%s A)", (value) => {
+  const state = structuredClone(FEEDER_STATE);
+  state.points.find((p) => p.id === "feeder-breaker-position")!.value = "open";
+  state.points.find((p) => p.id === "feeder-current")!.value = value;
+  const pf = state.points.find((p) => p.id === "feeder-pf")!;
+  // Exact live CB1 case: residual current 1.1655077e-8 GOOD; PF 0 IV.
+  pf.value = 0; pf.quality = { ...pf.quality, iv: true }; pf.stale_reason = "measurement_invalid";
+  expect(state.link.state).toBe("started");
+  expect(state.link.gi.state).toBe("complete");
+  const html = renderToStaticMarkup(<AbnormalSummary state={state} />);
+  expect(html).toContain("1 power-factor measurement undefined at no load");
+  expect(html).toContain('data-undefined-measurements="1"');
+  expect(html).toContain('data-observation-uncertainty="0"');
+  expect(html).not.toContain("undefined at zero current");
+});
+
+it.each(["disconnected", "connecting", "GI missing", "GI previous connection", "current missing"] as const)("does not infer no-load PF when %s", (condition) => {
+  const state = structuredClone(FEEDER_STATE);
+  const pf = state.points.find((p) => p.id === "feeder-pf")!;
+  pf.value = 0; pf.quality = { ...pf.quality, iv: true }; pf.stale_reason = "measurement_invalid";
+  if (condition === "disconnected" || condition === "connecting") state.link.state = condition;
+  if (condition === "GI missing") state.link.gi.last_complete_at = null;
+  if (condition === "GI previous connection") state.link.since = new Date(Date.parse(state.link.gi.last_complete_at!) + 1).toISOString();
+  if (condition === "current missing") state.points = state.points.filter((p) => p.id !== "feeder-current");
+  const html = renderToStaticMarkup(<AbnormalSummary state={state} />);
+  expect(html).not.toContain("data-undefined-measurements");
+  expect(html).toContain('data-observation-uncertainty="1"');
+});
+
+it.each(["nt", "sb", "bl", "ov"] as const)("retains uncertainty for a PF with additional %s quality", (flag) => {
+  const state = structuredClone(FEEDER_STATE);
+  const pf = state.points.find((p) => p.id === "feeder-pf")!;
+  pf.value = 0; pf.quality = { ...pf.quality, iv: true, [flag]: true }; pf.stale_reason = "measurement_invalid";
+  const html = renderToStaticMarkup(<AbnormalSummary state={state} />);
+  expect(html).not.toContain("data-undefined-measurements");
+  expect(html).toContain('data-observation-uncertainty="1"');
+});
+
+it("retains uncertainty when the whole device reports invalid measurements, including current IV", () => {
+  const state = structuredClone(FEEDER_STATE);
+  for (const id of ["feeder-pf", "feeder-current"]) {
+    const point = state.points.find((p) => p.id === id)!;
+    point.value = id === "feeder-pf" ? 0 : 1.1655077e-8;
+    point.quality = { ...point.quality, iv: true };
+    point.stale_reason = "measurement_invalid";
+  }
+  const html = renderToStaticMarkup(<AbnormalSummary state={state} />);
+  expect(html).not.toContain("data-undefined-measurements");
+  expect(html).toContain('data-observation-uncertainty="2"');
+});
+
+it.each(["link_lost", "device_unreachable", "not_updated", "measurement_invalid"] as const)("does not misclassify %s as no-load undefined when current is not valid", (reason) => {
   const state = structuredClone(FEEDER_STATE);
   const pf = state.points.find((p) => p.id === "feeder-pf")!;
   pf.stale_reason = reason; pf.quality = { ...pf.quality, iv: true };

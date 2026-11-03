@@ -42,7 +42,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Marker tooltips and accessible labels use the same short device wording as the list.
 - EU: CB1 and RMU faceplates explain RTU switching conditions. One-line
   voltage labels, earth leads, FPI badges and the F2 legend are clearer;
-  zero-current power factor is distinguished from observation uncertainty.
+  no-load power factor is distinguished from observation uncertainty using
+  sibling current quality, without requiring an exact-zero solver current.
 - The overview voltage trend lists the 5 newest snapshots, with a button
   to show the last 30. The Control Centre Trends tab still lists 30.
 
