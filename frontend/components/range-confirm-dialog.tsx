@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 import { confirmationConsequences, REQUEST_LABELS } from "../lib/range";
 
@@ -30,7 +31,9 @@ export function RangeConfirmDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel, pending]);
 
-  return (
+  // RangeControl opens this only after a client interaction. Escape the
+  // sticky sidebar's stacking context so page content cannot cover it.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs">
       <div
         role="dialog"
@@ -72,6 +75,7 @@ export function RangeConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
