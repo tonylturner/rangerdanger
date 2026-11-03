@@ -203,7 +203,8 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
       <div className={cluster} style={at(180, 166)}>
         {["oltc-1-at-lower", "oltc-1-at-upper"].filter((id) => asserted(id)).slice(0, 1).map((id) => badge(id, "AT LIMIT"))}
         {["oltc-1-blocked", "oltc-1-overcurrent-block"].filter((id) => asserted(id)).slice(0, 1).map((id) => badge(id, "BLOCKED"))}
-        {["plc-1-running", "plc-1-input-valid"].filter((id) => asserted(id, false)).slice(0, 1).map((id) => badge(id, "PLC DOWN"))}
+        {asserted("plc-1-running", false) ? badge("plc-1-running", "PLC DOWN")
+          : asserted("plc-1-running") && asserted("plc-1-input-valid", false) && badge("plc-1-input-valid", "PLC INPUT INVALID")}
       </div>
       </div>
     </div>
@@ -212,6 +213,6 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
       <p>Observation quality exceptions · separate from plant state:</p>
       <ul className="grid gap-x-6 gap-y-1 sm:grid-cols-2">{qualityNotes.map((id) => <li key={id} className="min-w-0 wrap-anywhere">{pointLabel(id)}: {read(id).shortText}</li>)}</ul>
     </div>}
-    <figcaption className="text-xs text-slate-400">Simplified functional one-line. Blue: voltage ≥ {LIVE_KV} kV, not proof of a supply path. Thick rose dashes + NO SUPPLY: valid voltage below {LIVE_KV} kV. TRIPPED / LOCKED OUT: protection latches. FAULT PASSED: latched FPI, not a fault location. EARTHED: earth closed. AT LIMIT / BLOCKED / PLC DOWN: control constraints. Amber: off-normal; dashed amber / hatching: uncertain data, never inferred loss of supply. RMU2 OPEN is normal (NOP); F2 is another connection to the same T1 bus. Filled switch (F2 adds a dot): closed; hollow (F2 adds a ring): open; ½ / ×: intermediate / indeterminate. Tap is the last completed step; TRANSIENT means motion. {physical ? "Simulation observations only; the lower F2 run follows solver energization separately from measured kV. Select a device for its equipment card." : "IEC 104 observations only; paths use valid received voltages and switch feedback. The lower F2 run follows S3 VT, not F2 position. Select a device for its faceplate."}</figcaption>
+    <figcaption className="text-xs text-slate-400">Simplified functional one-line. Blue: voltage ≥ {LIVE_KV} kV, not proof of a supply path. Thick rose dashes + NO SUPPLY: valid voltage below {LIVE_KV} kV. TRIPPED / LOCKED OUT: protection latches. FAULT PASSED: latched FPI, not a fault location. EARTHED: earth closed. AT LIMIT / BLOCKED / PLC DOWN / PLC INPUT INVALID: control constraints. Amber: off-normal; dashed amber / hatching: uncertain data, never inferred loss of supply. RMU2 OPEN is normal (NOP); F2 is another connection to the same T1 bus. Filled switch (F2 adds a dot): closed; hollow (F2 adds a ring): open; ½ / ×: intermediate / indeterminate. Tap is the last completed step; TRANSIENT means motion. {physical ? "Simulation observations only; the lower F2 run follows solver energization separately from measured kV. Select a device for its equipment card." : "IEC 104 observations only; paths use valid received voltages and switch feedback. The lower F2 run follows S3 VT, not F2 position. Select a device for its faceplate."}</figcaption>
   </figure>;
 }

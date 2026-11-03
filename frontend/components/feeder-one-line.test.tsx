@@ -27,6 +27,30 @@ const textBox = (text: Element, scale: number): Box => {
     y: Number(text.getAttribute("y")) * scale - font, width, height: font * 1.25 };
 };
 
+it.each([[false, "PLC DOWN"], [true, "PLC INPUT INVALID"]] as const)(
+  "keeps the PLC running=%s badge inside supported canvas widths",
+  (running, label) => {
+    const { operator } = oracleFixture(EU_ORACLE[12]);
+    operator.points.find((p) => p.id === "plc-1-running")!.value = running;
+    operator.points.find((p) => p.id === "plc-1-input-valid")!.value = false;
+    const root = document.createElement("div");
+    root.innerHTML = renderToStaticMarkup(<FeederOneLine read={controlCentreObservations(operator.points)} />);
+    const badge = root.querySelector<HTMLElement>('[data-condition="asserted"]')!;
+    expect(badge.textContent).toBe(label);
+    expect(badge.classList.contains("whitespace-nowrap")).toBe(true);
+    expect(badge.classList.contains("text-xs")).toBe(true);
+    const cluster = badge.parentElement!;
+    for (const canvasWidth of [1060, 1320, 1800]) {
+      // HTML badges keep 12px type; conservatively reserve 0.75em per
+      // character plus horizontal padding and borders, as for breaker badges.
+      const width = label.length * 12 * 0.75 + 18;
+      const x = parseFloat(cluster.style.left) / 100 * canvasWidth;
+      expect(x - width / 2).toBeGreaterThanOrEqual(0);
+      expect(x + width / 2).toBeLessThanOrEqual(canvasWidth);
+    }
+  },
+);
+
 it.each(EU_ORACLE)("$switches / F2 $f2 / VT $vt: physical source stubs stay live even at zero current; CC retains measurement provenance", (row) => {
   const { field, operator } = oracleFixture(row);
   const physical = renderToStaticMarkup(<FeederOneLine physical read={physicalSystemObservations(field)} />);

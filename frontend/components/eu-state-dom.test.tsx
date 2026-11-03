@@ -119,7 +119,7 @@ it.each([
   ["oltc-1-blocked", true, "BLOCKED"],
   ["oltc-1-overcurrent-block", true, "BLOCKED"],
   ["plc-1-running", false, "PLC DOWN"],
-  ["plc-1-input-valid", false, "PLC DOWN"],
+  ["plc-1-input-valid", false, "PLC INPUT INVALID"],
 ] as const)("shows %s as %s only from usable IEC evidence", (id, value, label) => {
   const { operator } = oracleFixture(EU_ORACLE[12]);
   const point = operator.points.find((p) => p.id === id)!;
@@ -136,6 +136,33 @@ it.each([
       expect(hook(root, "data-point", id)).toHaveLength(0);
     });
   }
+});
+
+it.each([
+  [true, true, null],
+  [false, true, "PLC DOWN"],
+  [true, false, "PLC INPUT INVALID"],
+  [false, false, "PLC DOWN"],
+] as const)("distinguishes PLC running=%s from input-valid=%s", (running, inputValid, label) => {
+  const { operator } = oracleFixture(EU_ORACLE[12]);
+  operator.points.find((p) => p.id === "plc-1-running")!.value = running;
+  operator.points.find((p) => p.id === "plc-1-input-valid")!.value = inputValid;
+  inspect(<FeederOneLine read={controlCentreObservations(operator.points)} />, (root) => {
+    const badges = hook(root, "data-condition", "asserted");
+    expect(badges.map((badge) => badge.textContent)).toEqual(label ? [label] : []);
+    if (label) expect(badges[0].getAttribute("data-point")).toBe(running ? "plc-1-input-valid" : "plc-1-running");
+    expect(root.querySelector("figcaption")?.textContent).toContain("PLC DOWN / PLC INPUT INVALID");
+  });
+});
+
+it.each(["iv", "nt", "sb", "bl", "ov"] as const)("does not infer a running PLC from %s quality when inputs are invalid", (flag) => {
+  const { operator } = oracleFixture(EU_ORACLE[12]);
+  const running = operator.points.find((p) => p.id === "plc-1-running")!;
+  running.quality = { ...running.quality, [flag]: true };
+  operator.points.find((p) => p.id === "plc-1-input-valid")!.value = false;
+  inspect(<FeederOneLine read={controlCentreObservations(operator.points)} />, (root) => {
+    expect(hook(root, "data-condition", "asserted")).toHaveLength(0);
+  });
 });
 
 it("uses independent physical protection, earth and FPI latches, never CC flags", () => {
