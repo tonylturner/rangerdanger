@@ -31,6 +31,10 @@ export function DeviceFaceplate({ state, selected, unavailable }: { state: Opera
     <h2 className="text-base font-semibold text-slate-100">{selected} · {selected === "T1" ? "Transformer / AVR" : selected === "CB1" || selected === "F2" ? "Feeder breaker" : "Ring main unit"}</h2>
     {selected === "F2" && <p className="text-xs text-slate-300">Indication only · no supervisory controls. F2 is an alternative feeder from the same T1 / bus20.</p>}
     {selected === "CB1" && <p className="text-xs text-slate-400">Remote/local authority is not telemetered for CB1.</p>}
+    {(selected === "CB1" || selected === "RMU1" || selected === "RMU2") && <p aria-label="RTU switching procedure" className="text-xs text-slate-300">
+      RTU procedure: CLOSE requires REMOTE, valid measurements, no protection pickup{selected === "CB1" ? ", no breaker lockout" : ", and the earth switch open"}. CLOSE is refused with both sides live (would parallel CB1 and F2).
+      {selected !== "CB1" && " OPEN also requires REMOTE, valid measurements and no protection pickup."}
+    </p>}
     <SupervisoryControls link={state.link} points={state.points} unavailable={unavailable} selected={selected} />
     {selected === "T1" && <><RegulationBand band={regulationBand(state.points)} /><p className="text-xs text-slate-400">Configured delay only; no live countdown is telemetered.</p></>}
     <dl className="text-xs">

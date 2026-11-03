@@ -28,6 +28,30 @@ function screen(props: Partial<Parameters<typeof ControlCentreScreen>[0]> = {}) 
   return render(<ControlCentreScreen initialTab="Points" state={FEEDER_STATE} stateError={null} stateUpdatedAt={NOW - 1000} journal={JOURNAL} now={NOW} {...props} />);
 }
 
+it.each(["CB1", "RMU1", "RMU2", "F2", "T1"] as const)("shows device-specific static RTU procedure for %s only where controls switch the feeder", (selected) => {
+  const html = render(<DeviceFaceplate state={FEEDER_STATE} selected={selected} unavailable={false} />);
+  if (selected === "F2" || selected === "T1") {
+    expect(html).not.toContain('aria-label="RTU switching procedure"');
+    return;
+  }
+  const procedure = text(html.match(/<p aria-label="RTU switching procedure"[\s\S]*?<\/p>/)![0]);
+  expect(procedure).toContain("CLOSE requires REMOTE, valid measurements, no protection pickup");
+  expect(procedure).toContain("CLOSE is refused with both sides live (would parallel CB1 and F2)");
+  if (selected === "CB1") {
+    expect(procedure).toContain("no breaker lockout");
+    expect(procedure).not.toContain("earth switch");
+    expect(html).toContain("Remote/local authority is not telemetered for CB1.");
+  } else {
+    expect(procedure).toContain("earth switch open");
+    expect(procedure).toContain("OPEN also requires REMOTE, valid measurements and no protection pickup");
+    expect(procedure).not.toContain("lockout");
+  }
+  const changed = structuredClone(FEEDER_STATE);
+  changed.points.forEach((point) => { point.value = null; });
+  const cached = render(<DeviceFaceplate state={changed} selected={selected} unavailable />);
+  expect(text(cached.match(/<p aria-label="RTU switching procedure"[\s\S]*?<\/p>/)![0])).toBe(procedure);
+});
+
 describe("ControlCentreScreen schema 3", () => {
   it("shows all 44 points, per-device controls and snapshot identity", () => {
     const html = screen();
