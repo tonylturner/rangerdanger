@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ApiError, type PackageSummary } from "../lib/api";
-import { RangeNotReadyError, type RangePhase, type RangeStatus } from "../lib/range";
+import { RANGE_QUERY_KEY, RangeNotReadyError, type RangePhase, type RangeStatus } from "../lib/range";
 import { RangeBannerView } from "./range-banner";
 import { RangeConfirmDialog } from "./range-confirm-dialog";
-import { RangeControlView, currentPackageId, rangeRequestErrorText } from "./range-control";
+import { RangeControl, RangeControlView, currentPackageId, rangeRequestErrorText } from "./range-control";
+import { RangeProvider } from "./range-context";
 
 const PACKAGES: PackageSummary[] = [
   { id: "us-dnp3-substation", title: "US DNP3 Substation", revision: 3, active: true, operator_view: "us-dnp3-substation", policies: ["weak", "improved"] },
@@ -99,9 +103,48 @@ describe("RangeControlView", () => {
   });
 });
 
+describe("RangeControl", () => {
+  const clients: QueryClient[] = [];
+  afterEach(() => {
+    clients.forEach((client) => client.clear());
+    clients.length = 0;
+  });
+
+  it.each([
+    ["Restart range", "Restart US DNP3 Substation?"],
+    ["Switch range", "Switch the range to EU IEC 104 Substation?"],
+  ])("portals the %s confirmation outside a sticky sidebar", (action, title) => {
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
+    clients.push(client);
+    client.setQueryData(RANGE_QUERY_KEY, status("ready"));
+    client.setQueryData(["packages"], PACKAGES);
+    const tree = render(
+      <QueryClientProvider client={client}>
+        <RangeProvider>
+          <aside style={{ position: "sticky", top: 0 }}>
+            <RangeControl />
+          </aside>
+        </RangeProvider>
+      </QueryClientProvider>,
+    );
+    const sidebar = tree.container.querySelector("aside")!;
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(action) }));
+
+    const dialog = screen.getByRole("dialog", { name: title });
+    expect(sidebar.contains(dialog)).toBe(false);
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
 describe("RangeConfirmDialog", () => {
   function dialog(kind: "restart" | "switch") {
-    return renderToStaticMarkup(
+    render(
       <RangeConfirmDialog
         kind={kind}
         packageTitle="EU IEC 104 Substation"
@@ -111,6 +154,7 @@ describe("RangeConfirmDialog", () => {
         onCancel={() => {}}
       />,
     );
+    return screen.getByRole("dialog").outerHTML;
   }
 
   it("states the consequences of a switch before it runs", () => {
@@ -127,6 +171,48 @@ describe("RangeConfirmDialog", () => {
 
   it("titles a restart as a restart", () => {
     expect(text(dialog("restart"))).toMatch(/^Restart EU IEC 104 Substation\?.*Restart range$/);
+  });
+
+  it("keeps a pending request disabled and ignores Escape", () => {
+    const onCancel = vi.fn();
+    const onConfirm = vi.fn();
+    render(
+      <RangeConfirmDialog
+        kind="restart"
+        packageTitle="EU IEC 104 Substation"
+        pending
+        error={null}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />,
+    );
+    for (const button of screen.getAllByRole("button")) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(button);
+    }
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("shows request errors and keeps both actions available", () => {
+    const onCancel = vi.fn();
+    const onConfirm = vi.fn();
+    render(
+      <RangeConfirmDialog
+        kind="switch"
+        packageTitle="EU IEC 104 Substation"
+        pending={false}
+        error="Another range change is already running."
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />,
+    );
+    expect(screen.getByRole("dialog").textContent).toContain("Another range change is already running.");
+    fireEvent.click(screen.getByRole("button", { name: "Switch range" }));
+    expect(onConfirm).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onCancel).toHaveBeenCalledOnce();
   });
 });
 
