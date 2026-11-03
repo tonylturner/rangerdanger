@@ -62,11 +62,11 @@ for (const prefix of ["feeder", "oltc-1"]) {
 }
 POINT_META["oltc-1-overcurrent-block"] = { label: "OLTC overcurrent block", states: ["CLEAR", "BLOCKED"] };
 for (const id of ["rmu-1", "rmu-2"]) {
-  POINT_META[`${id}-position`] = { label: `${id.toUpperCase()} position` };
-  POINT_META[`${id}-remote`] = { label: `${id.toUpperCase()} authority`, states: ["LOCAL", "REMOTE"] };
-  POINT_META[`${id}-earth`] = { label: `${id.toUpperCase()} earth switch`, states: ["OPEN", "CLOSED"] };
-  POINT_META[`${id}-fault-passage`] = { label: `${id.toUpperCase()} fault passage`, states: ["CLEAR", "LATCHED"] };
   const location = id === "rmu-1" ? "RMU1" : "RMU2";
+  POINT_META[`${id}-position`] = { label: `${location} position` };
+  POINT_META[`${id}-remote`] = { label: `${location} authority`, states: ["LOCAL", "REMOTE"] };
+  POINT_META[`${id}-earth`] = { label: `${location} earth switch`, states: ["OPEN", "CLOSED"] };
+  POINT_META[`${id}-fault-passage`] = { label: `${location} fault passage`, states: ["CLEAR", "LATCHED"] };
   POINT_META[`${id}-current`] = { label: `${location} current`, unit: "A", digits: 1 };
   POINT_META[`${id}-source-kv`] = { label: `${location} ${id === "rmu-1" ? "S1" : "S3"} side`, unit: "kV", digits: 2 };
   POINT_META[`${id}-section-kv`] = { label: `${location} S2 bus VT`, unit: "kV", digits: 2 };

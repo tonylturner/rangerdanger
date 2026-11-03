@@ -88,8 +88,8 @@ describe("operator observation rules", () => {
     state.points.find((p) => p.id === "plc-1-input-valid")!.value = false;
     expect(activeAlarms(state)).toEqual([
       { id: "feeder-protection-trip", text: "CB1 protection trip: TRIPPED" },
-      { id: "rmu-1-earth", text: "RMU-1 earth switch: CLOSED" },
-      { id: "rmu-2-fault-passage", text: "RMU-2 fault passage: LATCHED" },
+      { id: "rmu-1-earth", text: "RMU1 earth switch: CLOSED" },
+      { id: "rmu-2-fault-passage", text: "RMU2 fault passage: LATCHED" },
       { id: "oltc-1-at-lower", text: "OLTC lower limit: AT LIMIT" },
       { id: "oltc-1-at-upper", text: "OLTC upper limit: AT LIMIT" },
       { id: "oltc-1-blocked", text: "OLTC blocked: BLOCKED" },
