@@ -20,19 +20,19 @@ def require_backend_protection(response):
 
 
 def wait_ready(receipt, read, *, health=False, timeout=30, clock=time.monotonic, sleep=time.sleep):
-    """Never refresh an apply identity or recommit to hide failed readiness."""
+    """Wait for the commit revision; never retry protection or recommit."""
     deadline = clock() + min(timeout, 30)
     if not isinstance(receipt, dict):
         raise ValueError(f"invalid commit response: {receipt}")
-    apply_id = receipt.get("applyId")
-    if not health and (not isinstance(apply_id, str) or not apply_id):
-        raise ValueError(f"commit response has no applyId: {receipt}")
+    revision = receipt.get("runningRevision")
+    if not health and (not isinstance(receipt.get("status"), str) or not receipt["status"]
+                       or not isinstance(revision, str) or not revision):
+        raise ValueError(f"commit response has no status or runningRevision: {receipt}")
     last = receipt.get("protection") if not health else None
-    seen = False
-    previous_installed = None
+    first = last is None
     while True:
         if clock() > deadline:
-            raise ValueError(f"readiness timeout for {apply_id}: last observation {last}")
+            raise ValueError(f"readiness timeout for {revision}: last observation {last}")
         if last is not None:
             if not isinstance(last, dict):
                 raise ValueError(f"invalid readiness response: {last}")
@@ -40,30 +40,42 @@ def wait_ready(receipt, read, *, health=False, timeout=30, clock=time.monotonic,
                 if last.get("enforcement", {}).get("state") == "enforcing":
                     return last
             else:
-                current, installed = last.get("applyId"), last.get("installedApplyId")
-                if (current and current != apply_id and seen) or (
-                    installed and installed != apply_id and
-                    (previous_installed is not None and installed != previous_installed)
-                ):
-                    raise ValueError(f"apply {apply_id} superseded: {last}")
-                seen = seen or current == apply_id or installed == apply_id
-                if installed:
-                    previous_installed = installed
-                if last.get("state") in ("degraded", "failed", "disabled"):
-                    raise ValueError(f"apply {apply_id} not protecting: {last}")
-                if current == installed == apply_id and last.get("state") == "protecting":
+                desired = last.get("desiredRevision")
+                if desired is not None and desired != revision:
+                    raise ValueError(f"revision {revision} superseded: {last}")
+                if last.get("state") == "disabled":
+                    raise ValueError(f"revision {revision} disabled: {last}")
+                for subsystem in last.get("subsystems", []):
+                    fault = subsystem.get("fault") or {}
+                    if subsystem.get("required") is True and fault.get("kind") in ("config", "render"):
+                        raise ValueError(f"revision {revision} required subsystem fault: {last}")
+                if last.get("ready") is True and last.get("protectingRevision") == revision:
                     return last
         remaining = deadline - clock()
         if remaining <= 0:
-            raise ValueError(f"readiness timeout for {apply_id}: last observation {last}")
-        if last is not None:
+            raise ValueError(f"readiness timeout for {revision}: last observation {last}")
+        if not first:
             sleep(min(0.5, remaining))
+        first = False
         remaining = deadline - clock()
         if remaining <= 0:
-            raise ValueError(f"readiness timeout for {apply_id}: last observation {last}")
-        last = read("/health" if health else "/dataplane/protection", remaining)
-        if not isinstance(last, dict):
-            raise ValueError(f"invalid readiness response: {last}")
+            raise ValueError(f"readiness timeout for {revision}: last observation {last}")
+        try:
+            observation = read("/health" if health else "/dataplane/protection", remaining)
+        except subprocess.TimeoutExpired as exc:
+            if health:
+                raise
+            raise ValueError(f"readiness timeout for {revision}: last observation {last}") from exc
+        except subprocess.CalledProcessError as exc:
+            if health or exc.returncode != 28:  # curl's --max-time exhausted the remaining budget.
+                raise
+            raise ValueError(f"readiness timeout for {revision}: last observation {last}") from exc
+        # A starting runtime (503) has no protection telemetry; retain the last.
+        if observation is None and not health:
+            continue
+        if not isinstance(observation, dict):
+            raise ValueError(f"invalid readiness response: {observation}")
+        last = observation
 
 
 def docker_reader(container, token=None):
@@ -82,7 +94,9 @@ def docker_reader(container, token=None):
              "http://127.0.0.1:8080/api/v1" + path],
             capture_output=True, text=True, timeout=remaining, check=True)
         body, status = result.stdout.rsplit("\n", 1)
-        if status != "200":
+        if path == "/dataplane/protection" and status == "503":
+            return None
+        if status != "200" and not (path == "/dataplane/protection" and status == "502"):
             raise ValueError(f"GET {path} HTTP {status}: {body}")
         return json.loads(body)
     return read
