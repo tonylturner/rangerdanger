@@ -164,13 +164,45 @@ describe("historian trend", () => {
     expect(live.max - live.min).toBe(1);
     expect(dead.min).toBe(0);
     expect(dead.max).toBe(20);
-    expect(0.4 / (live.max - live.min) * 120).toBeCloseTo(48);
     const root = document.createElement("div"); root.innerHTML = html;
     for (const svg of root.querySelectorAll("svg")) expect(svg.querySelector("text")).toBeNull();
     for (const tick of root.querySelectorAll('[aria-label="Time in UTC"] time')) {
       const left = parseFloat((tick as HTMLElement).style.left);
       expect(left).toBeGreaterThanOrEqual(0); expect(left).toBeLessThanOrEqual(100);
     }
+  });
+
+  it("fits three 96 px strips with readable labels and a visible tap step, retaining full-height markers", () => {
+    const histories = [
+      sectionHistory("rmu-1-source-kv", 20, 20.4),
+      sectionHistory("rmu-1-section-kv", 20, 0),
+      sectionHistory("rmu-2-source-kv", 20, 20.4),
+    ];
+    const { container } = render(<SectionHistoryPlot histories={histories} events={sectionEvents} />);
+    const strips = container.querySelectorAll<HTMLElement>("[data-section-strip]");
+    expect(strips).toHaveLength(3);
+    for (const strip of strips) {
+      expect(strip.className).toContain("h-[96px]");
+      const svg = strip.querySelector("svg")!;
+      expect(svg.getAttribute("class")).toContain("h-[96px]");
+      // Convert actual plotted coordinates into CSS pixels, not viewBox units.
+      const ys = svg.querySelector("polyline")!.getAttribute("points")!.split(" ").map((point) => Number(point.split(",")[1]));
+      const step = Math.abs(ys[1] - ys[0]) * 96 / svg.viewBox.baseVal.height;
+      expect(step).toBeCloseTo(strip.dataset.sectionStrip === "S2" ? 76.8 : 30.72);
+    }
+    const labels = container.querySelectorAll<HTMLElement>("[data-y-label]");
+    expect(labels).toHaveLength(9);
+    for (let i = 0; i < labels.length; i += 3) {
+      expect(labels[i].parentElement!.className).toContain("h-[96px]");
+      expect(labels[i].parentElement!.className).toContain("text-xs");
+      const ys = [...labels].slice(i, i + 3).map((label) => Number.parseFloat(label.style.top) * 96 / 100);
+      expect(ys).toEqual([9.6, 48, 86.4]);
+    }
+    const rule = container.querySelector("[data-event-guide]")!;
+    expect(container.querySelectorAll("[data-event-guide]")).toHaveLength(1);
+    expect(rule.className).toContain("top-0 bottom-0");
+    // The annotation overlay spans the common parent of all three strips.
+    expect(rule.parentElement!.parentElement).toBe(strips[0].parentElement);
   });
 
   it("defaults the voltage dashboard to sections but keeps Control Centre on one signal", () => {

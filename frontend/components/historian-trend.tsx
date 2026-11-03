@@ -83,10 +83,10 @@ export function SectionHistoryPlot({ histories, events = [], window, expandableS
   return <div className="min-w-0 space-y-3 wrap-anywhere">
     <p className="text-xs text-slate-300">Section voltages · kV · independent scales: S1 RMU1 source VT; S2 RMU1 section VT; S3 RMU2 source VT.</p>
     {Number.isFinite(xmin) && Number.isFinite(xmax) && <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-x-2 pt-6 text-xs text-slate-300" role="group" aria-label="S1, S2 and S3 section voltage trends">
-      <div>{plotted.map((series) => <StripAxis key={series.id} label={series.label} scale={series.scale} />)}</div>
+      <div>{plotted.map((series) => <StripAxis key={series.id} compact label={series.label} scale={series.scale} />)}</div>
       <div className="relative min-w-0">
-        {plotted.map((series) => <div key={series.id} data-section-strip={series.label} className="relative h-[150px]">
-          <StripPlot {...series} xmin={xmin} xmax={xmax} label={`${series.label} section voltage by historian ingest time UTC`} />
+        {plotted.map((series) => <div key={series.id} data-section-strip={series.label} className="relative h-[96px]">
+          <StripPlot {...series} compact xmin={xmin} xmax={xmax} label={`${series.label} section voltage by historian ingest time UTC`} />
           <HistorianAnnotations history={series.history} events={events} showEvents={false} xmin={xmin} xmax={xmax} />
           {!series.scale.values.length && <p className="absolute inset-x-1 top-12 text-xs text-amber-300">No valid {series.label} observations</p>}
         </div>)}

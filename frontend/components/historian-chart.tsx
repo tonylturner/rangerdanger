@@ -21,8 +21,8 @@ export function historyScale(history: History, band?: VoltageBand | null) {
 }
 
 type Scale = ReturnType<typeof historyScale>;
-export function StripAxis({ scale, label }: { scale: Scale; label?: string }) {
-  return <div className="relative h-[150px] text-right text-xs text-slate-300">
+export function StripAxis({ scale, label, compact = false }: { scale: Scale; label?: string; compact?: boolean }) {
+  return <div className={`relative ${compact ? "h-[96px]" : "h-[150px]"} text-right text-xs text-slate-300`}>
     {label && <strong className="absolute left-0 top-0 text-slate-100">{label}</strong>}
     {[scale.max, scale.mid, scale.min].map((value, i) => <span key={i} data-y-label style={{ top: `${10 + i * 40}%` }} className="absolute right-0 -translate-y-1/2">{value.toFixed(2)}</span>)}
   </div>;
@@ -40,12 +40,12 @@ export function MinuteAxis({ xmin, xmax }: { xmin: number; xmax: number }) {
   </div>;
 }
 
-export function StripPlot({ history, scale, xmin, xmax, label, color = "#38bdf8", band }: {
-  history: History; scale: Scale; xmin: number; xmax: number; label: string; color?: string; band?: VoltageBand | null;
+export function StripPlot({ history, scale, xmin, xmax, label, color = "#38bdf8", band, compact = false }: {
+  history: History; scale: Scale; xmin: number; xmax: number; label: string; color?: string; band?: VoltageBand | null; compact?: boolean;
 }) {
   const x = (at: string | number) => ((typeof at === "number" ? at : Date.parse(at)) - xmin) / (xmax - xmin || 1) * 840;
   const y = (value: number) => 135 - (value - scale.min) / (scale.max - scale.min) * 120;
-  return <svg viewBox="0 0 840 150" preserveAspectRatio="none" role="img" aria-label={label} className="h-[150px] w-full overflow-hidden">
+  return <svg viewBox="0 0 840 150" preserveAspectRatio="none" role="img" aria-label={label} className={`${compact ? "h-[96px]" : "h-[150px]"} w-full overflow-hidden`}>
     {band && <rect x="0" y={y(band.high)} width="840" height={Math.max(1, y(band.low) - y(band.high))} fill="#64748b" fillOpacity="0.3"><title>Current PLC band, not historical setpoints</title></rect>}
     {minuteTicks(xmin, xmax).map((at) => <line key={at} data-minute-grid x1={x(at)} x2={x(at)} y1="0" y2="150" stroke="#334155" vectorEffect="non-scaling-stroke" />)}
     {[scale.min, scale.mid, scale.max].map((value) => <line key={value} data-y-grid x1="0" x2="840" y1={y(value)} y2={y(value)} stroke="#475569" vectorEffect="non-scaling-stroke" />)}

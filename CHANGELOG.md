@@ -36,7 +36,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   value. Only flagged quality is shown; tables say "valid", summaries
   say "N/M valid" and device comms say "reporting".
 - EU: the dashboard voltage trend uses three independently scaled section
-  strips with minute gridlines and full-height historian event rules.
+  compact 96 px strips with minute gridlines and full-height historian event rules.
   Every major event is listed, grouped within 250 ms of the first event; protection
   assertions are identified without attributing other switching to an actor.
   Marker tooltips and accessible labels use the same short device wording as the list.
