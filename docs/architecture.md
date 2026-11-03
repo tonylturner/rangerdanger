@@ -95,7 +95,7 @@ The package knowledge pages hold the detailed [EU node/plane map](../lab-definit
 
 ## Services
 
-RangerDanger v0.2.0 requires containd 0.1.37 or later. Before its first
+This release requires containd 0.1.39 or later. Before its first
 start, stop the lab and back up each package's complete firewall `/data`.
 The stored schema migrates one-way to 0.1.10; containd 0.1.36 cannot read a
 migrated store. Binary rollback requires matching pre-upgrade storage and image.

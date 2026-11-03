@@ -50,7 +50,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         for path in ("README.md", "docs/architecture.md"):
             text = " ".join((ROOT / path).read_text().split())
             with self.subTest(path=path):
-                for phrase in ("requires containd 0.1.37 or later", "stop the lab",
+                for phrase in ("requires containd 0.1.39 or later", "stop the lab",
                                "back up", "one-way", "0.1.10",
                                "containd 0.1.36 cannot read"):
                     self.assertIn(phrase, text)
@@ -76,11 +76,11 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                                "pre-upgrade", "stop the lab", "older tag",
                                "RangerDanger owns"):
                     self.assertIn(phrase.lower(), text.lower())
-                self.assertRegex(text, r"requires containd 0\.1\.37 or later")
+                self.assertRegex(text, r"requires containd 0\.1\.39 or later")
                 self.assertRegex(text, r"schema.{0,60}0\.1\.10")
                 self.assertRegex(text, r"0\.1\.36 and earlier cannot read")
         workshop = " ".join((ROOT / "docs/workshop-ssd.md").read_text().split()).lower()
-        for phrase in ("requires containd 0.1.37 or later", "schema migrates one-way to 0.1.10",
+        for phrase in ("requires containd 0.1.39 or later", "schema migrates one-way to 0.1.10",
                        "0.1.36 and earlier cannot read", "--include-upstream --include containd",
                        "record the saved image identity", "matching pre-upgrade data",
                        "for arch in amd64 arm64", "docker load -i",
@@ -90,7 +90,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
 
     def test_api_health_distinguishes_liveness_and_operational_diagnostics(self):
         text = (ROOT / "docs/api-spec.md").read_text()
-        self.assertIn("containd 0.1.37 minimum", text)
+        self.assertIn("containd 0.1.39 minimum", text)
         for phrase in ("liveness and diagnostics", "not forwarding readiness",
                        "ipv4Forwarding", "managementBinding.state",
                        "/api/v1/system/management-reservation",
@@ -131,11 +131,21 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                        "The L4 source pin enforces; DPI detects and logs."):
             self.assertIn(phrase, text)
 
+    def test_apply_readiness_uses_committed_revision(self):
+        text = " ".join((ROOT / "docs/api-spec.md").read_text().split())
+        for phrase in ("ready == true", "protectingRevision == commit.runningRevision",
+                       "desiredRevision", "required subsystem", "config`/`render",
+                       "HTTP `502`", "HTTP `503`", "`degraded` is never success",
+                       "No failure causes a recommit", "informational `applyId`"):
+            self.assertIn(phrase, text)
+        for obsolete in ("installedApplyId", "applied-with-warning", "backend apply succeeded"):
+            self.assertNotIn(obsolete, text)
+
     def test_policy_docs_require_candidate_commit_and_preserve_nic_bindings(self):
         text = " ".join((ROOT / "docs/api-spec.md").read_text().split())
         for phrase in ("POST /api/v1/config/candidate", "POST /api/v1/config/commit",
                        "both must succeed", "no legacy `/config/import` fallback",
                        "NIC `device` bindings", "running configuration",
                        "seed readiness", "adoption after a backend restart",
-                       "0.1.37 prerelease"):
+                       "0.1.39 prerelease"):
             self.assertIn(phrase, text)

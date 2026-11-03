@@ -78,7 +78,7 @@ A switch runs these phases, one switch at a time:
 2. `stopping`: in-flight range-bound work drains, then the old range is removed by its Compose project label together with its anonymous volumes (`down -v`; range models declare no named volumes), and the removal is verified: no container or network with the label, and none of the volumes its containers mounted, remains.
 3. `starting`: `compose up --wait` with no build and no pull (healthchecks have 300 s).
 4. `configuring`: the package's proxy routes are installed (`nginx -t`, then reload; a rejected file is rolled back), the firewall is waited for, and the package's default policy is imported and its runtime protection readiness is awaited. Every range start imports it, so a student's policy does not survive a switch.
-5. `ready` only after the committed application is `protecting` or `degraded` (with a warning).
+5. `ready` only after containd reports readiness at the committed running revision.
 
 On backend start, a range recorded as `ready` is adopted when every container of its manifest exists and the proxy runs its routes (no restart, no policy import); otherwise the phase becomes `failed` with `range missing: ...`. A switch that was cut short (`stopping`, `starting`, `configuring`) is torn down and recorded as `failed` with `interrupted during <phase>`.
 
@@ -351,8 +351,8 @@ Policy applies use only `POST /api/v1/config/candidate` followed by
 `POST /api/v1/config/commit`; both must succeed. There is no legacy
 `/config/import` fallback. Before staging, the backend copies appliance-owned
 NIC `device` bindings from the running configuration by logical interface name.
-The backend enforces the containd 0.1.37 minimum at seed readiness and range
-adoption after a backend restart; a 0.1.37 prerelease is below that floor.
+The backend enforces the containd 0.1.39 minimum at seed readiness and range
+adoption after a backend restart; a 0.1.39 prerelease is below that floor.
 Schema 0.1.10 migration is one-way: back up before upgrading; 0.1.36 cannot
 read a migrated store.
 
@@ -374,15 +374,24 @@ integration errors returned as `502`, retaining upstream status and body.
 `409`; a seed conflict instead sets phase `failed`, the same `code`, and
 an explanatory `error` in `GET /range`.
 
-A successful commit's `RuntimeApplyResponse` identifies its `applyId` but is
-not a readiness certificate. Every backend-owned apply waits up to 30 seconds
-(capped by the request deadline), polling `/api/v1/dataplane/protection`
-every 500 ms. Both `applyId` and `installedApplyId` must match the commit and
-state must be `protecting`. Matching readiness in the commit response itself
-is also accepted. `degraded` is applied-with-warning, not full lab readiness.
-`failed`/`disabled` fail immediately with component reasons. A replacement
-application is superseded; timeout retains the last observation. None of
-these failures causes a recommit.
+A successful commit returns `status`, a non-empty `runningRevision`, an
+informational `applyId`, and `protection`. It is not itself a readiness
+certificate. Every backend-owned apply waits up to 30 seconds (capped by the
+request deadline), polling `/api/v1/dataplane/protection` every 500 ms.
+Success requires `ready == true` and `protectingRevision == commit.runningRevision`
+using opaque string equality. Matching readiness in the commit response itself
+is also accepted. These revisions are separate from CAS headers and `applyId`;
+neither `applyId` nor `appliedRevision` gates readiness.
+
+A non-null `desiredRevision` different from the commit's `runningRevision`
+fails immediately as superseded. State `disabled` or a required subsystem's
+`config`/`render` fault also fails immediately. Optional subsystem faults do not
+gate readiness. All other observations poll until the deadline, including
+`degraded`, `failed` without a terminal fault, and delivery/unknown faults.
+HTTP `502` protection bodies are decoded and evaluated; HTTP `503` means the
+runtime is starting and polling continues. Timeout retains the last protection
+observation. `degraded` is never success. No failure causes a recommit or a
+call to protection/retry. The separate `/health` enforcement check is unchanged.
 
 Named apply, plan apply, workshop reset, workshop test-suite, and scenario
 steps that apply policy include this top-level receipt (the last commit when
@@ -392,20 +401,14 @@ there are several):
 {"containd":{"applyId":"opaque-commit-apply-id","protection":"protecting"}}
 ```
 
-For degraded readiness the same object is:
-
-```json
-{"containd":{"applyId":"opaque-commit-apply-id","protection":"degraded","warning":"containd protection degraded: rule-hit logging unavailable"}}
-```
-
-`warning` is omitted otherwise. Scenario firewall action results also carry
-the receipt. Readiness failures return `502` with `containd` containing the
-commit identity and last observed state, plus `observation` with protection
-telemetry and component reasons. No receipt is invented when no commit
-identity was received. Range status exposes the last backend apply receipt;
-lifecycle configuration reaches `ready` only after the same readiness wait.
-Gates must require `containd.protection == "protecting"`; degraded is a gate
-failure, even though the backend apply succeeded.
+Scenario firewall action results also carry the receipt. Readiness failures
+return `502` with `containd` containing the informational apply identity and last
+observed state, plus `observation` with protection telemetry and subsystem fault
+reasons. No receipt is invented when no valid commit acknowledgement was received.
+The former degraded-success warning is no longer emitted. Range status exposes
+the last backend apply receipt; lifecycle configuration reaches `ready` only
+after the same readiness wait. Gates require `containd.protection == "protecting"`;
+degraded readiness fails both the backend apply and the gate.
 
 The transparent containd UI proxy preserves upstream revision headers,
 statuses and response bodies; it does not wrap manual UI commits in the

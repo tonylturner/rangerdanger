@@ -217,7 +217,7 @@ Use [`stage-ssd-delta.sh`](#delta-staging) below.
 
 ### Pattern 3: containd update
 
-RangerDanger v0.2.0 requires containd 0.1.37 or later, including offline
+This release requires containd 0.1.39 or later, including offline
 bundles. RangerDanger owns its client fixes for that contract; using an older
 containd image is not a compatibility path. Verify the staged build as well
 as its digest.
@@ -233,7 +233,7 @@ in a delta, force it with:
   --include-upstream --include containd
 ```
 
-For the containd 0.1.37 compatibility update, use both flags on every delta:
+For the containd 0.1.39 compatibility update, use both flags on every delta:
 unchanged upstream references can otherwise cause the mutable `latest` image
 to be omitted. Keep the two architecture archives with the release evidence.
 
