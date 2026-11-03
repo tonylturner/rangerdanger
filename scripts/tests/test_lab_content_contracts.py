@@ -919,7 +919,7 @@ class EstablishedConnectionContracts(unittest.TestCase):
                        "checks handshake admission and inspection from SYN"):
             self.assertIn(phrase, text)
         text = (eu / "eu-containd-policy-enforcement.md").read_text()
-        self.assertIn("blob/v0.1.38/docs/mkdocs/policy-model.md"
+        self.assertIn("blob/v0.1.39/docs/mkdocs/policy-model.md"
                       "#established-connections-and-policy-changes", text)
         self.assertIn("The L4 source pin enforces; DPI detects and logs.", text)
         text = (ROOT / "lab-definitions/packages/us-dnp3-substation/"

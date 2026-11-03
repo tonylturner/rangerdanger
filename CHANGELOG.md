@@ -11,6 +11,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Support containd 0.1.39 and later; policy changes and range startup now wait
   for the committed policy to be protecting, rather than accepting degraded
   firewall readiness.
+- Build containd v0.1.39 in source mode for both range packages, matching
+  the supported minimum version.
 
 ## [v0.2.0] - 2026-11-02
 

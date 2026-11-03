@@ -18,7 +18,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                 self.assertNotRegex(text, r"containd#|Type `shell`|type `shell`")
                 self.assertIn("prompt reads `containd(config)#`", text)
         text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
-        self.assertIn("Current containd 0.1.38:", text)
+        self.assertIn("Current containd 0.1.39:", text)
         self.assertIn("rule edits stage the candidate", text)
 
     def test_lab_guidance_separates_running_proof_and_validation_surfaces(self):
@@ -55,7 +55,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                                "containd 0.1.36 cannot read"):
                     self.assertIn(phrase, text)
         text = (ROOT / "docs/architecture.md").read_text()
-        self.assertIn("containd `v0.1.38` git ref", text)
+        self.assertIn("containd `v0.1.39` git ref", text)
 
     def test_source_builds_and_release_guidance_use_current_containd_tag(self):
         for package in ("us-dnp3-substation", "eu-iec104-substation"):
@@ -63,9 +63,9 @@ class ContaindReleaseDocsTests(unittest.TestCase):
             with self.subTest(package=package):
                 self.assertIn(
                     'context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/'
-                    'containd.git#v0.1.38}"', path.read_text())
+                    'containd.git#v0.1.39}"', path.read_text())
         text = " ".join((ROOT / "RELEASING.md").read_text().split())
-        self.assertIn("release tag pinned by the package (`v0.1.38`)", text)
+        self.assertIn("release tag pinned by the package (`v0.1.39`)", text)
 
     def test_upgrade_guides_require_matching_full_storage_and_image(self):
         for path in ("RELEASING.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
