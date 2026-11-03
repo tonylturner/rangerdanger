@@ -60,6 +60,19 @@ body, as required by HTTP.
   `last_ingest_at` is null. Status is `degraded` until ingestion, `ok` for up to
   3 seconds after an accepted ingest, then `degraded`. This describes the
   feed, not telemetry quality. Counters are process-lifetime totals.
+- `GET /api/events?since=<UTC-RFC3339>&until=<UTC-RFC3339>` returns
+  `{events: [{point, at, from, to, quality}], gaps: [{from,to}]}` in ingest
+  order, with inclusive bounds. Both parameters are required exactly once;
+  unknown parameters, non-UTC timestamps and reversed intervals return 400.
+  Events compare GOOD single/double/step-position observations against the
+  last retained baseline, including a baseline before `since`. Initial,
+  null, missing and degraded observations do not establish changes. Epoch
+  transitions and ingest gaps reset baselines; quality recovery establishes
+  a new baseline without inventing a transition. Moving steps retain the
+  last GOOD settled position, emitting one numeric `from` → `to` at the
+  first GOOD settled ingest. Other values keep their original JSON type.
+  All status points are included; readers choose major events. This remains
+  sampled observation history, not complete event delivery or command causality.
 
 Each sample contains `snapshot_seq`, `value`, `quality` (`iv,nt,sb,bl,ov`),
 `stale_reason`, `source_time`, `source_time_invalid`, `cc_received_at` and

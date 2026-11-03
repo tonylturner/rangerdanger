@@ -17,6 +17,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - EU: the Physical System tab can inject or clear a fault on S1 or S2,
   reset breaker lockout and reset an RMU fault passage indicator. These
   are simulation actions, not operator commands.
+- Historian trends mark major events at the time they happened: tap
+  changes, breaker and switch operations, protection trips, earth and
+  fault-passage indications, and OLTC/PLC mode changes. Each marker has
+  a tooltip (hover, focus or tap), and an "Events in this window" list
+  sits under the chart. Hovering a line break says why the line broke,
+  for example "Measurement invalid 14:16:07–14:16:10 UTC, around T1 tap
+  1 → 2". The events come from the Ops DMZ historian's new read-only
+  `/api/events` route (portal: `/api/historian/events`).
 
 ### Changed
 

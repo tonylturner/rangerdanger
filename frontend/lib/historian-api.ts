@@ -38,7 +38,12 @@ export type TrendJournalEvents = {
   markers: TrendEventMarker[];
   commandNotices: TrendCommandNotice[];
 };
+export type HistorianEvent = { point: string; at: string; from: PointValue; to: PointValue; quality: PointQuality };
+export type HistorianEvents = { events: HistorianEvent[]; gaps: History["gaps"] };
 export const getHistorianPoints = () => request<HistorianPoint[]>("/historian/points");
+export function getHistorianEvents(since: string, until: string) {
+  return request<HistorianEvents>(`/historian/events?${new URLSearchParams({ since, until })}`);
+}
 export function getHistorianHistory(point: string, since: string, until: string) {
   const params = new URLSearchParams({ point, since, until });
   return request<History>(`/historian/history?${params}`);
@@ -175,4 +180,53 @@ export function historyRuns(history: History): HistorySample[][] {
     if (run.length) runs.push(run);
   }
   return runs;
+}
+
+const MAJOR_STATUS = new Set([
+  "oltc-1-tap", "oltc-1-auto", "oltc-1-remote", "oltc-1-blocked", "oltc-1-overcurrent-block",
+  "plc-1-running", "feeder-breaker-position", "f2-position", "rmu-1-position", "rmu-2-position",
+  "feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth",
+  "rmu-1-fault-passage", "rmu-2-fault-passage",
+]);
+export function majorHistorianEvents(events: HistorianEvent[]): HistorianEvent[] {
+  return events.filter((event) => MAJOR_STATUS.has(event.point));
+}
+
+export type HistoryBreak = { from: string; to: string; reasons: string[] };
+function breakReason(sample: HistorySample): string {
+  if (sample.stale_reason) return sample.stale_reason;
+  const flags = Object.entries(sample.quality).filter(([, value]) => value).map(([flag]) => flag.toUpperCase());
+  if (flags.length) return `Quality ${flags.join(" ")}`;
+  if (typeof sample.value === "object" && sample.value?.transient) return "Tap moving";
+  return "Unknown or non-numeric observation";
+}
+
+// Invalid intervals end at the next good observation in the same epoch,
+// never across feed silence. The final sample is an observation, not a
+// claim that the outage has ended.
+export function historyBreaks(history: History): HistoryBreak[] {
+  const breaks: HistoryBreak[] = [];
+  for (const segment of history.segments) {
+    let current: HistoryBreak | undefined;
+    let previous: HistorySample | undefined;
+    for (const sample of segment.samples) {
+      const t = Date.parse(sample.ingested_at);
+      if (!Number.isFinite(t)) continue;
+      if (previous && history.gaps.some((gap) => Date.parse(gap.from) < t && Date.parse(gap.to) > Date.parse(previous!.ingested_at))) current = undefined;
+      if (numericSample(sample) === null) {
+        if (!current) {
+          current = { from: sample.ingested_at, to: sample.ingested_at, reasons: [] };
+          breaks.push(current);
+        }
+        current.to = sample.ingested_at;
+        const reason = breakReason(sample);
+        if (!current.reasons.includes(reason)) current.reasons.push(reason);
+      } else if (current) {
+        current.to = sample.ingested_at;
+        current = undefined;
+      }
+      previous = sample;
+    }
+  }
+  return breaks;
 }

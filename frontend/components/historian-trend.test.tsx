@@ -168,8 +168,8 @@ describe("historian trend", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     const pointIds = ["oltc-1-bus-kv", "feeder-voltage", "rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-section-kv", "rmu-2-source-kv"];
     client.setQueryData(["historian", "points"], pointIds.map((id, ioa) => ({ id, ioa: ioa + 1, kind: "float", asdu: "M_ME_NC_1", last: null })));
-    for (const history of sectionHistories) client.setQueryData(["historian", "history", history.point], history);
-    client.setQueryData(["historian", "history", "oltc-1-bus-kv"], HISTORY);
+    client.setQueryData(["historian", "trend", "section-voltage"], { histories: sectionHistories, events: [], window: { since: "2026-10-15T09:45:10Z", until: "2026-10-15T10:00:10Z" } });
+    client.setQueryData(["historian", "trend", "oltc-1-bus-kv"], { histories: [HISTORY], events: [], window: { since: "2026-10-15T09:45:10Z", until: "2026-10-15T10:00:10Z" } });
     client.setQueryData(["operator", "journal"], { cache_epoch: "section-epoch", entries: [], latest_seq: null, oldest_seq: null });
     const { unmount } = render(<QueryClientProvider client={client}><HistorianTrend voltageOnly expandableSnapshots /></QueryClientProvider>);
     const selector = screen.getByLabelText("Signal") as HTMLSelectElement;

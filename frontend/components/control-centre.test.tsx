@@ -85,7 +85,7 @@ it("keeps thirty snapshots and no toggle in the Control Centre Trends tab", () =
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(["historian", "points"], FEEDER_STATE.points);
-  client.setQueryData(["historian", "history", "oltc-1-bus-kv"], history);
+  client.setQueryData(["historian", "trend", "oltc-1-bus-kv"], { histories: [history], events: [], window: { since: "2026-10-15T09:45:10Z", until: "2026-10-15T10:00:10Z" } });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}><ControlCentrePane state={FEEDER_STATE} journal={JOURNAL} now={NOW} initialTab="Trends" /></QueryClientProvider>);
   client.clear();
 

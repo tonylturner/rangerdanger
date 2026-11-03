@@ -18,8 +18,7 @@ function render(workshop: boolean, state = FEEDER_STATE) {
   client.setQueryData(["operator", "state"], state);
   client.setQueryData(WORKSHOP_STATUS_KEY, { control_centre: { link: "started", gi: "complete" }, firewall_online: true, firewall_config: "improved" });
   client.setQueryData(["historian", "points"], state.points);
-  for (const point of ["rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-source-kv"]) client.setQueryData(["historian", "history", point], { ...overviewHistory, point });
-  client.setQueryData(["operator", "journal"], { cache_epoch: "overview", entries: [], oldest_seq: null, latest_seq: null });
+  client.setQueryData(["historian", "trend", "section-voltage"], { histories: ["rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-source-kv"].map((point) => ({ ...overviewHistory, point })), events: [], window: { since: "2026-10-15T09:45:10Z", until: "2026-10-15T10:00:10Z" } });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}><RangeProvider><RangeScope>{workshop ? <EuWorkshopStatus title="EU" /> : <EuDashboard title="EU" />}</RangeScope></RangeProvider></QueryClientProvider>);
   client.clear();
   return html;

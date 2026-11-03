@@ -26,9 +26,11 @@ The portal relays `GET /api/historian/points` and `/api/historian/history` throu
 
 ### Portal presentation
 
-Overview defaults to the S1/S2/S3 section-voltage chart, not the T1 bus alone. S2 uses RMU1 section VT; RMU2 section VT measures the same S2 bus and remains individually selectable. Switching, trip and FPI markers use CC receive time against the historian ingest-time axis, only within the retained window and matching cache epoch. Rejected or unknown commands are not completed-switching markers. The snapshot table is explicitly S2 in this default view.
+Overview defaults to the S1/S2/S3 section-voltage chart, not the T1 bus alone. S2 uses RMU1 section VT; RMU2 section VT measures the same S2 bus and remains individually selectable. The snapshot table is explicitly S2 in this default view.
 
 The sample table preserves quality flags and stale reasons (or says **no flags**); Points and faceplates elsewhere call normal data quality **valid** without appending GOOD to each value. Valid data and healthy archive ingestion do not establish healthy plant. Epoch changes, gaps and unusable or transient samples break plotted lines rather than becoming zero voltage.
+
+Trend dots and the newest-first event list show major status changes from the same DMZ archive, via `/api/historian/events`, not live CC journal reads. Hover, focus or tap a dot for its UTC ingest time and before/after values. Settled tap changes collapse movement into one event; PLC input-valid flicker is not a marker. Hover, focus or tap a line break (or expand “Why the line breaks”) for the observed invalid/stale interval and reason. Nearby events are time correlations, not proof of cause. Amber ingest-gap bands still mean feed silence, not invalid measurements. Missing baselines, quality outages, epoch changes and ingest gaps prevent invented status transitions.
 
 ### Limits
 

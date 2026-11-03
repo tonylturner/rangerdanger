@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { getHistorianHistory, getHistorianPoints, historyRuns, numericSample, voltageTrendJournalEvents, type History, type TrendJournalEvents } from "../lib/historian-api";
+import { useQuery } from "@tanstack/react-query";
+import { getHistorianEvents, majorHistorianEvents, getHistorianHistory, getHistorianPoints, historyRuns, numericSample, voltageTrendJournalEvents, type HistorianEvent, type History, type TrendJournalEvents } from "../lib/historian-api";
 import { formatPointValue, formatUtcTime, pointLabel, qualityFlags } from "../lib/operator-format";
 import { getOperatorJournal, type OperatorPoint } from "../lib/operator-api";
 import { regulationBand, type VoltageBand } from "../lib/operator-workstation";
 import { isRangeNotReady } from "../lib/range";
 import { errorMessage } from "../lib/utils";
+import { HistorianAnnotations, HistorianEventList } from "./historian-annotations";
 
 const SECTION_VIEW = "section-voltage";
 const SECTION_SIGNALS = [
@@ -76,24 +77,25 @@ function HistorySnapshots({ history, expandableSnapshots = false, captionPrefix 
   </div>;
 }
 
-export function HistoryPlot({ history, band, expandableSnapshots = false, journalEvents }: { history: History; band?: VoltageBand | null; expandableSnapshots?: boolean; journalEvents?: TrendJournalEvents }) {
+export function HistoryPlot({ history, band, expandableSnapshots = false, journalEvents, events = [], window }: { history: History; band?: VoltageBand | null; expandableSnapshots?: boolean; journalEvents?: TrendJournalEvents; events?: HistorianEvent[]; window?: { since: string; until: string } }) {
   const samples = history.segments.flatMap((s) => s.samples);
   const times = samples.map((s) => Date.parse(s.ingested_at)).filter(Number.isFinite);
   const runs = historyRuns(history);
   const values = runs.flat().map((s) => numericSample(s)!);
-  const xmin = Math.min(...times), xmax = Math.max(...times);
-  const ymin = Math.min(...values, ...(band ? [band.low] : [])), ymax = Math.max(...values, ...(band ? [band.high] : []));
+  const xmin = window ? Date.parse(window.since) : Math.min(...times), xmax = window ? Date.parse(window.until) : Math.max(...times);
+  const ymin = Math.min(...(values.length ? values : [0]), ...(band ? [band.low] : [])), ymax = Math.max(...(values.length ? values : [1]), ...(band ? [band.high] : []));
   const x = (t: string) => (Date.parse(t) - xmin) / (xmax - xmin || 1) * 840;
   const y = (n: number) => 135 - (n - ymin) / (ymax - ymin || 1) * 120;
   const eventNotes = visibleJournalEvents([history], journalEvents);
   return <div className="min-w-0 space-y-3 wrap-anywhere">
-    {values.length ? <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-x-1 gap-y-2 pt-6 text-xs text-slate-300 sm:pr-10">
+    {Number.isFinite(xmin) && Number.isFinite(xmax) ? <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-x-1 gap-y-2 pt-6 text-xs text-slate-300 sm:pr-10">
       {/* HTML axes keep their type size while the plot scales horizontally.
           Its desktop proportions stay the same; phones get a 150px floor. */}
       <div className="relative">
         <span className="absolute right-0 top-[10%] -translate-y-1/2">{ymax.toFixed(2)}</span>
         <span className="absolute right-0 top-[90%] -translate-y-1/2">{ymin.toFixed(2)}</span>
       </div>
+      <div className="relative min-w-0">
       <svg viewBox="0 0 840 150" preserveAspectRatio="none" role="img" aria-label={`${pointLabel(history.point)} trend by ingest time UTC; breaks mark missing or invalid observations`} className="aspect-840/150 h-auto min-h-[150px] w-full overflow-visible">
         {band && <rect x="0" y={y(band.high)} width="840" height={Math.max(1, y(band.low) - y(band.high))} fill="#64748b" fillOpacity="0.3"><title>Current PLC band, not historical setpoints</title></rect>}
         <path d="M0 0 V150 H840" fill="none" stroke="#64748b" vectorEffect="non-scaling-stroke" />
@@ -107,20 +109,24 @@ export function HistoryPlot({ history, band, expandableSnapshots = false, journa
           <title>{`${event.label} · CC received ${event.at}${event.completedCommand ? " · completed command feedback" : ""}`}</title>
         </g>)}
       </svg>
+      <HistorianAnnotations history={history} events={events} xmin={xmin} xmax={xmax} />
+      </div>
       <div className="col-start-2 flex min-w-0 flex-wrap justify-between gap-x-4 gap-y-1">
         <span className="whitespace-nowrap">{formatUtcTime(new Date(xmin).toISOString())} UTC</span>
         <span className="ml-auto whitespace-nowrap">{formatUtcTime(new Date(xmax).toISOString())} UTC</span>
       </div>
-    </div> : <p className="text-sm text-amber-300">No valid numeric observations in this window. Unknown and stale samples are not plotted as zero. Select a numeric or single-point signal for a trend.</p>}
+    </div> : null}
+    {!values.length && <p className="text-sm text-amber-300">No valid numeric observations in this window. Unknown and stale samples are not plotted as zero. Select a numeric or single-point signal for a trend.</p>}
     <TrendEventNotes {...eventNotes} available={Boolean(journalEvents)} />
     {band && <p className="text-xs text-slate-300">Current PLC band {band.low.toFixed(2)}–{band.high.toFixed(2)} kV, not historical setpoints.</p>}
     <ul className="text-xs text-amber-300">{history.gaps.map((gap, i) => <li key={i}>Ingest gap: {gap.from} → {gap.to}</li>)}</ul>
     <p className="text-xs text-slate-400">{history.segments.length} cache-epoch segment(s). Lines never cross an epoch or a gap. Invalid, substituted, blocked, overflow and transient samples break the line.</p>
+    <HistorianEventList history={history} events={events} />
     <HistorySnapshots history={history} expandableSnapshots={expandableSnapshots} />
   </div>;
 }
 
-export function SectionHistoryPlot({ histories, journalEvents, expandableSnapshots = false }: { histories: History[]; journalEvents?: TrendJournalEvents; expandableSnapshots?: boolean }) {
+export function SectionHistoryPlot({ histories, journalEvents, events = [], window, expandableSnapshots = false }: { histories: History[]; journalEvents?: TrendJournalEvents; events?: HistorianEvent[]; window?: { since: string; until: string }; expandableSnapshots?: boolean }) {
   const plotted = SECTION_SIGNALS.flatMap((series) => {
     const history = histories.find((item) => item.point === series.id);
     return history ? [{ ...series, history, runs: historyRuns(history) }] : [];
@@ -128,7 +134,7 @@ export function SectionHistoryPlot({ histories, journalEvents, expandableSnapsho
   const values = plotted.flatMap((series) => series.runs.flat()).map((sample) => numericSample(sample)!);
   const samples = plotted.flatMap((series) => series.history.segments.flatMap((segment) => segment.samples));
   const times = samples.map((sample) => Date.parse(sample.ingested_at)).filter(Number.isFinite);
-  const xmin = Math.min(...times), xmax = Math.max(...times);
+  const xmin = window ? Date.parse(window.since) : Math.min(...times), xmax = window ? Date.parse(window.until) : Math.max(...times);
   const ymin = Math.min(...values), ymax = Math.max(...values);
   const x = (time: string) => (Date.parse(time) - xmin) / (xmax - xmin || 1) * 840;
   const y = (value: number) => 135 - (value - ymin) / (ymax - ymin || 1) * 120;
@@ -147,6 +153,7 @@ export function SectionHistoryPlot({ histories, journalEvents, expandableSnapsho
         <span className="absolute right-0 top-[10%] -translate-y-1/2">{ymax.toFixed(2)}</span>
         <span className="absolute right-0 top-[90%] -translate-y-1/2">{ymin.toFixed(2)}</span>
       </div>
+      <div className="relative min-w-0">
       <svg viewBox="0 0 840 150" preserveAspectRatio="none" role="img" aria-label="S1, S2 and S3 section voltage trends by historian ingest time UTC; lines break at epochs, gaps and invalid samples" className="aspect-840/150 h-auto min-h-[150px] w-full overflow-visible">
         <path d="M0 0 V150 H840" fill="none" stroke="#64748b" vectorEffect="non-scaling-stroke" />
         {[...gapMap.values()].map((gap) => <rect key={`${gap.from}/${gap.to}`} x={Math.max(0, x(gap.from))} y="0" width={Math.max(0, Math.min(840, x(gap.to)) - Math.max(0, x(gap.from)))} height="150" fill="#fbbf24" fillOpacity="0.15"><title>{`Ingest gap ${gap.from} to ${gap.to}`}</title></rect>)}
@@ -159,6 +166,8 @@ export function SectionHistoryPlot({ histories, journalEvents, expandableSnapsho
           <title>{`${event.label} · CC received ${event.at}${event.completedCommand ? " · completed command feedback" : ""}`}</title>
         </g>)}
       </svg>
+      <HistorianAnnotations history={snapshotHistory ?? histories[0]} events={events} xmin={xmin} xmax={xmax} />
+      </div>
       <div className="col-start-2 flex min-w-0 flex-wrap justify-between gap-x-4 gap-y-1">
         <span className="whitespace-nowrap">{formatUtcTime(new Date(xmin).toISOString())} UTC</span>
         <span className="ml-auto whitespace-nowrap">{formatUtcTime(new Date(xmax).toISOString())} UTC</span>
@@ -166,15 +175,11 @@ export function SectionHistoryPlot({ histories, journalEvents, expandableSnapsho
     </div> : <p className="text-sm text-amber-300">No valid numeric section observations in this window. Unknown and stale samples are not plotted as zero.</p>}
     <TrendEventNotes {...eventNotes} available={Boolean(journalEvents)} />
     <p className="text-xs text-slate-400">One shared time axis; each section line independently breaks at cache epochs, ingest gaps, invalid quality or transient samples. S2 uses RMU1 section VT; the RMU2 section VT is the same S2 bus and remains selectable on its own.</p>
+    {histories[0] && <HistorianEventList history={snapshotHistory ?? histories[0]} events={events} />}
     {snapshotHistory
       ? <HistorySnapshots history={snapshotHistory} expandableSnapshots={expandableSnapshots} captionPrefix="S2 snapshots · RMU1 section VT (same S2 bus measured at RMU2)" />
       : <p className="text-xs text-slate-400">S2 snapshot table unavailable: no RMU1 section VT history was received.</p>}
   </div>;
-}
-
-function getHistory(point: string) {
-  const until = Date.now();
-  return getHistorianHistory(point, new Date(until - 15 * 60_000).toISOString(), new Date(until).toISOString());
 }
 
 export function HistorianTrend({ points = [], voltageOnly = false, expandableSnapshots = false }: { points?: OperatorPoint[]; voltageOnly?: boolean; expandableSnapshots?: boolean }) {
@@ -182,18 +187,17 @@ export function HistorianTrend({ points = [], voltageOnly = false, expandableSna
   const sectionMode = voltageOnly && point === SECTION_VIEW;
   const catalogue = useQuery({ queryKey: ["historian", "points"], queryFn: getHistorianPoints, refetchInterval: 10000 });
   const history = useQuery({
-    queryKey: ["historian", "history", point],
-    queryFn: () => getHistory(point),
+    queryKey: ["historian", "trend", point],
+    queryFn: async () => {
+      const until = Date.now();
+      const window = { since: new Date(until - 15 * 60_000).toISOString(), until: new Date(until).toISOString() };
+      const [histories, events] = await Promise.all([
+        Promise.all((sectionMode ? SECTION_SIGNALS.map((series) => series.id) : [point]).map((id) => getHistorianHistory(id, window.since, window.until))),
+        getHistorianEvents(window.since, window.until),
+      ]);
+      return { histories, events: majorHistorianEvents(events.events), window };
+    },
     refetchInterval: 5000,
-    enabled: !sectionMode,
-  });
-  const sectionHistory = useQueries({
-    queries: SECTION_SIGNALS.map((series) => ({
-      queryKey: ["historian", "history", series.id],
-      queryFn: () => getHistory(series.id),
-      refetchInterval: 5000,
-      enabled: sectionMode,
-    })),
   });
   const journal = useQuery({
     queryKey: ["operator", "journal"],
@@ -201,9 +205,8 @@ export function HistorianTrend({ points = [], voltageOnly = false, expandableSna
     refetchInterval: 5000,
     enabled: voltageOnly,
   });
-  const sectionHistories = sectionHistory.flatMap((query) => query.data ? [query.data] : []);
-  const sectionError = sectionHistory.find((query) => query.error)?.error;
-  const error = catalogue.error ?? (sectionMode ? sectionError : history.error);
+  const sectionHistories = history.data?.histories ?? [];
+  const error = catalogue.error ?? history.error;
   const signals = catalogue.data?.filter((p) => !voltageOnly || VOLTAGE_SIGNAL_IDS.includes(p.id));
   const journalEvents = journal.data ? voltageTrendJournalEvents(journal.data) : undefined;
   const chartHistory = sectionMode ? sectionHistories.length > 0 : Boolean(history.data);
@@ -220,7 +223,7 @@ export function HistorianTrend({ points = [], voltageOnly = false, expandableSna
     {error ? <p role="alert" className="text-xs text-amber-300">{isRangeNotReady(error) ? "History shows once the range is ready." : `Historian unavailable: ${errorMessage(error)}. ${chartHistory ? "Showing received history, not a live feed." : "No history received."}`}</p> : null}
     {voltageOnly && journal.error ? <p role="status" className="text-xs text-amber-300">Event journal unavailable: {errorMessage(journal.error)}. {journal.data ? "Showing the last journal answer, not a live feed." : "No switching or protection markers shown."}</p> : null}
     {sectionMode
-      ? sectionHistories.length ? <SectionHistoryPlot histories={sectionHistories} journalEvents={journalEvents} expandableSnapshots={expandableSnapshots} /> : !error ? <p className="text-sm text-slate-400">Waiting for section voltage snapshots…</p> : null
-      : history.data ? <HistoryPlot history={history.data} band={point === "oltc-1-bus-kv" ? regulationBand(points) : null} expandableSnapshots={expandableSnapshots} journalEvents={voltageOnly ? journalEvents : undefined} /> : !error ? <p className="text-sm text-slate-400">Waiting for historian snapshots…</p> : null}
+      ? sectionHistories.length ? <SectionHistoryPlot histories={sectionHistories} events={history.data?.events} window={history.data?.window} journalEvents={journalEvents} expandableSnapshots={expandableSnapshots} /> : !error ? <p className="text-sm text-slate-400">Waiting for section voltage snapshots…</p> : null
+      : history.data ? <HistoryPlot history={history.data.histories[0]} events={history.data.events} window={history.data.window} band={point === "oltc-1-bus-kv" ? regulationBand(points) : null} expandableSnapshots={expandableSnapshots} journalEvents={voltageOnly ? journalEvents : undefined} /> : !error ? <p className="text-sm text-slate-400">Waiting for historian snapshots…</p> : null}
   </section>;
 }
