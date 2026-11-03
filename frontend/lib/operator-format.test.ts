@@ -14,6 +14,7 @@ import {
   pointCondition,
   pointLabel,
   qualityFlags,
+  qualityDefinition,
   staleReasonText,
   telemetrySummary,
   telemetryText,
@@ -195,4 +196,9 @@ it("formats PF IV as an em dash, not the wire zero, without hiding its quality",
   expect(formatPointValue("oltc-1-pf", null)).toBe("—");
   expect(formatPointValue("feeder-pf", 0, { ...q, iv: false })).toBe("0.000");
   expect(qualityFlags(q)).toEqual(["IV"]);
+});
+
+it("uses the valid badge word in its tooltip", () => {
+  expect(qualityDefinition("good")).toContain("valid means no quality flags");
+  expect(qualityDefinition("good")).not.toContain("GOOD");
 });

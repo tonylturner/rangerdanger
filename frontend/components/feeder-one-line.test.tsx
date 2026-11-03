@@ -130,3 +130,40 @@ it.each([[true, false], [false, true], [true, true]])(
     }
   },
 );
+
+it.each([false, true])("keeps RMU leads, S2 VT and protection badges clear at supported canvas widths (physical=%s)", (physical) => {
+  const { field, operator } = oracleFixture(EU_ORACLE[12]);
+  for (const [prefix, id] of [["rmu-1", "rmu-1"], ["rmu-2", "rmu-2"]]) {
+    const device = field.devices[id];
+    if (device.kind !== "rmu") throw new Error("Expected RMU");
+    Object.assign(device, { fault_passage: true, earth_closed: true });
+    for (const suffix of ["fault-passage", "earth"]) operator.points.find((p) => p.id === `${prefix}-${suffix}`)!.value = true;
+  }
+  const root = document.createElement("div");
+  root.innerHTML = renderToStaticMarkup(<FeederOneLine physical={physical} read={physical ? physicalSystemObservations(field) : controlCentreObservations(operator.points)} />);
+  const vt = root.querySelector('[data-point="rmu-2-section-kv"]')!;
+  expect(Number(vt.getAttribute("x"))).toBe(700);
+  expect(Number(vt.getAttribute("x"))).toBeLessThan(850);
+  expect(root.querySelector("figcaption")?.textContent).toContain("Filled switch (F2 adds a dot): closed");
+  for (const canvasWidth of [1060, 1320, 1800]) {
+    const scale = canvasWidth / 1060;
+    const enclosures = [...root.querySelectorAll('[aria-label$="assembly: switch function and earth"] rect')].map((rect) => rectBox(rect, scale));
+    for (const label of root.querySelectorAll('g[aria-label^="RMU2 S2 bus VT:"] text')) {
+      for (const enclosure of enclosures) expect(overlaps(textBox(label, scale), enclosure), "S2 VT must not cross an RMU enclosure").toBe(false);
+    }
+    for (const device of ["RMU1", "RMU2"]) {
+      const node = root.querySelector<HTMLElement>(`[data-rmu-badges="${device}"]`)!;
+      expect(node.children).toHaveLength(2);
+      const width = 126, height = node.children.length * 24 + (node.children.length - 1) * 4;
+      const box = { x: parseFloat(node.style.left) / 100 * canvasWidth - width / 2, y: parseFloat(node.style.top) / 100 * 460 * scale, width, height };
+      for (const enclosure of enclosures) expect(overlaps(box, enclosure)).toBe(false);
+      for (const label of root.querySelectorAll("svg text")) expect(overlaps(box, textBox(label, scale)), `${device} overlaps ${label.firstChild?.textContent} at ${canvasWidth}`).toBe(false);
+      const symbol = root.querySelector(`[data-device="${device}"]`)!;
+      const lead = symbol.querySelector('[aria-label$="assembly: switch function and earth"] path')!;
+      expect(lead.getAttribute("d")).toMatch(/h-65 v60$/);
+      const x = device === "RMU1" ? 570 : 850;
+      const status = [...symbol.querySelectorAll("text")].find((label) => label.getAttribute("y") === "225")!;
+      expect((x - 65) * scale).toBeLessThan(textBox(status, scale).x);
+    }
+  }
+});

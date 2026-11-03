@@ -80,9 +80,9 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
     return <g {...selectProps(device)} data-device={device} data-off-normal={offNormal ? "true" : "false"} data-position={position(id)} data-quality={r.condition} aria-label={`${label}: ${r.text}`}>
       {device.startsWith("RMU") && <g aria-label={`${label} assembly: switch function and earth`}>
         <rect x={x - 78} y={y - 40} width="156" height="164" rx="6" fill="none" stroke={r.condition !== "good" || offNormal ? "#fbbf24" : "#64748b"} strokeDasharray={r.condition === "good" ? undefined : "6 5"} />
-        <path d={`M${x} ${y + 20} v20 h-30 v40`} stroke="#64748b" fill="none" />
+        <path d={`M${x} ${y + 20} h-65 v60`} stroke="#64748b" fill="none" />
       </g>}
-      {device.startsWith("RMU") && indicators(x - 30, device === "RMU1" ? "rmu-1" : "rmu-2")}
+      {device.startsWith("RMU") && indicators(x - 65, device === "RMU1" ? "rmu-1" : "rmu-2")}
       {(device === "RMU1" || device === "RMU2") && authorityTag(x, y - 63, device)}
       {selected === device && <rect x={x - 27} y={y - 27} width="54" height="54" rx="4" fill="none" stroke="#e2e8f0" />}
       <title>{`${label}: ${r.text}`}</title>
@@ -162,7 +162,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
         {measure(400, 280, "feeder-voltage")}
         {measure(570, 95, "rmu-1-current")}
         {measure(850, 95, "rmu-2-current")}
-        {measure(925, 35, "rmu-2-section-kv")}
+        {measure(700, 126, "rmu-2-section-kv")}
         {section(80, 133, 80, 325, "oltc-1-bus-kv")}
         <text x="220" y="180" textAnchor="middle" fill="#e2e8f0" fontSize="14">F1 feeder</text>
         {section(80, 190, 310, 190, "oltc-1-bus-kv")}
@@ -195,7 +195,8 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
           the gap to F2. The line-side VT has its own annotation lane below. */}
       <div data-breaker-badges="CB1" className="absolute flex h-6 w-[210px] -translate-x-1/2 flex-row items-center justify-center gap-1" style={at(395, 230)}>{breakerBadges("feeder")}</div>
       <div data-breaker-badges="F2" className={cluster} style={at(455, 340)}>{breakerBadges("f2")}</div>
-      {(["rmu-1", "rmu-2"] as const).map((prefix, i) => <div key={prefix} className={cluster} style={at(i === 0 ? 690 : 925, 235)}>
+      {/* FPI/earth badges sit below the enclosures, clear of their borders and the earth leads. */}
+      {(["rmu-1", "rmu-2"] as const).map((prefix, i) => <div key={prefix} className={cluster} data-rmu-badges={i === 0 ? "RMU1" : "RMU2"} style={at(i === 0 ? 580 : 925, 355)}>
         {asserted(`${prefix}-fault-passage`) && badge(`${prefix}-fault-passage`, "FAULT PASSED")}
         {asserted(`${prefix}-earth`) && badge(`${prefix}-earth`, "EARTHED")}
       </div>)}
@@ -211,6 +212,6 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
       <p>Observation quality exceptions · separate from plant state:</p>
       <ul className="grid gap-x-6 gap-y-1 sm:grid-cols-2">{qualityNotes.map((id) => <li key={id} className="min-w-0 wrap-anywhere">{pointLabel(id)}: {read(id).shortText}</li>)}</ul>
     </div>}
-    <figcaption className="text-xs text-slate-400">Simplified functional one-line. Blue: voltage ≥ {LIVE_KV} kV, not proof of a supply path. Thick rose dashes + NO SUPPLY: valid voltage below {LIVE_KV} kV. TRIPPED / LOCKED OUT: protection latches. FAULT PASSED: latched FPI, not a fault location. EARTHED: earth closed. AT LIMIT / BLOCKED / PLC DOWN: control constraints. Amber: off-normal; dashed amber / hatching: uncertain data, never inferred loss of supply. RMU2 OPEN is normal (NOP); F2 is another connection to the same T1 bus. Filled switch: closed; hollow: open; ½ / ×: intermediate / indeterminate. Tap is the last completed step; TRANSIENT means motion. {physical ? "Simulation observations only; the lower F2 run follows solver energization separately from measured kV. Select a device for its equipment card." : "IEC 104 observations only; paths use valid received voltages and switch feedback. The lower F2 run follows S3 VT, not F2 position. Select a device for its faceplate."}</figcaption>
+    <figcaption className="text-xs text-slate-400">Simplified functional one-line. Blue: voltage ≥ {LIVE_KV} kV, not proof of a supply path. Thick rose dashes + NO SUPPLY: valid voltage below {LIVE_KV} kV. TRIPPED / LOCKED OUT: protection latches. FAULT PASSED: latched FPI, not a fault location. EARTHED: earth closed. AT LIMIT / BLOCKED / PLC DOWN: control constraints. Amber: off-normal; dashed amber / hatching: uncertain data, never inferred loss of supply. RMU2 OPEN is normal (NOP); F2 is another connection to the same T1 bus. Filled switch (F2 adds a dot): closed; hollow (F2 adds a ring): open; ½ / ×: intermediate / indeterminate. Tap is the last completed step; TRANSIENT means motion. {physical ? "Simulation observations only; the lower F2 run follows solver energization separately from measured kV. Select a device for its equipment card." : "IEC 104 observations only; paths use valid received voltages and switch feedback. The lower F2 run follows S3 VT, not F2 position. Select a device for its faceplate."}</figcaption>
   </figure>;
 }

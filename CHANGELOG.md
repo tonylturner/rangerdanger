@@ -17,7 +17,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - EU: the Physical System tab can inject or clear a fault on S1 or S2,
   reset breaker lockout and reset an RMU fault passage indicator. These
   are simulation actions, not operator commands.
-- Historian trends mark major events at the time they happened: tap
+- Historian trends mark major events at archive ingest time: tap
   changes, breaker and switch operations, protection trips, earth and
   fault-passage indications, and OLTC/PLC mode changes. Each marker has
   a tooltip (hover, focus or tap), and an "Events in this window" list
@@ -35,8 +35,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - EU: normal data quality is no longer printed as "GOOD" beside every
   value. Only flagged quality is shown; tables say "valid", summaries
   say "N/M valid" and device comms say "reporting".
-- EU: the dashboard voltage trend plots S1, S2 and S3 together, with
-  markers for switching, trip, lockout and fault-passage events.
+- EU: the dashboard voltage trend uses three independently scaled section
+  strips with minute gridlines and full-height historian event rules.
+  Every major event is listed, grouped by archive instant; protection
+  assertions are identified without attributing other switching to an actor.
+- EU: CB1 and RMU faceplates explain RTU switching conditions. One-line
+  voltage labels, earth leads, FPI badges and the F2 legend are clearer;
+  zero-current power factor is distinguished from observation uncertainty.
 - The overview voltage trend lists the 5 newest snapshots, with a button
   to show the last 30. The Control Centre Trends tab still lists 30.
 

@@ -171,9 +171,10 @@ describe("CC schematic layout", () => {
     expect(s1.y + 54).toBeLessThan(150);
     expect(s2.y + 54).toBeLessThan(150);
     const section = position("RMU2 S2 bus VT");
-    expect(section.x).toBeGreaterThan(772);
-    expect(section.x).toBeLessThan(1000);
-    expect(section.y + 18).toBeLessThan(150);
+    expect(section.x).toBeGreaterThan(648);
+    expect(section.x).toBeLessThan(772);
+    expect(section.y).toBeGreaterThan(113);
+    expect(section.y).toBeLessThan(150);
     // The S3-side measurement lives in the lower annotation lane, not
     // beside the right-hand vertical ring conductor (x=1000).
     const source = position("RMU2 S3 side");

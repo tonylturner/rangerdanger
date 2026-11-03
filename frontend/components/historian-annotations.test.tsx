@@ -36,8 +36,8 @@ describe("historian annotations", () => {
     expect(guides).toHaveLength(1);
     expect(Number.parseFloat(guides[0].style.left)).toBeCloseTo(4.787 / 900 * 100);
     expect(guides[0].className).toContain("top-0 bottom-0 w-px");
-    expect(container.querySelector("li time")?.textContent).toBe("10:00:04 UTC");
-    expect(container.querySelector("li time")?.dateTime).toBe(tap.at);
+    expect(container.querySelector<HTMLTimeElement>("li time")?.textContent).toBe("10:00:04 UTC");
+    expect(container.querySelector<HTMLTimeElement>("li time")?.dateTime).toBe(tap.at);
   });
   it("opens event tooltips on keyboard focus, mouse hover and touch click, and closes on Escape", async () => {
     render(<HistoryPlot history={HISTORY} events={[tap]} />);

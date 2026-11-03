@@ -46,7 +46,8 @@ it.each(["control-centre", "physical-system"] as const)("keeps a single persiste
     expect(banner()?.getAttribute("data-view-state")).toBe("ok");
     expect(banner()?.children).toHaveLength(0);
     if (view === "control-centre") {
-      expect(tree.container.querySelector("[data-observation-uncertainty='1']")?.textContent).toContain("1 non-valid measurement");
+      expect(tree.container.querySelector("[data-observation-uncertainty='0']")?.textContent).toContain("0 non-valid measurements");
+      expect(tree.container.querySelector("[data-undefined-measurements='1']")?.textContent).toContain("1 power-factor measurement undefined at zero current");
     }
     pf.stale_reason = "device_unreachable";
     tree.rerender(page(open));
@@ -117,4 +118,15 @@ it("separates uncertain measurements from the GOOD-observation empty summary", (
   expect(html).toContain("No alarms in valid observations");
   expect(html).toContain('data-observation-uncertainty="1"');
   expect(html).toContain("1 non-valid measurement");
+});
+
+it.each(["link_lost", "device_unreachable", "not_updated", "measurement_invalid"] as const)("does not misclassify %s as zero-current undefined when current is not valid", (reason) => {
+  const state = structuredClone(FEEDER_STATE);
+  const pf = state.points.find((p) => p.id === "feeder-pf")!;
+  pf.stale_reason = reason; pf.quality = { ...pf.quality, iv: true };
+  const current = state.points.find((p) => p.id === "feeder-current")!;
+  current.value = 0; current.quality = { ...current.quality, nt: true };
+  const html = renderToStaticMarkup(<AbnormalSummary state={state} />);
+  expect(html).not.toContain("data-undefined-measurements");
+  expect(html).toContain('data-observation-uncertainty="2"');
 });

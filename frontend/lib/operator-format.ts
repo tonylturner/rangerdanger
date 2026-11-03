@@ -82,7 +82,7 @@ export function pointLabel(id: string): string {
 export type PointCondition = "good" | "stale" | "never";
 
 export const QUALITY_DEFINITIONS = {
-  GOOD: "IEC 104 data quality: GOOD means no quality flags set and no stale reason. The value is valid/current, not a statement of plant state.",
+  GOOD: "IEC 104 data quality: valid means no quality flags set and no stale reason. The value is valid/current, not a statement of plant state.",
   STALE: "IEC 104 data quality: the retained value is not established as valid and current; inspect its flags and stale reason.",
   UNKNOWN: "IEC 104 data quality: no value has been received; the plant state is not established.",
   INVALID: "IEC 104 data quality: the source marks the value invalid; it cannot establish the plant state.",
