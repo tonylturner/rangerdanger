@@ -27,7 +27,7 @@ export function breakDescriptions(history: History, events: HistorianEvent[]) {
   });
 }
 
-function Annotation({ label, description = label, left, width, event, warning }: { label: string; description?: string; left: number; width?: number; event?: boolean; warning?: boolean }) {
+function Annotation({ label, description = label, left, width, event }: { label: string; description?: string; left: number; width?: number; event?: boolean }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const tooltip = useRef<HTMLDivElement>(null);
@@ -76,7 +76,7 @@ function Annotation({ label, description = label, left, width, event, warning }:
   }, [mode]);
   return <>
     {event ? <span aria-hidden="true" data-event-guide style={{ left: `${left}%` }}
-      className={`pointer-events-none absolute top-3.5 bottom-0 w-px ${warning ? "bg-rose-300/25" : "bg-slate-400/25"}`} /> :
+      className="pointer-events-none absolute top-0 bottom-0 w-px bg-slate-300/70" /> :
       <span aria-hidden="true" data-break-band style={{ left: `${left}%`, width: `${width}%`, minWidth: "2px" }}
         className="pointer-events-none absolute bottom-0 h-[calc(100%-2rem)] -translate-x-1/2 bg-amber-300/20" />}
     {/* A native button owns click/focus instead of a hover-only primitive
@@ -85,9 +85,9 @@ function Annotation({ label, description = label, left, width, event, warning }:
       onClick={() => mode === "pinned" ? setMode(null) : show("pinned")}
       onFocus={() => show("focus")} onBlur={() => setMode(null)}
       onPointerMove={(event) => { cancelHide(); if (event.pointerType === "mouse" && !mode) show("hover"); }} onPointerLeave={queueHide}
-      style={{ left: `${left}%`, ...(width === undefined ? {} : { width: `${width}%` }) }}
+      style={{ left: event ? `clamp(12px, ${left}%, calc(100% - 12px))` : `${left}%`, ...(width === undefined ? {} : { width: `${width}%` }) }}
       className={`pointer-events-auto absolute flex min-w-6 -translate-x-1/2 items-center justify-center rounded-sm border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${event ? "top-0 h-7 w-7" : "bottom-0 h-[calc(100%-2rem)]"}`}>
-      {event && <span aria-hidden="true" className={`size-2.5 rounded-full border ${warning ? "border-rose-300 bg-rose-400" : "border-slate-200 bg-slate-400"}`} />}
+      {event && <span aria-hidden="true" className="size-2.5 rounded-full border border-slate-200 bg-slate-400" />}
     </button>
     {mode && createPortal(<div ref={tooltip} id={id} role="tooltip" style={position}
       onPointerEnter={cancelHide} onPointerLeave={queueHide}
@@ -95,23 +95,23 @@ function Annotation({ label, description = label, left, width, event, warning }:
   </>;
 }
 
-export function HistorianAnnotations({ history, events, xmin, xmax }: { history: History; events: HistorianEvent[]; xmin: number; xmax: number }) {
+export function HistorianAnnotations({ history, events, xmin, xmax, showEvents = true }: { history?: History; events: HistorianEvent[]; xmin: number; xmax: number; showEvents?: boolean }) {
   const percent = (at: string) => Math.max(0, Math.min(100, (Date.parse(at) - xmin) / (xmax - xmin || 1) * 100));
-  // Several status changes can arrive in one snapshot. The topmost dot's
-  // tooltip must not conceal the other facts at that same instant.
-  const simultaneous = new Map<string, string>();
+  const simultaneous = new Map<number, HistorianEvent[]>();
   for (const event of events) {
-    const description = `${eventTime(event.at)} UTC ${eventDescription(event)}`;
-    const previous = simultaneous.get(event.at);
-    simultaneous.set(event.at, previous ? `${previous}\n${description}` : description);
+    const at = Date.parse(event.at);
+    if (at < xmin || at > xmax) continue;
+    const group = simultaneous.get(at) ?? [];
+    group.push(event);
+    simultaneous.set(at, group);
   }
   return <div className="pointer-events-none absolute inset-0" aria-label="Trend annotations">
-    {breakDescriptions(history, events).map((interval, i) => <Annotation key={`break-${i}`} label={interval.text}
+    {history && breakDescriptions(history, events).map((interval, i) => <Annotation key={`break-${i}`} label={interval.text}
       left={(percent(interval.from) + percent(interval.to)) / 2} width={percent(interval.to) - percent(interval.from)} />)}
-    {events.map((event, i) => <Annotation key={`event-${i}`} event left={percent(event.at)}
-      warning={event.to === "open" || (event.to === true && /trip|earth|fault-passage/.test(event.point))}
-      description={simultaneous.get(event.at)}
-      label={`${eventTime(event.at)} UTC ${eventDescription(event)}`} />)}
+    {showEvents && [...simultaneous].map(([at, group]) => {
+      const description = `${eventTime(new Date(at).toISOString())} UTC ${group.map(eventDescription).join("; ")}`;
+      return <Annotation key={at} event left={percent(group[0].at)} description={description} label={description} />;
+    })}
   </div>;
 }
 

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HISTORY, historySample } from "../lib/historian-fixtures.test-util";
 import type { History, HistorianEvent } from "../lib/historian-api";
 import { HistorianTrend, HistoryPlot, SectionHistoryPlot } from "./historian-trend";
+import { historyScale, minuteTicks } from "./historian-chart";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 const sectionHistory = (point: string, first: number, last: number): History => ({
@@ -52,22 +53,18 @@ describe("historian trend", () => {
     const svg = html.match(/<svg[\s\S]*?<\/svg>/)?.[0];
     expect(svg).toBeDefined();
     expect(svg).toContain('viewBox="0 0 840 150" preserveAspectRatio="none"');
-    expect(svg).toContain('class="aspect-840/150 h-auto min-h-[150px] w-full overflow-visible"');
+    expect(svg).toContain('class="h-[150px] w-full overflow-hidden"');
     expect(svg).not.toContain("<text");
-    expect(html).toContain("pt-6 text-xs text-slate-300");
-    expect(html).toContain('top-[10%] -translate-y-1/2">20.20</span>');
-    expect(html).toContain('top-[90%] -translate-y-1/2">19.70</span>');
-    expect(html).toContain('<span class="whitespace-nowrap">10:00:01.000 UTC</span>');
-    expect(html).toContain('<span class="ml-auto whitespace-nowrap">10:00:10.000 UTC</span>');
-    expect(html).toContain("col-start-2 flex min-w-0 flex-wrap justify-between");
+    expect(html.match(/data-y-label=/g)).toHaveLength(3);
+    expect(html).toContain('aria-label="Time in UTC"');
     expect(svg).toContain('vector-effect="non-scaling-stroke"');
   });
 
   it("preserves plot-relative coordinates and gap bounds after separating the axes", () => {
     const html = renderToStaticMarkup(<HistoryPlot history={HISTORY} />);
     expect(html).toContain('cx="0"');
-    expect(html).toContain('cx="840" cy="15"');
-    expect(html).toContain('cy="135"');
+    expect(html).toContain('cx="840"');
+    expect(html.match(/data-y-grid=/g)).toHaveLength(3);
     // The ingest gap starts at 5s, four ninths of the 1s–10s window.
     const gap = html.match(/<rect x="([^"]+)" y="0" width="([^"]+)" height="150"/);
     expect(gap).not.toBeNull();
@@ -111,7 +108,7 @@ describe("historian trend", () => {
   });
   it("plots separate runs while retaining stale quality and full UTC times in the table", () => {
     const html = renderToStaticMarkup(<HistoryPlot history={HISTORY} />);
-    expect(html.match(/data-history-run="true"/g)).toHaveLength(4);
+    expect(html.match(/data-history-run="oltc-1-bus-kv"/g)).toHaveLength(4);
     expect(text(html)).toContain("19.70 kV IV NT link_lost");
     expect(text(html)).toContain("Ingest gap: 2026-10-15T10:00:05Z → 2026-10-15T10:00:10Z");
     expect(text(html)).toContain("2026-10-15T10:01:10Z · time IV");
@@ -135,22 +132,45 @@ describe("historian trend", () => {
     expect(text(html)).toContain("0 cache-epoch segment(s)");
   });
 
-  it("plots three section voltages with independent line styles and historian markers", () => {
+  it("plots three independently scaled section strips with historian markers", () => {
     const html = renderToStaticMarkup(<SectionHistoryPlot histories={sectionHistories} events={sectionEvents} expandableSnapshots />);
-    expect(html).toContain('aria-label="Section voltage series legend"');
-    expect(html).toContain("S1 · RMU1 source VT");
-    expect(html).toContain("S2 · RMU1 section VT (S2)");
-    expect(html).toContain("S3 · RMU2 source VT");
+    expect(html.match(/data-section-strip="S[123]"/g)).toHaveLength(3);
+    expect(html).toContain("S1 RMU1 source VT");
+    expect(html).toContain("S2 RMU1 section VT");
+    expect(html).toContain("S3 RMU2 source VT");
+    expect(html.match(/data-y-grid=/g)).toHaveLength(9);
     expect(html).toContain('data-history-run="rmu-1-source-kv"');
     expect(html.match(/data-history-run="rmu-1-source-kv"/g)).toHaveLength(2);
     expect(html.match(/data-history-run="rmu-1-section-kv"/g)).toHaveLength(2);
-    expect(html).toContain('stroke-dasharray="8 4"');
-    expect(html).toContain('stroke-dasharray="2 3"');
+    expect(html).not.toContain("stroke-dasharray");
     expect(html).toContain('data-event-guide="true"');
     expect(html).not.toContain("CC receive time");
     expect(html).not.toContain("completed switching marker");
     expect(html).toContain("S2 snapshots · RMU1 section VT (same S2 bus measured at RMU2)");
     expect(html.match(/<tbody>[\s\S]*?<\/tbody>/)?.[0].match(/<tr /g)).toHaveLength(4);
+  });
+
+  it("uses minute-aligned gridlines, independent scales and one full-height rule per instant", () => {
+    const since = "2026-10-15T09:45:10Z", until = "2026-10-15T10:00:10Z";
+    const html = renderToStaticMarkup(<SectionHistoryPlot histories={sectionHistories} events={[...sectionEvents, { ...sectionEvents[0], point: "feeder-lockout", from: false, to: true }]} window={{ since, until }} />);
+    expect(minuteTicks(Date.parse(since), Date.parse(until))).toHaveLength(15);
+    expect(minuteTicks(Date.parse(since), Date.parse(until))[0]).toBe(Date.parse("2026-10-15T09:46:00Z"));
+    expect(html.match(/data-minute-grid=/g)).toHaveLength(45);
+    expect(html.match(/data-event-guide=/g)).toHaveLength(1);
+    expect(html).toContain("top-0 bottom-0 w-px");
+    expect(html.match(/data-break-band=/g)).toHaveLength(1);
+    const live = historyScale(sectionHistory("rmu-1-source-kv", 20, 20.4));
+    const dead = historyScale(sectionHistory("rmu-1-section-kv", 20, 0));
+    expect(live.max - live.min).toBe(1);
+    expect(dead.min).toBe(0);
+    expect(dead.max).toBe(20);
+    expect(0.4 / (live.max - live.min) * 120).toBeCloseTo(48);
+    const root = document.createElement("div"); root.innerHTML = html;
+    for (const svg of root.querySelectorAll("svg")) expect(svg.querySelector("text")).toBeNull();
+    for (const tick of root.querySelectorAll('[aria-label="Time in UTC"] time')) {
+      const left = parseFloat((tick as HTMLElement).style.left);
+      expect(left).toBeGreaterThanOrEqual(0); expect(left).toBeLessThanOrEqual(100);
+    }
   });
 
   it("defaults the voltage dashboard to sections but keeps Control Centre on one signal", () => {
@@ -163,14 +183,14 @@ describe("historian trend", () => {
     const selector = screen.getByLabelText("Signal") as HTMLSelectElement;
     expect(selector.value).toBe("section-voltage");
     expect(screen.getByRole("option", { name: "Sections S1/S2/S3 · default" })).toBeTruthy();
-    expect(screen.getByRole("img", { name: /S1, S2 and S3 section voltage trends/ })).toBeTruthy();
+    expect(screen.getByRole("group", { name: /S1, S2 and S3 section voltage trends/ })).toBeTruthy();
     expect(screen.getByRole("region", { name: "Latest snapshots" })).toBeTruthy();
     unmount();
 
     render(<QueryClientProvider client={client}><HistorianTrend /></QueryClientProvider>);
     expect((screen.getByLabelText("Signal") as HTMLSelectElement).value).toBe("oltc-1-bus-kv");
     expect(screen.queryByRole("option", { name: "Sections S1/S2/S3 · default" })).toBeNull();
-    expect(screen.queryByRole("img", { name: /S1, S2 and S3 section voltage trends/ })).toBeNull();
+    expect(screen.queryByRole("group", { name: /S1, S2 and S3 section voltage trends/ })).toBeNull();
     expect(screen.queryByLabelText("Switching and protection events")).toBeNull();
     client.clear();
   });

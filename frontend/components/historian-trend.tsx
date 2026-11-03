@@ -2,19 +2,20 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getHistorianEvents, majorHistorianEvents, getHistorianHistory, getHistorianPoints, historyRuns, numericSample, type HistorianEvent, type History } from "../lib/historian-api";
+import { getHistorianEvents, majorHistorianEvents, getHistorianHistory, getHistorianPoints, type HistorianEvent, type History } from "../lib/historian-api";
 import { formatPointValue, formatUtcTime, pointLabel, qualityFlags } from "../lib/operator-format";
 import type { OperatorPoint } from "../lib/operator-api";
 import { regulationBand, type VoltageBand } from "../lib/operator-workstation";
 import { isRangeNotReady } from "../lib/range";
 import { errorMessage } from "../lib/utils";
 import { HistorianAnnotations, HistorianEventList } from "./historian-annotations";
+import { historyScale, MinuteAxis, StripAxis, StripPlot } from "./historian-chart";
 
 const SECTION_VIEW = "section-voltage";
 const SECTION_SIGNALS = [
-  { id: "rmu-1-source-kv", label: "S1", color: "#38bdf8", dash: undefined },
-  { id: "rmu-1-section-kv", label: "S2", color: "#a78bfa", dash: "8 4" },
-  { id: "rmu-2-source-kv", label: "S3", color: "#34d399", dash: "2 3" },
+  { id: "rmu-1-source-kv", label: "S1", color: "#38bdf8" },
+  { id: "rmu-1-section-kv", label: "S2", color: "#a78bfa" },
+  { id: "rmu-2-source-kv", label: "S3", color: "#34d399" },
 ] as const;
 const VOLTAGE_SIGNAL_IDS = [
   "oltc-1-bus-kv", "feeder-voltage", "rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-section-kv", "rmu-2-source-kv",
@@ -43,41 +44,27 @@ function HistorySnapshots({ history, expandableSnapshots = false, captionPrefix 
   </div>;
 }
 
-export function HistoryPlot({ history, band, expandableSnapshots = false, events = [], window }: { history: History; band?: VoltageBand | null; expandableSnapshots?: boolean; events?: HistorianEvent[]; window?: { since: string; until: string } }) {
-  const samples = history.segments.flatMap((s) => s.samples);
-  const times = samples.map((s) => Date.parse(s.ingested_at)).filter(Number.isFinite);
-  const runs = historyRuns(history);
-  const values = runs.flat().map((s) => numericSample(s)!);
-  const xmin = window ? Date.parse(window.since) : Math.min(...times), xmax = window ? Date.parse(window.until) : Math.max(...times);
-  const ymin = Math.min(...(values.length ? values : [0]), ...(band ? [band.low] : [])), ymax = Math.max(...(values.length ? values : [1]), ...(band ? [band.high] : []));
-  const x = (t: string) => (Date.parse(t) - xmin) / (xmax - xmin || 1) * 840;
-  const y = (n: number) => 135 - (n - ymin) / (ymax - ymin || 1) * 120;
+type TrendWindow = { since: string; until: string };
+function historyBounds(histories: History[], window?: TrendWindow) {
+  const times = histories.flatMap((history) => history.segments.flatMap((segment) => segment.samples.map((sample) => Date.parse(sample.ingested_at)))).filter(Number.isFinite);
+  return { xmin: window ? Date.parse(window.since) : Math.min(...times), xmax: window ? Date.parse(window.until) : Math.max(...times) };
+}
+const MARKER_KEY = "Dots and full-height rules: archived status changes (hover, focus or tap to pin). Amber bands: ingest silence or invalid observations. Times UTC.";
+
+export function HistoryPlot({ history, band, expandableSnapshots = false, events = [], window }: { history: History; band?: VoltageBand | null; expandableSnapshots?: boolean; events?: HistorianEvent[]; window?: TrendWindow }) {
+  const { xmin, xmax } = historyBounds([history], window);
+  const scale = historyScale(history, band);
   return <div className="min-w-0 space-y-3 wrap-anywhere">
-    {Number.isFinite(xmin) && Number.isFinite(xmax) ? <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-x-1 gap-y-2 pt-6 text-xs text-slate-300 sm:pr-10">
-      {/* HTML axes keep their type size while the plot scales horizontally.
-          Its desktop proportions stay the same; phones get a 150px floor. */}
-      <div className="relative">
-        <span className="absolute right-0 top-[10%] -translate-y-1/2">{ymax.toFixed(2)}</span>
-        <span className="absolute right-0 top-[90%] -translate-y-1/2">{ymin.toFixed(2)}</span>
-      </div>
+    {Number.isFinite(xmin) && Number.isFinite(xmax) && <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-x-2 pt-6 text-xs text-slate-300">
+      <StripAxis scale={scale} />
       <div className="relative min-w-0">
-      <svg viewBox="0 0 840 150" preserveAspectRatio="none" role="img" aria-label={`${pointLabel(history.point)} trend by ingest time UTC; breaks mark missing or invalid observations`} className="aspect-840/150 h-auto min-h-[150px] w-full overflow-visible">
-        {band && <rect x="0" y={y(band.high)} width="840" height={Math.max(1, y(band.low) - y(band.high))} fill="#64748b" fillOpacity="0.3"><title>Current PLC band, not historical setpoints</title></rect>}
-        <path d="M0 0 V150 H840" fill="none" stroke="#64748b" vectorEffect="non-scaling-stroke" />
-        {history.gaps.map((gap, i) => <rect key={i} x={Math.max(0, x(gap.from))} y="0" width={Math.max(0, Math.min(840, x(gap.to)) - Math.max(0, x(gap.from)))} height="150" fill="#fbbf24" fillOpacity="0.15"><title>{`Ingest gap ${gap.from} to ${gap.to}`}</title></rect>)}
-        {runs.map((run, i) => <g key={i} data-history-run="true">
-          <polyline points={run.map((s) => `${x(s.ingested_at)},${y(numericSample(s)!)}`).join(" ")} fill="none" stroke="#38bdf8" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-          {run.map((s) => <circle key={s.snapshot_seq} cx={x(s.ingested_at)} cy={y(numericSample(s)!)} r="1" fill="#38bdf8" stroke="#38bdf8" strokeWidth="2" vectorEffect="non-scaling-stroke"><title>{`${s.ingested_at}: ${formatPointValue(history.point, s.value, s.quality)}`}</title></circle>)}
-        </g>)}
-      </svg>
-      <HistorianAnnotations history={history} events={events} xmin={xmin} xmax={xmax} />
+        <StripPlot history={history} scale={scale} xmin={xmin} xmax={xmax} band={band} label={`${pointLabel(history.point)} trend by ingest time UTC; breaks mark missing or invalid observations`} />
+        <HistorianAnnotations history={history} events={events} xmin={xmin} xmax={xmax} />
       </div>
-      <div className="col-start-2 flex min-w-0 flex-wrap justify-between gap-x-4 gap-y-1">
-        <span className="whitespace-nowrap">{formatUtcTime(new Date(xmin).toISOString())} UTC</span>
-        <span className="ml-auto whitespace-nowrap">{formatUtcTime(new Date(xmax).toISOString())} UTC</span>
-      </div>
-    </div> : null}
-    {!values.length && <p className="text-sm text-amber-300">No valid numeric observations in this window. Unknown and stale samples are not plotted as zero. Select a numeric or single-point signal for a trend.</p>}
+      <MinuteAxis xmin={xmin} xmax={xmax} />
+    </div>}
+    {!scale.values.length && <p className="text-sm text-amber-300">No valid numeric observations in this window. Unknown and stale samples are not plotted as zero. Select a numeric or single-point signal for a trend.</p>}
+    <p className="text-xs text-slate-400">{MARKER_KEY}</p>
     {band && <p className="text-xs text-slate-300">Current PLC band {band.low.toFixed(2)}–{band.high.toFixed(2)} kV, not historical setpoints.</p>}
     <ul className="text-xs text-amber-300">{history.gaps.map((gap, i) => <li key={i}>Ingest gap: {gap.from} → {gap.to}</li>)}</ul>
     <p className="text-xs text-slate-400">{history.segments.length} cache-epoch segment(s). Lines never cross an epoch or a gap. Invalid, substituted, blocked, overflow and transient samples break the line.</p>
@@ -86,49 +73,29 @@ export function HistoryPlot({ history, band, expandableSnapshots = false, events
   </div>;
 }
 
-export function SectionHistoryPlot({ histories, events = [], window, expandableSnapshots = false }: { histories: History[]; events?: HistorianEvent[]; window?: { since: string; until: string }; expandableSnapshots?: boolean }) {
-  const plotted = SECTION_SIGNALS.flatMap((series) => {
-    const history = histories.find((item) => item.point === series.id);
-    return history ? [{ ...series, history, runs: historyRuns(history) }] : [];
+export function SectionHistoryPlot({ histories, events = [], window, expandableSnapshots = false }: { histories: History[]; events?: HistorianEvent[]; window?: TrendWindow; expandableSnapshots?: boolean }) {
+  const plotted = SECTION_SIGNALS.map((series) => {
+    const history = histories.find((item) => item.point === series.id) ?? { point: series.id, segments: [], gaps: [] };
+    return { ...series, history, scale: historyScale(history) };
   });
-  const values = plotted.flatMap((series) => series.runs.flat()).map((sample) => numericSample(sample)!);
-  const samples = plotted.flatMap((series) => series.history.segments.flatMap((segment) => segment.samples));
-  const times = samples.map((sample) => Date.parse(sample.ingested_at)).filter(Number.isFinite);
-  const xmin = window ? Date.parse(window.since) : Math.min(...times), xmax = window ? Date.parse(window.until) : Math.max(...times);
-  const ymin = Math.min(...values), ymax = Math.max(...values);
-  const x = (time: string) => (Date.parse(time) - xmin) / (xmax - xmin || 1) * 840;
-  const y = (value: number) => 135 - (value - ymin) / (ymax - ymin || 1) * 120;
-  const gapMap = new Map(plotted.flatMap((series) => series.history.gaps.map((gap) => [`${gap.from}/${gap.to}`, gap] as const)));
+  const { xmin, xmax } = historyBounds(histories, window);
   const snapshotHistory = histories.find((history) => history.point === "rmu-1-section-kv");
   return <div className="min-w-0 space-y-3 wrap-anywhere">
-    <ul aria-label="Section voltage series legend" className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-200">
-      {SECTION_SIGNALS.map((series) => <li key={series.id} className="flex items-center gap-2">
-        <svg aria-hidden="true" viewBox="0 0 32 8" className="h-2 w-8 overflow-visible"><line x1="0" x2="32" y1="4" y2="4" stroke={series.color} strokeWidth="2" strokeDasharray={series.dash} /></svg>
-        <span>{series.label} · {series.id === "rmu-1-source-kv" ? "RMU1 source VT" : series.id === "rmu-1-section-kv" ? "RMU1 section VT (S2)" : "RMU2 source VT"}</span>
-      </li>)}
-    </ul>
-    {values.length ? <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-x-1 gap-y-2 pt-2 text-xs text-slate-300 sm:pr-10">
-      <div className="relative">
-        <span className="absolute right-0 top-[10%] -translate-y-1/2">{ymax.toFixed(2)}</span>
-        <span className="absolute right-0 top-[90%] -translate-y-1/2">{ymin.toFixed(2)}</span>
-      </div>
+    <p className="text-xs text-slate-300">Section voltages · kV · independent scales: S1 RMU1 source VT; S2 RMU1 section VT; S3 RMU2 source VT.</p>
+    {Number.isFinite(xmin) && Number.isFinite(xmax) && <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-x-2 pt-6 text-xs text-slate-300" role="group" aria-label="S1, S2 and S3 section voltage trends">
+      <div>{plotted.map((series) => <StripAxis key={series.id} label={series.label} scale={series.scale} />)}</div>
       <div className="relative min-w-0">
-      <svg viewBox="0 0 840 150" preserveAspectRatio="none" role="img" aria-label="S1, S2 and S3 section voltage trends by historian ingest time UTC; lines break at epochs, gaps and invalid samples" className="aspect-840/150 h-auto min-h-[150px] w-full overflow-visible">
-        <path d="M0 0 V150 H840" fill="none" stroke="#64748b" vectorEffect="non-scaling-stroke" />
-        {[...gapMap.values()].map((gap) => <rect key={`${gap.from}/${gap.to}`} x={Math.max(0, x(gap.from))} y="0" width={Math.max(0, Math.min(840, x(gap.to)) - Math.max(0, x(gap.from)))} height="150" fill="#fbbf24" fillOpacity="0.15"><title>{`Ingest gap ${gap.from} to ${gap.to}`}</title></rect>)}
-        {plotted.map((series) => series.runs.map((run, i) => <g key={`${series.id}-${i}`} data-history-run={series.id}>
-          <polyline points={run.map((sample) => `${x(sample.ingested_at)},${y(numericSample(sample)!)}`).join(" ")} fill="none" stroke={series.color} strokeWidth="2" strokeDasharray={series.dash} vectorEffect="non-scaling-stroke" />
-          {run.map((sample) => <circle key={sample.snapshot_seq} cx={x(sample.ingested_at)} cy={y(numericSample(sample)!)} r="1" fill="#020617" stroke={series.color} strokeWidth="2" vectorEffect="non-scaling-stroke"><title>{`${series.label} ${sample.ingested_at}: ${formatPointValue(series.id, sample.value, sample.quality)}`}</title></circle>)}
-        </g>))}
-      </svg>
-      <HistorianAnnotations history={snapshotHistory ?? histories[0]} events={events} xmin={xmin} xmax={xmax} />
+        {plotted.map((series) => <div key={series.id} data-section-strip={series.label} className="relative h-[150px]">
+          <StripPlot {...series} xmin={xmin} xmax={xmax} label={`${series.label} section voltage by historian ingest time UTC`} />
+          <HistorianAnnotations history={series.history} events={events} showEvents={false} xmin={xmin} xmax={xmax} />
+          {!series.scale.values.length && <p className="absolute inset-x-1 top-12 text-xs text-amber-300">No valid {series.label} observations</p>}
+        </div>)}
+        <HistorianAnnotations events={events} xmin={xmin} xmax={xmax} />
       </div>
-      <div className="col-start-2 flex min-w-0 flex-wrap justify-between gap-x-4 gap-y-1">
-        <span className="whitespace-nowrap">{formatUtcTime(new Date(xmin).toISOString())} UTC</span>
-        <span className="ml-auto whitespace-nowrap">{formatUtcTime(new Date(xmax).toISOString())} UTC</span>
-      </div>
-    </div> : <p className="text-sm text-amber-300">No valid numeric section observations in this window. Unknown and stale samples are not plotted as zero.</p>}
-    <p className="text-xs text-slate-400">One shared time axis; each section line independently breaks at cache epochs, ingest gaps, invalid quality or transient samples. S2 uses RMU1 section VT; the RMU2 section VT is the same S2 bus and remains selectable on its own.</p>
+      <MinuteAxis xmin={xmin} xmax={xmax} />
+    </div>}
+    <p className="text-xs text-slate-400">{MARKER_KEY}</p>
+    <p className="text-xs text-slate-400">One shared time axis; each section independently breaks at cache epochs, ingest gaps, invalid quality or transient samples. S2 uses RMU1 section VT; the RMU2 section VT is the same S2 bus and remains selectable on its own.</p>
     {histories[0] && <HistorianEventList history={snapshotHistory ?? histories[0]} events={events} />}
     {snapshotHistory
       ? <HistorySnapshots history={snapshotHistory} expandableSnapshots={expandableSnapshots} captionPrefix="S2 snapshots · RMU1 section VT (same S2 bus measured at RMU2)" />

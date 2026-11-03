@@ -33,13 +33,11 @@ describe("historian annotations", () => {
     expect(trigger.className).toContain("min-w-6");
     expect(trigger.className).toContain("bg-transparent");
     const guides = container.querySelectorAll<HTMLElement>("[data-event-guide]");
-    expect(guides).toHaveLength(2);
+    expect(guides).toHaveLength(1);
     expect(Number.parseFloat(guides[0].style.left)).toBeCloseTo(4.787 / 900 * 100);
-    expect(guides[0].className).toContain("bg-slate-400/25");
-    expect(guides[1].className).toContain("bg-rose-300/25");
-    for (const guide of guides) expect(guide.className).toContain("top-3.5 bottom-0 w-px");
-    expect(container.querySelector("time")?.textContent).toBe("10:00:04 UTC");
-    expect(container.querySelector("time")?.dateTime).toBe(tap.at);
+    expect(guides[0].className).toContain("top-0 bottom-0 w-px");
+    expect(container.querySelector("li time")?.textContent).toBe("10:00:04 UTC");
+    expect(container.querySelector("li time")?.dateTime).toBe(tap.at);
   });
   it("opens event tooltips on keyboard focus, mouse hover and touch click, and closes on Escape", async () => {
     render(<HistoryPlot history={HISTORY} events={[tap]} />);
@@ -120,7 +118,7 @@ describe("historian annotations", () => {
   });
   it("keeps simultaneous event facts available from the overlapping marker tooltip", async () => {
     render(<HistoryPlot history={HISTORY} events={[tap, { ...tap, point: "feeder-protection-trip", from: false, to: true }]} />);
-    fireEvent.click(screen.getByRole("button", { name: "10:00:04 UTC CB1 protection trip NORMAL → TRIPPED" }));
+    fireEvent.click(screen.getByRole("button", { name: "10:00:04 UTC T1 tap 1 → 2; CB1 protection trip NORMAL → TRIPPED" }));
     await waitFor(() => {
       const tooltip = screen.getByRole("tooltip");
       expect(tooltip.textContent).toContain("T1 tap 1 → 2");
