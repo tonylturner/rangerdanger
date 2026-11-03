@@ -32,7 +32,7 @@ T1's OLTC is on the **110 kV winding**: HV tap ratio = 1 − 0.0125 × operator 
 
 In the portal's `/substation` view, keep the CC-observed one-line separate from the physical device/process section. Compare section voltages, positions and quality before and after each authored switching or fault step. The read-only portal export `GET /api/field/state` contains a `devices` map plus `process`; the latter includes `buses`, `fault_section`, `f2_tripped`, `solver_epoch` and `solve_seq`.
 
-CC P/Q/PF points are feeder IOAs 2003–2005 and T1 IOAs 2303–2305; OLTC overcurrent block is IOA 1307. They are protocol observations of solved measurements, not independent meters. On the CC side, S3 voltage is `rmu-2-source-kv`, IOA 2203. F2 position/trip/current/MW are IEC 104 IOAs 1501/1502/2501/2502. Position alone does not prove S3 energization; missing or stale F2 observations leave the supply path uncertain. Use [reference cases](#eu-process-reference-cases) to distinguish expected solved behaviour from a current observation, and [switching orders](#eu-rmu-switching-orders) before attempting restoration.
+CC P/Q/PF points are feeder IOAs 2003–2005 and T1 IOAs 2303–2305; OLTC overcurrent block is IOA 1307. They are protocol observations of solved measurements, not independent meters. On the CC side, S3 voltage is `rmu-2-source-kv`, IOA 2203. F2 position/trip/lockout/current/MW are IEC 104 IOAs 1501/1502/1503/2501/2502. Position alone does not prove S3 energization; missing or stale F2 observations leave the supply path uncertain. Use [reference cases](#eu-process-reference-cases) to distinguish expected solved behaviour from a current observation, and [switching orders](#eu-rmu-switching-orders) before attempting restoration.
 
 ### Limits
 

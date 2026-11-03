@@ -29,7 +29,7 @@ it.each(Object.entries(SWITCH_NORMALS))("%s uses solid amber for all known off-n
     expect(rect.getAttribute("stroke")).toBe(offNormal ? "#fbbf24" : "#cbd5e1");
     expect(rect.getAttribute("stroke-dasharray")).toBeNull();
     expect(rect.getAttribute("fill")).toBe(value === "closed" ? "#cbd5e1" : "#0f172a");
-    const label = [...(device === "F2" ? node.parentElement! : node).querySelectorAll("text")].find((n) => n.textContent?.includes(`${value.toUpperCase()} · GOOD`))!;
+    const label = [...(device === "F2" ? node.parentElement! : node).querySelectorAll("text")].find((n) => n.textContent?.includes(`${value.toUpperCase()}`))!;
     expect(label.getAttribute("fill")).toBe(offNormal ? "#fbbf24" : "#cbd5e1");
     p.quality.nt = true;
     const staleNode = schematic(state).querySelector(`[data-device="${device}"]`)!;
@@ -65,7 +65,7 @@ it("counts, orders and distinguishes alarms from off-normal conditions, includin
   expect(entries[0].className).toBe("text-rose-300");
   expect(entries[1].className).toBe("text-amber-200");
   expect(renderToStaticMarkup(<AbnormalSummary state={state} cached />)).toContain("1 alarm · 2 off-normal in cached snapshot");
-  expect(renderToStaticMarkup(<AbnormalSummary state={FEEDER_STATE} />)).toContain("No alarms in GOOD observations");
+  expect(renderToStaticMarkup(<AbnormalSummary state={FEEDER_STATE} />)).toContain("No alarms in valid observations");
 });
 
 it("uses the same IEC quality definitions on one-line labels, faceplates, commands and Points", () => {

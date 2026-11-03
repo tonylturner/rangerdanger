@@ -210,6 +210,12 @@ export async function getActivePackage(): Promise<PackageSummary> {
   return active;
 }
 
+export type BuildInfo = { version: string; commit: string; date: string };
+
+export async function getBuild(): Promise<BuildInfo> {
+  return request<BuildInfo>("/build");
+}
+
 export async function getRange() {
   return request<RangeStatus>("/range");
 }
@@ -318,6 +324,17 @@ export async function sendSubstationCommand(device: string, command: string, sou
 
 export async function getSubstationAudit() {
   return request<{ entries: AuditEntry[] }>("/substation/audit");
+}
+
+export async function sendFieldAction(body:
+  | { device: "process"; action: "fault_s1" | "fault_s2" | "clear_fault" }
+  | { device: "feeder-breaker" | "f2-breaker"; action: "reset_lockout" }
+  | { device: "rmu-1" | "rmu-2"; action: "reset_fault_passage" }
+) {
+  return request<Record<string, unknown>>("/field/actions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 // Load Simulator (training-only) load override. Fields are optional so a caller

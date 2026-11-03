@@ -24,7 +24,7 @@ const one = (root: ParentNode, selector: string) => root.querySelector<SVGElemen
 
 describe("functional one-line observations", () => {
   it.each([
-    [0, "DEAD", "#94a3b8"], [0.000004679, "DEAD", "#94a3b8"], [0.099, "DEAD", "#94a3b8"],
+    [0, "DEAD", "#fb7185"], [0.000004679, "DEAD", "#fb7185"], [0.099, "DEAD", "#fb7185"],
     [0.1, "LIVE", "#38bdf8"], [-1, "UNKNOWN", "#fbbf24"], [NaN, "UNKNOWN", "#fbbf24"], [Infinity, "UNKNOWN", "#fbbf24"],
   ])("colours S1 at %s kV as %s while retaining its measured value", (value, state, color) => {
     const points = FEEDER_STATE.points.map((p) => p.id === "rmu-1-source-kv" ? { ...p, value: value as number } : p);
@@ -32,6 +32,9 @@ describe("functional one-line observations", () => {
     const s1 = one(tree, 'g[aria-label^="S1 residential:"]');
     expect(s1.querySelector("text")?.textContent).toBe(`S1 residential · ${state}`);
     expect(one(tree, 'line[x1="330"]').getAttribute("stroke")).toBe(color);
+    expect(one(tree, 'line[x1="330"]').getAttribute("stroke-width")).toBe(state === "DEAD" ? "5" : "3");
+    expect(one(tree, 'line[x1="330"]').getAttribute("stroke-dasharray")).toBe(state === "DEAD" ? "10 6" : state === "UNKNOWN" ? "6 5" : null);
+    expect(all(tree, '[data-point="S1-no-supply"]')).toHaveLength(state === "DEAD" ? 1 : 0);
     if (value === 0.000004679) expect(s1.getAttribute("aria-label")).toContain("0.00 kV");
   });
   it.each([
@@ -104,7 +107,7 @@ describe("functional one-line observations", () => {
   it("establishes a GOOD F2 path separately from measured voltage", () => {
     const tree = schematic();
     const s3 = one(tree, 'g[aria-label^="S3 industrial:"]');
-    expect(s3.getAttribute("aria-label")).toContain("GOOD");
+    expect(s3.getAttribute("aria-label")).not.toContain("· GOOD");
     expect([...s3.querySelectorAll("text")].map((n) => n.textContent).join("|")).toContain("via F2");
     expect(s3.querySelector("title")?.textContent).toContain("Observed F2 path");
     expect(all(tree, 'text[data-supply-path="via CB1"]')).toHaveLength(2);
@@ -120,7 +123,7 @@ describe("functional one-line observations", () => {
     for (const selected of DEVICES) {
       const html = faceplate({ state: LOST_LINK_STATE, selected, unavailable: false });
       // The explanatory "not GOOD" regulation message is not a GOOD badge.
-      expect(html).not.toContain("✓</span>GOOD");
+      expect(html).not.toContain("✓</span>valid");
     }
   });
 
@@ -155,13 +158,25 @@ describe("functional one-line observations", () => {
       ? { ...p, quality: { ...p.quality, iv: true, nt: true }, stale_reason: "link_lost" as const } : p);
     const tree = schematic(points);
     const cb1 = one(tree, 'g[role="button"][aria-label^="CB1:"]');
-    expect(cb1.getAttribute("aria-label")).toContain("CLOSED · STALE · IV NT");
+    expect(cb1.getAttribute("aria-label")).toContain("CLOSED · INVALID · NOT TOPICAL · STALE (IEC 104 link to the RTU lost)");
     const symbol = one(cb1, 'rect[width="40"]');
     expect(symbol.getAttribute("fill")).toBe("url(#cc-unknown)");
     expect(symbol.getAttribute("stroke")).toBe("#fbbf24");
     expect(symbol.getAttribute("stroke-dasharray")).not.toBeNull();
     expect(all(cb1, 'rect[fill="#cbd5e1"]')).toHaveLength(0);
     expect(all(tree, 'text[data-supply-path="via CB1"]')).toHaveLength(0);
+  });
+
+  it("keeps long quality reasons in wrapping HTML without hiding any flags", () => {
+    const points = FEEDER_STATE.points.map((p) => p.id === "feeder-breaker-position"
+      ? { ...p, quality: { ...p.quality, iv: true, nt: true }, stale_reason: "device_unreachable" as const } : p);
+    const tree = schematic(points);
+    const cb1 = one(tree, '[data-device="CB1"]');
+    const label = [...cb1.querySelectorAll("text")].at(-1)!;
+    expect(label.firstChild?.textContent).toBe("CLOSED · INVALID");
+    const notes = tree.querySelector('[aria-label="One-line quality exceptions"]')!;
+    expect(notes.textContent).toContain("Feeder breaker position: CLOSED · INVALID · NOT TOPICAL · STALE (RTU cannot reach the device (Modbus))");
+    expect(notes.querySelector("li")?.className).toContain("wrap-anywhere");
   });
 
   it("shares measurement locations across schematic, faceplates and Points", () => {

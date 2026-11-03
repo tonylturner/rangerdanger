@@ -69,11 +69,11 @@ steps:
 
     Completion uses the backend-retained result for the judging target, full running firewall hash and probe UTC window from this range and latest policy commit. The running policy is read before and after probing; a change or unreadable hash fails the report. Reapplying even the same policy invalidates the previous commit window: generate again. The backend retains the latest generated report until range/backend restart; export the markdown/PCAP before reset or shutdown. A local screenshot or old browser report cannot substitute for the retained proof.
 
-    Read every row: a failed positive blocks operations; a failed negative leaves exposure. The package-derived matrix rows cover all six required intents and all five field devices including F2. Retain every inventory point after a fresh GI; F2 has four indications, no command. If you performed Lab 2.2's instructor-supervised F2 visibility check, retain its last-value IV/NT loss, healthy-peer and restored-GI evidence with the report. Negatives actively probe Kali→RTU, foreign→field, enterprise→PLC and Kali→vendor RDP/VNC. Only connect timeout is denied; connection refused is reached, tool/container errors fail honestly. Default-deny drops need not emit logs.
+    Read every row: a failed positive blocks operations; a failed negative leaves exposure. The package-derived matrix rows cover all six required intents and all five field devices including F2. Retain every inventory point after a fresh GI; F2 has five indications, no command. If you performed Lab 2.2's instructor-supervised F2 visibility check, retain its last-value IV/NT loss, healthy-peer and restored-GI evidence with the report. Negatives actively probe Kali→RTU, foreign→field, enterprise→PLC and Kali→vendor RDP/VNC. Only connect timeout is denied; connection refused is reached, tool/container errors fail honestly. Default-deny drops need not emit logs.
 
     Inspect PCAP source analysis: RTU **and PLC→OLTC** are legitimate field sources. RTU↔PLC/GPS stays invisible at the firewall. A SYN captured on ingress does not prove a completed control operation.
 
-    In [/substation](/substation), confirm breaker closed, normal RMUs, OLTC auto, supply present and fresh GOOD CC observations. Plan proof plus operational continuity shows that this plan works as
+    In [/substation](/substation), confirm breaker closed, normal RMUs, OLTC auto, supply present and fresh valid CC observations. Plan proof plus operational continuity shows that this plan works as
     compiled. Hardened acceptance separately shows whether all sampled
     prevention gaps are closed. Keep both results.
 
@@ -85,7 +85,7 @@ steps:
     :::
 
     :::hint Advanced: verify by hand
-    Use the six-conduit inventory from Lab 2.2. From Kali read historian /api/points; from eng-ws GET PLC /login. Require a completed current-connection GI inside the ten-minute attempt window and non-null GOOD CC points received since that GI start, PLC heartbeat and advancing historian samples, not sockets alone. If GI evidence is missing or outside the window, press **Interrogate station** in the **Control Centre** and validate again. Quiet GOOD status need not have a recent receipt; floats have a cyclic-report watchdog. Repeat negatives from the named terminal tabs. At fw-1, type `exit` if the configuration CLI is open; RangerDanger then starts Linux bash. Capture there with tcpdump -i any using ports 2404/502/8080/8081, then use `containd cli` to return and export the running policy. Preserve UTC windows with the PCAP.
+    Use the six-conduit inventory from Lab 2.2. From Kali read historian /api/points; from eng-ws GET PLC /login. Require a completed current-connection GI inside the ten-minute attempt window and non-null valid CC points received since that GI start, PLC heartbeat and advancing historian samples, not sockets alone. If GI evidence is missing or outside the window, press **Interrogate station** in the **Control Centre** and validate again. Quiet valid status need not have a recent receipt; floats have a cyclic-report watchdog. Repeat negatives from the named terminal tabs. At fw-1, type `exit` if the configuration CLI is open; RangerDanger then starts Linux bash. Capture there with tcpdump -i any using ports 2404/502/8080/8081, then use `containd cli` to return and export the running policy. Preserve UTC windows with the PCAP.
     :::
 
     :::hint Optional historian-gap evidence

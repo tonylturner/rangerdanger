@@ -10,6 +10,7 @@ import {
   formatUtcTime,
   pointCondition,
   pointLabel,
+  pointQualityText,
   qualityFlags,
   qualityDefinition,
   staleReasonText,
@@ -22,24 +23,24 @@ import {
 export const STALE_HATCH =
   "bg-[repeating-linear-gradient(135deg,rgba(245,158,11,0.14)_0px,rgba(245,158,11,0.14)_6px,transparent_6px,transparent_12px)]";
 
-export function ConditionBadge({ condition }: { condition: PointCondition }) {
+export function ConditionBadge({ condition, point }: { condition: PointCondition; point?: OperatorPoint }) {
   if (condition === "stale") {
     return (
       <span title={qualityDefinition(condition)} tabIndex={0} className="inline-flex items-center gap-1 rounded-sm border border-dashed border-amber-500 bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-amber-300">
-        <span aria-hidden>⚠</span>STALE
+        <span aria-hidden>⚠</span>{point ? pointQualityText(point) : "STALE"}
       </span>
     );
   }
   if (condition === "never") {
     return (
       <span title={qualityDefinition(condition)} tabIndex={0} className="inline-flex items-center gap-1 rounded-sm border border-dashed border-slate-600 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-slate-400">
-        <span aria-hidden>∅</span>NO DATA
+        <span aria-hidden>∅</span>UNKNOWN
       </span>
     );
   }
   return (
     <span title={qualityDefinition(condition)} tabIndex={0} className="inline-flex items-center gap-1 rounded-sm border border-slate-600 bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-slate-200">
-      <span aria-hidden>✓</span>GOOD
+      <span aria-hidden>✓</span>valid
     </span>
   );
 }
@@ -81,7 +82,7 @@ function PointRow({ point, now }: { point: OperatorPoint; now: number }) {
         {stale && <div className="text-[9px] font-bold uppercase tracking-wider text-amber-400">last known value</div>}
       </td>
       <td className="px-2 py-2">
-        <ConditionBadge condition={condition} />
+        <ConditionBadge condition={condition} point={point} />
         <div className="mt-1 font-mono text-[10px] text-slate-400">{flags.length > 0 ? flags.join(" ") : "no flags"}</div>
       </td>
       <td className="px-2 py-2 text-xs text-slate-300">{reportingText(point)}</td>

@@ -19,6 +19,10 @@ func (s *Server) handleHistorianHistory(c *gin.Context) {
 	s.proxyHistorian(c, "/api/history", false)
 }
 
+func (s *Server) handleHistorianEvents(c *gin.Context) {
+	s.proxyHistorian(c, "/api/events", false)
+}
+
 func (s *Server) proxyHistorian(c *gin.Context, path string, array bool) {
 	url, ok := rangeOf(c).Manifest.Endpoint(manifest.RoleHistorian, "api")
 	if !ok {

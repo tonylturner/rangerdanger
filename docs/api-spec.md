@@ -256,8 +256,9 @@ and `not_updated`; a new report replaces quality. Other stale reasons are
 `never_received`, `link_lost`, `device_unreachable`, `heartbeat` and
 `measurement_invalid` (or null).
 
-The 42 monitored points include F2 position/trip/current/MW (1501/1502/2501/2502,
+The 44 monitored points include F2 position/trip/lockout/current/MW (1501/1502/1503/2501/2502,
 indication-only; five supervisory commands unchanged), feeder P/Q/PF (IOAs 2003/2004/2005),
+CB1 lockout (1003, input register 1 bit 1; F2 lockout also uses bit 1),
 T1 P/Q/PF (2303/2304/2305), and `oltc-1-overcurrent-block` (1307,
 OLTC input register 1 bit 7). P is MW, Q is Mvar, PF is dimensionless.
 PF with IV displays “—” alongside quality, never the wire placeholder 0.

@@ -9,13 +9,25 @@ import { FeederOneLine } from "../components/feeder-one-line";
 describe("independent one-line sources", () => {
   it("pins GOOD CC observation values and text", () => {
     expect(controlCentreObservations(FEEDER_STATE.points)("feeder-breaker-position")).toEqual({
-      value: "closed", condition: "good", text: "CLOSED · GOOD", shortText: "CLOSED · GOOD",
+      value: "closed", condition: "good", text: "CLOSED", shortText: "CLOSED",
       flags: [], staleReason: null, transient: false,
     });
   });
+  it.each([
+    ["iv", "INVALID"], ["nt", "NOT TOPICAL"], ["sb", "SUBSTITUTED"],
+    ["bl", "BLOCKED"], ["ov", "OVERFLOW"],
+  ] as const)("names the %s quality flag without implying plant state", (flag, label) => {
+    const points = structuredClone(FEEDER_STATE.points);
+    const point = points.find((p) => p.id === "feeder-protection-trip")!;
+    point.value = true;
+    point.quality = { ...point.quality, [flag]: true };
+    expect(controlCentreObservations(points)(point.id).shortText).toBe(`TRIPPED · ${label}`);
+    point.quality = { ...point.quality, [flag]: false };
+    expect(controlCentreObservations(points)(point.id).shortText).toBe("TRIPPED");
+  });
   it("pins stale CC text, IEC flag order and the stale reason", () => {
     expect(controlCentreObservations(STALE_STATE.points)("feeder-breaker-position")).toEqual({
-      value: "closed", condition: "stale", text: "CLOSED · STALE · IV NT · link_lost", shortText: "CLOSED · STALE · IV NT",
+      value: "closed", condition: "stale", text: "CLOSED · INVALID · NOT TOPICAL · STALE (IEC 104 link to the RTU lost)", shortText: "CLOSED · INVALID · NOT TOPICAL · STALE (IEC 104 link to the RTU lost)",
       flags: ["IV", "NT"], staleReason: "link_lost", transient: false,
     });
   });
@@ -27,7 +39,7 @@ describe("independent one-line sources", () => {
   });
   it("pins the cached CC snapshot suffix without rewriting IEC quality", () => {
     expect(controlCentreObservations(FEEDER_STATE.points, true)("feeder-breaker-position")).toEqual({
-      value: "closed", condition: "good", text: "CLOSED · GOOD · cached snapshot · CC API unavailable", shortText: "CLOSED · GOOD",
+      value: "closed", condition: "good", text: "CLOSED · cached snapshot · CC API unavailable", shortText: "CLOSED",
       flags: [], staleReason: null, transient: false,
     });
   });
@@ -41,8 +53,8 @@ describe("independent one-line sources", () => {
     expect(read("f2-position").value).toBe("closed");
     expect(read("feeder-current").flags).toEqual([]);
     const html = renderToStaticMarkup(createElement(FeederOneLine, { read, physical: true }));
-    expect(html).toContain("CB1: OPEN · GOOD · sim");
-    expect(html).toContain("F2 · CLOSED · GOOD · sim");
+    expect(html).toContain("CB1: OPEN · sim");
+    expect(html).toContain("F2 · CLOSED · sim");
     expect(html).toContain("Simulation-observed · independent of IEC 104");
     expect(html).not.toContain("faceplate");
   });
@@ -53,19 +65,28 @@ describe("independent one-line sources", () => {
     field.process.truth_stale = true;
     const read = physicalSystemObservations(field);
     expect(read("feeder-current")).toMatchObject({ value: null, condition: "unknown" });
+    expect(read("feeder-current").shortText).toBe("UNKNOWN (device input stale) · sim");
     expect(read("rmu-1-section-kv").text).toContain("INVALID");
     expect(read("f2-position").condition).toBe("good");
     expect(read("rmu-1-position").condition).toBe("good");
     delete field.devices["breaker-1"];
     expect(physicalSystemObservations(field)("feeder-breaker-position").condition).toBe("unknown");
   });
-  it("reads all four F2 channels from its device, never a process latch or the other view", () => {
+  it("uses one UNKNOWN for undefined physical PF without dropping sim provenance", () => {
+    const field = structuredClone(TRUTH);
+    field.devices["breaker-1"].measurements.pf = null;
+    expect(physicalSystemObservations(field)("feeder-pf")).toMatchObject({
+      condition: "unknown", value: null, shortText: "UNKNOWN · sim", text: "UNKNOWN · sim",
+    });
+  });
+  it("reads all five F2 channels from its device, never a process latch or the other view", () => {
     const field = structuredClone(TRUTH);
     // Deliberately contradictory process data cannot override the device.
     field.process.f2_tripped = true;
     const physical = physicalSystemObservations(field);
     expect(physical("f2-position")).toMatchObject({ value: "closed", condition: "good" });
     expect(physical("f2-protection-trip")).toMatchObject({ value: false, condition: "good" });
+    expect(physical("f2-lockout")).toMatchObject({ value: false, condition: "good" });
     expect(physical("f2-current")).toMatchObject({ value: 11.2, condition: "good" });
     expect(physical("f2-p-mw")).toMatchObject({ value: 0.38, condition: "good" });
     const cc = controlCentreObservations(FEEDER_STATE.points.map((p) => p.id === "f2-position" ? { ...p, value: "open" } : p));
@@ -75,7 +96,7 @@ describe("independent one-line sources", () => {
     expect(physicalSystemObservations(field)("f2-current").condition).toBe("stale");
     expect(physicalSystemObservations(field)("f2-p-mw").condition).toBe("stale");
     expect(physicalSystemObservations(field)("f2-position").condition).toBe("good");
-    for (const id of ["f2-position", "f2-protection-trip", "f2-current", "f2-p-mw"]) {
+    for (const id of ["f2-position", "f2-protection-trip", "f2-lockout", "f2-current", "f2-p-mw"]) {
       expect(physicalSystemObservations(field, true)(id).condition).toBe("stale");
     }
     delete field.devices["f2-breaker"];

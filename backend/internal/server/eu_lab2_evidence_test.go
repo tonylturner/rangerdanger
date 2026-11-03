@@ -174,8 +174,8 @@ func TestConduitsEvidence(t *testing.T) {
 
 func TestConduitsPollsAcceptsHealthyGIWithoutPointGoodEvents(t *testing.T) {
 	ev := passingConduits(t)
-	if len(ev.stationPoints) != 42 || len(ev.state.Points) != 42 {
-		t.Fatalf("loaded inventory=%d, observations=%d; want 42", len(ev.stationPoints), len(ev.state.Points))
+	if len(ev.stationPoints) != 44 || len(ev.state.Points) != 44 {
+		t.Fatalf("loaded inventory=%d, observations=%d; want 44", len(ev.stationPoints), len(ev.state.Points))
 	}
 	if len(ev.journal.Entries) != 2 || ev.journal.Entries[0].Kind != "gi_started" ||
 		ev.journal.Entries[1].Kind != "gi_complete" {
@@ -183,7 +183,7 @@ func TestConduitsPollsAcceptsHealthyGIWithoutPointGoodEvents(t *testing.T) {
 	}
 	start, _ := conduitWindow(ev)
 	check := conduitPolls(ev, start)
-	if check.Status != "pass" || !strings.Contains(check.Detail, "all 42 station IOAs") {
+	if check.Status != "pass" || !strings.Contains(check.Detail, "all 44 station IOAs") {
 		t.Fatal(check)
 	}
 	for i, point := range ev.state.Points {
@@ -193,7 +193,7 @@ func TestConduitsPollsAcceptsHealthyGIWithoutPointGoodEvents(t *testing.T) {
 		}
 	}
 	check = conduitPolls(ev, start)
-	if check.Status != "fail" || !strings.Contains(check.Detail, "1 of 42 station IOAs [1307]") {
+	if check.Status != "fail" || !strings.Contains(check.Detail, "1 of 44 station IOAs [1307]") {
 		t.Fatal(check)
 	}
 }

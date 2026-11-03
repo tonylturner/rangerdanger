@@ -332,8 +332,8 @@ eu_gate_G8() {
   g8_epoch=$(printf '%s' "$g8_before" | jq -r '.cache_epoch // empty')
   g8_points=$(eu_get_point_snapshot "$g8_before" station) || g8_points=""
   if [ -z "$g8_epoch" ] || [ -z "$g8_points" ] \
-    || ! printf '%s' "$g8_before" | jq -e "$EU_JQ_DEFS four_points" >/dev/null 2>&1; then
-    fail "G8 cache epoch, four-point shape, or point snapshot is empty/invalid"
+    || ! printf '%s' "$g8_before" | jq -e "$EU_JQ_DEFS breaker_inventory" >/dev/null 2>&1; then
+    fail "G8 cache epoch, breaker subset shape, or point snapshot is empty/invalid"
     return 1
   fi
   eu_g8_regulate_without_cc "$g8_epoch" "$g8_points" || return
@@ -417,8 +417,10 @@ eu_gate_G9() {
     eu_assert_jq_truth "$API_BODY" "$g9_truth" '
       point("feeder-breaker-position").value == $truth.devices["breaker-1"].position
       and point("feeder-protection-trip").value == $truth.devices["breaker-1"].protection_tripped
+      and point("feeder-lockout").value == $truth.devices["breaker-1"].lockout
       and point("f2-position").value == $truth.devices["f2-breaker"].position
       and point("f2-protection-trip").value == $truth.devices["f2-breaker"].protection_tripped
+      and point("f2-lockout").value == $truth.devices["f2-breaker"].lockout
       and $truth.devices["breaker-1"].position == "open" and $truth.devices["breaker-1"].protection_tripped == true
       and ($truth.devices["oltc-1"].tap | type) == "number"
       and point("oltc-1-tap").value.value == $truth.devices["oltc-1"].tap

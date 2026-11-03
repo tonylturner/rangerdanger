@@ -72,6 +72,24 @@ def bodies(package, seq=1):
 
 
 class CatalogueTests(unittest.TestCase):
+    def test_historian_inventory_matches_package_point_maps(self):
+        matrix = json.loads(g3.MATRIX.read_text())
+        checked = set()
+        for package, cat in matrix["packages"].items():
+            path = g3.ROOT / "lab-definitions/packages" / package / "protocols/points.json"
+            if not path.is_file():
+                continue
+            checked.add(package)
+            with self.subTest(package=package):
+                point_ids = [point["id"] for point in json.loads(path.read_text())["points"]]
+                # G3 checks cardinality and membership, not historian response order.
+                self.assertEqual(len(cat["point_ids"]), len(set(cat["point_ids"])),
+                                 "duplicate G3 historian point IDs")
+                self.assertEqual(len(point_ids), len(set(point_ids)),
+                                 "duplicate package point IDs")
+                self.assertEqual(set(cat["point_ids"]), set(point_ids))
+        self.assertIn(EU, checked, "EU point-map coverage must not silently disappear")
+
     def test_cardinality_and_verdict_counts(self):
         for package, counts in ((US, ((156, 90, 66), (156, 2, 154))),
                                 (EU, ((90, 25, 65), (90, 2, 88)))):

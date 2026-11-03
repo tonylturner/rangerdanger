@@ -133,7 +133,7 @@ eu_kill_tuple() { return 0; }
 eu_wait_for_operator() { return 0; }
 : >"$CLOCK_LOG"
 t_run eu_gate_G11
-t_expect_out "G11 four points IV+NT" "G11 reaches the capture window end"
+t_expect_out "G11 five breaker points IV+NT" "G11 reaches the capture window end"
 t_expect_eq "$(cat "$CLOCK_LOG")" "$(printf '%s\n%s' \
   "exec $FW date -u +%s.%N" "exec $FW date -u +%s.%N")" \
   "both G11 packet boundaries use range epoch seconds"

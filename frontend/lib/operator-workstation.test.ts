@@ -2,8 +2,19 @@ import { describe, expect, it } from "vitest";
 import { activeAlarms, abnormalConditions, deviceCommsHealth, devicePoints, pointObservationNotCurrent, receivedAuthority, regulationBand, scadaViewState, DEVICES } from "./operator-workstation";
 import { BOOT_STATE, FEEDER_STATE, LOST_LINK_STATE, PERIODIC_GI_STATE, WATCHDOG_STATE } from "./operator-fixtures.test-util";
 import { pointCondition } from "./operator-format";
+import oracle from "../../scripts/lib/eu-state-oracle.json";
 
 describe("operator observation rules", () => {
+  it("pins every boolean alarm's wording, without changing the alarm set", () => {
+    expect(Object.keys(oracle.presentation.alarm_text).sort()).toEqual(
+      [...oracle.presentation.asserted_alarms, ...oracle.presentation.false_alarms].sort(),
+    );
+  });
+  it.each(Object.entries(oracle.presentation.alarm_text))("pins formatted %s alarm wording to the gate oracle", (id, text) => {
+    const point = structuredClone(FEEDER_STATE.points.find((p) => p.id === id)!);
+    point.value = !oracle.presentation.false_alarms.includes(id);
+    expect(activeAlarms({ ...FEEDER_STATE, points: [point] })).toEqual([{ id, text }]);
+  });
   it.each([
     ["feeder-breaker-position", "open", "CB1: OPEN (normal CLOSED)"],
     ["rmu-1-position", "open", "RMU1 · NC: OPEN (normal CLOSED)"],
@@ -54,6 +65,20 @@ describe("operator observation rules", () => {
     expect(abnormalConditions({ ...state, points: state.points.filter((p) => p.id !== id) }).some((c) => c.id === id)).toBe(false);
   });
 
+  it.each(["feeder-lockout", "f2-lockout"])("alarms on independently received %s only while GOOD", (id) => {
+    const state = structuredClone(FEEDER_STATE);
+    const point = state.points.find((p) => p.id === id)!;
+    point.value = true; // Neither trip nor OPEN is a substitute for lockout telemetry.
+    expect(activeAlarms(state).map((a) => a.id)).toEqual([id]);
+    for (const flag of ["iv", "nt", "sb", "bl", "ov"] as const) {
+      const bad = { ...state, points: state.points.map((p) => p.id === id ? { ...p, quality: { ...p.quality, [flag]: true } } : p) };
+      expect(activeAlarms(bad)).toEqual([]);
+    }
+    for (const patch of [{ value: false }, { value: null }, { stale_reason: "not_updated" as const }]) {
+      expect(activeAlarms({ ...state, points: state.points.map((p) => p.id === id ? { ...p, ...patch } : p) })).toEqual([]);
+    }
+    expect(activeAlarms({ ...state, points: state.points.filter((p) => p.id !== id) })).toEqual([]);
+  });
   it("derives process alarms only from full GOOD and separates bad quality", () => {
     const state = structuredClone(FEEDER_STATE);
     for (const id of ["feeder-protection-trip", "rmu-1-earth", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-at-lower", "oltc-1-at-upper"]) {
@@ -61,7 +86,16 @@ describe("operator observation rules", () => {
     }
     state.points.find((p) => p.id === "plc-1-running")!.value = false;
     state.points.find((p) => p.id === "plc-1-input-valid")!.value = false;
-    expect(activeAlarms(state)).toHaveLength(8);
+    expect(activeAlarms(state)).toEqual([
+      { id: "feeder-protection-trip", text: "CB1 protection trip: TRIPPED" },
+      { id: "rmu-1-earth", text: "RMU1 earth switch: CLOSED" },
+      { id: "rmu-2-fault-passage", text: "RMU2 fault passage: LATCHED" },
+      { id: "oltc-1-at-lower", text: "OLTC lower limit: AT LIMIT" },
+      { id: "oltc-1-at-upper", text: "OLTC upper limit: AT LIMIT" },
+      { id: "oltc-1-blocked", text: "OLTC blocked: BLOCKED" },
+      { id: "plc-1-running", text: "OpenPLC running: STOPPED" },
+      { id: "plc-1-input-valid", text: "OpenPLC input: INVALID" },
+    ]);
     for (const flag of ["iv", "nt", "sb", "bl", "ov"] as const) {
       const bad = { ...state, points: state.points.map((p) => ({ ...p, quality: { ...p.quality, [flag]: true } })) };
       expect(activeAlarms(bad)).toEqual([]);
@@ -160,7 +194,7 @@ describe("F2 and command authority", () => {
     const state = structuredClone(FEEDER_STATE);
     const trip = state.points.find((p) => p.id === "f2-protection-trip")!;
     trip.value = true;
-    expect(activeAlarms(state)).toEqual([{ id: trip.id, text: "F2 protection trip: asserted" }]);
+    expect(activeAlarms(state)).toEqual([{ id: trip.id, text: "F2 protection trip: TRIPPED" }]);
     for (const flag of ["iv", "nt", "sb", "bl"] as const) {
       expect(activeAlarms({ ...state, points: [{ ...trip, quality: { ...trip.quality, [flag]: true } }] })).toEqual([]);
     }

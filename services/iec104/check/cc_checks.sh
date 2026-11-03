@@ -39,6 +39,7 @@ cmd_ok() {
 }
 POS="pt(s,'feeder-breaker-position')"
 TRIP="pt(s,'feeder-protection-trip')"
+LOCKOUT="pt(s,'feeder-lockout')"
 
 # ---- CC 0. strict config and fatal binds (no network needed) -----------
 log "CC check 0: strict config loader, fatal --http and --bind failures"
@@ -171,7 +172,7 @@ cmd_ok cc-cmd-restore close closed || fail "CC: could not restore closed (cc-cmd
 log "CC check 4: close under lockout -> rejected"
 cmd_ok cc-cmd-open2 open open || fail "CC: open before the interlock check (cc-cmd-open2.json)"
 ctl "http://$BRK_IP:8081/fault?active=1"
-probe wait 10 "${TRIP}['value'] is True and ${TRIP}['cot'] in (3,20)" >/dev/null || fail "CC: protection trip not seen"
+probe wait 10 "${TRIP}['value'] is True and ${TRIP}['cot'] in (3,20) and ${LOCKOUT}['value'] is True" >/dev/null || fail "CC: protection trip not seen"
 cc_cmd cc-cmd-interlock close
 if [ "$(cat "$OUT/cc-cmd-interlock.status")" = 200 ] && jtest "$OUT/cc-cmd-interlock.json" \
   "d['result']=='rejected' and d['selected_at'] and d['executed_at'] and d['con_at'] \

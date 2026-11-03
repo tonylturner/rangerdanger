@@ -17,7 +17,7 @@ function operator(): OperatorState {
     schema: 3, snapshot_seq: 1, rendered_at: new Date(now).toISOString(), cache_epoch: "cc-boot", package_id: "eu-iec104-substation", range_generation: 7,
     link: { state: "started", peer: "10.30.30.20:2404", since: null, last_rx_at: null, connection_seq: 1,
       gi: { state: "complete", started_at: null, trigger: "connect", last_complete_at: new Date(now).toISOString(), next_due_at: new Date(now + 900000).toISOString() } },
-    points: ["feeder-breaker-position", "feeder-protection-trip"].map((id) => ({
+    points: ["feeder-breaker-position", "feeder-protection-trip", "feeder-lockout"].map((id) => ({
       id, device: "feeder-breaker", limits: null, ioa: 1, kind: "single-point", reporting: null, asdu: "M_SP_TB_1", value: false, quality: { iv: false, nt: false, sb: false, bl: false, ov: null },
       stale_reason: null, source_time: null, source_time_invalid: null,
       received_at: "2020-01-01T00:00:00Z", cot: 3,
@@ -90,10 +90,12 @@ describe("package flow liveness", () => {
     op.points.push(
       { ...op.points[0], id: "f2-position", device: "f2-breaker", ioa: 1501, kind: "double-point", asdu: "M_DP_TB_1", value: "closed" },
       { ...op.points[1], id: "f2-protection-trip", device: "f2-breaker", ioa: 1502 },
+      { ...op.points[1], id: "f2-lockout", device: "f2-breaker", ioa: 1503 },
     );
     expect(createFlowContext(eu, { operator: op }).observations["rtu-f2-breaker"].status).toBe("active");
-    op.points[2].stale_reason = "device_unreachable";
-    op.points[2].quality = { ...op.points[2].quality, iv: true };
+    const position = op.points.find((p) => p.id === "f2-position")!;
+    position.stale_reason = "device_unreachable";
+    position.quality = { ...position.quality, iv: true };
     const context = createFlowContext(eu, { operator: op });
     expect(context.observations["rtu-f2-breaker"].status).toBe("down");
     expect(context.observations["rtu-breaker"].status).toBe("active");

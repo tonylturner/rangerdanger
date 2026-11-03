@@ -68,7 +68,7 @@ describe("Physical System presentation", () => {
     const body = <PhysicalSystemScreen {...props} field={field} operator={operator} />;
     const html = renderToStaticMarkup(<ControlCentreScreen state={operator} stateError={null} stateUpdatedAt={NOW} journal={JOURNAL} now={NOW} view="physical-system" physicalSystem={body} />);
     const out = text(html);
-    for (const value of ["Physical System State", "Live electrical and device conditions from the simulation, independent of SCADA communications.", "This is privileged simulation truth, not available to the SCADA operator.", "Simulation observations · Independent of IEC 104", "No active physical abnormalities", "CB1 — Feeder breaker", "T1 — Transformer / OLTC", "RMU1", "RMU2 · NOP", "SCADA data quality:", "Physical agreement: 35 matched / 0 mismatched", "CC alarm limits 19.8–21.0 kV"]) expect(out).toContain(value);
+    for (const value of ["Physical System State", "Live electrical and device conditions from the simulation, independent of SCADA communications.", "This is privileged simulation truth, not available to the SCADA operator.", "Simulation observations · Independent of IEC 104", "No active physical abnormalities", "CB1 — Feeder breaker", "T1 — Transformer / OLTC", "RMU1", "RMU2 · NOP", "SCADA data quality:", "Physical agreement: 37 matched / 0 mismatched", "CC alarm limits 19.8–21.0 kV"]) expect(out).toContain(value);
     const sections = ["Physical abnormalities", "System overview", "Physical system vs. Control Centre", "Electrical network overview", "Equipment overview", "Advanced diagnostics"];
     const indices = sections.map((label) => html.indexOf(`aria-label="${label}"`));
     expect(indices.every((i) => i >= 0)).toBe(true);
@@ -129,10 +129,10 @@ describe("Physical System presentation", () => {
   it("promotes a genuine mismatch with a red text-and-symbol badge and independent physical values", () => {
     const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} />);
     expect(html).toContain("≠ MISMATCH"); expect(html).toContain("border-red-700");
-    expect(html).toContain("CB1: OPEN · GOOD · sim");
-    expect(html).toContain("F2 · CLOSED · GOOD · sim");
+    expect(html).toContain("CB1: OPEN · sim");
+    expect(html).toContain("F2 · CLOSED · sim");
     expect(html).toContain("Physical topology path: via F2");
-    expect(html).toContain("ENERGIZED"); expect(html).toContain("solver bus live");
+    expect(html).toContain("ENERGIZED"); expect(html).toContain("solver energization flag");
     expect(html).toContain("received 29 s ago"); expect(html).toContain("Source UTC");
     const noOperator = renderToStaticMarkup(<PhysicalSystemScreen {...props} operator={undefined} />);
     expect(noOperator).not.toContain("CC alarm limits"); expect(noOperator).toContain("? UNKNOWN");
@@ -145,7 +145,7 @@ describe("Physical System presentation", () => {
     const row = tree.container.querySelector(`[data-comparison="${p.id}"]`)!;
     expect(row.getAttribute("data-status")).toBe("STALE");
     expect(output(tree)).toContain("CC↔RTU link lost");
-    expect(button(tree, "All comparable points (35)").getAttribute("aria-expanded")).toBe("false");
+    expect(button(tree, "All comparable points (37)").getAttribute("aria-expanded")).toBe("false");
   });
   it("never turns null into zero and distinguishes validity, freshness, energization and known positions", () => {
     const field = structuredClone(TRUTH);
@@ -156,20 +156,20 @@ describe("Physical System presentation", () => {
     delete field.devices["breaker-1"];
     const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} field={field} />);
     expect(html).toContain("I unknown"); expect(html).toContain("Bus voltage");
-    expect(html).toContain("CB1: unknown · UNKNOWN · sim");
+    expect(html).toContain("CB1: UNKNOWN · sim");
     expect(html).toContain("INVALID · retained measurements");
-    expect(html).toContain("F2 · CLOSED · GOOD · sim");
+    expect(html).toContain("F2 · CLOSED · sim");
     expect(html).toContain("Physical topology path: unknown");
-    expect(html).toContain("UNKNOWN · solver bus live");
+    expect(html).toContain("UNKNOWN · solver energization flag");
   });
   it("shows solver energization separately from measured kV on the physical lower branch", () => {
     const field = structuredClone(TRUTH);
     field.process.buses.s3.live = false;
     const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} field={field} />);
     expect(html).toContain("S3 industrial · LIVE");
-    expect(html).toContain("NOT ENERGIZED · solver bus live");
-    expect(html.match(/<line x1="337"[^>]*>/)?.[0]).toContain('stroke="#94a3b8"');
-    expect(html.match(/<line x1="337"[^>]*>/)?.[0]).not.toContain("stroke-dasharray");
+    expect(html).toContain("NOT ENERGIZED · solver energization flag");
+    expect(html.match(/<line x1="337"[^>]*>/)?.[0]).toContain('stroke="#fb7185"');
+    expect(html.match(/<line x1="337"[^>]*>/)?.[0]).toContain('stroke-dasharray="10 6"');
     field.process.truth_stale = true;
     const stale = renderToStaticMarkup(<PhysicalSystemScreen {...props} field={field} />);
     expect(stale.match(/<line x1="337"[^>]*>/)?.[0]).toContain('stroke="#fbbf24"');
@@ -177,7 +177,20 @@ describe("Physical System presentation", () => {
   it("distinguishes completed tap, target tap and motion", () => {
     const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} />);
     expect(text(html)).toContain("Completed tap 1 MANUAL · moving · target 2");
-    expect(html).toContain("Tap 1 · TRANSIENT · GOOD · sim");
+    expect(html).toContain("Tap 1 · TRANSIENT · sim");
+  });
+  it("shows unknown physical PF once with sim provenance, separately from IEC IV", () => {
+    const field = normalField(), operator = matchingOperator(field);
+    field.devices["breaker-1"].measurements.pf = null;
+    const pf = operator.points.find((p) => p.id === "feeder-pf")!;
+    pf.value = 0;
+    pf.quality.iv = true;
+    pf.stale_reason = "measurement_invalid";
+    const tree = mount(<PhysicalSystemScreen {...props} field={field} operator={operator} />);
+    const row = tree.container.querySelector('[data-comparison="feeder-pf"]')!;
+    expect(row.children[1].textContent).toBe("Physical: UNKNOWN · sim");
+    expect(row.getAttribute("data-status")).toBe("INVALID");
+    expect(row.children[2].textContent).toContain("IEC IV");
   });
   it("retains every engineering group and applies only fields meaningful to the equipment", () => {
     const render = (id: string) => renderToStaticMarkup(<EquipmentCard id="CB1" title={id} device={TRUTH.devices[id]} open onToggle={() => {}} stale={false} />);
@@ -254,7 +267,7 @@ describe("Physical System interactions", () => {
     expect(button(tree, "CB1 — Feeder breaker").getAttribute("aria-expanded")).toBe("true");
     expect(scrollTargets).toHaveLength(calls);
     fireEvent.click(button(tree, "SCADA agreement"));
-    expect(button(tree, "All comparable points (35)").getAttribute("aria-expanded")).toBe("true");
+    expect(button(tree, "All comparable points (37)").getAttribute("aria-expanded")).toBe("true");
   });
   it("shares device selection across views in both directions", async () => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : url.includes("journal") ? JOURNAL : FEEDER_STATE)));

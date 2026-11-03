@@ -16,6 +16,7 @@ import { PhysicalComparison } from "./physical-system-comparison";
 import { PhysicalDiagnostics } from "./physical-system-diagnostics";
 import { PhysicalEquipment } from "./physical-system-equipment";
 import { PhysicalOverview } from "./physical-system-overview";
+import { PhysicalSystemControls } from "./physical-system-controls";
 import { ACTION, PANEL } from "./physical-system-parts";
 
 export const PHYSICAL_DESCRIPTION = "Live electrical and device conditions from the simulation, independent of SCADA communications. This is privileged simulation truth, not available to the SCADA operator. Compare these values with the Control Centre to identify missing, delayed, or incorrect observations.";
@@ -76,7 +77,7 @@ export function PhysicalSystemScreen({ field, stateError, operator, operatorUnav
           const live = read(`${id.toLowerCase()}-live`), path = sectionSupplyPath(read, id);
           return <div key={id} className="min-w-0 text-slate-300 wrap-anywhere">
             <h3 className="font-semibold">{id} · physical energization</h3>
-            <p className="font-mono">{live.condition === "good" ? live.value ? "ENERGIZED" : "NOT ENERGIZED" : "UNKNOWN"} · solver bus live</p>
+            <p className="font-mono">{live.condition === "good" ? live.value ? "ENERGIZED" : "NOT ENERGIZED" : "UNKNOWN"} · solver energization flag</p>
             <p className="font-mono">Measured kV: {read(SECTION_VOLTAGE[id]).shortText}</p>
             <p className="font-mono">Physical topology path: {field.process.truth_stale || unavailable ? "unknown" : path.state}</p>
             <p className="text-slate-400">{path.reason}</p>
@@ -85,6 +86,7 @@ export function PhysicalSystemScreen({ field, stateError, operator, operatorUnav
         <p className="mt-2 text-xs text-slate-400">Physical topology paths use simulation switch states; CC paths are inferred from IEC observations. No source is substituted for the other. Energization is the solver&apos;s live flag, not a calculation from the displayed kV.</p>
       </section>
       <PhysicalEquipment field={field} expanded={expanded} onToggle={(id) => { if (!expanded[id]) onSelect(id); toggle(id); }} unavailable={unavailable} />
+      <PhysicalSystemControls unavailable={unavailable || field.process.truth_stale} />
       <section aria-label="Advanced diagnostics" className={`${PANEL} border-slate-700`}>
         <button type="button" className={ACTION} aria-expanded={!!expanded.diagnostics} aria-controls="physical-diagnostics" onClick={() => toggle("diagnostics")}>{expanded.diagnostics ? "−" : "+"} Advanced diagnostics</button>
         {expanded.diagnostics && <div id="physical-diagnostics"><PhysicalDiagnostics field={field} audit={audit} /></div>}

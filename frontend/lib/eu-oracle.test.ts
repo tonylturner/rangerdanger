@@ -26,7 +26,7 @@ it.each(EU_ORACLE)("$switches / F2 $f2 / $supply / VT $vt: both adapters match t
     }
   }
   const tripped = row.f2 === "tripped";
-  const expectedConditions: string[] = tripped ? ["F2 protection trip: asserted", "F2: OPEN (normal CLOSED)"] : [];
+  const expectedConditions: string[] = tripped ? ["F2 lockout: LOCKED OUT", "F2 protection trip: TRIPPED", "F2: OPEN (normal CLOSED)"] : [];
   const expectedPhysical: string[] = [];
   if (row.switches[0] === "O") { expectedConditions.push("CB1: OPEN (normal CLOSED)"); expectedPhysical.push("breaker-1-open"); }
   if (row.switches[1] === "O") { expectedConditions.push("RMU1 · NC: OPEN (normal CLOSED)"); expectedPhysical.push("rmu-1-switch"); }
@@ -37,13 +37,13 @@ it.each(EU_ORACLE)("$switches / F2 $f2 / $supply / VT $vt: both adapters match t
   const conditions = abnormalConditions(operator);
   expect(conditions.filter((c) => !c.id.endsWith("-voltage-limit")).map((c) => c.text).sort()).toEqual(expectedConditions.sort());
   const expectedAlarmIds = ORACLE_SECTIONS.filter((_, i) => supply[i] === "D").map((section) => `${section}-no-supply`);
-  if (tripped) expectedAlarmIds.push("f2-protection-trip");
+  if (tripped) expectedAlarmIds.push("f2-protection-trip", "f2-lockout");
   if ("fault" in row) {
     expectedAlarmIds.push("feeder-voltage-voltage-limit", "rmu-2-source-kv-voltage-limit");
     expectedPhysical.push("fault");
   }
   expect(activeAlarms(operator).map((c) => c.id).sort()).toEqual(expectedAlarmIds.sort());
-  if (row.f2 === "tripped") expectedPhysical.push("f2-breaker-trip");
+  if (row.f2 === "tripped") expectedPhysical.push("f2-breaker-trip", "f2-breaker-lockout");
   expect(physicalAbnormalities(field).map((c) => c.id).sort()).toEqual(expectedPhysical.sort());
   expect(conditions.some((c) => c.text.includes("F2"))).toBe(tripped);
 });

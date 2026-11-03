@@ -279,10 +279,10 @@ liveness:
     provider: operator-link
   rtu-breaker:
     provider: operator-device
-    points: ["feeder-breaker-position", "feeder-protection-trip"]
+    points: ["feeder-breaker-position", "feeder-protection-trip", "feeder-lockout"]
   rtu-f2-breaker:
     provider: operator-device
-    points: ["f2-position", "f2-protection-trip"]
+    points: ["f2-position", "f2-protection-trip", "f2-lockout"]
   station-clock:
     provider: unobserved
   attacker-rtu:

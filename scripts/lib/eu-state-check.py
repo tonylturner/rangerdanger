@@ -50,7 +50,9 @@ def point_values(field):
                 values[f'{prefix}-{suffix}'] = d['measurements'][key]
     d = field['devices']['oltc-1']
     f2 = field['devices']['f2-breaker']
-    values.update({'feeder-protection-trip': field['devices']['breaker-1']['protection_tripped'],
+    values.update({'feeder-lockout': field['devices']['breaker-1']['lockout'],
+                   'f2-lockout': f2['lockout'],
+                   'feeder-protection-trip': field['devices']['breaker-1']['protection_tripped'],
                    'f2-position': f2['position'], 'f2-protection-trip': f2['protection_tripped'],
                    'f2-current': f2['measurements']['current_a'], 'f2-p-mw': f2['measurements']['p_mw'],
                    'oltc-1-tap': {'value': d['tap'], 'transient': d['moving']},
@@ -157,7 +159,7 @@ def check_data(row, field, operator, before, since, tap=0, auto=False, local=Fal
     plc = {'plc-1-running': True, 'plc-1-input-valid': True, 'plc-1-setpoint-kv': 20.4,
            'plc-1-deadband-pct': 1, 'plc-1-delay-s': 30}
     require(len(operator['points']) == ORACLE['point_count']
-            and set(points) == set(expected) | set(plc), 'CC 42-point inventory incomplete/duplicate')
+            and set(points) == set(expected) | set(plc), 'CC 44-point inventory incomplete/duplicate')
     for id, value in expected.items():
         point = points[id]
         require(timestamp(point['received_at']) >= timestamp(since), f'{id}: retained CC receipt')
@@ -246,12 +248,29 @@ def check_dom(row, dom, view, expected, tap=0):
             and devices['F2']['quality'] == 'good', f'{view} F2 position/quality')
     require(dom['f2Line'] == ('DEAD' if row['supply'][2] == 'D' else 'LIVE'), f'{view} F2 lower-run state')
     telemetry = dom['f2Telemetry']
-    require(('TRIPPED' if row['f2'] == 'tripped' else 'NORMAL') in telemetry, f'{view}: F2 trip text')
     for id, unit, tolerance in [('f2-current', 'A', 2.05), ('f2-p-mw', 'MW', .055)]:
         numbers = re.findall(r'(-?\d+(?:\.\d+)?)\s*' + unit + r'\b', telemetry)
         require(bool(numbers), f'{view}: F2 {unit} reading absent')
         near(float(numbers[-1]), expected[id], tolerance, f'{view}: displayed {id}')
     measurements = {v['point']: v for v in dom['measurements']}
+    for section, supply in zip(SECTIONS, row['supply']):
+        badge = measurements.get(section + '-no-supply')
+        require(bool(badge) == (supply == 'D'), f'{view} {section}: NO SUPPLY badge presence')
+        if badge:
+            require(badge['visible'] and badge['state'] == 'NO SUPPLY' and badge['text'] == 'NO SUPPLY',
+                    f'{view} {section}: visible NO SUPPLY badge')
+    for rule in PRESENTATION['consequence_badges']:
+        # Physical API does not expose PLC status or OLTC limit indications.
+        ids = rule['points']
+        active = [] if view == 'physical' and rule.get('cc_only') else [
+            id for id in ids if expected.get(id) is rule['value']]
+        chosen = active[0] if active else None
+        for id in ids:
+            badge = measurements.get(id)
+            require(bool(badge) == (id == chosen), f'{view} {id}: consequence badge presence')
+            if badge:
+                require(badge['visible'] and badge['state'] == rule['label'] and badge['text'] == rule['label'],
+                        f'{view} {id}: visible {rule["label"]} badge')
     for id in ['oltc-1-current', 'oltc-1-bus-kv', 'feeder-current', 'feeder-voltage', 'rmu-1-current', 'rmu-2-current', 'rmu-2-section-kv']:
         require(id in measurements and measurements[id]['visible'] and measurements[id]['text'].strip(), f'{view} missing visible measurement {id}')
         voltage = id.endswith('-kv') or id == 'feeder-voltage'
@@ -279,7 +298,7 @@ def check_dom(row, dom, view, expected, tap=0):
         require(strip and strip['visible'] and strip['beforeSchematic'], 'CC abnormal strip missing/hidden/below schematic')
         require(strip['alarmCount'] == str(len(alarms)), 'CC alarm count differs from expected point values')
         require(strip['offNormalCount'] == str(len(off_normal_conditions)), 'CC off-normal count differs from expected point values')
-        headline = f'{len(alarms)} {"alarm" if len(alarms) == 1 else "alarms"} · {len(off_normal_conditions)} off-normal' if alarms or off_normal_conditions else 'No alarms in GOOD observations'
+        headline = f'{len(alarms)} {"alarm" if len(alarms) == 1 else "alarms"} · {len(off_normal_conditions)} off-normal' if alarms or off_normal_conditions else 'No alarms in valid observations'
         require(headline in strip['text'], 'CC abnormal strip headline absent')
         alarm_entries = [c for c in conditions if c.get('kind') == 'alarm']
         require(len(alarm_entries) == len(alarms) and {c['id'] for c in alarm_entries} == alarms,
@@ -296,11 +315,10 @@ def check_dom(row, dom, view, expected, tap=0):
         for id, wording in off_normal_conditions.items():
             require(any(c['id'] == id and wording in c['text'] for c in off_entries), f'CC missing off-normal {id}')
         text = ' '.join(v['text'].lower() for v in conditions)
-        if expected.get('feeder-protection-trip'):
-            require(any('protection trip' in v['text'].lower() and 'asserted' in v['text'].lower() for v in conditions), 'CC asserted trip summary absent')
-        if row['f2'] == 'tripped':
-            require(any(v['id'] == 'f2-protection-trip' and 'asserted' in v['text'].lower() for v in conditions),
-                    'CC F2 asserted trip summary absent')
+        for entry in alarm_entries:
+            if entry['id'] in PRESENTATION['alarm_text']:
+                require(entry['text'] == PRESENTATION['alarm_text'][entry['id']],
+                        f'CC formatted alarm text differs for {entry["id"]}')
         abnormal = False
         for name, switch, normal in zip(['CB1', 'RMU1', 'RMU2'], row['switches'], 'CCO'):
             if switch != normal:

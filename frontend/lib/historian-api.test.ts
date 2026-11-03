@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getHistorianHistory, getHistorianPoints, historyRuns, numericSample } from "./historian-api";
+import { getHistorianEvents, getHistorianHistory, getHistorianPoints, historyBreaks, historyRuns, majorHistorianEvents, numericSample } from "./historian-api";
 import { HISTORY, historySample } from "./historian-fixtures.test-util";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -20,6 +20,17 @@ describe("historian proxy", () => {
     vi.stubGlobal("fetch", fetchMock);
     await expect(getHistorianPoints()).resolves.toEqual(points);
     expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/historian\/points$/);
+  });
+  it("requests all event changes in one bounded-window read", async () => {
+    const events = { events: [], gaps: [] };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(events)));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getHistorianEvents("2026-10-15T10:00:00Z", "2026-10-15T10:15:00Z")).resolves.toEqual(events);
+    const url = new URL(String(fetchMock.mock.calls[0][0]), "http://localhost");
+    expect(url.pathname).toMatch(/\/historian\/events$/);
+    expect([...url.searchParams.keys()]).toEqual(["since", "until"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
   });
 });
 
@@ -55,5 +66,18 @@ describe("history integrity", () => {
     const sample = historySample(1);
     const history = { ...HISTORY, segments: [{ cache_epoch: "one", samples: [historySample(2), sample] }], gaps: [] };
     expect(historyRuns(history)).toHaveLength(2);
+  });
+  it("explains stale intervals through the next good sample, without crossing epochs or ingest gaps", () => {
+    expect(historyBreaks(HISTORY)).toEqual([{ from: historySample(3).ingested_at, to: historySample(4).ingested_at, reasons: ["link_lost"] }]);
+    const bad = (seq: number) => historySample(seq, { stale_reason: "measurement_invalid" });
+    const history = { ...HISTORY, segments: [{ cache_epoch: "one", samples: [bad(5), bad(10)] }, { cache_epoch: "two", samples: [bad(11), historySample(12)] }] };
+    expect(historyBreaks(history).map(({ from, to }) => [from, to])).toEqual([
+      [bad(5).ingested_at, bad(5).ingested_at], [bad(10).ingested_at, bad(10).ingested_at], [bad(11).ingested_at, bad(12).ingested_at],
+    ]);
+  });
+  it("keeps all major event families but excludes input-valid and tap-limit noise", () => {
+    const event = { at: historySample(1).ingested_at, from: false, to: true, quality: historySample(1).quality };
+    const ids = ["oltc-1-tap", "oltc-1-auto", "oltc-1-remote", "oltc-1-blocked", "oltc-1-overcurrent-block", "plc-1-running", "feeder-breaker-position", "f2-position", "rmu-1-position", "rmu-2-position", "feeder-protection-trip", "f2-protection-trip", "feeder-lockout", "f2-lockout", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage"];
+    expect(majorHistorianEvents([...ids, "plc-1-input-valid", "oltc-1-at-lower", "oltc-1-at-upper"].map((point) => ({ ...event, point }))).map((e) => e.point)).toEqual(ids);
   });
 });

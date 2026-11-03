@@ -242,7 +242,7 @@ status-only feeder profile deliberately has no analog cyclic points.
 acknowledged two-object periodic ASDU is a cycle barrier; after exactly three
 cycles the peer stops data transfer. It checks the complete ASDU bytes,
 including COT, ordering, values and quality, without a sampling sleep.
-Full 42-point analog/cyclic behavior is also exercised by `check/run.sh`.
+Full 44-point analog/cyclic behavior is also exercised by `check/run.sh`.
 STARTDT, GI ACT-TERM, select/execute, fresh Modbus reads, GPS requests and
 scripted-server acknowledgments are barriers, never fixed startup sleeps.
 The scripted server uses exact fixed CP56 IV timestamps; the real RTU uses

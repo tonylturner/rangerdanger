@@ -231,7 +231,7 @@ func TestConduitsHistorianInventory(t *testing.T) {
 		mutate func([]labs.IEC104Point) []labs.IEC104Point
 		pass   bool
 	}{
-		{"full 42-point inventory", func(points []labs.IEC104Point) []labs.IEC104Point { return points }, true},
+		{"full 44-point inventory", func(points []labs.IEC104Point) []labs.IEC104Point { return points }, true},
 		{"missing C4 PF point", func(points []labs.IEC104Point) []labs.IEC104Point {
 			return slices.DeleteFunc(points, func(point labs.IEC104Point) bool { return point.IOA == 2305 })
 		}, false},
@@ -253,8 +253,8 @@ func TestConduitsHistorianInventory(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gen := euGeneration(t, nil, nil)
-			if len(gen.Package.StationPoints) != 42 {
-				t.Fatalf("loaded %d station points, want 42", len(gen.Package.StationPoints))
+			if len(gen.Package.StationPoints) != 44 {
+				t.Fatalf("loaded %d station points, want 44", len(gen.Package.StationPoints))
 			}
 			points := tc.mutate(slices.Clone(gen.Package.StationPoints))
 			body, err := json.Marshal(points)
@@ -270,7 +270,7 @@ func TestConduitsHistorianInventory(t *testing.T) {
 				return string(response), "", 0, nil
 			}
 			check := s.conduitRead(t.Context(), gen, "kali-1", "enterprise_net", "historian-1", "ops_dmz_net", "/api/points", "read")
-			if (check.Status == "pass") != tc.pass || !strings.Contains(check.Detail, "42-point station inventory") {
+			if (check.Status == "pass") != tc.pass || !strings.Contains(check.Detail, "44-point station inventory") {
 				t.Fatalf("inventory check: %+v", check)
 			}
 			// An absent inventory is a failure, never a vacuous pass.

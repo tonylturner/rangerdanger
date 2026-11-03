@@ -135,8 +135,8 @@ For EU, `/substation` instead presents the IEC 104 **Control Centre** and a
 separate management-backed **Physical System** view. A shared SCADA
 view-state annunciator spans both; the compact link/current-connection
 GI/current-point status precedes the CC schematic, with detailed diagnostics
-collapsed below records. The current station inventory has 42 monitored
-points, including four indication-only F2 points and no F2 supervisory
+collapsed below records. The current station inventory has 44 monitored
+points, including five indication-only F2 points and no F2 supervisory
 command. See [EU HMI/SCADA](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-hmi-scada.md)
 for view states, count semantics and observation-versus-physical-truth limits.
 

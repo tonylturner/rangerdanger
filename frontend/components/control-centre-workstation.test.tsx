@@ -144,8 +144,8 @@ describe("operator workstation interactions", () => {
     const tree = mount(screen({ state }));
     expect(button(tree, "Confirm RAISE")?.hasAttribute("disabled")).toBe(false);
     expect(button(tree, "Interrogate station")?.hasAttribute("disabled")).toBe(true);
-    expect(renderToStaticMarkup(<LinkDetails link={state.link} now={NOW} />)).toContain("GI ok");
-    expect(renderToStaticMarkup(<ControlCentreMiniStatus state={state} waiting={false} />)).toContain("GI ok");
+    expect(renderToStaticMarkup(<LinkDetails link={state.link} now={NOW} />)).toContain("GI complete");
+    expect(renderToStaticMarkup(<ControlCentreMiniStatus state={state} waiting={false} />)).toContain("GI complete");
   });
   it("opens bad-quality Points without turning an uncertain bus into a process alarm", () => {
     const tree = mount(screen({ state: WATCHDOG_STATE }));
@@ -154,7 +154,7 @@ describe("operator workstation interactions", () => {
     expect(tree.container.querySelectorAll("tbody tr")).toHaveLength(1);
     expect(output(tree)).toContain("not_updated");
     fireEvent.change(tree.container.querySelector("select")!, { target: { value: "status" } });
-    expect(tree.container.querySelectorAll("tbody tr")).toHaveLength(21);
+    expect(tree.container.querySelectorAll("tbody tr")).toHaveLength(23);
   });
   it("marks the complete cached surface and shows journal failures, without rewriting GOOD", () => {
     const state = structuredClone(FEEDER_STATE);

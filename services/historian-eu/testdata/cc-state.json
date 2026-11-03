@@ -1025,6 +1025,50 @@
       },
       "device": "f2-breaker",
       "limits": null
+    },
+    {
+      "id": "feeder-lockout",
+      "ioa": 1003,
+      "asdu": "M_SP_NA_1",
+      "value": true,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-15T21:07:12.04763522Z",
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null,
+      "device": "feeder-breaker",
+      "limits": null
+    },
+    {
+      "id": "f2-lockout",
+      "ioa": 1503,
+      "asdu": "M_SP_NA_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-15T21:07:12.04763522Z",
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null,
+      "device": "f2-breaker",
+      "limits": null
     }
   ]
 }

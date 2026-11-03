@@ -105,7 +105,7 @@ func TestLoaderScenarios(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("got %q, want %q", got, tc.want)
 			}
-			if tc.want == "" && (len(m.Points) != 42 || len(m.Devices) != 6 || len(m.Commands) != 5) {
+			if tc.want == "" && (len(m.Points) != 44 || len(m.Devices) != 6 || len(m.Commands) != 5) {
 				t.Fatalf("incomplete configuration: %+v", m)
 			}
 		})

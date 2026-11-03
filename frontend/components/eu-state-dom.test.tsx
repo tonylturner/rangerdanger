@@ -52,7 +52,16 @@ it.each(EU_ORACLE.flatMap((row) => [false, true].map((physical) => ({ ...row, ph
       expect(f2.getAttribute("data-quality")).toBe("good");
       expect(f2.getAttribute("data-off-normal")).toBe(row.f2 === "tripped" ? "true" : "false");
       expect(hook(root, "data-f2-line")[0].getAttribute("data-state")).toBe(live[2] ? "LIVE" : "DEAD");
-      expect(hook(root, "data-point").map((n) => n.getAttribute("data-point")).sort()).toEqual([
+      const badges = hook(root, "data-condition", "asserted");
+      const expectedBadges = ORACLE_SECTIONS.filter((_, i) => !live[i]).map((s) => `${s}-no-supply`);
+      if (row.f2 === "tripped") expectedBadges.push("f2-protection-trip", "f2-lockout");
+      expect(badges.map((n) => n.getAttribute("data-point")).sort()).toEqual(expectedBadges.sort());
+      for (const badge of badges) {
+        expect(badge.tagName.toLowerCase()).toBe("span");
+        expect(badge.textContent).toBe(badge.getAttribute("data-state"));
+        expect(badge.className).toContain("text-rose-200");
+      }
+      expect(hook(root, "data-point").filter((n) => n.tagName.toLowerCase() === "text").map((n) => n.getAttribute("data-point")).sort()).toEqual([
         "oltc-1-current", "oltc-1-bus-kv", "feeder-current", "feeder-voltage", "rmu-1-current", "rmu-2-current",
         "rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-source-kv", "rmu-2-section-kv",
       ].sort());
@@ -60,7 +69,7 @@ it.each(EU_ORACLE.flatMap((row) => [false, true].map((physical) => ({ ...row, ph
       if ("fault" in row) expect(hook(root, "data-point", "rmu-1-source-kv")[0].textContent).toContain("0.00 kV");
     });
     inspect(<AbnormalSummary state={operator} />, (root) => {
-      const expected = row.f2 === "tripped" ? ["f2-protection-trip", "f2-position-off-normal"] : [];
+      const expected = row.f2 === "tripped" ? ["f2-protection-trip", "f2-lockout", "f2-position-off-normal"] : [];
       if (row.switches[0] === "O") expected.push("feeder-breaker-position-off-normal");
       if (row.switches[1] === "O") expected.push("rmu-1-position-off-normal");
       if (row.switches[2] === "C") expected.push("rmu-2-position-off-normal");
@@ -92,6 +101,89 @@ it.each(["stale", "unknown"] as const)("exports CC %s states without turning ret
     expect(hook(root, "data-device", "CB1")[0].getAttribute("data-position")).toBe(condition === "unknown" ? "unknown" : "closed");
     expect(hook(root, "data-device", "T1")[0].getAttribute("data-tap")).toBe(condition === "unknown" ? "" : "0");
     expect(hook(root, "data-point", "feeder-voltage")[0].getAttribute("data-state")).toBe("UNKNOWN");
+    expect(hook(root, "data-condition", "asserted")).toHaveLength(0);
+  });
+});
+
+it.each([
+  ["feeder-protection-trip", true, "TRIPPED"],
+  ["feeder-lockout", true, "LOCKED OUT"],
+  ["f2-protection-trip", true, "TRIPPED"],
+  ["f2-lockout", true, "LOCKED OUT"],
+  ["rmu-1-fault-passage", true, "FAULT PASSED"],
+  ["rmu-2-fault-passage", true, "FAULT PASSED"],
+  ["rmu-1-earth", true, "EARTHED"],
+  ["rmu-2-earth", true, "EARTHED"],
+  ["oltc-1-at-lower", true, "AT LIMIT"],
+  ["oltc-1-at-upper", true, "AT LIMIT"],
+  ["oltc-1-blocked", true, "BLOCKED"],
+  ["oltc-1-overcurrent-block", true, "BLOCKED"],
+  ["plc-1-running", false, "PLC DOWN"],
+  ["plc-1-input-valid", false, "PLC INPUT INVALID"],
+] as const)("shows %s as %s only from usable IEC evidence", (id, value, label) => {
+  const { operator } = oracleFixture(EU_ORACLE[12]);
+  const point = operator.points.find((p) => p.id === id)!;
+  point.value = value;
+  inspect(<FeederOneLine read={controlCentreObservations(operator.points)} />, (root) => {
+    const badge = hook(root, "data-point", id)[0];
+    expect(badge.textContent).toBe(label);
+    expect(badge.getAttribute("data-state")).toBe(label);
+    expect(badge.getAttribute("aria-label")).toContain("IEC 104 observation");
+  });
+  for (const flag of ["iv", "nt", "sb", "bl", "ov"] as const) {
+    const points = operator.points.map((p) => p.id === id ? { ...p, quality: { ...p.quality, [flag]: true } } : p);
+    inspect(<FeederOneLine read={controlCentreObservations(points)} />, (root) => {
+      expect(hook(root, "data-point", id)).toHaveLength(0);
+    });
+  }
+});
+
+it.each([
+  [true, true, null],
+  [false, true, "PLC DOWN"],
+  [true, false, "PLC INPUT INVALID"],
+  [false, false, "PLC DOWN"],
+] as const)("distinguishes PLC running=%s from input-valid=%s", (running, inputValid, label) => {
+  const { operator } = oracleFixture(EU_ORACLE[12]);
+  operator.points.find((p) => p.id === "plc-1-running")!.value = running;
+  operator.points.find((p) => p.id === "plc-1-input-valid")!.value = inputValid;
+  inspect(<FeederOneLine read={controlCentreObservations(operator.points)} />, (root) => {
+    const badges = hook(root, "data-condition", "asserted");
+    expect(badges.map((badge) => badge.textContent)).toEqual(label ? [label] : []);
+    if (label) expect(badges[0].getAttribute("data-point")).toBe(running ? "plc-1-input-valid" : "plc-1-running");
+    expect(root.querySelector("figcaption")?.textContent).toContain("PLC DOWN / PLC INPUT INVALID");
+  });
+});
+
+it.each(["iv", "nt", "sb", "bl", "ov"] as const)("does not infer a running PLC from %s quality when inputs are invalid", (flag) => {
+  const { operator } = oracleFixture(EU_ORACLE[12]);
+  const running = operator.points.find((p) => p.id === "plc-1-running")!;
+  running.quality = { ...running.quality, [flag]: true };
+  operator.points.find((p) => p.id === "plc-1-input-valid")!.value = false;
+  inspect(<FeederOneLine read={controlCentreObservations(operator.points)} />, (root) => {
+    expect(hook(root, "data-condition", "asserted")).toHaveLength(0);
+  });
+});
+
+it("uses independent physical protection, earth and FPI latches, never CC flags", () => {
+  const { field } = oracleFixture(EU_ORACLE[12]);
+  const cb1 = field.devices["breaker-1"], f2 = field.devices["f2-breaker"], rmu = field.devices["rmu-1"];
+  if (cb1.kind !== "breaker" || f2.kind !== "breaker" || rmu.kind !== "rmu") throw new Error("Expected device kinds");
+  cb1.protection_tripped = true;
+  cb1.lockout = true;
+  f2.lockout = true; // Lockout is independent of the trip indication.
+  rmu.earth_closed = true;
+  rmu.fault_passage = true;
+  field.devices["oltc-1"].protection.picked_up = true;
+  inspect(<FeederOneLine physical read={physicalSystemObservations(field)} />, (root) => {
+    expect(hook(root, "data-condition", "asserted").map((n) => n.textContent).sort()).toEqual(
+      ["TRIPPED", "LOCKED OUT", "LOCKED OUT", "EARTHED", "FAULT PASSED", "BLOCKED"].sort(),
+    );
+    expect(hook(root, "data-point", "f2-protection-trip")).toHaveLength(0);
+    expect(hook(root, "data-point", "feeder-lockout")[0].getAttribute("aria-label")).toContain("sim");
+  });
+  inspect(<FeederOneLine physical read={physicalSystemObservations(field, true)} />, (root) => {
+    expect(hook(root, "data-condition", "asserted")).toHaveLength(0);
   });
 });
 

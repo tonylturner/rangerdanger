@@ -6,6 +6,47 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The portal sidebar shows the running RangerDanger version and commit
+  (from `/api/build`) at its foot; a build from source shows
+  "source build". On desktop the sidebar now stays in view while the
+  page scrolls, so the version and the range control are always visible.
+- EU: the Control Centre receives CB1 and F2 breaker lockout over IEC 104
+  (IOAs 1003 and 1503), so the station inventory is now 44 points.
+- EU: the Physical System tab can inject or clear a fault on S1 or S2,
+  reset breaker lockout and reset an RMU fault passage indicator. These
+  are simulation actions, not operator commands.
+- Historian trends mark major events at archive ingest time: tap
+  changes, breaker and switch operations, protection trips, earth and
+  fault-passage indications, and OLTC/PLC mode changes. Each marker has
+  a tooltip (hover, focus or tap), and an "Events in this window" list
+  sits under the chart. Hovering a line break says why the line broke,
+  for example "Measurement invalid 14:16:07–14:16:10 UTC, around T1 tap
+  1 → 2". The events come from the Ops DMZ historian's new read-only
+  `/api/events` route (portal: `/api/historian/events`).
+
+### Changed
+
+- EU: the feeder one-line shows consequences. A dead section is drawn
+  red and dashed with NO SUPPLY; CB1 and F2 show TRIPPED and LOCKED OUT;
+  RMUs show FAULT PASSED and EARTHED; T1 shows AT LIMIT, BLOCKED, and
+  PLC DOWN or PLC INPUT INVALID.
+- EU: normal data quality is no longer printed as "GOOD" beside every
+  value. Only flagged quality is shown; tables say "valid", summaries
+  say "N/M valid" and device comms say "reporting".
+- EU: the dashboard voltage trend uses three independently scaled section
+  compact 96 px strips with minute gridlines and full-height historian event rules.
+  Every major event is listed, grouped within 250 ms of the first event; protection
+  assertions are identified without attributing other switching to an actor.
+  Marker tooltips and accessible labels use the same short device wording as the list.
+- EU: CB1 and RMU faceplates explain RTU switching conditions. One-line
+  voltage labels, earth leads, FPI badges and the F2 legend are clearer;
+  no-load power factor is distinguished from observation uncertainty using
+  sibling current quality, without requiring an exact-zero solver current.
+- The overview voltage trend lists the 5 newest snapshots, with a button
+  to show the last 30. The Control Centre Trends tab still lists 30.
+
 ### Fixed
 
 - Support containd 0.1.39 and later; policy changes and range startup now wait
@@ -13,6 +54,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   firewall readiness.
 - Build containd v0.1.39 in source mode for both range packages, matching
   the supported minimum version.
+- The range restart and switch confirmation now appears above page content
+  instead of behind it.
 
 ## [v0.2.0] - 2026-11-02
 

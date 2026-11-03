@@ -1,5 +1,5 @@
 import type { ControlCentreLink, OperatorPoint, OperatorState } from "./operator-api";
-import { pointCondition, pointLabel } from "./operator-format";
+import { formatPointValue, pointCondition, pointLabel } from "./operator-format";
 import { LIVE_KV, voltageState } from "./electrical-state";
 import { controlCentreObservations, type Readings } from "./observation-readings";
 import { SECTION_VOLTAGE } from "./operator-supply-path";
@@ -43,7 +43,7 @@ export function devicePoints(points: OperatorPoint[], device: DeviceId) {
 export function activeAlarms(state: OperatorState): { id: string; text: string }[] {
   const alarms: { id: string; text: string }[] = [];
   if (state.link.state !== "started") alarms.push({ id: "link", text: `IEC 104 link ${state.link.state}` });
-  const asserted = ["feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-overcurrent-block", "oltc-1-at-lower", "oltc-1-at-upper"];
+  const asserted = ["feeder-lockout", "f2-lockout", "feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-overcurrent-block", "oltc-1-at-lower", "oltc-1-at-upper"];
   // Loss of supply first, upstream to downstream, so the strip reads along the feeder.
   for (const id of ["oltc-1-bus-kv", SECTION_VOLTAGE.S1, SECTION_VOLTAGE.S2, SECTION_VOLTAGE.S3]) {
     const p = state.points.find((point) => point.id === id), supply = SUPPLY_VOLTAGES[id];
@@ -57,7 +57,7 @@ export function activeAlarms(state: OperatorState): { id: string; text: string }
       alarms.push({ id: `${p.id}-voltage-limit`, text: `${pointLabel(p.id)}: voltage limit (${p.value.toFixed(2)} kV; ${p.limits.low.toFixed(2)}–${p.limits.high.toFixed(2)} kV)` });
     }
     if ((asserted.includes(p.id) && p.value === true) || (["plc-1-running", "plc-1-input-valid"].includes(p.id) && p.value === false)) {
-      alarms.push({ id: p.id, text: `${pointLabel(p.id)}: ${p.value ? "asserted" : p.id.endsWith("running") ? "stopped" : "invalid"}` });
+      alarms.push({ id: p.id, text: `${pointLabel(p.id)}: ${formatPointValue(p.id, p.value, p.quality)}` });
     }
   }
   return alarms;

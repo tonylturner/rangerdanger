@@ -15,17 +15,17 @@ EU_JQ_DEFS=$(jq -er '.points | arrays | select(length > 0)
 }
 # shellcheck disable=SC2016
 EU_JQ_DEFS+='
-def breaker_points: [.points[] | select(.ioa == 1001 or .ioa == 1002 or .ioa == 2001 or .ioa == 2002)];
-def four_points: ([breaker_points[].id] | sort)
-  == ["feeder-breaker-position","feeder-current","feeder-protection-trip","feeder-voltage"];
+def breaker_points: [.points[] | select(.ioa == 1001 or .ioa == 1002 or .ioa == 1003 or .ioa == 2001 or .ioa == 2002)];
+def breaker_inventory: ([breaker_points[].id] | sort)
+  == ["feeder-breaker-position","feeder-current","feeder-lockout","feeder-protection-trip","feeder-voltage"];
 def good: .value != null and .quality.iv == false and .quality.nt == false
   and .quality.sb == false and .quality.bl == false and (.quality.ov == null or .quality.ov == false)
   and .stale_reason == null;
-def all_stale($reason): four_points
+def all_stale($reason): breaker_inventory
   and all(breaker_points[]; .quality.iv == true and .quality.nt == true and .stale_reason == $reason);
 def station_good: ([.points[] | {id, ioa, device}] | sort_by(.id)) == station_inventory
   and all(.points[]; good);
-def f2_good: ([.points[] | select(.device == "f2-breaker")] | length == 4 and all(.[]; good));
+def f2_good: ([.points[] | select(.device == "f2-breaker")] | length == 5 and all(.[]; good));
 def point($id): ([.points[] | select(.id == $id)][0] // {});
 def epoch: capture("^(?<base>.*:[0-9]{2})(?:\\.(?<frac>[0-9]+))?Z$")
   | ((.base + "Z" | fromdateiso8601) + ("0." + (.frac // "0") | tonumber));
@@ -375,15 +375,18 @@ eu_baseline_mismatches() {
     $truth.devices["breaker-1"] as $device | $truth.process as $solver
     | (if .link.state != "started" then "link state \(.link.state | tojson), expected started" else empty end),
       (if .link.gi.last_complete_at == null then "GI integrity missing" else empty end),
-      (if four_points then empty else "operator point ids \([.points[].id] | sort | tojson)" end),
+      (if breaker_inventory then empty else "operator point ids \([.points[].id] | sort | tojson)" end),
       (.points[] | select(good | not)
         | "\(.id) not GOOD: iv=\(.quality.iv) nt=\(.quality.nt) stale_reason=\(.stale_reason | tojson)"),
-      (.points[] | select(.id == "feeder-breaker-position" or .id == "feeder-protection-trip")
+      (.points[] | select(.id == "feeder-breaker-position" or .id == "feeder-protection-trip" or .id == "feeder-lockout")
         | select(time_fits_cot | not)
         | "\(.id) time tag does not fit COT \(.cot | tojson): source_time=\(.source_time | tojson) source_time_invalid=\(.source_time_invalid | tojson)"),
       (point("f2-position").value as $value
         | if $value == $truth.devices["f2-breaker"].position then empty
           else pair("F2 position"; $value; $truth.devices["f2-breaker"].position) end),
+      (point("f2-lockout").value as $value
+        | if $value == $truth.devices["f2-breaker"].lockout then empty
+          else pair("f2 lockout"; $value; $truth.devices["f2-breaker"].lockout) end),
       (point("f2-protection-trip").value as $value
         | if $value == $truth.devices["f2-breaker"].protection_tripped then empty
           else pair("F2 trip"; $value; $truth.devices["f2-breaker"].protection_tripped) end),
@@ -395,6 +398,9 @@ eu_baseline_mismatches() {
           else pair("F2 " + $suffix; $value; $truth.devices["f2-breaker"].measurements[$key]) end),
       (point("feeder-breaker-position").value as $value
         | if $value == $device.position then empty else pair("position"; $value; $device.position) end),
+      (point("feeder-lockout").value as $value
+        | if $value == $truth.devices["breaker-1"].lockout then empty
+          else pair("feeder lockout"; $value; $truth.devices["breaker-1"].lockout) end),
       (point("feeder-protection-trip").value as $value
         | if $value == $device.protection_tripped then empty
           else pair("protection trip"; $value; $device.protection_tripped) end),

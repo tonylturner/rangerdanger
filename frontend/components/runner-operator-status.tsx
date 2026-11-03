@@ -25,7 +25,7 @@ export function ControlCentreMiniStatus({ state, waiting }: { state: OperatorSta
   return (
     <div className="grid grid-cols-2 gap-2">
       <MiniStatus label="IEC 104 Link" value={LINK_STATE_TEXT[state.link.state]} ok={state.link.state === "started"} />
-      <MiniStatus label="Interrogation" value={state.link.gi.last_complete_at !== null ? "GI ok" : state.link.gi.state.toUpperCase()} ok={state.link.gi.last_complete_at !== null} />
+      <MiniStatus label="Interrogation" value={state.link.gi.last_complete_at !== null ? "GI complete" : state.link.gi.state.toUpperCase()} ok={state.link.gi.last_complete_at !== null} />
       <MiniStatus label="Telemetry" value={telemetryText(summary)} ok={summary.total > 0 && summary.good === summary.total} />
       <MiniStatus
         label="Breaker (as reported)"

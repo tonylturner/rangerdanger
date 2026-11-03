@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useOperatorView } from "../lib/operator-queries";
+import { useBuildInfo, useOperatorView } from "../lib/operator-queries";
 import { operatorNavLabel, type OperatorViewResolution } from "../lib/operator-view";
 import { RangeControl } from "./range-control";
 
@@ -22,12 +22,29 @@ export function navLinksFor(resolution: OperatorViewResolution): NavLink[] {
   return links;
 }
 
+function SidebarBuildVersion() {
+  const { data, isError, isPending } = useBuildInfo();
+  const className = "mt-2 block truncate px-3 text-[10px] font-mono text-slate-500";
+
+  if (isError) return <div className={className}>version unavailable</div>;
+  if (isPending || !data) return null;
+
+  const commit = data.commit !== "none" ? data.commit.slice(0, 7) : null;
+  const label = data.version === "dev"
+    ? `source build${commit ? ` · ${commit}` : ""}`
+    : `${data.version}${commit ? ` · ${commit}` : ""}`;
+
+  return <div className={className} title={data.date}>{label}</div>;
+}
+
 export function NavSidebar() {
   const pathname = usePathname();
   const navLinks = navLinksFor(useOperatorView());
 
+  // On desktop the sidebar stays in view, so the range control and the
+  // running version at its foot are visible on long pages.
   return (
-    <aside className="flex w-full min-w-0 shrink-0 flex-col border-b border-slate-900 bg-slate-950/70 px-3 py-3 md:w-48 md:border-b-0 md:border-r md:py-5">
+    <aside className="flex w-full min-w-0 shrink-0 flex-col border-b border-slate-900 bg-slate-950/70 px-3 py-3 md:sticky md:top-0 md:h-screen md:w-48 md:overflow-y-auto md:border-b-0 md:border-r md:py-5">
       <Link href="/" className="mb-5 hidden px-2 md:block">
         {/* Brand lockup. Native <img> rather than next/image because
             the SVG wraps an embedded PNG and we want it to scale
@@ -82,6 +99,8 @@ export function NavSidebar() {
           containd Firewall
         </a>
       </div>
+
+      <SidebarBuildVersion />
     </aside>
   );
 }

@@ -7,7 +7,7 @@ import { SupervisoryControls } from "./control-centre-command";
 import { ConditionBadge, STALE_HATCH } from "./control-centre-points";
 
 export function RegulationBand({ band }: { band: VoltageBand | null }) {
-  if (!band) return <p className="text-xs text-amber-300">Current regulation band unavailable: setpoint or deadband is not GOOD.</p>;
+  if (!band) return <p className="text-xs text-amber-300">Current regulation band unavailable: setpoint or deadband is not valid.</p>;
   const span = Math.max(band.high - band.low, 0.2);
   const min = Math.min(band.low - span / 2, band.bus ?? band.low), max = Math.max(band.high + span / 2, band.bus ?? band.high);
   const x = (n: number) => 20 + (n - min) / (max - min) * 260;
@@ -31,12 +31,16 @@ export function DeviceFaceplate({ state, selected, unavailable }: { state: Opera
     <h2 className="text-base font-semibold text-slate-100">{selected} · {selected === "T1" ? "Transformer / AVR" : selected === "CB1" || selected === "F2" ? "Feeder breaker" : "Ring main unit"}</h2>
     {selected === "F2" && <p className="text-xs text-slate-300">Indication only · no supervisory controls. F2 is an alternative feeder from the same T1 / bus20.</p>}
     {selected === "CB1" && <p className="text-xs text-slate-400">Remote/local authority is not telemetered for CB1.</p>}
+    {(selected === "CB1" || selected === "RMU1" || selected === "RMU2") && <p aria-label="RTU switching procedure" className="text-xs text-slate-300">
+      RTU procedure: CLOSE requires REMOTE, valid measurements, no protection pickup{selected === "CB1" ? ", no breaker lockout" : ", and the earth switch open"}. CLOSE is refused with both sides live (would parallel CB1 and F2).
+      {selected !== "CB1" && " OPEN also requires REMOTE, valid measurements and no protection pickup."}
+    </p>}
     <SupervisoryControls link={state.link} points={state.points} unavailable={unavailable} selected={selected} />
     {selected === "T1" && <><RegulationBand band={regulationBand(state.points)} /><p className="text-xs text-slate-400">Configured delay only; no live countdown is telemetered.</p></>}
     <dl className="text-xs">
       {devicePoints(state.points, selected).map((p) => <div key={p.id} className={`grid gap-x-4 gap-y-1 border-t border-slate-800 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] ${pointCondition(p) !== "good" ? `border-dashed ${STALE_HATCH}` : ""}`}>
         <dt className="text-slate-400">{pointLabel(p.id)}</dt>
-        <dd className="flex min-w-0 flex-wrap items-center gap-2 text-slate-100"><span className="font-mono">{formatPointValue(p.id, p.value, p.quality)}</span><ConditionBadge condition={pointCondition(p)} /><span className="wrap-break-word">{qualityFlags(p.quality).join(" ")} {p.stale_reason}</span></dd>
+        <dd className="flex min-w-0 flex-wrap items-center gap-2 text-slate-100"><span className="font-mono">{formatPointValue(p.id, p.value, p.quality)}</span><ConditionBadge condition={pointCondition(p)} point={p} /><span className="wrap-break-word">{qualityFlags(p.quality).join(" ")} {p.stale_reason}</span></dd>
         <dd className="text-slate-400 sm:col-start-2">{reportingText(p)}</dd>
       </div>)}
     </dl>

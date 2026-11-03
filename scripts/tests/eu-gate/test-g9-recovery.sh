@@ -6,11 +6,11 @@
 
 RECOVERED=$(jq -c '
   (.points[] | select(.id == "feeder-breaker-position") | .value) = "open"
-  | (.points[] | select(.id == "feeder-protection-trip") | .value) = true
+  | (.points[] | select(.id == "feeder-protection-trip" or .id == "feeder-lockout") | .value) = true
   | (.points[] | select(.id == "feeder-pf")) |=
       (.quality.iv = true | .stale_reason = "measurement_invalid")
 ' "$T_FIXTURES/operator-gi-untimed.json")
-TRUTH=$(jq -c '(.devices["breaker-1"] |= (.position = "open" | .protection_tripped = true))
+TRUTH=$(jq -c '(.devices["breaker-1"] |= (.position = "open" | .protection_tripped = true | .lockout = true))
   | .devices["oltc-1"] = {tap:0}' \
   "$T_FIXTURES/field-baseline.json")
 OPERATOR="$RECOVERED"
@@ -55,7 +55,12 @@ for expression in \
   '.link.gi.state = "running"'; do
   OPERATOR=$(jq -c "$expression" <<<"$RECOVERED")
   t_run eu_gate_G9
-  t_expect_fails 1 "G9 rejects incomplete or unrefreshed recovery: $expression"
+  # The last point is now F2 lockout: absent/null also fails truth equality.
+  expected_fails=1
+  case "$expression" in
+    '.points[-1].value = null'|'del(.points[-1])') expected_fails=2 ;;
+  esac
+  t_expect_fails "$expected_fails" "G9 rejects incomplete or unrefreshed recovery: $expression"
 done
 OPERATOR=$(jq -c '(.points[] | select(.id == "feeder-breaker-position") | .value) = "closed"' <<<"$RECOVERED")
 t_run eu_gate_G9
