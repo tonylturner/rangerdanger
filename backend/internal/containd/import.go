@@ -86,16 +86,13 @@ func (c *Client) importViaCandidate(ctx context.Context, configJSON []byte, revi
 	if err := json.NewDecoder(resp2.Body).Decode(&applied); err != nil {
 		return nil, fmt.Errorf("decode commit: %w", err)
 	}
-	if applied.ApplyID == "" || applied.Status == "" {
-		return nil, fmt.Errorf("commit missing status or applyId")
+	if applied.RunningRevision == "" || applied.Status == "" {
+		return nil, fmt.Errorf("commit missing status or runningRevision")
 	}
 	result := &ApplyResult{Warnings: collectWarnings(resp2.Header.Values("X-Containd-Warnings"))}
 	receipt, err := c.waitProtection(ctx, applied)
 	result.Receipt = receipt
 	c.rememberApply(receipt)
-	if receipt.Warning != "" {
-		result.Warnings = append(result.Warnings, receipt.Warning)
-	}
 	return result, err
 }
 

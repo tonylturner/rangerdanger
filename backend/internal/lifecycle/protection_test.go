@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ func TestLifecycleWaitsForProtection(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			h := newHarness(t)
 			seen, release := make(chan struct{}), make(chan struct{})
+			var reads atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/api/v1/health":
@@ -40,19 +42,31 @@ func TestLifecycleWaitsForProtection(t *testing.T) {
 					}
 					w.Header().Set("X-Containd-Revision", "staged")
 					if strings.HasSuffix(r.URL.Path, "/commit") {
-						fmt.Fprint(w, `{"status":"ok","applyId":"lifecycle-apply","protection":{"applyId":"lifecycle-apply","state":"pending"}}`)
+						fmt.Fprint(w, `{"status":"committed","applyId":"lifecycle-apply","runningRevision":"runtime-lifecycle","protection":{"state":"pending","subsystems":[]}}`)
 					}
 				case "/api/v1/dataplane/protection":
-					close(seen)
+					n := reads.Add(1)
+					if n == 1 {
+						close(seen)
+					}
 					select {
 					case <-release:
 					case <-r.Context().Done():
 						return
 					}
-					json.NewEncoder(w).Encode(containd.ProtectionStatus{
-						ApplyID: "lifecycle-apply", InstalledApplyID: "lifecycle-apply", State: state,
-						Components: []containd.ProtectionComponent{{Name: "nflog", State: "failed", Reason: "fixture reason"}},
-					})
+					observed := state
+					if state == "degraded" && n > 1 {
+						observed = "protecting"
+					}
+					revision := "runtime-lifecycle"
+					status := containd.ProtectionStatus{
+						ProtectingRevision: &revision, DesiredRevision: &revision, State: observed, Ready: observed == "protecting",
+						Subsystems: []containd.ProtectionSubsystem{},
+					}
+					if state == "failed" {
+						status.Subsystems = []containd.ProtectionSubsystem{{Required: true, State: "failed", Fault: &containd.ProtectionFault{Kind: "render", Reason: "fixture reason"}}}
+					}
+					json.NewEncoder(w).Encode(status)
 				default:
 					t.Errorf("unexpected path %s", r.URL.Path)
 				}
@@ -80,13 +94,20 @@ func TestLifecycleWaitsForProtection(t *testing.T) {
 			if state == "failed" || state == "disabled" {
 				wantPhase = PhaseFailed
 			}
-			if st.Phase != wantPhase || st.Containd == nil || st.Containd.ApplyID != "lifecycle-apply" || st.Containd.Protection != state {
+			wantState := state
+			if state == "degraded" {
+				wantState = "protecting"
+				if reads.Load() != 2 {
+					t.Fatalf("degraded did not poll: %d", reads.Load())
+				}
+			}
+			if st.Phase != wantPhase || st.Containd == nil || st.Containd.ApplyID != "lifecycle-apply" || st.Containd.Protection != wantState {
 				t.Fatalf("status = %+v", st)
 			}
-			if (st.Containd.Warning != "") != (state == "degraded") || h.loadRecord().Containd.Protection != state {
-				t.Fatal("warning/receipt was not retained")
+			if h.loadRecord().Containd.Protection != wantState {
+				t.Fatal("receipt was not retained")
 			}
-			if wantPhase == PhaseFailed && (len(h.activated) != 0 || !strings.Contains(st.Error, "fixture reason")) {
+			if wantPhase == PhaseFailed && (len(h.activated) != 0 || (state == "failed" && !strings.Contains(st.Error, "fixture reason"))) {
 				t.Fatal("failed protection activated generation or lost reasons")
 			}
 		})
