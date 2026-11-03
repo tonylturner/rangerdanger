@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HISTORY, historySample } from "../lib/historian-fixtures.test-util";
-import type { History, TrendJournalEvents } from "../lib/historian-api";
+import type { History, HistorianEvent } from "../lib/historian-api";
 import { HistorianTrend, HistoryPlot, SectionHistoryPlot } from "./historian-trend";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -44,11 +44,7 @@ const sectionHistories = [
   },
   sectionHistory("rmu-2-source-kv", 20, 20.1),
 ];
-const sectionEvents: TrendJournalEvents = {
-  cacheEpoch: "section-epoch",
-  markers: [{ seq: 4, at: "2026-10-15T10:00:05Z", point: "rmu-1-position", label: "RMU1 OPEN", active: true, critical: false, completedCommand: false }],
-  commandNotices: [{ seq: 5, at: "2026-10-15T10:00:05Z", label: "RMU1 CLOSE", result: "rejected" }],
-};
+const sectionEvents: HistorianEvent[] = [{ point: "rmu-1-position", at: "2026-10-15T10:00:05Z", from: "closed", to: "open", quality: historySample(1).quality }];
 
 describe("historian trend", () => {
   it("keeps axis labels outside the scalable SVG and the plot at least 150px tall", () => {
@@ -139,8 +135,8 @@ describe("historian trend", () => {
     expect(text(html)).toContain("0 cache-epoch segment(s)");
   });
 
-  it("plots three section voltages with independent line styles and cache-matched journal ticks", () => {
-    const html = renderToStaticMarkup(<SectionHistoryPlot histories={sectionHistories} journalEvents={sectionEvents} expandableSnapshots />);
+  it("plots three section voltages with independent line styles and historian markers", () => {
+    const html = renderToStaticMarkup(<SectionHistoryPlot histories={sectionHistories} events={sectionEvents} expandableSnapshots />);
     expect(html).toContain('aria-label="Section voltage series legend"');
     expect(html).toContain("S1 · RMU1 source VT");
     expect(html).toContain("S2 · RMU1 section VT (S2)");
@@ -150,18 +146,11 @@ describe("historian trend", () => {
     expect(html.match(/data-history-run="rmu-1-section-kv"/g)).toHaveLength(2);
     expect(html).toContain('stroke-dasharray="8 4"');
     expect(html).toContain('stroke-dasharray="2 3"');
-    expect(html).toContain('data-trend-event="RMU1 OPEN"');
-    expect(html).toContain('x1="420" x2="420"');
-    expect(html).toContain("Event ticks use CC receive time; the voltage axis uses historian ingest time.");
-    expect(html).toContain("RMU1 CLOSE — REJECTED; no completed switching marker");
+    expect(html).toContain('data-event-guide="true"');
+    expect(html).not.toContain("CC receive time");
+    expect(html).not.toContain("completed switching marker");
     expect(html).toContain("S2 snapshots · RMU1 section VT (same S2 bus measured at RMU2)");
     expect(html.match(/<tbody>[\s\S]*?<\/tbody>/)?.[0].match(/<tr /g)).toHaveLength(4);
-  });
-
-  it("does not display journal markers from a different CC cache epoch", () => {
-    const html = renderToStaticMarkup(<SectionHistoryPlot histories={sectionHistories} journalEvents={{ ...sectionEvents, cacheEpoch: "old-epoch" }} />);
-    expect(html).not.toContain("data-trend-event=");
-    expect(html).toContain("No event markers: the journal and historian belong to different CC cache epochs.");
   });
 
   it("defaults the voltage dashboard to sections but keeps Control Centre on one signal", () => {
@@ -170,7 +159,6 @@ describe("historian trend", () => {
     client.setQueryData(["historian", "points"], pointIds.map((id, ioa) => ({ id, ioa: ioa + 1, kind: "float", asdu: "M_ME_NC_1", last: null })));
     client.setQueryData(["historian", "trend", "section-voltage"], { histories: sectionHistories, events: [], window: { since: "2026-10-15T09:45:10Z", until: "2026-10-15T10:00:10Z" } });
     client.setQueryData(["historian", "trend", "oltc-1-bus-kv"], { histories: [HISTORY], events: [], window: { since: "2026-10-15T09:45:10Z", until: "2026-10-15T10:00:10Z" } });
-    client.setQueryData(["operator", "journal"], { cache_epoch: "section-epoch", entries: [], latest_seq: null, oldest_seq: null });
     const { unmount } = render(<QueryClientProvider client={client}><HistorianTrend voltageOnly expandableSnapshots /></QueryClientProvider>);
     const selector = screen.getByLabelText("Signal") as HTMLSelectElement;
     expect(selector.value).toBe("section-voltage");

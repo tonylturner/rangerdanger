@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getHistorianEvents, getHistorianHistory, getHistorianPoints, historyBreaks, historyRuns, majorHistorianEvents, numericSample, voltageTrendJournalEvents } from "./historian-api";
+import { getHistorianEvents, getHistorianHistory, getHistorianPoints, historyBreaks, historyRuns, majorHistorianEvents, numericSample } from "./historian-api";
 import { HISTORY, historySample } from "./historian-fixtures.test-util";
-import type { JournalEntry, OperatorJournal } from "./operator-api";
 
 afterEach(() => vi.unstubAllGlobals());
 describe("historian proxy", () => {
@@ -78,52 +77,7 @@ describe("history integrity", () => {
   });
   it("keeps all major event families but excludes input-valid and tap-limit noise", () => {
     const event = { at: historySample(1).ingested_at, from: false, to: true, quality: historySample(1).quality };
-    const ids = ["oltc-1-tap", "oltc-1-auto", "oltc-1-remote", "oltc-1-blocked", "oltc-1-overcurrent-block", "plc-1-running", "feeder-breaker-position", "f2-position", "rmu-1-position", "rmu-2-position", "feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage"];
+    const ids = ["oltc-1-tap", "oltc-1-auto", "oltc-1-remote", "oltc-1-blocked", "oltc-1-overcurrent-block", "plc-1-running", "feeder-breaker-position", "f2-position", "rmu-1-position", "rmu-2-position", "feeder-protection-trip", "f2-protection-trip", "feeder-lockout", "f2-lockout", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage"];
     expect(majorHistorianEvents([...ids, "plc-1-input-valid", "oltc-1-at-lower", "oltc-1-at-upper"].map((point) => ({ ...event, point }))).map((e) => e.point)).toEqual(ids);
-  });
-});
-
-describe("dashboard event markers", () => {
-  const entry = (seq: number, kind: string, detail: Record<string, unknown>, at = "2026-11-02T14:34:20.574Z"): JournalEntry => ({ seq, at, kind, detail });
-  const journal = (entries: JournalEntry[]): OperatorJournal => ({
-    cache_epoch: "epoch-a", entries, oldest_seq: entries[0]?.seq ?? null, latest_seq: entries.at(-1)?.seq ?? null,
-  });
-
-  it("marks observed switching, trip, lockout, and FPI states using CC receive time", () => {
-    const result = voltageTrendJournalEvents(journal([
-      entry(1, "status_event", { id: "rmu-1-position", ioa: 1101, value: "open", source_time: "2026-11-02T14:34:20.572Z" }),
-      entry(2, "status_event", { id: "feeder-protection-trip", ioa: 1002, value: true }),
-      entry(3, "status_event", { id: "feeder-lockout", ioa: 1003, value: true }),
-      entry(4, "status_event", { id: "rmu-2-fault-passage", ioa: 3102, value: true }),
-      entry(5, "status_event", { id: "rmu-1-position", ioa: 1101, value: "intermediate" }),
-      entry(6, "point_good", { point: "rmu-1-position", value: "closed" }),
-    ]));
-    expect(result.cacheEpoch).toBe("epoch-a");
-    expect(result.markers.map(({ label, active, critical }) => [label, active, critical])).toEqual([
-      ["RMU1 OPEN", true, false], ["CB1 TRIPPED", true, true], ["CB1 LOCKED OUT", true, true], ["FPI RMU2", true, false],
-    ]);
-    expect(result.markers[0].at).toBe("2026-11-02T14:34:20.574Z");
-    expect(result.commandNotices).toEqual([]);
-  });
-
-  it("joins only completed command feedback to an observed status and reports non-completed outcomes separately", () => {
-    const result = voltageTrendJournalEvents(journal([
-      entry(1, "status_event", { id: "rmu-1-position", ioa: 1101, value: "open" }, "2026-11-02T14:34:20.574Z"),
-      entry(2, "command", {
-        point: "rmu-1-command", operation: "open", result: "completed",
-        feedback: { ioa: 1101, value: "open", at: "2026-11-02T14:34:20.574Z" },
-      }, "2026-11-02T14:34:20.600Z"),
-      entry(3, "command", { point: "rmu-1-command", operation: "close", result: "rejected", feedback: null }),
-      entry(4, "command", { point: "feeder-breaker-command", operation: "open", result: "unknown", feedback: null }),
-      entry(5, "command", { point: "rmu-2-command", operation: "close", result: "failed", feedback: null }),
-      entry(6, "command", { point: "rmu-2-command", operation: "open", result: "completed", feedback: null }),
-    ]));
-    expect(result.markers).toHaveLength(1);
-    expect(result.markers[0].completedCommand).toBe(true);
-    expect(result.commandNotices).toEqual([
-      { seq: 5, at: "2026-11-02T14:34:20.574Z", label: "RMU2 CLOSE", result: "failed" },
-      { seq: 4, at: "2026-11-02T14:34:20.574Z", label: "CB1 OPEN", result: "unknown" },
-      { seq: 3, at: "2026-11-02T14:34:20.574Z", label: "RMU1 CLOSE", result: "rejected" },
-    ]);
   });
 });

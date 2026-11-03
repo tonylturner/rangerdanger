@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getHistorianEvents, majorHistorianEvents, getHistorianHistory, getHistorianPoints, historyRuns, numericSample, voltageTrendJournalEvents, type HistorianEvent, type History, type TrendJournalEvents } from "../lib/historian-api";
+import { getHistorianEvents, majorHistorianEvents, getHistorianHistory, getHistorianPoints, historyRuns, numericSample, type HistorianEvent, type History } from "../lib/historian-api";
 import { formatPointValue, formatUtcTime, pointLabel, qualityFlags } from "../lib/operator-format";
-import { getOperatorJournal, type OperatorPoint } from "../lib/operator-api";
+import type { OperatorPoint } from "../lib/operator-api";
 import { regulationBand, type VoltageBand } from "../lib/operator-workstation";
 import { isRangeNotReady } from "../lib/range";
 import { errorMessage } from "../lib/utils";
@@ -19,40 +19,6 @@ const SECTION_SIGNALS = [
 const VOLTAGE_SIGNAL_IDS = [
   "oltc-1-bus-kv", "feeder-voltage", "rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-section-kv", "rmu-2-source-kv",
 ];
-
-function visibleJournalEvents(histories: History[], events?: TrendJournalEvents) {
-  const segments = histories.flatMap((history) => history.segments);
-  const epochs = new Set(segments.map((segment) => segment.cache_epoch));
-  const samples = segments.flatMap((segment) => segment.samples);
-  const times = samples.map((sample) => Date.parse(sample.ingested_at)).filter(Number.isFinite);
-  if (!events || !epochs.has(events.cacheEpoch) || times.length === 0) return { markers: [], commandNotices: [], epochMismatch: Boolean(events && segments.length && !epochs.has(events.cacheEpoch)) };
-  const start = Math.min(...times), end = Math.max(...times);
-  const inWindow = (at: string) => {
-    const time = Date.parse(at);
-    return Number.isFinite(time) && time >= start && time <= end;
-  };
-  return {
-    markers: events.markers.filter((event) => inWindow(event.at)),
-    commandNotices: events.commandNotices.filter((notice) => inWindow(notice.at)),
-    epochMismatch: false,
-  };
-}
-
-function TrendEventNotes({ markers, commandNotices, epochMismatch, available }: ReturnType<typeof visibleJournalEvents> & { available: boolean }) {
-  if (!available && !markers.length && !commandNotices.length && !epochMismatch) return null;
-  return <div className="space-y-1 text-xs">
-    <p className="text-slate-400">Event ticks use CC receive time; the voltage axis uses historian ingest time.</p>
-    {epochMismatch && <p className="text-amber-300">No event markers: the journal and historian belong to different CC cache epochs.</p>}
-    {markers.length > 0 && <ul aria-label="Switching and protection events" className="flex flex-wrap gap-x-4 gap-y-1 text-slate-200">
-      {markers.slice(-8).reverse().map((event) => <li key={event.seq} className={event.critical ? "text-rose-300" : "text-amber-200"}>
-        <span className="font-semibold">{event.label}</span> · {formatUtcTime(event.at)} UTC{event.completedCommand ? " · completed command feedback" : ""}
-      </li>)}
-    </ul>}
-    {commandNotices.length > 0 && <ul aria-label="Commands without completed switching markers" className="space-y-1 text-amber-300">
-      {commandNotices.map((notice) => <li key={notice.seq}>{notice.label} — {notice.result.toUpperCase()}; no completed switching marker · {formatUtcTime(notice.at)} UTC</li>)}
-    </ul>}
-  </div>;
-}
 
 function HistorySnapshots({ history, expandableSnapshots = false, captionPrefix }: { history: History; expandableSnapshots?: boolean; captionPrefix?: string }) {
   const [snapshotsExpanded, setSnapshotsExpanded] = useState(false);
@@ -77,7 +43,7 @@ function HistorySnapshots({ history, expandableSnapshots = false, captionPrefix 
   </div>;
 }
 
-export function HistoryPlot({ history, band, expandableSnapshots = false, journalEvents, events = [], window }: { history: History; band?: VoltageBand | null; expandableSnapshots?: boolean; journalEvents?: TrendJournalEvents; events?: HistorianEvent[]; window?: { since: string; until: string } }) {
+export function HistoryPlot({ history, band, expandableSnapshots = false, events = [], window }: { history: History; band?: VoltageBand | null; expandableSnapshots?: boolean; events?: HistorianEvent[]; window?: { since: string; until: string } }) {
   const samples = history.segments.flatMap((s) => s.samples);
   const times = samples.map((s) => Date.parse(s.ingested_at)).filter(Number.isFinite);
   const runs = historyRuns(history);
@@ -86,7 +52,6 @@ export function HistoryPlot({ history, band, expandableSnapshots = false, journa
   const ymin = Math.min(...(values.length ? values : [0]), ...(band ? [band.low] : [])), ymax = Math.max(...(values.length ? values : [1]), ...(band ? [band.high] : []));
   const x = (t: string) => (Date.parse(t) - xmin) / (xmax - xmin || 1) * 840;
   const y = (n: number) => 135 - (n - ymin) / (ymax - ymin || 1) * 120;
-  const eventNotes = visibleJournalEvents([history], journalEvents);
   return <div className="min-w-0 space-y-3 wrap-anywhere">
     {Number.isFinite(xmin) && Number.isFinite(xmax) ? <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-x-1 gap-y-2 pt-6 text-xs text-slate-300 sm:pr-10">
       {/* HTML axes keep their type size while the plot scales horizontally.
@@ -104,10 +69,6 @@ export function HistoryPlot({ history, band, expandableSnapshots = false, journa
           <polyline points={run.map((s) => `${x(s.ingested_at)},${y(numericSample(s)!)}`).join(" ")} fill="none" stroke="#38bdf8" strokeWidth="2" vectorEffect="non-scaling-stroke" />
           {run.map((s) => <circle key={s.snapshot_seq} cx={x(s.ingested_at)} cy={y(numericSample(s)!)} r="1" fill="#38bdf8" stroke="#38bdf8" strokeWidth="2" vectorEffect="non-scaling-stroke"><title>{`${s.ingested_at}: ${formatPointValue(history.point, s.value, s.quality)}`}</title></circle>)}
         </g>)}
-        {eventNotes.markers.map((event) => <g key={`event-${event.seq}`} data-trend-event={event.label}>
-          <line x1={x(event.at)} x2={x(event.at)} y1="0" y2="18" stroke={event.critical ? "#f43f5e" : "#fbbf24"} strokeWidth="2" strokeDasharray={event.completedCommand ? undefined : "2 2"} vectorEffect="non-scaling-stroke" />
-          <title>{`${event.label} · CC received ${event.at}${event.completedCommand ? " · completed command feedback" : ""}`}</title>
-        </g>)}
       </svg>
       <HistorianAnnotations history={history} events={events} xmin={xmin} xmax={xmax} />
       </div>
@@ -117,7 +78,6 @@ export function HistoryPlot({ history, band, expandableSnapshots = false, journa
       </div>
     </div> : null}
     {!values.length && <p className="text-sm text-amber-300">No valid numeric observations in this window. Unknown and stale samples are not plotted as zero. Select a numeric or single-point signal for a trend.</p>}
-    <TrendEventNotes {...eventNotes} available={Boolean(journalEvents)} />
     {band && <p className="text-xs text-slate-300">Current PLC band {band.low.toFixed(2)}–{band.high.toFixed(2)} kV, not historical setpoints.</p>}
     <ul className="text-xs text-amber-300">{history.gaps.map((gap, i) => <li key={i}>Ingest gap: {gap.from} → {gap.to}</li>)}</ul>
     <p className="text-xs text-slate-400">{history.segments.length} cache-epoch segment(s). Lines never cross an epoch or a gap. Invalid, substituted, blocked, overflow and transient samples break the line.</p>
@@ -126,7 +86,7 @@ export function HistoryPlot({ history, band, expandableSnapshots = false, journa
   </div>;
 }
 
-export function SectionHistoryPlot({ histories, journalEvents, events = [], window, expandableSnapshots = false }: { histories: History[]; journalEvents?: TrendJournalEvents; events?: HistorianEvent[]; window?: { since: string; until: string }; expandableSnapshots?: boolean }) {
+export function SectionHistoryPlot({ histories, events = [], window, expandableSnapshots = false }: { histories: History[]; events?: HistorianEvent[]; window?: { since: string; until: string }; expandableSnapshots?: boolean }) {
   const plotted = SECTION_SIGNALS.flatMap((series) => {
     const history = histories.find((item) => item.point === series.id);
     return history ? [{ ...series, history, runs: historyRuns(history) }] : [];
@@ -138,7 +98,6 @@ export function SectionHistoryPlot({ histories, journalEvents, events = [], wind
   const ymin = Math.min(...values), ymax = Math.max(...values);
   const x = (time: string) => (Date.parse(time) - xmin) / (xmax - xmin || 1) * 840;
   const y = (value: number) => 135 - (value - ymin) / (ymax - ymin || 1) * 120;
-  const eventNotes = visibleJournalEvents(histories, journalEvents);
   const gapMap = new Map(plotted.flatMap((series) => series.history.gaps.map((gap) => [`${gap.from}/${gap.to}`, gap] as const)));
   const snapshotHistory = histories.find((history) => history.point === "rmu-1-section-kv");
   return <div className="min-w-0 space-y-3 wrap-anywhere">
@@ -161,10 +120,6 @@ export function SectionHistoryPlot({ histories, journalEvents, events = [], wind
           <polyline points={run.map((sample) => `${x(sample.ingested_at)},${y(numericSample(sample)!)}`).join(" ")} fill="none" stroke={series.color} strokeWidth="2" strokeDasharray={series.dash} vectorEffect="non-scaling-stroke" />
           {run.map((sample) => <circle key={sample.snapshot_seq} cx={x(sample.ingested_at)} cy={y(numericSample(sample)!)} r="1" fill="#020617" stroke={series.color} strokeWidth="2" vectorEffect="non-scaling-stroke"><title>{`${series.label} ${sample.ingested_at}: ${formatPointValue(series.id, sample.value, sample.quality)}`}</title></circle>)}
         </g>))}
-        {eventNotes.markers.map((event) => <g key={`event-${event.seq}`} data-trend-event={event.label}>
-          <line x1={x(event.at)} x2={x(event.at)} y1="0" y2="18" stroke={event.critical ? "#f43f5e" : "#fbbf24"} strokeWidth="2" strokeDasharray={event.completedCommand ? undefined : "2 2"} vectorEffect="non-scaling-stroke" />
-          <title>{`${event.label} · CC received ${event.at}${event.completedCommand ? " · completed command feedback" : ""}`}</title>
-        </g>)}
       </svg>
       <HistorianAnnotations history={snapshotHistory ?? histories[0]} events={events} xmin={xmin} xmax={xmax} />
       </div>
@@ -173,7 +128,6 @@ export function SectionHistoryPlot({ histories, journalEvents, events = [], wind
         <span className="ml-auto whitespace-nowrap">{formatUtcTime(new Date(xmax).toISOString())} UTC</span>
       </div>
     </div> : <p className="text-sm text-amber-300">No valid numeric section observations in this window. Unknown and stale samples are not plotted as zero.</p>}
-    <TrendEventNotes {...eventNotes} available={Boolean(journalEvents)} />
     <p className="text-xs text-slate-400">One shared time axis; each section line independently breaks at cache epochs, ingest gaps, invalid quality or transient samples. S2 uses RMU1 section VT; the RMU2 section VT is the same S2 bus and remains selectable on its own.</p>
     {histories[0] && <HistorianEventList history={snapshotHistory ?? histories[0]} events={events} />}
     {snapshotHistory
@@ -199,16 +153,9 @@ export function HistorianTrend({ points = [], voltageOnly = false, expandableSna
     },
     refetchInterval: 5000,
   });
-  const journal = useQuery({
-    queryKey: ["operator", "journal"],
-    queryFn: getOperatorJournal,
-    refetchInterval: 5000,
-    enabled: voltageOnly,
-  });
   const sectionHistories = history.data?.histories ?? [];
   const error = catalogue.error ?? history.error;
   const signals = catalogue.data?.filter((p) => !voltageOnly || VOLTAGE_SIGNAL_IDS.includes(p.id));
-  const journalEvents = journal.data ? voltageTrendJournalEvents(journal.data) : undefined;
   const chartHistory = sectionMode ? sectionHistories.length > 0 : Boolean(history.data);
   return <section aria-label="Historian trend" className="min-w-0 space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-4">
     <h2 className="text-sm font-bold text-slate-200">{voltageOnly ? `Voltage trend · ${sectionMode ? "sections S1/S2/S3" : pointLabel(point)}` : "Historian · CC-observed history"}</h2>
@@ -221,9 +168,8 @@ export function HistorianTrend({ points = [], voltageOnly = false, expandableSna
       </select>
     </label>
     {error ? <p role="alert" className="text-xs text-amber-300">{isRangeNotReady(error) ? "History shows once the range is ready." : `Historian unavailable: ${errorMessage(error)}. ${chartHistory ? "Showing received history, not a live feed." : "No history received."}`}</p> : null}
-    {voltageOnly && journal.error ? <p role="status" className="text-xs text-amber-300">Event journal unavailable: {errorMessage(journal.error)}. {journal.data ? "Showing the last journal answer, not a live feed." : "No switching or protection markers shown."}</p> : null}
     {sectionMode
-      ? sectionHistories.length ? <SectionHistoryPlot histories={sectionHistories} events={history.data?.events} window={history.data?.window} journalEvents={journalEvents} expandableSnapshots={expandableSnapshots} /> : !error ? <p className="text-sm text-slate-400">Waiting for section voltage snapshots…</p> : null
-      : history.data ? <HistoryPlot history={history.data.histories[0]} events={history.data.events} window={history.data.window} band={point === "oltc-1-bus-kv" ? regulationBand(points) : null} expandableSnapshots={expandableSnapshots} journalEvents={voltageOnly ? journalEvents : undefined} /> : !error ? <p className="text-sm text-slate-400">Waiting for historian snapshots…</p> : null}
+      ? sectionHistories.length ? <SectionHistoryPlot histories={sectionHistories} events={history.data?.events} window={history.data?.window} expandableSnapshots={expandableSnapshots} /> : !error ? <p className="text-sm text-slate-400">Waiting for section voltage snapshots…</p> : null
+      : history.data ? <HistoryPlot history={history.data.histories[0]} events={history.data.events} window={history.data.window} band={point === "oltc-1-bus-kv" ? regulationBand(points) : null} expandableSnapshots={expandableSnapshots} /> : !error ? <p className="text-sm text-slate-400">Waiting for historian snapshots…</p> : null}
   </section>;
 }

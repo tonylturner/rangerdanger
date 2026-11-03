@@ -141,7 +141,7 @@ describe("historian annotations", () => {
   it.each([false, true])("uses one extra event read with exactly the history window (voltageOnly=%s)", async (voltageOnly) => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const fetchMock = vi.fn().mockImplementation(async (path: string) => new Response(JSON.stringify(
-      path.includes("/journal") ? { cache_epoch: "a", entries: [] } : path.includes("/points") ? [] : path.includes("/events") ? { events: [tap], gaps: [] } : HISTORY,
+      path.includes("/points") ? [] : path.includes("/events") ? { events: [tap], gaps: [] } : HISTORY,
     )));
     vi.stubGlobal("fetch", fetchMock);
     const { unmount } = render(<QueryClientProvider client={client}><HistorianTrend voltageOnly={voltageOnly} /></QueryClientProvider>);
