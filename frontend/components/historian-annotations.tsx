@@ -95,33 +95,51 @@ function Annotation({ label, description = label, left, width, event }: { label:
   </>;
 }
 
-export function HistorianAnnotations({ history, events, xmin, xmax, showEvents = true }: { history?: History; events: HistorianEvent[]; xmin: number; xmax: number; showEvents?: boolean }) {
-  const percent = (at: string) => Math.max(0, Math.min(100, (Date.parse(at) - xmin) / (xmax - xmin || 1) * 100));
+export function groupHistorianEvents(events: HistorianEvent[]) {
+  // Tolerance: 0 ms (one exact ingest instant). Do not merge nearby but
+  // unrelated operations without measured evidence of snapshot spacing.
   const simultaneous = new Map<number, HistorianEvent[]>();
   for (const event of events) {
     const at = Date.parse(event.at);
-    if (at < xmin || at > xmax) continue;
     const group = simultaneous.get(at) ?? [];
     group.push(event);
     simultaneous.set(at, group);
   }
+  return [...simultaneous].sort(([a], [b]) => a - b).map(([at, events]) => ({
+    at: new Date(at).toISOString(), events,
+    protection: events.some((event) => event.to === true && /(?:protection-trip|lockout|fault-passage)$/.test(event.point)),
+  }));
+}
+
+function eventSummary(event: HistorianEvent) {
+  const device = event.point.startsWith("feeder-") ? "CB1" : event.point.startsWith("f2-") ? "F2" : event.point.startsWith("rmu-1-") ? "RMU1" : "RMU2";
+  if (["feeder-breaker-position", "f2-position", "rmu-1-position", "rmu-2-position"].includes(event.point)) return `${device} ${formatPointValue(event.point, event.to)}`;
+  if (event.point.endsWith("protection-trip")) return `${device} ${event.to ? "TRIPPED" : "PROTECTION RESET"}`;
+  if (event.point.endsWith("lockout")) return `${device} ${event.to ? "LOCKED OUT" : "LOCKOUT RESET"}`;
+  if (event.point.endsWith("fault-passage")) return `${device} ${event.to ? "FAULT PASSED" : "FPI RESET"}`;
+  return eventDescription(event);
+}
+
+export function HistorianAnnotations({ history, events, xmin, xmax, showEvents = true }: { history?: History; events: HistorianEvent[]; xmin: number; xmax: number; showEvents?: boolean }) {
+  const percent = (at: string) => Math.max(0, Math.min(100, (Date.parse(at) - xmin) / (xmax - xmin || 1) * 100));
+  const groups = groupHistorianEvents(events.filter((event) => Date.parse(event.at) >= xmin && Date.parse(event.at) <= xmax));
   return <div className="pointer-events-none absolute inset-0" aria-label="Trend annotations">
     {history && breakDescriptions(history, events).map((interval, i) => <Annotation key={`break-${i}`} label={interval.text}
       left={(percent(interval.from) + percent(interval.to)) / 2} width={percent(interval.to) - percent(interval.from)} />)}
-    {showEvents && [...simultaneous].map(([at, group]) => {
-      const description = `${eventTime(new Date(at).toISOString())} UTC ${group.map(eventDescription).join("; ")}`;
-      return <Annotation key={at} event left={percent(group[0].at)} description={description} label={description} />;
+    {showEvents && groups.map((group) => {
+      const description = `${eventTime(group.at)} UTC ${group.events.map(eventDescription).join("; ")}`;
+      return <Annotation key={group.at} event left={percent(group.at)} description={description} label={description} />;
     })}
   </div>;
 }
 
 export function HistorianEventList({ history, events }: { history: History; events: HistorianEvent[] }) {
   const breaks = breakDescriptions(history, events);
+  const groups = groupHistorianEvents(events).reverse();
   return <div className="min-w-0 space-y-2 text-xs text-slate-300 wrap-anywhere">
     <h3 className="font-semibold">Events in this window</h3>
-    {events.length ? <ul className="space-y-1">{[...events].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 10).map((event, i) =>
-      <li key={i}><time dateTime={event.at}>{eventTime(event.at)} UTC</time> {eventDescription(event)}</li>)}</ul> : <p>No major status changes observed.</p>}
-    {events.length > 10 && <p className="text-slate-400">Newest 10 of {events.length} events. All markers remain on the chart.</p>}
+    {groups.length ? <ul aria-label="Archived events" tabIndex={0} className="max-h-60 space-y-1 overflow-y-auto">{groups.map((group) =>
+      <li key={group.at}><time dateTime={group.at}>{eventTime(group.at)} UTC</time>{group.protection ? " · protection" : ""} · {group.events.map(eventSummary).join(" · ")}</li>)}</ul> : <p>No major status changes observed.</p>}
     {breaks.length > 0 && <details><summary className="cursor-pointer text-amber-300">Why the line breaks ({breaks.length})</summary>
       <ul className="mt-2 space-y-1">{breaks.map((interval, i) => <li key={i}>{interval.text}</li>)}</ul>
     </details>}

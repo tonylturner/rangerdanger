@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HISTORY, historySample } from "../lib/historian-fixtures.test-util";
 import type { HistorianEvent } from "../lib/historian-api";
 import { HistoryPlot, HistorianTrend } from "./historian-trend";
-import { breakDescriptions, eventDescription } from "./historian-annotations";
+import { breakDescriptions, eventDescription, groupHistorianEvents } from "./historian-annotations";
 import { pointLabel } from "../lib/operator-format";
 
 const tap: HistorianEvent = { point: "oltc-1-tap", at: "2026-10-15T10:00:04.787Z", from: 1, to: 2, quality: historySample(1).quality };
@@ -125,17 +125,38 @@ describe("historian annotations", () => {
       expect(tooltip.textContent).toContain("CB1 protection trip NORMAL → TRIPPED");
     });
   });
-  it("caps the newest-first list at ten without removing chart markers, including an all-invalid window", () => {
+  it("keeps every event newest first without removing chart markers, including an all-invalid window", () => {
     const events = Array.from({ length: 12 }, (_, i) => ({ ...tap, at: historySample(i + 1).ingested_at, from: i, to: i + 1 }));
     const history = { ...HISTORY, gaps: [], segments: [{ cache_epoch: "a", samples: [historySample(1, { value: null }), historySample(12, { value: null })] }] };
     const { container } = render(<HistoryPlot history={history} events={events} />);
-    expect(screen.getByText("Newest 10 of 12 events. All markers remain on the chart.")).toBeTruthy();
+    expect(screen.queryByText(/Newest 10/)).toBeNull();
     const list = screen.getByRole("heading", { name: "Events in this window" }).nextElementSibling!;
-    expect(list.querySelectorAll("li")).toHaveLength(10);
+    expect(list.querySelectorAll("li")).toHaveLength(12);
     expect(list.firstChild?.textContent).toContain("11 → 12");
     expect(container.querySelectorAll("button")).toHaveLength(13);
     expect(container.innerHTML).not.toMatch(/NaN|Infinity|<polyline/);
   });
+  it("groups one protection instant into one row and rule, not nearby independent switching", () => {
+    const at = tap.at;
+    const events: HistorianEvent[] = [
+      { ...tap, point: "feeder-breaker-position", from: "closed", to: "open" },
+      { ...tap, point: "feeder-protection-trip", from: false, to: true },
+      { ...tap, point: "feeder-lockout", from: false, to: true },
+      { ...tap, point: "rmu-1-fault-passage", from: false, to: true },
+      { ...tap, at: new Date(Date.parse(at) + 1).toISOString(), point: "rmu-1-position", from: "closed", to: "open" },
+    ];
+    expect(groupHistorianEvents(events).map((g) => [g.events.length, g.protection])).toEqual([[4, true], [1, false]]);
+    const { container } = render(<HistoryPlot history={HISTORY} events={events} />);
+    const rows = screen.getByRole("list", { name: "Archived events" }).querySelectorAll("li");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toBe("10:00:04 UTC · RMU1 OPEN");
+    expect(rows[1].textContent).toBe("10:00:04 UTC · protection · CB1 OPEN · CB1 TRIPPED · CB1 LOCKED OUT · RMU1 FAULT PASSED");
+    expect(container.querySelectorAll("[data-event-guide]")).toHaveLength(2);
+    expect(container.innerHTML).not.toContain("operator");
+    const reset = { ...events[2], from: true, to: false };
+    expect(groupHistorianEvents([reset])[0].protection).toBe(false);
+  });
+
   it.each([false, true])("uses one extra event read with exactly the history window (voltageOnly=%s)", async (voltageOnly) => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const fetchMock = vi.fn().mockImplementation(async (path: string) => new Response(JSON.stringify(
