@@ -143,18 +143,56 @@ describe("historian annotations", () => {
       { ...tap, point: "feeder-protection-trip", from: false, to: true },
       { ...tap, point: "feeder-lockout", from: false, to: true },
       { ...tap, point: "rmu-1-fault-passage", from: false, to: true },
-      { ...tap, at: new Date(Date.parse(at) + 1).toISOString(), point: "rmu-1-position", from: "closed", to: "open" },
+      { ...tap, at: new Date(Date.parse(at) + 251).toISOString(), point: "rmu-1-position", from: "closed", to: "open" },
     ];
     expect(groupHistorianEvents(events).map((g) => [g.events.length, g.protection])).toEqual([[4, true], [1, false]]);
     const { container } = render(<HistoryPlot history={HISTORY} events={events} />);
     const rows = screen.getByRole("list", { name: "Archived events" }).querySelectorAll("li");
     expect(rows).toHaveLength(2);
-    expect(rows[0].textContent).toBe("10:00:04 UTC · RMU1 OPEN");
+    expect(rows[0].textContent).toBe("10:00:05 UTC · RMU1 OPEN");
     expect(rows[1].textContent).toBe("10:00:04 UTC · protection · CB1 OPEN · CB1 TRIPPED · CB1 LOCKED OUT · RMU1 FAULT PASSED");
     expect(container.querySelectorAll("[data-event-guide]")).toHaveLength(2);
     expect(container.innerHTML).not.toContain("operator");
     const reset = { ...events[2], from: true, to: false };
     expect(groupHistorianEvents([reset])[0].protection).toBe(false);
+  });
+
+  it("groups the observed S2 fault spacings into one rule and row per protection instant", () => {
+    const observed = [
+      ["18:36:48.040", "feeder-breaker-position", "closed", "open"],
+      ["18:36:48.0416", "feeder-protection-trip", false, true],
+      ["18:36:48.0428", "feeder-lockout", false, true],
+      ["18:36:48.0589", "oltc-1-blocked", true, false],
+      ["18:36:48.0599", "oltc-1-overcurrent-block", true, false],
+      ["18:36:46.519", "rmu-1-fault-passage", false, true],
+      ["18:36:46.540", "oltc-1-blocked", false, true],
+      ["18:36:46.541", "oltc-1-overcurrent-block", false, true],
+      ["18:36:57.640", "feeder-protection-trip", true, false],
+      ["18:36:57.641", "feeder-lockout", true, false],
+    ] as const;
+    const events: HistorianEvent[] = observed.map(([at, point, from, to]) => ({
+      ...tap, at: `2026-11-03T${at}Z`, point, from, to,
+    }));
+    const groups = groupHistorianEvents(events);
+    expect(groups.map((group) => [group.events.length, group.protection])).toEqual([[3, true], [5, true], [2, false]]);
+    expect(groups.flatMap((group) => group.events)).toHaveLength(events.length);
+    const { container } = render(<HistoryPlot history={{ ...HISTORY, segments: [], gaps: [] }} events={events}
+      window={{ since: "2026-11-03T18:36:45Z", until: "2026-11-03T18:36:59Z" }} />);
+    const rows = screen.getByRole("list", { name: "Archived events" }).querySelectorAll("li");
+    expect(rows).toHaveLength(3);
+    expect(rows[0].textContent).toBe("18:36:57 UTC · CB1 PROTECTION RESET · CB1 LOCKOUT RESET");
+    expect(rows[1].textContent).toContain("18:36:48 UTC · protection · CB1 OPEN · CB1 TRIPPED · CB1 LOCKED OUT");
+    expect(rows[2].textContent).toContain("18:36:46 UTC · protection · RMU1 FAULT PASSED");
+    expect(container.querySelectorAll("[data-event-guide]")).toHaveLength(3);
+  });
+  it("anchors the inclusive 250 ms tolerance to the first event, without chaining or mutating input", () => {
+    const events = [651, 400, 250, 200, 0].map((offset) => ({
+      ...tap, at: new Date(Date.parse(tap.at) + offset).toISOString(),
+    }));
+    const original = [...events];
+    const groups = groupHistorianEvents(events);
+    expect(groups.map((group) => group.events.map((event) => Date.parse(event.at) - Date.parse(tap.at)))).toEqual([[0, 200, 250], [400], [651]]);
+    expect(events).toEqual(original);
   });
 
   it.each([false, true])("uses one extra event read with exactly the history window (voltageOnly=%s)", async (voltageOnly) => {

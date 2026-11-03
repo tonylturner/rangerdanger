@@ -37,7 +37,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   say "N/M valid" and device comms say "reporting".
 - EU: the dashboard voltage trend uses three independently scaled section
   strips with minute gridlines and full-height historian event rules.
-  Every major event is listed, grouped by archive instant; protection
+  Every major event is listed, grouped within 250 ms of the first event; protection
   assertions are identified without attributing other switching to an actor.
 - EU: CB1 and RMU faceplates explain RTU switching conditions. One-line
   voltage labels, earth leads, FPI badges and the F2 legend are clearer;

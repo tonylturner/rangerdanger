@@ -96,16 +96,19 @@ function Annotation({ label, description = label, left, width, event }: { label:
 }
 
 export function groupHistorianEvents(events: HistorianEvent[]) {
-  // Tolerance: 0 ms (one exact ingest instant). Do not merge nearby but
-  // unrelated operations without measured evidence of snapshot spacing.
-  const simultaneous = new Map<number, HistorianEvent[]>();
-  for (const event of events) {
+  // Group within 250 ms of the group's FIRST event, never a sliding gap.
+  // Observed S2 fault (2026-11-03): 18:36:48.040–.0599 breaker/trip/
+  // lockout/OLTC changes span 19.9 ms; 18:36:46.519–.541 FPI/OLTC
+  // assertions span 22 ms; 18:36:57.640–.641 resets span 1 ms.
+  // Snapshots are 1 s apart; this tolerance keeps those snapshots distinct.
+  const groups: { at: number; events: HistorianEvent[] }[] = [];
+  for (const event of [...events].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))) {
     const at = Date.parse(event.at);
-    const group = simultaneous.get(at) ?? [];
-    group.push(event);
-    simultaneous.set(at, group);
+    const group = groups.at(-1);
+    if (group && at - group.at <= 250) group.events.push(event);
+    else groups.push({ at, events: [event] });
   }
-  return [...simultaneous].sort(([a], [b]) => a - b).map(([at, events]) => ({
+  return groups.map(({ at, events }) => ({
     at: new Date(at).toISOString(), events,
     protection: events.some((event) => event.to === true && /(?:protection-trip|lockout|fault-passage)$/.test(event.point)),
   }));
