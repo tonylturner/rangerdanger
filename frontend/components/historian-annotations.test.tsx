@@ -41,7 +41,7 @@ describe("historian annotations", () => {
   });
   it("opens event tooltips on keyboard focus, mouse hover and touch click, and closes on Escape", async () => {
     render(<HistoryPlot history={HISTORY} events={[tap]} />);
-    const button = screen.getByRole("button", { name: "10:00:04 UTC T1 tap 1 → 2" });
+    const button = screen.getByRole("button", { name: "10:00:04 UTC · T1 tap 1 → 2" });
     fireEvent.focus(button);
     await waitFor(() => expect(screen.getByRole("tooltip").textContent).toContain("T1 tap 1 → 2"));
     fireEvent.keyDown(button, { key: "Escape" });
@@ -65,13 +65,13 @@ describe("historian annotations", () => {
   });
   it.each(["mouse", "touch"])("pins the tooltip after %s pointerdown, pointerup and click without focus", async (pointerType) => {
     render(<HistoryPlot history={HISTORY} events={[tap]} />);
-    const button = screen.getByRole("button", { name: "10:00:04 UTC T1 tap 1 → 2" });
+    const button = screen.getByRole("button", { name: "10:00:04 UTC · T1 tap 1 → 2" });
     expect(screen.queryByRole("tooltip")).toBeNull();
     fireEvent.pointerDown(button, { pointerType });
     fireEvent.pointerUp(button, { pointerType });
     fireEvent.click(button);
     const tooltip = await screen.findByRole("tooltip");
-    expect(tooltip.textContent).toBe("10:00:04 UTC T1 tap 1 → 2");
+    expect(tooltip.textContent).toBe("10:00:04 UTC · T1 tap 1 → 2");
     expect(button.getAttribute("aria-describedby")).toBe(tooltip.id);
     fireEvent.pointerLeave(button, { pointerType });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
@@ -81,7 +81,7 @@ describe("historian annotations", () => {
   });
   it("pins a click after pointerdown focuses the marker, and dismisses with blur or a second click", () => {
     render(<HistoryPlot history={HISTORY} events={[tap]} />);
-    const button = screen.getByRole("button", { name: "10:00:04 UTC T1 tap 1 → 2" });
+    const button = screen.getByRole("button", { name: "10:00:04 UTC · T1 tap 1 → 2" });
     fireEvent.pointerDown(button, { pointerType: "mouse" });
     fireEvent.focus(button);
     fireEvent.pointerUp(button, { pointerType: "mouse" });
@@ -101,7 +101,7 @@ describe("historian annotations", () => {
     vi.stubGlobal("innerWidth", 320);
     vi.stubGlobal("innerHeight", 600);
     render(<HistoryPlot history={HISTORY} events={[tap]} />);
-    const button = screen.getByRole("button", { name: "10:00:04 UTC T1 tap 1 → 2" });
+    const button = screen.getByRole("button", { name: "10:00:04 UTC · T1 tap 1 → 2" });
     vi.spyOn(button, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 550, 28, 28));
     fireEvent.pointerMove(button, { pointerType: "mouse" });
     const tooltip = screen.getByRole("tooltip");
@@ -118,12 +118,30 @@ describe("historian annotations", () => {
   });
   it("keeps simultaneous event facts available from the overlapping marker tooltip", async () => {
     render(<HistoryPlot history={HISTORY} events={[tap, { ...tap, point: "feeder-protection-trip", from: false, to: true }]} />);
-    fireEvent.click(screen.getByRole("button", { name: "10:00:04 UTC T1 tap 1 → 2; CB1 protection trip NORMAL → TRIPPED" }));
+    fireEvent.click(screen.getByRole("button", { name: "10:00:04 UTC · protection · T1 tap 1 → 2 · CB1 TRIPPED" }));
     await waitFor(() => {
       const tooltip = screen.getByRole("tooltip");
       expect(tooltip.textContent).toContain("T1 tap 1 → 2");
-      expect(tooltip.textContent).toContain("CB1 protection trip NORMAL → TRIPPED");
+      expect(tooltip.textContent).toContain("protection · T1 tap 1 → 2 · CB1 TRIPPED");
     });
+  });
+  it.each([
+    ["feeder-breaker-position", "closed", "open", "CB1 OPEN"],
+    ["f2-position", "open", "closed", "F2 CLOSED"],
+    ["rmu-1-position", "closed", "open", "RMU1 OPEN"],
+    ["rmu-2-position", "open", "closed", "RMU2 CLOSED"],
+    ["feeder-protection-trip", false, true, "protection · CB1 TRIPPED"],
+    ["feeder-protection-trip", true, false, "CB1 PROTECTION RESET"],
+    ["f2-lockout", false, true, "protection · F2 LOCKED OUT"],
+    ["f2-lockout", true, false, "F2 LOCKOUT RESET"],
+    ["rmu-1-fault-passage", false, true, "protection · RMU1 FAULT PASSED"],
+    ["rmu-2-fault-passage", true, false, "RMU2 FPI RESET"],
+  ] as const)("uses the same short %s wording in the list, marker label and tooltip (%s → %s)", (point, from, to, summary) => {
+    render(<HistoryPlot history={HISTORY} events={[{ ...tap, point, from, to }]} />);
+    const row = screen.getByRole("list", { name: "Archived events" }).querySelector("li")!;
+    expect(row.textContent).toBe(`10:00:04 UTC · ${summary}`);
+    fireEvent.focus(screen.getByRole("button", { name: row.textContent! }));
+    expect(screen.getByRole("tooltip").textContent).toBe(row.textContent);
   });
   it("keeps every event newest first without removing chart markers, including an all-invalid window", () => {
     const events = Array.from({ length: 12 }, (_, i) => ({ ...tap, at: historySample(i + 1).ingested_at, from: i, to: i + 1 }));
@@ -184,6 +202,12 @@ describe("historian annotations", () => {
     expect(rows[1].textContent).toContain("18:36:48 UTC · protection · CB1 OPEN · CB1 TRIPPED · CB1 LOCKED OUT");
     expect(rows[2].textContent).toContain("18:36:46 UTC · protection · RMU1 FAULT PASSED");
     expect(container.querySelectorAll("[data-event-guide]")).toHaveLength(3);
+    for (const row of rows) {
+      const marker = screen.getByRole("button", { name: row.textContent! });
+      fireEvent.focus(marker);
+      expect(screen.getByRole("tooltip").textContent).toBe(row.textContent);
+      fireEvent.blur(marker);
+    }
   });
   it("anchors the inclusive 250 ms tolerance to the first event, without chaining or mutating input", () => {
     const events = [651, 400, 250, 200, 0].map((offset) => ({

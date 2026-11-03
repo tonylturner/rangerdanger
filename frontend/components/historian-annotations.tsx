@@ -123,6 +123,10 @@ function eventSummary(event: HistorianEvent) {
   return eventDescription(event);
 }
 
+function eventGroupDetails(group: ReturnType<typeof groupHistorianEvents>[number]) {
+  return `${group.protection ? " · protection" : ""} · ${group.events.map(eventSummary).join(" · ")}`;
+}
+
 export function HistorianAnnotations({ history, events, xmin, xmax, showEvents = true }: { history?: History; events: HistorianEvent[]; xmin: number; xmax: number; showEvents?: boolean }) {
   const percent = (at: string) => Math.max(0, Math.min(100, (Date.parse(at) - xmin) / (xmax - xmin || 1) * 100));
   const groups = groupHistorianEvents(events.filter((event) => Date.parse(event.at) >= xmin && Date.parse(event.at) <= xmax));
@@ -130,7 +134,7 @@ export function HistorianAnnotations({ history, events, xmin, xmax, showEvents =
     {history && breakDescriptions(history, events).map((interval, i) => <Annotation key={`break-${i}`} label={interval.text}
       left={(percent(interval.from) + percent(interval.to)) / 2} width={percent(interval.to) - percent(interval.from)} />)}
     {showEvents && groups.map((group) => {
-      const description = `${eventTime(group.at)} UTC ${group.events.map(eventDescription).join("; ")}`;
+      const description = `${eventTime(group.at)} UTC${eventGroupDetails(group)}`;
       return <Annotation key={group.at} event left={percent(group.at)} description={description} label={description} />;
     })}
   </div>;
@@ -142,7 +146,7 @@ export function HistorianEventList({ history, events }: { history: History; even
   return <div className="min-w-0 space-y-2 text-xs text-slate-300 wrap-anywhere">
     <h3 className="font-semibold">Events in this window</h3>
     {groups.length ? <ul aria-label="Archived events" tabIndex={0} className="max-h-60 space-y-1 overflow-y-auto">{groups.map((group) =>
-      <li key={group.at}><time dateTime={group.at}>{eventTime(group.at)} UTC</time>{group.protection ? " · protection" : ""} · {group.events.map(eventSummary).join(" · ")}</li>)}</ul> : <p>No major status changes observed.</p>}
+      <li key={group.at}><time dateTime={group.at}>{eventTime(group.at)} UTC</time>{eventGroupDetails(group)}</li>)}</ul> : <p>No major status changes observed.</p>}
     {breaks.length > 0 && <details><summary className="cursor-pointer text-amber-300">Why the line breaks ({breaks.length})</summary>
       <ul className="mt-2 space-y-1">{breaks.map((interval, i) => <li key={i}>{interval.text}</li>)}</ul>
     </details>}

@@ -39,6 +39,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   strips with minute gridlines and full-height historian event rules.
   Every major event is listed, grouped within 250 ms of the first event; protection
   assertions are identified without attributing other switching to an actor.
+  Marker tooltips and accessible labels use the same short device wording as the list.
 - EU: CB1 and RMU faceplates explain RTU switching conditions. One-line
   voltage labels, earth leads, FPI badges and the F2 legend are clearer;
   zero-current power factor is distinguished from observation uncertainty.
