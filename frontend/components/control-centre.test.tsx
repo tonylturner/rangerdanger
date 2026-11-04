@@ -13,7 +13,9 @@ import { controlCentreObservations } from "../lib/observation-readings";
 import { AbnormalSummary, ControlCentreScreen, ObservationStatus } from "./control-centre-view";
 import { ControlCentreMiniStatus } from "./runner-operator-status";
 import { DeviceFaceplate, RegulationBand } from "./control-centre-faceplate";
+import { ControlCentrePane } from "./control-centre-pane";
 import { devicePoints } from "../lib/operator-workstation";
+import { HISTORY, historySample } from "../lib/historian-fixtures.test-util";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 function render(node: ReactNode): string {
@@ -74,6 +76,22 @@ describe("ControlCentreScreen schema 3", () => {
     expect(out).toContain("seq 1–4");
     expect(text(screen({ journal: EMPTY_JOURNAL, initialTab: "Events" }))).toContain("No journal entries yet.");
   });
+});
+
+it("keeps thirty snapshots and no toggle in the Control Centre Trends tab", () => {
+  const history = {
+    ...HISTORY, gaps: [],
+    segments: [{ cache_epoch: "control-centre", samples: Array.from({ length: 35 }, (_, i) => historySample(i + 1)) }],
+  };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(["historian", "points"], FEEDER_STATE.points);
+  client.setQueryData(["historian", "history", "oltc-1-bus-kv"], history);
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><ControlCentrePane state={FEEDER_STATE} journal={JOURNAL} now={NOW} initialTab="Trends" /></QueryClientProvider>);
+  client.clear();
+
+  expect(html.match(/<tbody>[\s\S]*?<\/tbody>/)?.[0].match(/<tr /g)).toHaveLength(30);
+  expect(html).toContain("Latest 30 snapshots, newest first · full timestamps in UTC");
+  expect(html).not.toContain("Show last 30");
 });
 
 describe("CC schematic layout", () => {

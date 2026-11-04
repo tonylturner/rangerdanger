@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { HISTORY, historySample } from "../lib/historian-fixtures.test-util";
@@ -47,6 +49,25 @@ describe("historian trend", () => {
     const rows = text(html).slice(text(html).indexOf("CC epoch / seq"));
     expect(rows.indexOf("0ba59ec6be7b5148 / 35")).toBeLessThan(rows.indexOf("0ba59ec6be7b5148 / 6"));
     expect(rows).not.toContain("0ba59ec6be7b5148 / 5 ");
+  });
+  it("lets the overview expand from five snapshots to thirty and collapse again", () => {
+    const history = {
+      ...HISTORY, gaps: [],
+      segments: [{ cache_epoch: "overview", samples: Array.from({ length: 35 }, (_, i) => historySample(i + 1)) }],
+    };
+    render(<HistoryPlot history={history} expandableSnapshots />);
+    expect(screen.getByRole("caption").textContent).toBe("Latest 5 snapshots, newest first · full timestamps in UTC");
+    expect(screen.getAllByRole("row")).toHaveLength(6);
+
+    const toggle = screen.getByRole("button", { name: "Show last 30" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(screen.getByRole("caption").textContent).toBe("Latest 30 snapshots, newest first · full timestamps in UTC");
+    expect(screen.getAllByRole("row")).toHaveLength(31);
+    expect(screen.getByRole("button", { name: "Show last 5" }).getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show last 5" }));
+    expect(screen.getAllByRole("row")).toHaveLength(6);
   });
   it("plots separate runs while retaining stale quality and full UTC times in the table", () => {
     const html = renderToStaticMarkup(<HistoryPlot history={HISTORY} />);

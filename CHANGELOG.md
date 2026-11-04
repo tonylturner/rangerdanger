@@ -13,6 +13,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "source build". On desktop the sidebar now stays in view while the
   page scrolls, so the version and the range control are always visible.
 
+### Changed
+
+- The overview voltage trend lists the 5 newest snapshots, with a button
+  to show the last 30. The Control Centre Trends tab still lists 30.
+
 ## [v0.2.0] - 2026-11-02
 
 Students choose the lab environment from the portal: the US DNP3
