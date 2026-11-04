@@ -10,6 +10,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - DNP3 control commands exit nonzero on rejected or timed-out operates, so
   the Run command log no longer labels a failed control successful.
+- US manual firewall instructions commit operational replacements together
+  with broad-rule removals, avoiding an intermediate field-polling outage.
+- US labs use the correct policy-preview answer and firewall event label,
+  and describe small residual outage current as approximately zero.
 - EU labs explain the Ethernet capture and host-file upload needed for
   optional containd PCAP Analysis, and the baseline capture's actual
   rotation timing.

@@ -192,11 +192,11 @@ class ExtractTests(unittest.TestCase):
     def test_manual_default_deny_probe_checks_reference_end_state_not_weak_read(self):
         rows = extract.extract(ROOT)
         row = next(r for r in rows if r["scenario"] == "firewall-implementation"
-                   and r["step"] == 4 and r["command"].startswith("mbpoll "))
+                   and r["step"] == 5 and r["command"].startswith("mbpoll "))
         data = json.loads(extract.EXPECTATIONS.read_text())
         oracle = data["commands"][extract.key(row)]["oracle"]
         self.assertEqual((row["policy"], oracle["policy"], oracle["intent"]),
-                         ("weak", "hardened", "deny"))
+                         ("hardened", "hardened", "deny"))
         self.assertFalse(extract.verdict(oracle, 0, "[1]: 1", "", control=True))
         self.assertTrue(extract.verdict(oracle, 1, "", "timed out", control=True))
         result = subprocess.run([sys.executable, str(HELPER), "--matrix"],

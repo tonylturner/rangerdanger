@@ -52,17 +52,19 @@ steps:
 
       Now use the dropdown to **preview Hardened Segmentation** -
       don't click Apply, just inspect. The Evaluation table
-      re-evaluates against the hardened policy: explicit ALLOWs
-      tighten down to source-pinned rules, and the implicit-deny
-      rows become explicit DENY rules with logging. Rows tagged
-      *"-> would change"* are the verdicts you'll commit below.
+      compares zone-pair action labels, not individual rules or packet tests.
+      Six of the fourteen rows change from ALLOW to DENY or MIXED (a mix of
+      allow and deny rules). Enterprise → Vendor stays ALLOW even though its
+      allowed ports narrow. The six reverse-direction rows remain implicit
+      default-deny; they do not gain explicit logged denies. Rows tagged
+      *"-> would change"* have a different action label from the active policy.
 
       :::decision id=current-policy-allowable options=MOSTLY_ALLOW,MOSTLY_DENY,MIXED correct=MOSTLY_ALLOW
       **Looking at the Evaluation table for the weak baseline - how
       would you characterize the current zone-pair allow/deny mix?**
       :::
 
-      :::decision id=hardened-changes-rough-count options=FEW_CHANGES,ABOUT_HALF,MOST_ROWS correct=MOST_ROWS
+      :::decision id=hardened-changes-rough-count options=FEW_CHANGES,ABOUT_HALF,MOST_ROWS correct=ABOUT_HALF
       **When you previewed Hardened Segmentation, roughly what
       fraction of zone-pair rows showed "-> would change"?**
       :::

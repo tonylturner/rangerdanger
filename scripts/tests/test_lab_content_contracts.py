@@ -748,8 +748,9 @@ class AdvancedTrackContracts(unittest.TestCase):
                        "both ports must be `filtered`", "fix the rule and commit again",
                        "A plan uses its compiled verdict instead"):
             self.assertIn(phrase, flat)
-        self.assertLess(flat.index("TCP 22, 80 and 443"), flat.index("Run `commit`"))
-        self.assertLess(flat.index("Run `commit`"), flat.index("`nmap -Pn -p 3389,5900 10.20.20.10`"))
+        commit = flat.index("commit replacements and removals together")
+        self.assertLess(flat.index("TCP 22, 80 and 443"), commit)
+        self.assertLess(commit, flat.index("`nmap -Pn -p 3389,5900 10.20.20.10`"))
         for index in (3, 4):
             text = " ".join(scenario("firewall-implementation")["steps"][index]["description"].split())
             self.assertNotIn("immediately", text)

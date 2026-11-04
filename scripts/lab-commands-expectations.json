@@ -37,7 +37,7 @@
       "SKIP": 0
     },
     "firewall-implementation": {
-      "RUN": 22,
+      "RUN": 23,
       "SKIP": 6
     },
     "hardening-configurations": {
@@ -61,7 +61,7 @@
       "SKIP": 3
     }
   },
-  "minimum_executed": 78,
+  "minimum_executed": 79,
   "commands": {
     "baseline-assessment|3|tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'|1": {
       "container": "rangerdanger-firewall",
@@ -432,18 +432,30 @@
       },
       "reason": null
     },
-    "firewall-implementation|4|commit|1": {
+    "firewall-implementation|5|show diff|1": {
       "container": "rangerdanger-firewall",
-      "policy": "weak",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?i)(?:diff|no changes|firewall|candidate)"
+      },
+      "reason": null
+    },
+    "firewall-implementation|5|commit|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
       "prompt": "cli",
       "entry": "",
       "action": "SKIP",
       "oracle": null,
-      "reason": "Manual mutation; not automated. First-match review: deletion preserves survivor order; keep required RTAC exceptions before diagnostic denies."
+      "reason": "Manual mutation; commit Phase 2 removals and Phase 3 operational replacements together after complete candidate review."
     },
-    "firewall-implementation|4|mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20|1": {
+    "firewall-implementation|5|mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20|1": {
       "container": "rangerdanger-kali",
-      "policy": "weak",
+      "policy": "hardened",
       "prompt": "shell",
       "entry": "",
       "action": "RUN",
