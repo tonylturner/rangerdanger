@@ -336,7 +336,7 @@ class ErrataContracts(unittest.TestCase):
         text = path.read_text()
         for phrase in ("How to update", "PowerShell", "full image release",
                        "All 16 first-party images", "`latest` moves", "SSD",
-                       "quickstart.md#upgrading-to-v020", "workshop-ssd.md#delta-staging"):
+                       "quickstart.md#upgrading-to-v021", "workshop-ssd.md#delta-staging"):
             self.assertIn(phrase, text)
         for stale in ("existing v0.1.35 images", "no pull, no rebuild",
                       "Do not run `./setup.sh --version v0.1.36`", "./scripts/apply-repo-update.sh"):
@@ -358,13 +358,13 @@ class ErrataContracts(unittest.TestCase):
 
     def test_release_update_uses_standard_setup_and_delta_paths(self):
         quickstart = (ROOT / "docs/quickstart.md").read_text()
-        for phrase in ("git fetch origin tag v0.2.0", "git checkout --detach v0.2.0",
-                       "./setup.sh --version v0.2.0 --package us-dnp3-substation",
+        for phrase in ("git fetch origin tag v0.2.1", "git checkout --detach v0.2.1",
+                       "./setup.sh --version v0.2.1 --package us-dnp3-substation",
                        "eu-iec104-substation", "PowerShell", "parity",
                        "workshop reset", "DELTA-README.md", "close to a full set"):
             self.assertIn(phrase, quickstart)
         ssd = (ROOT / "docs/workshop-ssd.md").read_text()
-        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0",
+        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.1",
                        "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1",
                        "v0.1.x SSD baseline lacks it", "package Compose metadata",
                        "close to a full set", "[rebuild-all]"):

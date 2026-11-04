@@ -7,6 +7,53 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ContaindReleaseDocsTests(unittest.TestCase):
+    def test_current_install_and_staging_commands_select_v021(self):
+        for path in ("README.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
+            text = (ROOT / path).read_text()
+            with self.subTest(path=path):
+                self.assertIn("v0.2.1", text)
+                self.assertIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.1", text)
+                self.assertNotRegex(text, r"(?:--version|-Version) v0\.2\.0\b")
+                self.assertNotIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0", text)
+        for path in ("README.md", "docs/quickstart.md"):
+            text = (ROOT / path).read_text()
+            with self.subTest(path=path):
+                self.assertIn("./setup.sh --version v0.2.1", text)
+                self.assertIn(r".\setup.ps1 -Version v0.2.1", text)
+        for path in ("README.md", "docs/v0.1.36-hotfix.md"):
+            self.assertIn("quickstart.md#upgrading-to-v021", (ROOT / path).read_text())
+
+    def test_patch_upgrade_requires_backup_without_rewriting_v020_history(self):
+        text = " ".join((ROOT / "docs/quickstart.md").read_text().split())
+        current, history = text.split("## Upgrading to v0.2.0", 1)
+        for phrase in ("## Upgrading to v0.2.1", "v0.2.0 → v0.2.1",
+                       "git fetch origin tag v0.2.1", "git checkout --detach v0.2.1",
+                       "requires containd 0.1.40 or later", "containd:latest",
+                       "once that stable release has been promoted",
+                       "**Back up for the v0.2.0 → v0.2.1 update too.**",
+                       "complete persistent `/data`", "does not cross that schema boundary again",
+                       "v0.1.40/docs/mkdocs/update-policy.md",
+                       "v0.1.40/docs/mkdocs/config-format.md",
+                       "./scripts/dev-down.sh", r".\scripts\dev-down.ps1",
+                       "promotes unchanged images", "digests qualify"):
+            self.assertIn(phrase, current)
+        for phrase in ("v0.1.x", "rebuilt all 20 first-party images",
+                       "minimum was 0.1.37", "one-way to 0.1.10",
+                       "matching complete pre-upgrade storage"):
+            self.assertIn(phrase, history)
+        self.assertNotIn("once v0.2.0 is published", text)
+        self.assertNotIn("git checkout --detach v0.2.0", text)
+
+    def test_both_v021_delta_examples_force_include_containd(self):
+        text = (ROOT / "docs/workshop-ssd.md").read_text()
+        command = (
+            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1 \\\n"
+            "  --include-upstream --include containd"
+        )
+        self.assertEqual(text.count(command), 2)
+        self.assertIn("fresh full\nstorage backup is still required", text)
+        self.assertNotIn("This is a future-version example", text)
+
     def test_local_cli_guidance_uses_exit_and_separates_candidate_status(self):
         for path in ("docs/quickstart.md", "docs/api-spec.md"):
             text = " ".join((ROOT / path).read_text().split())

@@ -1,7 +1,7 @@
 # Quickstart
 
-Full install walkthrough for package-based v0.2.0 (tagged commands
-require published v0.2.0 images). The 5-line version lives
+Full install walkthrough for package-based v0.2.1 (tagged commands
+require published v0.2.1 images). The 5-line version lives
 in the [README](../README.md); this doc covers the offline / SSD
 path, common errors, and what to do when something breaks.
 
@@ -102,7 +102,7 @@ git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
 ./setup.sh                   # latest release
 # or pin a specific version:
-./setup.sh --version v0.2.0
+./setup.sh --version v0.2.1
 ```
 
 PowerShell (Docker Desktop WSL2, local-drive checkout):
@@ -111,7 +111,7 @@ PowerShell (Docker Desktop WSL2, local-drive checkout):
 git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
 .\setup.ps1                  # latest release
-.\setup.ps1 -Version v0.2.0
+.\setup.ps1 -Version v0.2.1
 ```
 
 `setup.sh` checks Docker, the Compose (2.36.0+) and Engine API (1.49+)
@@ -180,7 +180,7 @@ isn't realistic. The instructor stages an SSD; students load from it.
 **On a machine with internet (instructor):**
 
 ```bash
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.1
 ```
 
 The positional version selects every first-party image tag independently
@@ -222,12 +222,14 @@ has prebuilt image tarballs attached. Use an instructor-staged, verified
 bundle, or verify any manually supplied assets and their `.version`
 before using them offline.
 
-## Upgrading to v0.2.0
+## Upgrading to v0.2.1
 
-These tagged examples apply once v0.2.0 is published. On this branch use
-`./setup.sh --from-source` to build its images instead of pulling older ones.
-v0.2.0 rebuilds all 20 first-party images (the tag carries `[rebuild-all]`);
-this is not a repository-only hotfix.
+For v0.2.0 → v0.2.1, save your work and make a fresh backup as described
+below, then fetch/check out v0.2.1 and rerun setup using the commands under
+[Installing the upgrade](#installing-the-upgrade). These commands require
+published v0.2.1 images. This patch builds changed images and promotes
+unchanged images when the release's recorded inputs and digests qualify;
+it is not a repository-only hotfix or a forced full rebuild.
 
 **This release requires containd 0.1.40 or later** for online, offline and source
 installs. Check the actual containd build, not just the mutable `latest` tag.
@@ -235,6 +237,23 @@ RangerDanger owns its client fixes for the readiness contract introduced in
 0.1.39; older containd builds are not a compatibility option.
 The backend checks the version before seeding and before adopting a running
 range after a backend restart; a 0.1.40 prerelease is too old.
+
+Online setup pulls `ghcr.io/tonylturner/containd:latest`, which supplies
+0.1.40 or later once that stable release has been promoted to the channel.
+The tag is mutable: verify the actual build, not the tag name. Offline
+bundles must carry a verified qualifying image; see the
+[SSD containd update procedure](workshop-ssd.md#pattern-3-containd-update).
+
+**Back up for the v0.2.0 → v0.2.1 update too.** The containd
+[tagged update checklist](https://github.com/tonylturner/containd/blob/v0.1.40/docs/mkdocs/update-policy.md#operator-update-checklist)
+requires a config export and preservation of the complete persistent `/data`
+before updating, retained until verification. Its
+[schema documentation](https://github.com/tonylturner/containd/blob/v0.1.40/docs/mkdocs/config-format.md#schema)
+still names schema 0.1.10: an already migrated v0.2.0 store does not cross
+that schema boundary again, but that does not remove the backup requirement.
+Stop the lab with `./scripts/dev-down.sh` (Windows:
+`.\scripts\dev-down.ps1`) before copying storage. Use the complete
+package paths and matching image/repo preservation described below.
 
 `/api/firewall/health` includes `ipv4Forwarding`, `managementBinding` and
 authenticated `managementReservation` diagnostics (or
@@ -275,13 +294,13 @@ bindings before staging. It is not a binary/schema rollback.
 From a clean macOS/Linux checkout:
 
 ```bash
-git fetch origin tag v0.2.0 &&
-git checkout --detach v0.2.0 &&
-./setup.sh --version v0.2.0 --package us-dnp3-substation
+git fetch origin tag v0.2.1 &&
+git checkout --detach v0.2.1 &&
+./setup.sh --version v0.2.1 --package us-dnp3-substation
 # Or select --package eu-iec104-substation
 ```
 
-Do not stop the install before image acquisition. Setup accepts ports owned by
+After the backup, do not tear down again before image acquisition. Setup accepts ports owned by
 both RangerDanger projects, pulls/loads all package images first, then migrates
 an old single-project install and restarts through `POST /api/range`. Foreign
 port listeners or network owners stop setup. `--check-only` never migrates or
@@ -290,19 +309,20 @@ restarts, including on an existing or partly running install.
 For SSD upgrades, prefer a new full bundle when crossing from v0.1.x: the old
 release lacks the package Compose metadata required by the delta helper. Delta
 staging remains supported between compatible package-aware releases; follow
-its generated `DELTA-README.md`, including backup and rollback. With all images
-rebuilt the delta is close to a full set, not a bandwidth-saving promise.
+its generated `DELTA-README.md`, including backup and rollback. Include containd
+explicitly for this patch. Delta size depends on changed digests; a forced full
+rebuild can still produce a delta close to a full set.
 
 PowerShell has the same package/migration setup path; installer parity does
 not establish real-hardware acceptance. From a clean local-drive checkout
 on Docker Desktop WSL2:
 
 ```powershell
-git fetch origin tag v0.2.0
-if ($LASTEXITCODE -ne 0) { throw 'Could not fetch v0.2.0' }
-git checkout --detach v0.2.0
-if ($LASTEXITCODE -ne 0) { throw 'Could not check out v0.2.0' }
-.\setup.ps1 -Version v0.2.0 -Package us-dnp3-substation
+git fetch origin tag v0.2.1
+if ($LASTEXITCODE -ne 0) { throw 'Could not fetch v0.2.1' }
+git checkout --detach v0.2.1
+if ($LASTEXITCODE -ne 0) { throw 'Could not check out v0.2.1' }
+.\setup.ps1 -Version v0.2.1 -Package us-dnp3-substation
 # Or select -Package eu-iec104-substation
 ```
 
@@ -314,6 +334,19 @@ install's listeners for reruns and rejects foreign or unknown listeners.
 
 Historical [v0.1.36 errata](v0.1.36-hotfix.md) retains
 useful US evidence guidance, but its old installer path is not this upgrade.
+
+## Upgrading to v0.2.0
+
+Historical context for v0.1.x users: v0.2.0 introduced package-based installs
+and rebuilt all 20 first-party images (`[rebuild-all]`). Its containd minimum
+was 0.1.37; the first start migrated stored schema one-way to 0.1.10.
+The [firewall storage backup and rollback](#firewall-storage-backup-and-rollback)
+requirements still apply when moving from v0.1.x directly to v0.2.1.
+Use the [current upgrade commands](#installing-the-upgrade), or a full
+v0.2.1 SSD bundle, rather than installing an intermediate v0.2.0 release.
+Save evidence first: setup resets the workshop and does not migrate old
+single-package browser progress. A rollback across the schema boundary needs
+the matching complete pre-upgrade storage, image and older RangerDanger release.
 
 ## Once it's up
 
