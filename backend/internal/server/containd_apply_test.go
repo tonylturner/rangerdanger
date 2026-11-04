@@ -50,16 +50,20 @@ func receiptFirewall(t *testing.T, state string) (*httptest.Server, *atomic.Int3
 			commits.Add(1)
 			revision = "committed-revision"
 			w.Header().Set("X-Containd-Revision", revision)
-			fmt.Fprint(w, `{"status":"ok","applyId":"route-apply","protection":{"applyId":"route-apply","state":"pending"}}`)
+			fmt.Fprint(w, `{"status":"committed","applyId":"route-apply","runningRevision":"runtime-revision","protection":{"state":"pending","subsystems":[]}}`)
 		case "/api/v1/dataplane/protection":
-			id, observed := "route-apply", state
+			desired, protecting, observed := "runtime-revision", "runtime-revision", state
 			if state == "superseded" {
-				id, observed = "newer-apply", "protecting"
+				desired, observed = "newer-runtime", "protecting"
 			}
-			json.NewEncoder(w).Encode(containd.ProtectionStatus{
-				ApplyID: id, InstalledApplyID: id, State: observed,
-				Components: []containd.ProtectionComponent{{Name: "nflog", State: "failed", Reason: "consumer unavailable"}},
-			})
+			status := containd.ProtectionStatus{
+				DesiredRevision: &desired, ProtectingRevision: &protecting, State: observed, Ready: observed == "protecting",
+				Subsystems: []containd.ProtectionSubsystem{},
+			}
+			if state == "failed" {
+				status.Subsystems = []containd.ProtectionSubsystem{{Required: true, State: "failed", Fault: &containd.ProtectionFault{Kind: "config", Reason: "consumer unavailable"}}}
+			}
+			json.NewEncoder(w).Encode(status)
 		default:
 			t.Errorf("unexpected containd request %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -80,7 +84,7 @@ func TestApplyRoutesProtectionReceipts(t *testing.T) {
 				if route == "plan" {
 					handler, request = s.handleFirewallApplyPlan, planRequest(s)
 				}
-				if state == "pending" {
+				if state == "pending" || state == "degraded" {
 					original := handler
 					handler = func(c *gin.Context) {
 						ctx, cancel := context.WithTimeout(c.Request.Context(), 600*time.Millisecond)
@@ -91,7 +95,7 @@ func TestApplyRoutesProtectionReceipts(t *testing.T) {
 				}
 				rec, body := invoke(s, handler, "POST", "/apply", request)
 				want := 502
-				if state == "protecting" || state == "degraded" {
+				if state == "protecting" {
 					want = 200
 				}
 				if rec.Code != want || commits.Load() != 1 {
@@ -105,8 +109,8 @@ func TestApplyRoutesProtectionReceipts(t *testing.T) {
 				if !ok || receipt["applyId"] != "route-apply" || receipt["protection"] != observed {
 					t.Fatalf("missing or inferred receipt: %s", rec.Body)
 				}
-				if (receipt["warning"] != nil) != (state == "degraded") {
-					t.Fatalf("warning must appear only for degraded: %v", receipt)
+				if receipt["warning"] != nil {
+					t.Fatalf("unexpected readiness warning: %v", receipt)
 				}
 				if want != 200 {
 					if body["observation"] == nil || s.activeConfig != "weak" || s.planProvenance != nil {
@@ -125,16 +129,13 @@ func TestApplyRoutesProtectionReceipts(t *testing.T) {
 // Exercise the real handlers so changing JSON rendering or receipt field order
 // cannot silently make a healthy install fail its readiness checks.
 func TestInstallerReceiptEncoding(t *testing.T) {
-	for _, state := range []string{"protecting", "degraded"} {
+	for _, state := range []string{"protecting"} {
 		t.Run(state, func(t *testing.T) {
 			fw, commits := receiptFirewall(t, state)
 			s := newTestServer(t, fw.URL)
 			s.orchestrator = &orchestrator.Orchestrator{}
 			rng := s.rng.(*fakeRange)
 			want := `"containd":{"applyId":"route-apply","protection":"` + state + `"`
-			if state == "degraded" {
-				want += `,"warning":"containd protection degraded: rule-hit logging unavailable"`
-			}
 			want += `}`
 			assertEncoding := func(t *testing.T, rec *httptest.ResponseRecorder) {
 				t.Helper()
@@ -253,7 +254,17 @@ func TestScenarioApplyReceiptAndConflict(t *testing.T) {
 			if err := s.db.Model(&models.Scenario{}).Where("id = ?", "eu-hardening-configurations").Update("steps", string(steps)).Error; err != nil {
 				t.Fatal(err)
 			}
-			rec := callRoute(s, s.handleExecuteStep, "POST", "/api/scenarios/:id/steps/:stepIdx/execute",
+			handler := s.handleExecuteStep
+			if state == "degraded" {
+				original := handler
+				handler = func(c *gin.Context) {
+					ctx, cancel := context.WithTimeout(c.Request.Context(), 600*time.Millisecond)
+					defer cancel()
+					c.Request = c.Request.WithContext(ctx)
+					original(c)
+				}
+			}
+			rec := callRoute(s, handler, "POST", "/api/scenarios/:id/steps/:stepIdx/execute",
 				"/api/scenarios/eu-hardening-configurations/steps/0/execute", "")
 			var result struct {
 				StepExecutionResult
@@ -263,7 +274,7 @@ func TestScenarioApplyReceiptAndConflict(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := 200
-			if state == "failed" {
+			if state == "failed" || state == "degraded" {
 				want = 502
 			} else if state == "conflict" {
 				want = 409

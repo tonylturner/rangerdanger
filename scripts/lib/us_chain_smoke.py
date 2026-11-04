@@ -112,8 +112,9 @@ def check_state(state, boundary, energized):
 
 
 def operate_result(result, elapsed, denied):
-    """dnp3cmd exits zero even when the transport or protocol failed."""
-    if result.returncode != 0 or result.stderr.strip():
+    """Require the CLI's explicit control-failure exit code for a dial denial."""
+    expected_rc = 2 if denied else 0
+    if result.returncode != expected_rc or result.stderr.strip():
         raise GateError(f"operate tool-error rc={result.returncode}: {result.stderr}")
     lines = re.findall(r"^\s*Result:\s*(.*?)\s*$", result.stdout, re.M)
     if len(lines) != 1:

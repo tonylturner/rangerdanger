@@ -289,7 +289,9 @@ steps:
           dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
 
       With `block-enterprise-to-field` selected, expect a connection timeout and
-      auto-reclose still enabled. With it deferred, the command still lands:
+      exit code `2`, with auto-reclose still enabled. A failed or timed-out
+      control now reports `[EXIT 2]` in the Run command log, rather than `[OK]`.
+      With it deferred, the command still lands:
       auto-reclose becomes disabled. This command alone does not trip the recloser.
       The deferred result matches plan proof but leaves a Hardened prevention gap.
       Detection selections do not close it.

@@ -118,6 +118,20 @@ function renderStep(authored: Scenario, stepId: string, binding: CurriculumBindi
 }
 
 describe("authored description → Run → node exec", () => {
+  it.each([US_CURRICULUM, EU])("logs package-neutral scenario generation", async (binding) => {
+    vi.spyOn(api, "startTrafficGeneration").mockResolvedValue({
+      status: "started", duration_sec: 45, run_id: "fixture", started_at: "2026-11-04T00:00:00Z",
+    });
+    vi.spyOn(globalThis, "setInterval").mockReturnValue(0 as unknown as ReturnType<typeof setInterval>);
+    const authored = { ...scenario, steps: [{ ...scenario.steps[0], description: "Generate representative traffic." }] };
+    const tree = renderStep(authored, "first", binding);
+    try {
+      fireEvent.click(tree.getByRole("button", { name: "Generate Traffic (45s)" }));
+      await waitFor(() => expect(tree.container.textContent).toContain("45s of package-defined scenario flows"));
+      expect(tree.container.textContent).not.toContain("Modbus, DNP3, HTTP, NTP");
+    } finally { tree.close(); }
+  });
+
   it("keeps the host reconnect copy-only and runs the CC reconnect on cc-1", async () => {
     const exec = vi.spyOn(api, "execOnNode").mockResolvedValue({ exit_code: 0, stdout: "ok", stderr: "", duration_ms: 1 });
     const tree = renderStep(authoredScenario("eu-firewall-implementation"), "phase-4-enable-logging-and-visibility", EU);

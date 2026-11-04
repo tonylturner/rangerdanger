@@ -14,7 +14,7 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// Snapshots include intentional catalog/first-match prose, presentation-data
 	// removal, readiness-driven budgets, per-command source headers, and EU
 	// probes without host discovery, commit-time established-flow re-evaluation,
-	// containd 0.1.38 configuration-CLI and review navigation, and breaker
+	// containd 0.1.39 configuration-CLI and review navigation, and breaker
 	// lockout telemetry in the EU acceptance inventory, and the EU portal's
 	// valid/quality-flag wording (without changing protocol acceptance).
 	for id, want := range map[string]string{

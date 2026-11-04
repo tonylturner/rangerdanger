@@ -234,7 +234,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     setCmdLog((prev) => [`[TRAFFIC] Generating ${durationSec}s of representative OT traffic...`, ...prev].slice(0, 100));
     try {
       await startTrafficGeneration(durationSec);
-      setCmdLog((prev) => [`[TRAFFIC] Generation started - ${durationSec}s of Modbus, DNP3, HTTP, NTP flows`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [`[TRAFFIC] Generation started - ${durationSec}s of package-defined scenario flows`, ...prev].slice(0, 100));
       // Poll for completion
       const pollId = setInterval(async () => {
         try {

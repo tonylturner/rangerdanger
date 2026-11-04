@@ -95,7 +95,7 @@ The package knowledge pages hold the detailed [EU node/plane map](../lab-definit
 
 ## Services
 
-RangerDanger v0.2.0 requires containd 0.1.37 or later. Before its first
+This release requires containd 0.1.40 or later. Before its first
 start, stop the lab and back up each package's complete firewall `/data`.
 The stored schema migrates one-way to 0.1.10; containd 0.1.36 cannot read a
 migrated store. Binary rollback requires matching pre-upgrade storage and image.
@@ -184,7 +184,7 @@ DNP3 outstation addresses (the five that expose DNP3): relay=1, recloser=2, regu
 
 [containd](https://github.com/tonylturner/containd) is pulled as
 `ghcr.io/tonylturner/containd:latest` in release mode. Source mode builds
-`rangerdanger-firewall` from the containd `v0.1.38` git ref (or the
+`rangerdanger-firewall` from the containd `v0.1.40` git ref (or the
 `CONTAIND_SOURCE` override). Policies are declared by each package's
 `package.yml`: US uses `lab-definitions/firewall/`, EU uses
 `lab-definitions/packages/eu-iec104-substation/firewall/`.

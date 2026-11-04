@@ -4,8 +4,8 @@ How to get RangerDanger onto N student laptops in a room with bad
 Wi-Fi, and how to push patches between sessions without forcing every
 student to re-import the full 6 GB image bundle.
 
-This is the v0.2.0 package-based operator runbook. Tagged examples require
-published v0.2.0 images. PowerShell setup supports the same packages on
+This is the v0.2.1 package-based operator runbook. Tagged examples require
+published v0.2.1 images. PowerShell setup supports the same packages on
 Docker Desktop WSL2 with a physical local-drive checkout. It rejects UNC,
 `\\wsl$`, mapped network drives, junctions and Hyper-V; see the
 [Windows requirements](quickstart.md#windows-docker-desktop-wsl2-only).
@@ -67,7 +67,7 @@ archive.
 On a machine with internet, from the repo root:
 
 ```sh
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.1
 ```
 
 The positional version selects the first-party image tags through Compose
@@ -217,7 +217,7 @@ Use [`stage-ssd-delta.sh`](#delta-staging) below.
 
 ### Pattern 3: containd update
 
-RangerDanger v0.2.0 requires containd 0.1.37 or later, including offline
+This release requires containd 0.1.40 or later, including offline
 bundles. RangerDanger owns its client fixes for that contract; using an older
 containd image is not a compatibility path. Verify the staged build as well
 as its digest.
@@ -233,7 +233,7 @@ in a delta, force it with:
   --include-upstream --include containd
 ```
 
-For the containd 0.1.37 compatibility update, use both flags on every delta:
+For the containd 0.1.40 compatibility update, use both flags on every delta:
 unchanged upstream references can otherwise cause the mutable `latest` image
 to be omitted. Keep the two architecture archives with the release evidence.
 
@@ -266,6 +266,13 @@ back up the complete firewall `/data` while quiescent. In the repo root
 Keep all databases, journals, users and captures, not just a config export.
 The stored schema migrates one-way to 0.1.10, which containd 0.1.36 and earlier
 cannot read.
+
+For v0.2.0 → v0.2.1, schema 0.1.10 is already in use, but a fresh full
+storage backup is still required before updating containd. Follow the
+[current upgrade backup guidance](quickstart.md#upgrading-to-v021), based on
+containd's v0.1.40 update checklist; keep the matching old image and repo
+until the update is verified. The generated delta apply recipe stops the lab
+and snapshots the complete installed tree, including both package stores.
 
 ## Delta staging
 
@@ -304,16 +311,19 @@ is not Windows runtime acceptance.
   `curl` and `python3` on the student's machine.
 
 The source release must carry the platform/package Compose metadata. A
-v0.1.x SSD baseline lacks it: stage a full v0.2.0 bundle for that migration.
+v0.1.x SSD baseline lacks it: stage a full v0.2.1 bundle for that migration.
 Later package-aware releases can use:
 
 ```sh
-./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1
+./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1 \
+  --include-upstream --include containd
 ```
 
-This is a future-version example, not a claim those tags already exist.
-v0.2.0 rebuilds every first-party image (`[rebuild-all]`), so a compatible
-full-rebuild delta is close to a full set. Do not use the retired single-stack
+For v0.2.1, changed first-party images are built and qualifying unchanged
+images are promoted; containd must be force-included as shown above.
+Historically v0.2.0 rebuilt every first-party image (`[rebuild-all]`), so a
+compatible full-rebuild delta can be close to a full set.
+Do not use the retired single-stack
 repository-update helpers for package migration; use setup and full/delta staging.
 
 Typical output (from the script's run summary):

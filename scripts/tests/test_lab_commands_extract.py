@@ -192,11 +192,11 @@ class ExtractTests(unittest.TestCase):
     def test_manual_default_deny_probe_checks_reference_end_state_not_weak_read(self):
         rows = extract.extract(ROOT)
         row = next(r for r in rows if r["scenario"] == "firewall-implementation"
-                   and r["step"] == 4 and r["command"].startswith("mbpoll "))
+                   and r["step"] == 5 and r["command"].startswith("mbpoll "))
         data = json.loads(extract.EXPECTATIONS.read_text())
         oracle = data["commands"][extract.key(row)]["oracle"]
         self.assertEqual((row["policy"], oracle["policy"], oracle["intent"]),
-                         ("weak", "hardened", "deny"))
+                         ("hardened", "hardened", "deny"))
         self.assertFalse(extract.verdict(oracle, 0, "[1]: 1", "", control=True))
         self.assertTrue(extract.verdict(oracle, 1, "", "timed out", control=True))
         result = subprocess.run([sys.executable, str(HELPER), "--matrix"],
@@ -236,6 +236,22 @@ class ExtractTests(unittest.TestCase):
             no_ack, 0, sent + "\nConnection refused", "", control=True))
         self.assertFalse(extract.verdict(
             no_ack, 0, sent + "\nNo route to host", "", control=True))
+
+    def test_dnp3_control_failure_exit_contract(self):
+        data = json.loads(extract.EXPECTATIONS.read_text())
+        controls = [(key, row["oracle"]) for key, row in data["commands"].items()
+                    if "|dnp3cmd " in key]
+        self.assertEqual(len(controls), 4)
+        for key, oracle in controls:
+            with self.subTest(key=key):
+                if oracle["intent"] == "deny":
+                    timeout = "Result: FAILED: dial tcp 10.40.40.21:20000: i/o timeout"
+                    self.assertTrue(extract.verdict(oracle, 2, timeout, "", control=True))
+                    if "-no-ack" not in key:
+                        self.assertFalse(extract.verdict(oracle, 0, timeout, "", control=True))
+                else:
+                    self.assertTrue(extract.verdict(oracle, 0, "Result: SUCCESS", ""))
+                    self.assertFalse(extract.verdict(oracle, 2, "Result: BLOCKED", ""))
 
     def test_nmap_zero_rc_needs_filtered_ports_and_control(self):
         oracle = {"intent": "deny", "match": r"5900/tcp\s+filtered", "nmap": True}

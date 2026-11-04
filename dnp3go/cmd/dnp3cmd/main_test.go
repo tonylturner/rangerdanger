@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"os/exec"
 	"path/filepath"
@@ -101,5 +102,116 @@ func TestAnalogCLISubprocess(t *testing.T) {
 				t.Fatal("CLI operated more than once")
 			}
 		})
+	}
+}
+
+// Exercise the real process boundary and wire replies, including failures during
+// either half of SBO. Exit status must not depend on parsing the displayed text.
+func TestControlExitCodes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	binary := filepath.Join(t.TempDir(), "dnp3cmd")
+	if output, err := exec.CommandContext(ctx, "go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, output)
+	}
+	for _, command := range [][]string{{"crob", "0", "trip"}, {"analog", "0", "-16"}} {
+		for _, tc := range []struct {
+			name, mode, result string
+			statuses           []byte
+			iin                byte
+			noStatus, timeout  bool
+			exit               int
+		}{
+			{name: "success", statuses: []byte{0}, result: "SUCCESS"},
+			{name: "blocked", statuses: []byte{7}, exit: 2, result: "BLOCKED"},
+			{name: "unsupported", statuses: []byte{4}, exit: 2, result: "NOT SUPPORTED"},
+			{name: "iin-error", statuses: []byte{0}, iin: 0x40, exit: 2, result: "OUTSTATION ERROR"},
+			{name: "missing-status", statuses: []byte{0}, noStatus: true, exit: 2, result: "without control status"},
+			{name: "timeout", statuses: []byte{0}, timeout: true, exit: 2, result: "i/o timeout"},
+			{name: "sbo-success", mode: "-sbo", statuses: []byte{0, 0}, result: "SUCCESS"},
+			{name: "select-rejected", mode: "-sbo", statuses: []byte{7}, exit: 2, result: "SELECT BLOCKED"},
+			{name: "operate-rejected", mode: "-sbo", statuses: []byte{0, 7}, exit: 2, result: "BLOCKED"},
+			{name: "no-ack", mode: "-no-ack", result: "SENT (no acknowledgement requested)"},
+		} {
+			t.Run(command[0]+"/"+tc.name, func(t *testing.T) {
+				ln, err := net.Listen("tcp", "127.0.0.1:0")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer ln.Close()
+				done := make(chan error, 1)
+				go func() {
+					conn, err := ln.Accept()
+					if err != nil {
+						done <- err
+						return
+					}
+					defer conn.Close()
+					if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+						done <- err
+						return
+					}
+					if tc.mode == "-no-ack" {
+						_, err := dnp3go.ReadLinkFrame(conn)
+						done <- err
+						return
+					}
+					for _, status := range tc.statuses {
+						req, err := dnp3go.ReadLinkFrame(conn)
+						if err != nil {
+							done <- err
+							return
+						}
+						if tc.timeout {
+							// Wait for the client deadline/close, without sleeping.
+							_, err := conn.Read(make([]byte, 1))
+							if err == nil {
+								done <- fmt.Errorf("unexpected data while awaiting timeout")
+							} else {
+								done <- nil
+							}
+							return
+						}
+						payload := []byte{req.Payload[0], req.Payload[1], 0x81, 0x80, tc.iin}
+						if !tc.noStatus {
+							payload = append(payload, req.Payload[3:]...)
+							payload[len(payload)-1] = status
+						}
+						if err := dnp3go.WriteLinkFrame(conn, &dnp3go.LinkFrame{
+							Control: 0x44, Dest: 100, Source: 3, Payload: payload,
+						}); err != nil {
+							done <- err
+							return
+						}
+					}
+					done <- nil
+				}()
+				args := []string{ln.Addr().String(), "-a", "3"}
+				if tc.mode != "" {
+					args = append(args, tc.mode)
+				}
+				args = append(args, command...)
+				output, err := exec.CommandContext(ctx, binary, args...).CombinedOutput()
+				exit := 0
+				if err != nil {
+					if exitErr, ok := err.(*exec.ExitError); ok {
+						exit = exitErr.ExitCode()
+					} else {
+						t.Fatal(err)
+					}
+				}
+				if serverErr := <-done; serverErr != nil {
+					t.Fatal(serverErr)
+				}
+				if exit != tc.exit || !strings.Contains(string(output), tc.result) {
+					t.Fatalf("exit=%d, want=%d; result want %q\n%s", exit, tc.exit, tc.result, output)
+				}
+			})
+		}
+	}
+	output, err := exec.CommandContext(ctx, binary).CombinedOutput()
+	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 ||
+		!strings.Contains(string(output), "2   Control failed") {
+		t.Fatalf("usage error=%v\n%s", err, output)
 	}
 }

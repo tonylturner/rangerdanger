@@ -7,6 +7,53 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ContaindReleaseDocsTests(unittest.TestCase):
+    def test_current_install_and_staging_commands_select_v021(self):
+        for path in ("README.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
+            text = (ROOT / path).read_text()
+            with self.subTest(path=path):
+                self.assertIn("v0.2.1", text)
+                self.assertIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.1", text)
+                self.assertNotRegex(text, r"(?:--version|-Version) v0\.2\.0\b")
+                self.assertNotIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0", text)
+        for path in ("README.md", "docs/quickstart.md"):
+            text = (ROOT / path).read_text()
+            with self.subTest(path=path):
+                self.assertIn("./setup.sh --version v0.2.1", text)
+                self.assertIn(r".\setup.ps1 -Version v0.2.1", text)
+        for path in ("README.md", "docs/v0.1.36-hotfix.md"):
+            self.assertIn("quickstart.md#upgrading-to-v021", (ROOT / path).read_text())
+
+    def test_patch_upgrade_requires_backup_without_rewriting_v020_history(self):
+        text = " ".join((ROOT / "docs/quickstart.md").read_text().split())
+        current, history = text.split("## Upgrading to v0.2.0", 1)
+        for phrase in ("## Upgrading to v0.2.1", "v0.2.0 → v0.2.1",
+                       "git fetch origin tag v0.2.1", "git checkout --detach v0.2.1",
+                       "requires containd 0.1.40 or later", "containd:latest",
+                       "once that stable release has been promoted",
+                       "**Back up for the v0.2.0 → v0.2.1 update too.**",
+                       "complete persistent `/data`", "does not cross that schema boundary again",
+                       "v0.1.40/docs/mkdocs/update-policy.md",
+                       "v0.1.40/docs/mkdocs/config-format.md",
+                       "./scripts/dev-down.sh", r".\scripts\dev-down.ps1",
+                       "promotes unchanged images", "digests qualify"):
+            self.assertIn(phrase, current)
+        for phrase in ("v0.1.x", "rebuilt all 20 first-party images",
+                       "minimum was 0.1.37", "one-way to 0.1.10",
+                       "matching complete pre-upgrade storage"):
+            self.assertIn(phrase, history)
+        self.assertNotIn("once v0.2.0 is published", text)
+        self.assertNotIn("git checkout --detach v0.2.0", text)
+
+    def test_both_v021_delta_examples_force_include_containd(self):
+        text = (ROOT / "docs/workshop-ssd.md").read_text()
+        command = (
+            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1 \\\n"
+            "  --include-upstream --include containd"
+        )
+        self.assertEqual(text.count(command), 2)
+        self.assertIn("fresh full\nstorage backup is still required", text)
+        self.assertNotIn("This is a future-version example", text)
+
     def test_local_cli_guidance_uses_exit_and_separates_candidate_status(self):
         for path in ("docs/quickstart.md", "docs/api-spec.md"):
             text = " ".join((ROOT / path).read_text().split())
@@ -18,7 +65,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                 self.assertNotRegex(text, r"containd#|Type `shell`|type `shell`")
                 self.assertIn("prompt reads `containd(config)#`", text)
         text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
-        self.assertIn("Current containd 0.1.38:", text)
+        self.assertIn("Current containd 0.1.40:", text)
         self.assertIn("rule edits stage the candidate", text)
 
     def test_lab_guidance_separates_running_proof_and_validation_surfaces(self):
@@ -50,12 +97,12 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         for path in ("README.md", "docs/architecture.md"):
             text = " ".join((ROOT / path).read_text().split())
             with self.subTest(path=path):
-                for phrase in ("requires containd 0.1.37 or later", "stop the lab",
+                for phrase in ("requires containd 0.1.40 or later", "stop the lab",
                                "back up", "one-way", "0.1.10",
                                "containd 0.1.36 cannot read"):
                     self.assertIn(phrase, text)
         text = (ROOT / "docs/architecture.md").read_text()
-        self.assertIn("containd `v0.1.38` git ref", text)
+        self.assertIn("containd `v0.1.40` git ref", text)
 
     def test_source_builds_and_release_guidance_use_current_containd_tag(self):
         for package in ("us-dnp3-substation", "eu-iec104-substation"):
@@ -63,9 +110,9 @@ class ContaindReleaseDocsTests(unittest.TestCase):
             with self.subTest(package=package):
                 self.assertIn(
                     'context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/'
-                    'containd.git#v0.1.38}"', path.read_text())
+                    'containd.git#v0.1.40}"', path.read_text())
         text = " ".join((ROOT / "RELEASING.md").read_text().split())
-        self.assertIn("release tag pinned by the package (`v0.1.38`)", text)
+        self.assertIn("release tag pinned by the package (`v0.1.40`)", text)
 
     def test_upgrade_guides_require_matching_full_storage_and_image(self):
         for path in ("RELEASING.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
@@ -76,11 +123,11 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                                "pre-upgrade", "stop the lab", "older tag",
                                "RangerDanger owns"):
                     self.assertIn(phrase.lower(), text.lower())
-                self.assertRegex(text, r"requires containd 0\.1\.37 or later")
+                self.assertRegex(text, r"requires containd 0\.1\.40 or later")
                 self.assertRegex(text, r"schema.{0,60}0\.1\.10")
                 self.assertRegex(text, r"0\.1\.36 and earlier cannot read")
         workshop = " ".join((ROOT / "docs/workshop-ssd.md").read_text().split()).lower()
-        for phrase in ("requires containd 0.1.37 or later", "schema migrates one-way to 0.1.10",
+        for phrase in ("requires containd 0.1.40 or later", "schema migrates one-way to 0.1.10",
                        "0.1.36 and earlier cannot read", "--include-upstream --include containd",
                        "record the saved image identity", "matching pre-upgrade data",
                        "for arch in amd64 arm64", "docker load -i",
@@ -90,7 +137,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
 
     def test_api_health_distinguishes_liveness_and_operational_diagnostics(self):
         text = (ROOT / "docs/api-spec.md").read_text()
-        self.assertIn("containd 0.1.37 minimum", text)
+        self.assertIn("containd 0.1.40 minimum", text)
         for phrase in ("liveness and diagnostics", "not forwarding readiness",
                        "ipv4Forwarding", "managementBinding.state",
                        "/api/v1/system/management-reservation",
@@ -131,11 +178,21 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                        "The L4 source pin enforces; DPI detects and logs."):
             self.assertIn(phrase, text)
 
+    def test_apply_readiness_uses_committed_revision(self):
+        text = " ".join((ROOT / "docs/api-spec.md").read_text().split())
+        for phrase in ("ready == true", "protectingRevision == commit.runningRevision",
+                       "desiredRevision", "required subsystem", "config`/`render",
+                       "HTTP `502`", "HTTP `503`", "`degraded` is never success",
+                       "No failure causes a recommit", "informational `applyId`"):
+            self.assertIn(phrase, text)
+        for obsolete in ("installedApplyId", "applied-with-warning", "backend apply succeeded"):
+            self.assertNotIn(obsolete, text)
+
     def test_policy_docs_require_candidate_commit_and_preserve_nic_bindings(self):
         text = " ".join((ROOT / "docs/api-spec.md").read_text().split())
         for phrase in ("POST /api/v1/config/candidate", "POST /api/v1/config/commit",
                        "both must succeed", "no legacy `/config/import` fallback",
                        "NIC `device` bindings", "running configuration",
                        "seed readiness", "adoption after a backend restart",
-                       "0.1.37 prerelease"):
+                       "0.1.40 prerelease"):
             self.assertIn(phrase, text)

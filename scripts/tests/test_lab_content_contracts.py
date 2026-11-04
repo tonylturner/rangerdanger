@@ -336,7 +336,7 @@ class ErrataContracts(unittest.TestCase):
         text = path.read_text()
         for phrase in ("How to update", "PowerShell", "full image release",
                        "All 16 first-party images", "`latest` moves", "SSD",
-                       "quickstart.md#upgrading-to-v020", "workshop-ssd.md#delta-staging"):
+                       "quickstart.md#upgrading-to-v021", "workshop-ssd.md#delta-staging"):
             self.assertIn(phrase, text)
         for stale in ("existing v0.1.35 images", "no pull, no rebuild",
                       "Do not run `./setup.sh --version v0.1.36`", "./scripts/apply-repo-update.sh"):
@@ -358,13 +358,13 @@ class ErrataContracts(unittest.TestCase):
 
     def test_release_update_uses_standard_setup_and_delta_paths(self):
         quickstart = (ROOT / "docs/quickstart.md").read_text()
-        for phrase in ("git fetch origin tag v0.2.0", "git checkout --detach v0.2.0",
-                       "./setup.sh --version v0.2.0 --package us-dnp3-substation",
+        for phrase in ("git fetch origin tag v0.2.1", "git checkout --detach v0.2.1",
+                       "./setup.sh --version v0.2.1 --package us-dnp3-substation",
                        "eu-iec104-substation", "PowerShell", "parity",
                        "workshop reset", "DELTA-README.md", "close to a full set"):
             self.assertIn(phrase, quickstart)
         ssd = (ROOT / "docs/workshop-ssd.md").read_text()
-        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0",
+        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.1",
                        "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1",
                        "v0.1.x SSD baseline lacks it", "package Compose metadata",
                        "close to a full set", "[rebuild-all]"):
@@ -748,8 +748,9 @@ class AdvancedTrackContracts(unittest.TestCase):
                        "both ports must be `filtered`", "fix the rule and commit again",
                        "A plan uses its compiled verdict instead"):
             self.assertIn(phrase, flat)
-        self.assertLess(flat.index("TCP 22, 80 and 443"), flat.index("Run `commit`"))
-        self.assertLess(flat.index("Run `commit`"), flat.index("`nmap -Pn -p 3389,5900 10.20.20.10`"))
+        commit = flat.index("commit replacements and removals together")
+        self.assertLess(flat.index("TCP 22, 80 and 443"), commit)
+        self.assertLess(commit, flat.index("`nmap -Pn -p 3389,5900 10.20.20.10`"))
         for index in (3, 4):
             text = " ".join(scenario("firewall-implementation")["steps"][index]["description"].split())
             self.assertNotIn("immediately", text)
@@ -919,7 +920,7 @@ class EstablishedConnectionContracts(unittest.TestCase):
                        "checks handshake admission and inspection from SYN"):
             self.assertIn(phrase, text)
         text = (eu / "eu-containd-policy-enforcement.md").read_text()
-        self.assertIn("blob/v0.1.38/docs/mkdocs/policy-model.md"
+        self.assertIn("blob/v0.1.40/docs/mkdocs/policy-model.md"
                       "#established-connections-and-policy-changes", text)
         self.assertIn("The L4 source pin enforces; DPI detects and logs.", text)
         text = (ROOT / "lab-definitions/packages/us-dnp3-substation/"

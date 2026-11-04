@@ -187,7 +187,8 @@ steps:
       For the Hardened manual target, remove the five broad Weak allows in
       containd. Do not run these deletes to implement a partial plan: its deferred
       allows must stay. Keep management and required operational rules intact.
-      From the fw-1 CLI:
+      Stage these deletes only; do not commit until Phase 3 has staged their
+      operational replacements. From the fw-1 CLI:
 
           delete firewall rule enterprise-to-ot-weak
           delete firewall rule enterprise-to-field-weak
@@ -195,14 +196,11 @@ steps:
           delete firewall rule vendor-to-field-weak
           delete firewall rule ot-to-field-broad
           show diff
-          commit
 
-      Verify that reference closure from Kali:
-
-          mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20
-
-      This manual reference test should time out. For a compiled plan, the
-      enterprise-to-field verdict instead follows its owning action.
+      Do not commit yet. The running Weak rules still carry operations while
+      you build the candidate. In particular, deleting `ot-to-field-broad`
+      without its RTAC replacements would interrupt field polling and the HMI.
+      Continue directly to Phase 3 with this same shared candidate.
       :::
   - id: phase-3-create-minimal-required-rules
     title: "Phase 3 - Create minimal required rules"
@@ -228,7 +226,25 @@ steps:
       `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
       access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
       remain reachable. **Create rule** and **Delete** do not reload the firewall.
-      Run `commit` in the configuration CLI or **Commit** on the **Configuration** page.
+      Keep the Phase 2 deletes staged until all replacements are in this candidate.
+      Before the single commit, verify the Hardened operational rules:
+      `rtac-to-field-modbus`, `rtac-to-field-dnp3` and `rtac-to-field-http`
+      allow source `10.30.30.20/32` on TCP 502, 20000 and 8080 respectively,
+      before `deny-ot-to-field-direct`. Preserve `ot-intrazone-ops` for HMI
+      operations, `gps-to-field-ntp` for `10.30.30.50/32` UDP/123, and the
+      reserved management access. Review the full candidate, not just the deletes.
+      From the fw-1 configuration CLI, commit replacements and removals together:
+
+          show diff
+          commit
+
+      Or use **Commit** on the **Configuration** page after the same review.
+      Verify that reference closure from Kali:
+
+          mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20
+
+      This manual reference test should time out. For a compiled plan, the
+      enterprise-to-field verdict instead follows its owning action.
       After commit, run `nmap -Pn -p 3389,5900 10.20.20.10` from Kali.
       For the manual Hardened target, both ports must be `filtered`; if not,
       fix the rule and commit again. A plan uses its compiled verdict instead.

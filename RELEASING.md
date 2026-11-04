@@ -166,8 +166,8 @@ its release twin; the package lint checks that the two agree.
 ## containd image policy
 
 RangerDanger and [containd](https://github.com/tonylturner/containd)
-are co-developed by the same maintainer. **RangerDanger v0.2.0 requires
-containd 0.1.37 or later**, in release, source and offline modes; there is
+are co-developed by the same maintainer. **This release requires
+containd 0.1.40 or later**, in release, source and offline modes; there is
 no compatibility path for older builds. Release package Compose files
 reference `ghcr.io/tonylturner/containd:latest` rather than a per-release
 pinned tag. A mutable tag is not proof of the minimum version.
@@ -176,10 +176,10 @@ containd defects belong upstream. Do not mask a client defect by downgrading
 below the supported minimum.
 
 Source-mode package builds use the containd release tag pinned by the package
-(`v0.1.38`), or an explicit `CONTAIND_SOURCE` override, not the published
+(`v0.1.40`), or an explicit `CONTAIND_SOURCE` override, not the published
 image. Source-mode success does not certify the release's containd digest.
 The backend checks the minimum version before seeding and before adopting a
-running range after a backend restart; a 0.1.37 prerelease does not qualify.
+running range after a backend restart; a 0.1.40 prerelease does not qualify.
 
 ### Back up before the first 0.1.37 start
 
@@ -200,7 +200,7 @@ directories with their complete matching pre-upgrade backups (do not merge
 old and new database files), restore the old release and image, then restart
 and verify operations. **An older tag or digest alone is not a rollback.**
 Returning to containd 0.1.36 or earlier also requires the older RangerDanger
-release; v0.2.0 requires 0.1.37 or later. Policy import uses candidate+commit
+release; this release requires 0.1.40 or later. Policy import uses candidate+commit
 only, copying running NIC `device` bindings before staging; it does not undo
 a stored-schema migration.
 
@@ -217,7 +217,7 @@ of class can shift behavior under you. **Mitigations for instructors:**
    ```
 
    Save that digest. If anything breaks the morning of class, compare
-   against `:latest`. A known-good digest must still meet the 0.1.37 minimum;
+   against `:latest`. A known-good digest must still meet the 0.1.40 minimum;
    if reverting across the schema migration, restore its matching data backup
    and older RangerDanger release as described above.
 
@@ -237,7 +237,7 @@ of class can shift behavior under you. **Mitigations for instructors:**
    Once staged, the SSD is immutable.
 
 If a workshop scenario demands hard determinism (regulatory audit,
-certified curriculum), pin a known-good `containd:vX.Y.Z` tag (0.1.37 or later) in both
+certified curriculum), pin a known-good `containd:vX.Y.Z` tag (0.1.40 or later) in both
 of the package's range Compose files for that engagement and document the pin in the
 engagement's README. The default `:latest` posture is for the public
 project where currency-of-fixes outweighs frozen-behavior.

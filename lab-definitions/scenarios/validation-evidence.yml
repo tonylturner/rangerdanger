@@ -217,7 +217,7 @@ steps:
       policy you attached is the policy that's loaded. Add an **HMI
       screenshot** (Feeder One-Line, no alarms, customers served) for the
       operational side. Per-rule deny events for each blocked probe are in
-      the [/console](/console) Segmentation drawer's **Live DPI Events**
+      the [/console](/console) Segmentation drawer's **Live Firewall Events**
       strip - correlate each event with its tuple and time. A detection record alone
       is not proof of prevention.
       :::

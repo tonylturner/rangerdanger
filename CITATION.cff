@@ -44,6 +44,6 @@ preferred-citation:
     - family-names: Turner
       given-names: Tony
       affiliation: DefendICS
-  version: "0.2.0"
+  version: "0.2.1"
   year: 2026
   url: "https://github.com/tonylturner/rangerdanger"

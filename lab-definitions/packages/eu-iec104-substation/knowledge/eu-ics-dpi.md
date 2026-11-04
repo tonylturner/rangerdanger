@@ -33,11 +33,16 @@ Type 47 RCS **1 is lower, 2 is raise**; Type 45 mode states instead use **0 manu
 
 ### Optional instructor-led PCAP Analysis — not graded
 
-The instructor demonstrates and does not grade anything in this optional sidebar. Begin with a clean candidate and a classic PCAP covering SYN through an already approved controlled command. In embedded containd **PCAP Analysis**:
+The instructor demonstrates and does not grade anything in this optional sidebar. Begin with a clean candidate and a separate **Ethernet classic PCAP** covering SYN through an already approved controlled command:
 
-Follow **Collect → Generate → Review → Stage**:
+1. In fw-1's Linux terminal, type `exit` if the configuration CLI is open. Run `mkdir -p /data/captures`, then manually run `tcpdump -i lan4 -nn -s 0 -U -w /data/captures/approved-command.pcap 'host 10.60.60.20 and host 10.30.30.20 and tcp port 2404'`. Leave it capturing; do not use the bounded Run button.
+2. Once tcpdump reports it is listening, use a separate cc-1 terminal to run `wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect`. Wait for connect GI. Repeat Lab 2.2's approved CB1 OPEN then CLOSE in the Control Centre; verify fresh feedback, breaker closed and supply restored. Press Ctrl-C in fw-1 only after the command feedback. Capture starts before reconnect so it includes the SYN.
+3. `lan4` is fw-1's named Control Centre interface and writes Ethernet frames. Do not import the baseline `tcpdump -i any` file: it is Linux cooked SLL2 (link type 276), which containd 0.1.40 rejects even though it is classic PCAP.
+4. The portal has no download for this manual file. On the Docker host, the instructor selects `data/eu-iec104-substation/firewall/captures/approved-command.pcap` relative to the install root using the browser's file chooser: this bind-mounted file is the capture above. A source checkout is also an install root. For a browser on another machine, copy the file to that machine first. Viewing the file in a terminal or through eng-ws's read-only mount does not transfer it to the browser. Before any reset, copy the file out of the captures folder: reset deletes captures. Do not assume it appears in **Existing PCAP Files**.
 
-1. Open **Import capture** and import with **Analyze**. Inspect the sealed dataset, capture hash, decoder/profile/snapshot fingerprints, record counts, gaps and expiry. Analyze alone does not generate rules.
+In embedded containd **PCAP Analysis**, follow **Collect → Generate → Review → Stage**:
+
+1. Open **Import capture → Upload & Analyze PCAP**, select the host file above and choose **Analyze**. Inspect the sealed dataset, capture hash, decoder/profile/snapshot fingerprints, record counts, gaps and expiry. Analyze alone does not generate rules.
 2. Explicitly **Generate suggestions**. Expand **Inspect suggestion** and **Checks on saved evidence** for checks, limitations and withheld reasons. Supported state/QU command tuples can certify; **SBO sequences, setpoint values/QL and bitstrings remain withheld**. Monitoring ASDUs/startup do not become command ALLOWs. Dataset gaps are limitations, not a blanket bar: retained complete eligible parents may certify.
 3. An authenticated administrator must **Review** the exact IEC revision and acknowledge captured wire/NAT scope. Review is approval, not selection, staging or application. Select the reviewed revisions, then **Stage N selected** (where N is the selected revision count) atomically as explicit **`mode: monitor` only**.
 4. Inspect the candidate diff and verify running policy remains unchanged. Certification is bounded evaluator evidence, not permission, delivery proof or universal protocol proof. A staged receipt does not prove an active rule; global enforce cannot override an explicit monitor mode.
@@ -49,4 +54,4 @@ Keep dataset/hash/revision/proof and withheld reasons separate from the 37-row L
 
 Keep applied policy/plan identity, source/destination/service, fresh-session boundary, counter lifetimes, rule-local deltas/events and independent command/device outcomes. Preserve the NFQUEUE forwarding dependency and rollback owner. Neither TCP proof nor decoded capture certifies command prevention. See [acceptance and handover](#eu-acceptance-handover), [established sessions](#eu-established-sessions) and [GI/quality](#iec104-gi-cot-quality).
 
-References: containd [v0.1.38 ICS DPI guide](https://github.com/tonylturner/containd/blob/v0.1.38/docs/mkdocs/ics-dpi.md) (modes, shadow counters, IEC selectors, PCAP Analysis); EU `firewall/improved.json`, `curriculum/plan.yml`, `protocols/points.json`.
+References: containd [v0.1.40 ICS DPI guide](https://github.com/tonylturner/containd/blob/v0.1.40/docs/mkdocs/ics-dpi.md) (modes, shadow counters, IEC selectors, PCAP Analysis); EU `firewall/improved.json`, `curriculum/plan.yml`, `protocols/points.json`.

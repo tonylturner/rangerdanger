@@ -11,18 +11,19 @@ import (
 	"sync"
 )
 
-// NewServer wraps a fake's handlers with the mandatory 0.1.37 write contract.
+// NewServer wraps a fake's handlers with the mandatory 0.1.39 write/readiness contract.
 // Successful empty commits receive a pending RuntimeApplyResponse; the first
-// protection read reports the same application installed and protecting.
+// protection read reports the committed revision ready and protecting.
 func NewServer(handler http.Handler) *httptest.Server {
 	var mu sync.Mutex
 	revision := 1
 	applyID := ""
+	runningRevision := ""
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 		if r.URL.Path == "/api/v1/dataplane/protection" {
-			fmt.Fprintf(w, `{"applyId":%q,"installedApplyId":%q,"state":"protecting"}`, applyID, applyID)
+			fmt.Fprintf(w, `{"ready":true,"protectingRevision":%q,"desiredRevision":%q,"appliedRevision":%q,"state":"protecting","subsystems":[]}`, runningRevision, runningRevision, runningRevision)
 			return
 		}
 		write := r.Method == http.MethodPost && (r.URL.Path == "/api/v1/config/candidate" || r.URL.Path == "/api/v1/config/commit")
@@ -50,8 +51,9 @@ func NewServer(handler http.Handler) *httptest.Server {
 			}
 			if r.URL.Path == "/api/v1/config/commit" && write {
 				applyID = "apply-" + strconv.Itoa(revision)
+				runningRevision = "runtime-" + strconv.Itoa(revision)
 				if rec.Body.Len() == 0 {
-					fmt.Fprintf(rec.Body, `{"status":"ok","applyId":%q,"protection":{"applyId":%q,"state":"pending"}}`, applyID, applyID)
+					fmt.Fprintf(rec.Body, `{"status":"committed","applyId":%q,"runningRevision":%q,"protection":{"ready":false,"desiredRevision":%q,"state":"pending","subsystems":[]}}`, applyID, runningRevision, runningRevision)
 				}
 			}
 		}

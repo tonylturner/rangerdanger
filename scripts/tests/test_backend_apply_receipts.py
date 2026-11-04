@@ -34,11 +34,11 @@ class BackendReceiptConsumers(unittest.TestCase):
             ("degraded", response("degraded"), False),
             ("missing", response("missing"), False),
             ("empty-applyId", {"containd": {"applyId": "", "protection": "protecting"}}, False),
-            ("native-response", {"status": "ok", "applyId": "route-id", "protection": {
-                "applyId": "route-id", "installedApplyId": "route-id", "state": "protecting",
+            ("native-response", {"status": "committed", "runningRevision": "runtime-revision", "applyId": "route-id", "protection": {
+                "ready": True, "protectingRevision": "runtime-revision", "state": "protecting", "subsystems": [],
             }}, False),
             ("nested-native-response", {"containd": {"applyId": "route-id", "protection": {
-                "applyId": "route-id", "installedApplyId": "route-id", "state": "protecting",
+                "ready": True, "protectingRevision": "runtime-revision", "state": "protecting", "subsystems": [],
             }}}, False),
             ("unrelated-protection", {"applyId": "route-id", "protection": "protecting"}, False),
             ("protecting-prefix", response("protecting-later"), False),

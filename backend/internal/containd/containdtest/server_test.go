@@ -46,11 +46,17 @@ func TestRevisionedTransactionFixture(t *testing.T) {
 	stage, _ := request("POST", "/api/v1/config/candidate", read.Get("X-Containd-Revision"), 200)
 	request("POST", "/api/v1/config/commit", read.Get("X-Containd-Revision"), 412)
 	_, commit := request("POST", "/api/v1/config/commit", stage.Get("X-Containd-Revision"), 200)
-	if commit["applyId"] == "" || commit["protection"].(map[string]any)["state"] != "pending" {
+	if commit["status"] != "committed" || commit["runningRevision"] == "" || commit["protection"].(map[string]any)["state"] != "pending" {
 		t.Fatalf("invalid commit: %v", commit)
 	}
 	_, protection := request("GET", "/api/v1/dataplane/protection", "", 200)
-	if protection["applyId"] != commit["applyId"] || protection["installedApplyId"] != commit["applyId"] || protection["state"] != "protecting" {
+	if protection["ready"] != true || protection["protectingRevision"] != commit["runningRevision"] || protection["desiredRevision"] != commit["runningRevision"] || protection["state"] != "protecting" {
 		t.Fatalf("invalid readiness: %v", protection)
+	}
+	if _, ok := protection["subsystems"].([]any); !ok {
+		t.Fatalf("missing subsystems array: %v", protection)
+	}
+	if commit["runningRevision"] == commit["applyId"] || commit["runningRevision"] == stage.Get("X-Containd-Revision") {
+		t.Fatal("fixture conflates revision authorities")
 	}
 }

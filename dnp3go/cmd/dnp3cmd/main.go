@@ -41,6 +41,11 @@ Control mode (default: Direct Operate, FC 0x05):
   -sbo         Select-Before-Operate: Select (FC 0x03) then Operate (FC 0x04)
   -no-ack      Direct Operate, No Acknowledge (FC 0x06): fire-and-forget, no reply
 
+Exit codes:
+  0   Successful operate, or No-Ack request sent (execution unconfirmed)
+  1   Invalid usage
+  2   Control failed: transport error/timeout, rejected control or missing status
+
 Examples:
   dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip
   dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
@@ -116,14 +121,18 @@ func main() {
 		usage()
 	}
 
+	var success bool
 	switch cmdArgs[0] {
 	case "crob":
-		doCROB(endpoint, uint16(outstationAddr), uint16(masterAddr), mode, cmdArgs[1:])
+		success = doCROB(endpoint, uint16(outstationAddr), uint16(masterAddr), mode, cmdArgs[1:])
 	case "analog":
-		doAnalog(endpoint, uint16(outstationAddr), uint16(masterAddr), mode, cmdArgs[1:])
+		success = doAnalog(endpoint, uint16(outstationAddr), uint16(masterAddr), mode, cmdArgs[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s (use 'crob' or 'analog')\n", cmdArgs[0])
 		os.Exit(1)
+	}
+	if !success {
+		os.Exit(2)
 	}
 }
 
@@ -147,7 +156,7 @@ func modeLabel(mode controlMode) string {
 	}
 }
 
-func doCROB(endpoint string, outAddr, masterAddr uint16, mode controlMode, args []string) {
+func doCROB(endpoint string, outAddr, masterAddr uint16, mode controlMode, args []string) bool {
 	if len(args) < 2 {
 		fmt.Fprintf(os.Stderr, "Usage: dnp3cmd <host:port> -a <addr> crob <index> <trip|close|latch-on|latch-off>\n")
 		os.Exit(1)
@@ -171,11 +180,12 @@ func doCROB(endpoint string, outAddr, masterAddr uint16, mode controlMode, args 
 	build := func(funcCode, seq uint8) []byte {
 		return buildCROBAPDU(funcCode, seq, uint8(index), cc)
 	}
-	resp := runControl(endpoint, outAddr, masterAddr, mode, build)
+	resp, success := runControl(endpoint, outAddr, masterAddr, mode, build)
 	fmt.Printf("  Result: %s\n", resp)
+	return success
 }
 
-func doAnalog(endpoint string, outAddr, masterAddr uint16, mode controlMode, args []string) {
+func doAnalog(endpoint string, outAddr, masterAddr uint16, mode controlMode, args []string) bool {
 	if len(args) < 2 {
 		fmt.Fprintf(os.Stderr, "Usage: dnp3cmd <host:port> -a <addr> analog <index> <value>\n")
 		os.Exit(1)
@@ -199,8 +209,9 @@ func doAnalog(endpoint string, outAddr, masterAddr uint16, mode controlMode, arg
 	build := func(funcCode, seq uint8) []byte {
 		return buildAnalogAPDU(funcCode, seq, uint8(index), float32(value))
 	}
-	resp := runControl(endpoint, outAddr, masterAddr, mode, build)
+	resp, success := runControl(endpoint, outAddr, masterAddr, mode, build)
 	fmt.Printf("  Result: %s\n", resp)
+	return success
 }
 
 // appControl returns an application control byte (FIR=1, FIN=1) carrying the
@@ -253,8 +264,9 @@ type buildAPDU func(funcCode, seq uint8) []byte
 //   - Direct Operate No Ack (FC 0x06): one request, no response expected.
 //   - Select-Before-Operate: Select (FC 0x03) then Operate (FC 0x04), each
 //     with its own response; the Operate response carries the final status.
-func runControl(endpoint string, outAddr, masterAddr uint16, mode controlMode, build buildAPDU) string {
+func runControl(endpoint string, outAddr, masterAddr uint16, mode controlMode, build buildAPDU) (string, bool) {
 	var response string
+	var success bool
 	err := dnp3go.WithMasterConnection(endpoint, 3*time.Second, func(conn net.Conn) error {
 		switch mode {
 		case modeDirectNoAck:
@@ -263,6 +275,7 @@ func runControl(endpoint string, outAddr, masterAddr uint16, mode controlMode, b
 			}
 			// No reply is expected for FC 0x06.
 			response = "SENT (no acknowledgement requested)"
+			success = true
 
 		case modeSelectOperate:
 			// Select (FC 0x03), app sequence 0.
@@ -286,6 +299,7 @@ func runControl(endpoint string, outAddr, masterAddr uint16, mode controlMode, b
 				return fmt.Errorf("operate: %w", err)
 			}
 			response = statusText(opStatus)
+			success = opStatus == statusSuccess
 
 		default: // modeDirectOperate
 			if err := writeAPDU(conn, outAddr, masterAddr, 0, build(dnp3go.FCDirectOperate, 0)); err != nil {
@@ -296,13 +310,14 @@ func runControl(endpoint string, outAddr, masterAddr uint16, mode controlMode, b
 				return err
 			}
 			response = statusText(status)
+			success = status == statusSuccess
 		}
 		return nil
 	})
 	if err != nil {
-		return fmt.Sprintf("FAILED: %v", err)
+		return fmt.Sprintf("FAILED: %v", err), false
 	}
-	return response
+	return response, success
 }
 
 // writeAPDU wraps an APDU in transport+link layers and sends it.
@@ -369,7 +384,7 @@ func statusText(s controlStatus) string {
 	case statusSuccess:
 		return "SUCCESS"
 	case statusNoResponse:
-		return "OK (response received, no status object)"
+		return "FAILED: response received without control status"
 	case statusOutstaErr:
 		return fmt.Sprintf("OUTSTATION ERROR: IIN=0x%04X", lastIIN)
 	case 0x07:

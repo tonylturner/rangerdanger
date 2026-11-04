@@ -18,7 +18,7 @@ const report: ValidationReport = {
   },
   active_config: "custom",
   policy_source: "manual-custom",
-  pcap_path: "/captures/validation.pcap",
+  pcap_path: "data/firewall/captures/validation-20261018T120000Z.pcap",
   policy_hash: "sha256:" + "abcdef0123456789".repeat(4),
   window_start: "2026-10-18T08:00:00-04:00",
   window_end: "2026-10-18T08:00:09-04:00",
@@ -33,7 +33,7 @@ async function generate(answer: ValidationReport) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
   render(<ValidationReportPanel expectations={US_PLANS[0].expectations} />);
   fireEvent.click(screen.getByRole("button", { name: "Generate Validation Report" }));
-  await screen.findByText(answer.markdown);
+  await screen.findByRole("button", { name: "Re-run report" });
 }
 
 function text() {
@@ -41,6 +41,29 @@ function text() {
 }
 
 describe("validation proof metadata", () => {
+  it.each([
+    "data/firewall/captures/validation-20261018T120000Z.pcap",
+    "data/eu-iec104-substation/firewall/captures/validation-20261018T120000Z.pcap",
+  ])("labels the host PCAP path without linking it: %s", async (pcap_path) => {
+    await generate({ ...report, pcap_path });
+    expect(text()).toContain("PCAP path (relative to the install root):");
+    expect(screen.getByText(pcap_path).closest("a")).toBeNull();
+    expect(text()).toContain("Copy the PCAP out of the captures folder before any reset; reset deletes captures.");
+  });
+
+  it("downloads exactly the markdown shown, including Unicode and reserved characters", async () => {
+    const markdown = "Evidence → CB1\n\n# Policy & captures: 100%";
+    await generate({ ...report, markdown });
+    const link = screen.getByRole("link", { name: "Download markdown" });
+    expect(link.getAttribute("download")).toBe("validation-report.md");
+    expect(link.getAttribute("href")).toBe(`data:text/markdown;charset=utf-8,${encodeURIComponent(markdown)}`);
+  });
+
+  it("offers no report download before generation", () => {
+    render(<ValidationReportPanel />);
+    expect(screen.queryByRole("link", { name: "Download markdown" })).toBeNull();
+  });
+
   it("shows the full hash in mono and the proof window in UTC", async () => {
     await generate(report);
     const hash = document.querySelector("code")!;
