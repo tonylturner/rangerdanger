@@ -130,7 +130,7 @@ def point_map(subnet, profile="feeder-status-v1"):
     """Small real app profile, not a modified C implementation.
 
     Analog inventory retains the fixture's constant float registers and real
-    cyclic timers. Full 42-point acceptance remains in check/run.sh.
+    cyclic timers. Full 44-point acceptance remains in check/run.sh.
     """
     data = load(CHECK / "points.test.json")
     prefix = str(ipaddress.ip_network(subnet).network_address).rsplit(".", 1)[0]

@@ -14,10 +14,12 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// Snapshots include intentional catalog/first-match prose, presentation-data
 	// removal, readiness-driven budgets, per-command source headers, and EU
 	// probes without host discovery, commit-time established-flow re-evaluation,
-	// and containd 0.1.38 configuration-CLI and review navigation.
+	// containd 0.1.38 configuration-CLI and review navigation, and breaker
+	// lockout telemetry in the EU acceptance inventory, and the EU portal's
+	// valid/quality-flag wording (without changing protocol acceptance).
 	for id, want := range map[string]string{
 		"us-dnp3-substation":   "a80eaaebbc5e344ffb7ac3d9e683f662ed7502e4e4d2f65e41b1006a512cf745",
-		"eu-iec104-substation": "e1e21902fe69aa64bf9a9816b6c177b34c8cf569d881340a967c0a55508421d8",
+		"eu-iec104-substation": "615d2a5437183c54c0d7386f473a56dbc993426c8609530c22768ab442ab5532",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

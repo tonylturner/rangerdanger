@@ -118,7 +118,7 @@ listeners per container; unchanged defaults are only suitable for CB1:
 `DEVICE_ZONES` is a comma-separated `name=IPv4-CIDR` map for audit attribution;
 it defaults to `field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24`.
 F2 owns its 400 A / 1000 ms / 2000 A protection and
-provides four indications, no IEC 104 command. Its generic Modbus writes
+provides five indications, no IEC 104 command. Its generic Modbus writes
 remain available to permitted field clients. Process reset does not reset F2.
 
 Unknown peers remain `unknown`; attribution is not authorization.
@@ -198,7 +198,7 @@ The EU PLC publishes configured 20.4 kV / 10 per-mille / 30 s at holding
 1025–1027. Its thresholds derive from setpoint and deadband (20.196–20.604 kV),
 and timer PT derives from the configured delay. Countdown is internal only.
 The image build compiles the ST, and startup checks all three settings.
-CC state is schema 3 with 42 points; each point carries its source `device`
+CC state is schema 3 with 44 points; each point carries its source `device`
 and nullable voltage `limits`. The point-map configuration itself remains
 schema 2 (not a state or measurement surface).
 
@@ -229,7 +229,7 @@ RANGERDANGER_API=http://127.0.0.1:8088 bash scripts/eu-state-smoke.sh
 ```
 
 Rebuild the range with the fifth device, `f2-breaker`, before running it.
-All 42 IEC indications must be present; F2 position/trip/current/MW must be
+All 44 IEC indications must be present; F2 position/trip/lockout/current/MW must be
 fresh and agree with the independent device/model observations. Both pages'
 SCADA banners must stay `ok` in steady states, including zero-power PF marked
 `measurement_invalid`; the CC summary reports that uncertainty separately.

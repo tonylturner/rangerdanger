@@ -45,17 +45,19 @@ func TestEUF2IndicationContract(t *testing.T) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatal(err)
 	}
-	if len(config.Devices) != 6 || len(config.Points) != 42 || len(config.Commands) != 5 {
+	if len(config.Devices) != 6 || len(config.Points) != 44 || len(config.Commands) != 5 {
 		t.Fatalf("sources/points/commands = %d/%d/%d", len(config.Devices), len(config.Points), len(config.Commands))
 	}
 	want := map[string]point{
+		"feeder-lockout":     {ID: "feeder-lockout", IOA: 1003, ASDU: "M_SP_TB_1", Kind: "single-point", Source: source{"feeder-breaker", "input", 1, "bit", 1}},
+		"f2-lockout":         {ID: "f2-lockout", IOA: 1503, ASDU: "M_SP_TB_1", Kind: "single-point", Source: source{"f2-breaker", "input", 1, "bit", 1}},
 		"f2-position":        {ID: "f2-position", IOA: 1501, ASDU: "M_DP_TB_1", Kind: "double-point", Source: source{"f2-breaker", "input", 0, "dp", 0}},
 		"f2-protection-trip": {ID: "f2-protection-trip", IOA: 1502, ASDU: "M_SP_TB_1", Kind: "single-point", Source: source{"f2-breaker", "input", 1, "bit", 3}},
 		"f2-current":         {ID: "f2-current", IOA: 2501, ASDU: "M_ME_NC_1", Kind: "float", CyclicMS: 10000, Deadband: 2, Measurement: true, Source: source{"f2-breaker", "input", 3, "f32", 0}},
 		"f2-p-mw":            {ID: "f2-p-mw", IOA: 2502, ASDU: "M_ME_NC_1", Kind: "float", CyclicMS: 10000, Deadband: .05, Measurement: true, Source: source{"f2-breaker", "input", 11, "f32", 0}},
 	}
 	for _, p := range config.Points {
-		if p.Source.Device != "f2-breaker" {
+		if p.Source.Device != "f2-breaker" && p.ID != "feeder-lockout" {
 			continue
 		}
 		if expected, ok := want[p.ID]; !ok || p != expected {

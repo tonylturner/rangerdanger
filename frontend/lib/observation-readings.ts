@@ -1,5 +1,5 @@
 import type { DeviceState, FieldState, OperatorPoint, PointValue } from "./operator-api";
-import { formatPointValue, pointCondition, qualityFlags } from "./operator-format";
+import { formatPointValue, pointCondition, pointQualityText, qualityFlags } from "./operator-format";
 
 export type Reading = {
   value: PointValue | undefined;
@@ -18,8 +18,9 @@ export function controlCentreObservations(points: OperatorPoint[], unavailable =
     const condition = !p || p.value === null ? "unknown" : pointCondition(p) === "good" ? "good" : "stale";
     const flags = p ? qualityFlags(p.quality) : [];
     const transient = typeof p?.value === "object" && p.value !== null ? p.value.transient : false;
-    const shortText = `${p ? formatPointValue(id, p.value, p.quality) : "unknown"} · ${condition.toUpperCase()}${flags.length ? ` · ${flags.join(" ")}` : ""}`;
-    const text = `${shortText}${p?.stale_reason ? ` · ${p.stale_reason}` : ""}${unavailable ? " · cached snapshot · CC API unavailable" : ""}`;
+    const quality = pointQualityText(p);
+    const shortText = `${p ? formatPointValue(id, p.value, p.quality) : "unknown"}${quality ? ` · ${quality}` : ""}`;
+    const text = `${shortText}${unavailable ? " · cached snapshot · CC API unavailable" : ""}`;
     return { value: p?.value, condition, text, shortText, transient, flags, staleReason: p?.stale_reason };
   };
 }
@@ -28,8 +29,10 @@ type Mapping = { device: string; value: (d: DeviceState) => PointValue; measurem
 export const PHYSICAL_POINTS: Record<string, Mapping> = {
   "feeder-breaker-position": { device: "breaker-1", value: (d) => d.kind === "breaker" ? d.position : null },
   "feeder-protection-trip": { device: "breaker-1", value: (d) => d.kind === "breaker" ? d.protection_tripped : null },
+  "feeder-lockout": { device: "breaker-1", value: (d) => d.kind === "breaker" ? d.lockout : null },
   "f2-position": { device: "f2-breaker", value: (d) => d.kind === "breaker" ? d.position : null },
   "f2-protection-trip": { device: "f2-breaker", value: (d) => d.kind === "breaker" ? d.protection_tripped : null },
+  "f2-lockout": { device: "f2-breaker", value: (d) => d.kind === "breaker" ? d.lockout : null },
   "f2-current": { device: "f2-breaker", measurement: true, value: (d) => d.measurements.current_a },
   "f2-p-mw": { device: "f2-breaker", measurement: true, value: (d) => d.measurements.p_mw },
   "oltc-1-tap": { device: "oltc-1", value: (d) => d.kind === "oltc" ? { value: d.tap, transient: d.moving } : null },
@@ -68,7 +71,8 @@ export function physicalSystemObservations(field: FieldState, unavailable = fals
     const condition = value === null || value === undefined ? "unknown" : invalid || stale ? "stale" : "good";
     const staleReason = unavailable ? "field API unavailable · retained snapshot" : invalid ? "measurements invalid · last values, not current" : stale ? "device input stale" : null;
     const transient = typeof value === "object" && value !== null ? value.transient : false;
-    const shortText = `${value === null || value === undefined ? "unknown" : formatPointValue(id, value)} · ${invalid ? "INVALID" : condition.toUpperCase()} · sim`;
-    return { value, condition, shortText, text: `${shortText}${staleReason ? ` · ${staleReason}` : ""}`, flags: [], staleReason, transient };
+    const quality = condition === "good" ? "" : `${condition === "unknown" ? "" : ` · ${invalid ? "INVALID" : "STALE"}`}${staleReason ? ` (${staleReason})` : ""}`;
+    const shortText = `${value === null || value === undefined ? "UNKNOWN" : formatPointValue(id, value)}${quality} · sim`;
+    return { value, condition, shortText, text: shortText, flags: [], staleReason, transient };
   };
 }

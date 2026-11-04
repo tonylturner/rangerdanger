@@ -18,7 +18,7 @@ function render(workshop: boolean, state = FEEDER_STATE) {
   client.setQueryData(["operator", "state"], state);
   client.setQueryData(WORKSHOP_STATUS_KEY, { control_centre: { link: "started", gi: "complete" }, firewall_online: true, firewall_config: "improved" });
   client.setQueryData(["historian", "points"], state.points);
-  client.setQueryData(["historian", "trend", "oltc-1-bus-kv"], { samples: overviewHistory, events: [], window: { since: "2026-10-15T09:45:10Z", until: "2026-10-15T10:00:10Z" } });
+  client.setQueryData(["historian", "trend", "section-voltage"], { histories: ["rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-source-kv"].map((point) => ({ ...overviewHistory, point })), events: [], window: { since: "2026-10-15T09:45:10Z", until: "2026-10-15T10:00:10Z" } });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}><RangeProvider><RangeScope>{workshop ? <EuWorkshopStatus title="EU" /> : <EuDashboard title="EU" />}</RangeScope></RangeProvider></QueryClientProvider>);
   client.clear();
   return html;
@@ -36,21 +36,22 @@ describe("EU overview and workshop comms", () => {
   it.each([false, true])("shows source-device comms in workshop=%s", (workshop) => {
     const html = render(workshop);
     expect(html).toContain('aria-label="Device comms health"');
-    for (const device of ["feeder-breaker", "rmu-1", "rmu-2", "oltc-1", "plc-1"]) expect(html).toContain(`<dt class="text-slate-400">${device}</dt><dd class="text-slate-200">ok</dd>`);
+    for (const device of ["feeder-breaker", "rmu-1", "rmu-2", "oltc-1", "plc-1"]) expect(html).toContain(`<dt class="text-slate-400">${device}</dt><dd class="text-slate-200">reporting</dd>`);
     expect(render(workshop, LOST_LINK_STATE)).toContain("link down");
   });
   it("offers only historian bus and section voltage signals on Overview", () => {
     const html = render(false);
     const select = html.match(/<select[^>]*>(.*?)<\/select>/)?.[1];
-    expect(select).toBeDefined();
+    expect(select).toContain('value="section-voltage" selected=""');
+    for (const id of ["rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-source-kv"]) expect(html).toContain(`data-history-run="${id}"`);
     for (const id of ["oltc-1-bus-kv", "feeder-voltage", "rmu-1-section-kv", "rmu-2-section-kv"]) expect(select).toContain(`value="${id}"`);
     expect(select).not.toContain('value="feeder-current"');
-    expect(html).toContain("Voltage trend · bus and sections");
+    expect(html).toContain("Voltage trend · sections S1/S2/S3");
   });
   it("shows five overview snapshots with the 30-row expansion control", () => {
     const html = render(false);
     expect(html.match(/<tbody>[\s\S]*?<\/tbody>/)?.[0].match(/<tr /g)).toHaveLength(5);
-    expect(html).toContain("Latest 5 snapshots, newest first · full timestamps in UTC");
+    expect(html).toContain("S2 snapshots · RMU1 section VT (same S2 bus measured at RMU2) · Latest 5 snapshots, newest first · full timestamps in UTC");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("Show last 30");
   });

@@ -4,7 +4,7 @@ A historian preserves observations for later analysis. That does not make it an 
 
 The range's `historian-1` sits at `10.70.70.40` in the Operations DMZ, firewall zone `lan5`. The CC pushes its schema-3 state once per second and for every applied timed report to `POST /api/ingest` on TCP/8081, binding its source to `10.60.60.20`. This 1 Hz publication is independent of IEC 104 reporting: status can remain quiet, floats are cyclic at 10/60 seconds and GI normally runs every 15 minutes. Repeated ingestion does not advance a point’s CC receipt time. A timed snapshot is rendered before a following untimed GI can clear its source tag. Pushes have a 500 ms total timeout and one in flight. A bounded queue holds at most 16 pending snapshots; overflow drops the oldest and increments CC health's `historian.dropped_snapshots`. Failed pushes are dropped, never replayed. Historian failure must not block IEC 104 processing.
 
-Read listeners are separate: `10.70.70.40:8080` and management `10.99.99.40:8080`. They expose GET points, history, events and health only; neither serves ingestion. The historian never polls the CC, field devices or process, never sends a command, and has no write-back path into OT.
+Read listeners are separate: `10.70.70.40:8080` and management `10.99.99.40:8080`. They expose GET points, history and health only; neither serves ingestion. The historian never polls the CC, field devices or process, never sends a command, and has no write-back path into OT.
 
 The Network console calls CC→historian **Archive ingestion** and enterprise→historian **Archive reading**. Its arrows identify the connection initiator, not all information direction: an enterprise read receives archived observations in the response. A live ingest path does not certify current field observations or permission for a different listener; see [telecontrol roles](#eu-telecontrol-architecture) and [authorization evidence](#eu-port-source-boundary).
 
@@ -23,6 +23,12 @@ The in-memory ring holds 7201 snapshots, covering a full two-hour interval at 1 
 From an allowed enterprise source, `GET http://10.70.70.40:8080/api/points` lists retained points and their latest samples. History requires `point`, `since` and `until`, each exactly once, with UTC RFC3339 timestamps. For example, choose `point=oltc-1-tap` and a window spanning the exercise. The bounds are inclusive **ingestion times**, not source-event times.
 
 The portal relays `GET /api/historian/points` and `/api/historian/history` through the management read listener. That convenience does not prove the enterprise-to-DMZ firewall rule; test that conduit from the enterprise source separately. Correlate the trend with [CC state and journals](#eu-rtu-control-centre-apis), physical evidence and [evidence lifecycle](#eu-evidence-lifecycle).
+
+### Portal presentation
+
+Overview defaults to the S1/S2/S3 section-voltage chart, not the T1 bus alone. S2 uses RMU1 section VT; RMU2 section VT measures the same S2 bus and remains individually selectable. The snapshot table is explicitly S2 in this default view.
+
+The sample table preserves quality flags and stale reasons (or says **no flags**); Points and faceplates elsewhere call normal data quality **valid** without appending GOOD to each value. Valid data and healthy archive ingestion do not establish healthy plant. Epoch changes, gaps and unusable or transient samples break plotted lines rather than becoming zero voltage.
 
 Trend dots and the newest-first event list show major status changes from the same DMZ archive, via `/api/historian/events`, not live CC journal reads. Hover, focus or tap a dot for its UTC ingest time and before/after values. Settled tap changes collapse movement into one event; PLC input-valid flicker is not a marker. Hover, focus or tap a line break (or expand “Why the line breaks”) for the observed invalid/stale interval and reason. Nearby events are time correlations, not proof of cause. Amber ingest-gap bands still mean feed silence, not invalid measurements. Missing baselines, quality outages, epoch changes and ingest gaps prevent invented status transitions.
 

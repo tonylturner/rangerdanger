@@ -77,7 +77,7 @@ describe("history integrity", () => {
   });
   it("keeps all major event families but excludes input-valid and tap-limit noise", () => {
     const event = { at: historySample(1).ingested_at, from: false, to: true, quality: historySample(1).quality };
-    const ids = ["oltc-1-tap", "oltc-1-auto", "oltc-1-remote", "oltc-1-blocked", "oltc-1-overcurrent-block", "plc-1-running", "feeder-breaker-position", "f2-position", "rmu-1-position", "rmu-2-position", "feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage"];
+    const ids = ["oltc-1-tap", "oltc-1-auto", "oltc-1-remote", "oltc-1-blocked", "oltc-1-overcurrent-block", "plc-1-running", "feeder-breaker-position", "f2-position", "rmu-1-position", "rmu-2-position", "feeder-protection-trip", "f2-protection-trip", "feeder-lockout", "f2-lockout", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage"];
     expect(majorHistorianEvents([...ids, "plc-1-input-valid", "oltc-1-at-lower", "oltc-1-at-upper"].map((point) => ({ ...event, point }))).map((e) => e.point)).toEqual(ids);
   });
 });

@@ -148,8 +148,8 @@ func TestTopologyFlowsShippedInventory(t *testing.T) {
 			}
 			wantLiveness := map[string]LivenessBinding{
 				"cc-rtu":               {Provider: "operator-link"},
-				"rtu-breaker":          {Provider: "operator-device", Points: []string{"feeder-breaker-position", "feeder-protection-trip"}},
-				"rtu-f2-breaker":       {Provider: "operator-device", Points: []string{"f2-position", "f2-protection-trip"}},
+				"rtu-breaker":          {Provider: "operator-device", Points: []string{"feeder-breaker-position", "feeder-protection-trip", "feeder-lockout"}},
+				"rtu-f2-breaker":       {Provider: "operator-device", Points: []string{"f2-position", "f2-protection-trip", "f2-lockout"}},
 				"station-clock":        {Provider: "unobserved"},
 				"attacker-rtu":         {Provider: "session-presence", Transport: "tcp"},
 				"rtu-rmu-1":            {Provider: "operator-device", Points: []string{"rmu-1-position", "rmu-1-fault-passage"}},

@@ -69,7 +69,7 @@ export function historyRuns(history: History): HistorySample[][] {
 const MAJOR_STATUS = new Set([
   "oltc-1-tap", "oltc-1-auto", "oltc-1-remote", "oltc-1-blocked", "oltc-1-overcurrent-block",
   "plc-1-running", "feeder-breaker-position", "f2-position", "rmu-1-position", "rmu-2-position",
-  "feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth",
+  "feeder-protection-trip", "f2-protection-trip", "feeder-lockout", "f2-lockout", "rmu-1-earth", "rmu-2-earth",
   "rmu-1-fault-passage", "rmu-2-fault-passage",
 ]);
 export function majorHistorianEvents(events: HistorianEvent[]): HistorianEvent[] {

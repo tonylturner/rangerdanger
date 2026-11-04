@@ -1819,7 +1819,9 @@
         "f2-position",
         "f2-protection-trip",
         "f2-current",
-        "f2-p-mw"
+        "f2-p-mw",
+        "feeder-lockout",
+        "f2-lockout"
       ]
     }
   }

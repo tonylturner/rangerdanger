@@ -24,8 +24,8 @@ export function ControlCentrePane({ state, journal, journalError, now, initialTa
     </div>
     <div role="tabpanel" id={`cc-pane-${tab}`} aria-labelledby={`cc-tab-${tab}`} className="min-w-0">
       {tab === "Alarms" && <div className="space-y-3 text-sm">
-        <p className="text-slate-400">Derived from GOOD-quality indications only. No acknowledgement. Bad quality is uncertainty, not a process alarm.</p>
-        {alarms.length ? <ul className="divide-y divide-slate-800 text-amber-200">{alarms.map((a) => <li key={a.id} className="py-2">⚠ {a.text}</li>)}</ul> : <p className="text-slate-200">No active alarms in received GOOD indications.</p>}
+        <p className="text-slate-400">Derived from valid-quality indications only. No acknowledgement. Bad quality is uncertainty, not a process alarm.</p>
+        {alarms.length ? <ul className="divide-y divide-slate-800 text-amber-200">{alarms.map((a) => <li key={a.id} className="py-2">⚠ {a.text}</li>)}</ul> : <p className="text-slate-200">No active alarms in received valid indications.</p>}
         <button className="rounded-sm border border-slate-600 px-3 py-2 text-slate-200 focus-visible:outline-solid focus-visible:outline-sky-400" onClick={() => { setFilter("bad quality"); setTab("Points"); }}>{bad.length} {bad.length === 1 ? "point" : "points"} with bad quality · open Points</button>
       </div>}
       {tab === "Events" && <>{journalError ? <p role="alert" className="mb-3 text-xs text-amber-300">Journal unavailable: {errorMessage(journalError)}. {journal ? "Showing cached events, not a live journal." : "No journal received."}</p> : null}{journal || !journalError ? <ControlCentreJournal journal={journal} /> : null}</>}

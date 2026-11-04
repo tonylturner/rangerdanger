@@ -2,6 +2,7 @@ import type { DeviceState, FieldState } from "../lib/operator-api";
 import { formatUtcTime } from "../lib/operator-format";
 import type { DeviceId } from "../lib/operator-workstation";
 import { ACTION, EQUIPMENT, Group, PANEL, Row, num, position, yesNo } from "./physical-system-parts";
+import { PhysicalEquipmentControls } from "./physical-system-controls";
 
 export function ProtectionDiagnostics({ device: d }: { device: DeviceState }) {
   return <>
@@ -42,6 +43,7 @@ export function EquipmentCard({ id, title, device: d, open, onToggle, stale }: {
       <div className="my-1 text-xs font-mono text-slate-300">{d.kind === "oltc" ? `Bus ${num(m.voltage_kv_ll, 2, "kV")}` : `I ${num(m.current_a, 1, "A")} · ${d.kind === "breaker" ? `P ${num(m.p_mw, 2, "MW")}` : `Section ${num(m.voltage_kv_ll, 2, "kV")}`}`}</div>
       <p className="text-xs text-slate-300">{d.kind === "breaker" ? `Protection ${d.protection_tripped ? "TRIPPED" : d.protection.picked_up ? "picked up" : "normal"}${d.lockout ? " · LOCKOUT" : ""}` : d.kind === "rmu" ? `FPI ${d.fault_passage ? "LATCHED" : "clear"} · Earth ${d.earth_closed ? "CLOSED" : "open"}` : `Control authority ${d.remote_enabled ? "REMOTE" : "LOCAL"}`}</p>
       <p className={`mt-1 text-xs ${!m.valid || stale ? "text-amber-300" : "text-slate-400"}`}>{!m.valid ? "INVALID · retained measurements" : stale ? "STALE · retained measurements" : "Measurements valid · sim"}</p>
+      <PhysicalEquipmentControls id={id} device={d} unavailable={stale} />
       {open && <div id={`physical-details-${id}`} className="grid gap-x-5 sm:grid-cols-2">
         <Group title="Electrical">
           <Row label="Current">{num(m.current_a, 1, "A")}</Row>
@@ -76,6 +78,6 @@ export function EquipmentCard({ id, title, device: d, open, onToggle, stale }: {
 export function PhysicalEquipment({ field, expanded, onToggle, unavailable }: { field: FieldState; expanded: Record<string, boolean>; onToggle: (id: DeviceId) => void; unavailable: boolean }) {
   return <section aria-label="Equipment overview" className="space-y-3">
     <h2 className="text-sm font-semibold text-slate-200">Equipment overview</h2>
-    <div className="grid min-w-0 gap-3 lg:grid-cols-2">{EQUIPMENT.map(({ id, key, title }) => <EquipmentCard key={id} id={id} title={title} device={field.devices[key]} open={!!expanded[id]} onToggle={() => onToggle(id)} stale={unavailable || field.process.truth_stale} />)}</div>
+    <div className="grid min-w-0 gap-3 lg:grid-cols-2">{EQUIPMENT.map(({ id, key, title }) => <EquipmentCard key={id} id={id} title={id === "F2" ? "F2 — Alternative feeder" : title} device={field.devices[key]} open={!!expanded[id]} onToggle={() => onToggle(id)} stale={unavailable || field.process.truth_stale} />)}</div>
   </section>;
 }

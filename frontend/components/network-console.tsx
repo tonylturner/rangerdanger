@@ -285,7 +285,7 @@ export function NetworkConsole() {
                 ok={workshopStatus.control_centre.link === "started"}
                 label={`Control centre ${controlCentreLinkText(workshopStatus.control_centre)}`}
                 tooltipTitle="Supervisory control"
-                tooltipBody="The CC→RTU TCP/2404 session carries spontaneous status events, cyclic/deadband measurands and commands. GI runs on connect, every 15 minutes or via Interrogate station. Quiet GOOD status does not expire; link loss marks retained values stale."
+                tooltipBody="The CC→RTU TCP/2404 session carries spontaneous status events, cyclic/deadband measurands and commands. GI runs on connect, every 15 minutes or via Interrogate station. Quiet valid status does not expire; link loss marks retained values stale."
               />
             )}
             <PolicyBadge activeConfig={workshopStatus.firewall_config} />

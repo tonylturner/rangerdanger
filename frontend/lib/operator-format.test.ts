@@ -14,6 +14,7 @@ import {
   pointCondition,
   pointLabel,
   qualityFlags,
+  qualityDefinition,
   staleReasonText,
   telemetrySummary,
   telemetryText,
@@ -25,6 +26,11 @@ describe("point condition and value", () => {
     expect(formatPointValue("feeder-breaker-position", "closed")).toBe("CLOSED");
     expect(formatPointValue("feeder-protection-trip", true)).toBe("TRIPPED");
     expect(formatPointValue("feeder-protection-trip", false)).toBe("NORMAL");
+    for (const id of ["feeder-lockout", "f2-lockout"]) {
+      expect(formatPointValue(id, true)).toBe("LOCKED OUT");
+      expect(formatPointValue(id, false)).toBe("NORMAL");
+      expect(formatPointValue(id, null)).toBe("not received");
+    }
     expect(formatPointValue("feeder-current", 28.93)).toBe("28.9 A");
     expect(formatPointValue("feeder-voltage", 19.94)).toBe("19.94 kV");
     expect(formatPointValue("other", true)).toBe("ON");
@@ -76,8 +82,8 @@ describe("point condition and value", () => {
   });
 
   it("summarises telemetry", () => {
-    expect(telemetryText(telemetrySummary(FRESH_POINTS))).toBe("4/4 good");
-    expect(telemetryText(telemetrySummary(STALE_STATE.points))).toBe("0/4 good · 4 STALE");
+    expect(telemetryText(telemetrySummary(FRESH_POINTS))).toBe("4/4 valid");
+    expect(telemetryText(telemetrySummary(STALE_STATE.points))).toBe("0/4 valid · 4 STALE");
   });
 });
 
@@ -120,11 +126,11 @@ describe("journalSummary", () => {
     expect(journalSummary("link_down", { peer: "10.30.30.20:2404", connection_seq: 3, reason: "t1_timeout" })).toBe(
       "Link down #3: nothing received from the RTU for t1 (t1_timeout)",
     );
-    expect(journalSummary("gi_complete", { connection_seq: 4, points_good: 4 })).toContain("4 points good");
+    expect(journalSummary("gi_complete", { connection_seq: 4, points_good: 4 })).toContain("4 points valid");
     expect(journalSummary("point_stale", { point: "feeder-current", stale_reason: "link_lost", value: 28.93 })).toBe(
       "CB1 current STALE (IEC 104 link to the RTU lost), keeps 28.9 A",
     );
-    expect(journalSummary("point_good", { point: "feeder-breaker-position", value: "open" })).toBe("Feeder breaker position good: OPEN");
+    expect(journalSummary("point_good", { point: "feeder-breaker-position", value: "open" })).toBe("Feeder breaker position valid: OPEN");
     expect(
       journalSummary("command", {
         id: "c1", point: "feeder-breaker-command", operation: "open", result: "completed", reason: null,
@@ -149,6 +155,8 @@ describe("journalSummary", () => {
 });
 
 it.each([
+  ["feeder-protection-trip", "CB1 protection trip"],
+  ["feeder-lockout", "CB1 lockout"],
   ["oltc-1-bus-kv", "20 kV busbar (T1 secondary)"],
   ["oltc-1-current", "T1 20 kV terminal current"],
   ["oltc-1-p-mw", "T1 20 kV terminal active power P"],
@@ -188,4 +196,9 @@ it("formats PF IV as an em dash, not the wire zero, without hiding its quality",
   expect(formatPointValue("oltc-1-pf", null)).toBe("—");
   expect(formatPointValue("feeder-pf", 0, { ...q, iv: false })).toBe("0.000");
   expect(qualityFlags(q)).toEqual(["IV"]);
+});
+
+it("uses the valid badge word in its tooltip", () => {
+  expect(qualityDefinition("good")).toContain("valid means no quality flags");
+  expect(qualityDefinition("good")).not.toContain("GOOD");
 });

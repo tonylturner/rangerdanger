@@ -30,11 +30,13 @@ type PointMeta = {
 // CC reports that is not listed here shows under its id.
 export const POINT_META: Record<string, PointMeta> = {
   "feeder-breaker-position": { label: "Feeder breaker position" },
-  "feeder-protection-trip": { label: "Protection trip", states: ["NORMAL", "TRIPPED"] },
+  "feeder-protection-trip": { label: "CB1 protection trip", states: ["NORMAL", "TRIPPED"] },
+  "feeder-lockout": { label: "CB1 lockout", states: ["NORMAL", "LOCKED OUT"] },
   "feeder-current": { label: "CB1 current", unit: "A", digits: 1 },
   "feeder-voltage": { label: "CB1 line-side VT", unit: "kV", digits: 2 },
   "f2-position": { label: "F2 breaker position" },
   "f2-protection-trip": { label: "F2 protection trip", states: ["NORMAL", "TRIPPED"] },
+  "f2-lockout": { label: "F2 lockout", states: ["NORMAL", "LOCKED OUT"] },
   "f2-current": { label: "F2 current", unit: "A", digits: 1 },
   "f2-p-mw": { label: "F2 active power P", unit: "MW", digits: 2 },
   "oltc-1-tap": { label: "T1 completed tap", digits: 0 },
@@ -60,11 +62,11 @@ for (const prefix of ["feeder", "oltc-1"]) {
 }
 POINT_META["oltc-1-overcurrent-block"] = { label: "OLTC overcurrent block", states: ["CLEAR", "BLOCKED"] };
 for (const id of ["rmu-1", "rmu-2"]) {
-  POINT_META[`${id}-position`] = { label: `${id.toUpperCase()} position` };
-  POINT_META[`${id}-remote`] = { label: `${id.toUpperCase()} authority`, states: ["LOCAL", "REMOTE"] };
-  POINT_META[`${id}-earth`] = { label: `${id.toUpperCase()} earth switch`, states: ["OPEN", "CLOSED"] };
-  POINT_META[`${id}-fault-passage`] = { label: `${id.toUpperCase()} fault passage`, states: ["CLEAR", "LATCHED"] };
   const location = id === "rmu-1" ? "RMU1" : "RMU2";
+  POINT_META[`${id}-position`] = { label: `${location} position` };
+  POINT_META[`${id}-remote`] = { label: `${location} authority`, states: ["LOCAL", "REMOTE"] };
+  POINT_META[`${id}-earth`] = { label: `${location} earth switch`, states: ["OPEN", "CLOSED"] };
+  POINT_META[`${id}-fault-passage`] = { label: `${location} fault passage`, states: ["CLEAR", "LATCHED"] };
   POINT_META[`${id}-current`] = { label: `${location} current`, unit: "A", digits: 1 };
   POINT_META[`${id}-source-kv`] = { label: `${location} ${id === "rmu-1" ? "S1" : "S3"} side`, unit: "kV", digits: 2 };
   POINT_META[`${id}-section-kv`] = { label: `${location} S2 bus VT`, unit: "kV", digits: 2 };
@@ -80,7 +82,7 @@ export function pointLabel(id: string): string {
 export type PointCondition = "good" | "stale" | "never";
 
 export const QUALITY_DEFINITIONS = {
-  GOOD: "IEC 104 data quality: the value is valid and current. It does not say the plant is in its normal state.",
+  GOOD: "IEC 104 data quality: valid means no quality flags set and no stale reason. The value is valid/current, not a statement of plant state.",
   STALE: "IEC 104 data quality: the retained value is not established as valid and current; inspect its flags and stale reason.",
   UNKNOWN: "IEC 104 data quality: no value has been received; the plant state is not established.",
   INVALID: "IEC 104 data quality: the source marks the value invalid; it cannot establish the plant state.",
@@ -104,6 +106,19 @@ export function qualityFlags(quality: PointQuality): string[] {
   if (quality.bl) flags.push("BL");
   if (quality.ov === true) flags.push("OV");
   return flags;
+}
+
+// Operator-facing labels, separate from the IEC abbreviations used in records.
+export function qualityLabels(quality: PointQuality): string[] {
+  const labels = { IV: "INVALID", NT: "NOT TOPICAL", SB: "SUBSTITUTED", BL: "BLOCKED", OV: "OVERFLOW" };
+  return qualityFlags(quality).map((flag) => labels[flag as keyof typeof labels]);
+}
+
+export function pointQualityText(point: OperatorPoint | undefined): string {
+  if (!point || point.value === null) return "UNKNOWN";
+  const labels = qualityLabels(point.quality);
+  if (point.stale_reason) labels.push(`STALE (${staleReasonText(point.stale_reason)})`);
+  return labels.join(" · ");
 }
 
 export const STALE_REASON_TEXT: Record<StaleReason, string> = {
@@ -266,7 +281,7 @@ export function journalSummary(kind: string, detail: Record<string, unknown>): s
     case "gi_started":
       return `General interrogation (${str(detail, "trigger")}) started on link #${str(detail, "connection_seq")}`;
     case "gi_complete":
-      return `General interrogation (${str(detail, "trigger")}) complete on link #${str(detail, "connection_seq")}, ${str(detail, "points_good")} points good`;
+      return `General interrogation (${str(detail, "trigger")}) complete on link #${str(detail, "connection_seq")}, ${str(detail, "points_good")} points valid`;
     case "status_event":
       return `${pointLabel(str(detail, "id"))}: ${formatPointValue(str(detail, "id"), detail.value as PointValue)} · ${str(detail, "asdu")} COT ${str(detail, "cot")} · RTU ${detail.source_time ?? "untimed"}${detail.source_time_invalid ? " · time IV" : ""}`;
     case "point_stale": {
@@ -274,7 +289,7 @@ export function journalSummary(kind: string, detail: Record<string, unknown>): s
       return `${pointLabel(str(detail, "point"))} STALE (${staleReasonText(reason as StaleReason | null) || "—"}), keeps ${journalValue(detail)}`;
     }
     case "point_good":
-      return `${pointLabel(str(detail, "point"))} good: ${journalValue(detail)}`;
+      return `${pointLabel(str(detail, "point"))} valid: ${journalValue(detail)}`;
     case "command":
       // The contract freezes POST results, not journal command details.
       // Preserve the complete record instead of inventing phase semantics.
@@ -307,8 +322,8 @@ export function telemetrySummary(points: OperatorPoint[]): TelemetrySummary {
 
 export function telemetryText(summary: TelemetrySummary): string {
   if (summary.total === 0) return "no points";
-  if (summary.good === summary.total) return `${summary.good}/${summary.total} good`;
-  const parts = [`${summary.good}/${summary.total} good`];
+  if (summary.good === summary.total) return `${summary.good}/${summary.total} valid`;
+  const parts = [`${summary.good}/${summary.total} valid`];
   if (summary.stale > 0) parts.push(`${summary.stale} STALE`);
   if (summary.never > 0) parts.push(`${summary.never} not received`);
   return parts.join(" · ");

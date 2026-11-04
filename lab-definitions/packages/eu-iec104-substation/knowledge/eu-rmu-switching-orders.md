@@ -26,6 +26,6 @@ The portal's physical process section can explain a failed hypothesis, but it mu
 
 ### Limits
 
-This is a training switching order, not authority to operate real equipment. There is no crew dispatch, safety document system, full earth-switch/key interlocking or protection-selectivity study. F2 has four IEC 104 indications but no command point; its protection belongs to the F2 breaker instance. The [RMU model](#eu-rmu-switchgear) is one load-break way per device. Full [Reset Lab](#eu-reset-acceptance) bypasses operating interlocks and restores a teaching baseline; it is not a shortcut in an operational restoration sequence.
+This is a training switching order, not authority to operate real equipment. There is no crew dispatch, safety document system, full earth-switch/key interlocking or protection-selectivity study. F2 has five IEC 104 indications but no command point; its protection belongs to the F2 breaker instance. The [RMU model](#eu-rmu-switchgear) is one load-break way per device. Full [Reset Lab](#eu-reset-acceptance) bypasses operating interlocks and restores a teaching baseline; it is not a shortcut in an operational restoration sequence.
 
 Implementation: `services/opendss-sim/eu_circuit.py`, `eu_controls.py`; `services/devices/fielddevice/switch.go`.

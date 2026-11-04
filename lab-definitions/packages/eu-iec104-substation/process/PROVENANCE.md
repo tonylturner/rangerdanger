@@ -167,7 +167,7 @@ parallel process-owned relay. Process reset clears faults and load/source
 controls only; instructor `f2-breaker/reset` restores F2 after fault removal.
 The process `f2_tripped` value is a read-only projection of F2 device truth,
 null before the first successful solve; protection diagnostics live on the device, not under
-`process.f2_protection`. F2 has four IEC 104 indications and no command IOA.
+`process.f2_protection`. F2 has five IEC 104 indications and no command IOA.
 Its generic Modbus endpoint is not write-disabled.
 
 In the disabled-profile baseline, S1/S2 radial faults draw about 2701/1438 A
