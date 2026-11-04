@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getActivePackage } from "./api";
+import { getActivePackage, getBuild } from "./api";
 import {
   getFieldAudit,
   type FieldDeviceKey,
@@ -23,6 +23,16 @@ import { packagePolicies, type PackagePolicies } from "./policy-wording";
 // request.
 function useActivePackage() {
   return useQuery({ queryKey: ["packages", "active"], queryFn: getActivePackage });
+}
+
+export const BUILD_INFO_KEY = ["build-info"] as const;
+
+export function useBuildInfo() {
+  return useQuery({
+    queryKey: BUILD_INFO_KEY,
+    queryFn: getBuild,
+    staleTime: Infinity,
+  });
 }
 
 export function useOperatorView(): OperatorViewResolution {
