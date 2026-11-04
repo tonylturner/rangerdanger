@@ -49,11 +49,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Support containd 0.1.39 and later; policy changes and range startup now wait
+- Support containd 0.1.40 and later; policy changes and range startup now wait
   for the committed policy to be protecting, rather than accepting degraded
   firewall readiness.
-- Build containd v0.1.39 in source mode for both range packages, matching
+- Build containd v0.1.40 in source mode for both range packages, matching
   the supported minimum version.
+- containd 0.1.40 restores firewall rule-hit events.
 - The range restart and switch confirmation now appears above page content
   instead of behind it.
 

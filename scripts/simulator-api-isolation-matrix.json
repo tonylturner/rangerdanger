@@ -282,7 +282,7 @@
         }
       ],
       "reviewed_inputs": {
-        "compose.source.yml": "15c2adbec081caf228a5337f7fd738f0e41af45d7616e297cdf0013a9d0ec749",
+        "compose.source.yml": "f218e69f039ee06ea3869dae865525498e9844a9b7a6cbc2161f930354f0f2f2",
         "compose.release.yml": "49c02bec2eac53d4cf3b883f7ed587f2e9b229c91745300779e82061a51b5456"
       },
       "destinations": [
@@ -1269,7 +1269,7 @@
         }
       ],
       "reviewed_inputs": {
-        "compose.source.yml": "a0c88c20c237bcfff1320b38815508dde30e55ec7bfb0c6f6cdbef12f36116ad",
+        "compose.source.yml": "6ece161992669102031ae1fa93c475204fd01eee506fd72a8d6d8b37e2f23144",
         "compose.release.yml": "406f0709b1d14061e14d309fa6fc3fbe5d80d4830f885f9421ebf640bbf81f37"
       },
       "destinations": [

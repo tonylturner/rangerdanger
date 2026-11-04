@@ -352,8 +352,8 @@ Policy applies use only `POST /api/v1/config/candidate` followed by
 `POST /api/v1/config/commit`; both must succeed. There is no legacy
 `/config/import` fallback. Before staging, the backend copies appliance-owned
 NIC `device` bindings from the running configuration by logical interface name.
-The backend enforces the containd 0.1.39 minimum at seed readiness and range
-adoption after a backend restart; a 0.1.39 prerelease is below that floor.
+The backend enforces the containd 0.1.40 minimum at seed readiness and range
+adoption after a backend restart; a 0.1.40 prerelease is below that floor.
 Schema 0.1.10 migration is one-way: back up before upgrading; 0.1.36 cannot
 read a migrated store.
 

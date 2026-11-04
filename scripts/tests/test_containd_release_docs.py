@@ -18,7 +18,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                 self.assertNotRegex(text, r"containd#|Type `shell`|type `shell`")
                 self.assertIn("prompt reads `containd(config)#`", text)
         text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
-        self.assertIn("Current containd 0.1.39:", text)
+        self.assertIn("Current containd 0.1.40:", text)
         self.assertIn("rule edits stage the candidate", text)
 
     def test_lab_guidance_separates_running_proof_and_validation_surfaces(self):
@@ -50,12 +50,12 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         for path in ("README.md", "docs/architecture.md"):
             text = " ".join((ROOT / path).read_text().split())
             with self.subTest(path=path):
-                for phrase in ("requires containd 0.1.39 or later", "stop the lab",
+                for phrase in ("requires containd 0.1.40 or later", "stop the lab",
                                "back up", "one-way", "0.1.10",
                                "containd 0.1.36 cannot read"):
                     self.assertIn(phrase, text)
         text = (ROOT / "docs/architecture.md").read_text()
-        self.assertIn("containd `v0.1.39` git ref", text)
+        self.assertIn("containd `v0.1.40` git ref", text)
 
     def test_source_builds_and_release_guidance_use_current_containd_tag(self):
         for package in ("us-dnp3-substation", "eu-iec104-substation"):
@@ -63,9 +63,9 @@ class ContaindReleaseDocsTests(unittest.TestCase):
             with self.subTest(package=package):
                 self.assertIn(
                     'context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/'
-                    'containd.git#v0.1.39}"', path.read_text())
+                    'containd.git#v0.1.40}"', path.read_text())
         text = " ".join((ROOT / "RELEASING.md").read_text().split())
-        self.assertIn("release tag pinned by the package (`v0.1.39`)", text)
+        self.assertIn("release tag pinned by the package (`v0.1.40`)", text)
 
     def test_upgrade_guides_require_matching_full_storage_and_image(self):
         for path in ("RELEASING.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
@@ -76,11 +76,11 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                                "pre-upgrade", "stop the lab", "older tag",
                                "RangerDanger owns"):
                     self.assertIn(phrase.lower(), text.lower())
-                self.assertRegex(text, r"requires containd 0\.1\.39 or later")
+                self.assertRegex(text, r"requires containd 0\.1\.40 or later")
                 self.assertRegex(text, r"schema.{0,60}0\.1\.10")
                 self.assertRegex(text, r"0\.1\.36 and earlier cannot read")
         workshop = " ".join((ROOT / "docs/workshop-ssd.md").read_text().split()).lower()
-        for phrase in ("requires containd 0.1.39 or later", "schema migrates one-way to 0.1.10",
+        for phrase in ("requires containd 0.1.40 or later", "schema migrates one-way to 0.1.10",
                        "0.1.36 and earlier cannot read", "--include-upstream --include containd",
                        "record the saved image identity", "matching pre-upgrade data",
                        "for arch in amd64 arm64", "docker load -i",
@@ -90,7 +90,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
 
     def test_api_health_distinguishes_liveness_and_operational_diagnostics(self):
         text = (ROOT / "docs/api-spec.md").read_text()
-        self.assertIn("containd 0.1.39 minimum", text)
+        self.assertIn("containd 0.1.40 minimum", text)
         for phrase in ("liveness and diagnostics", "not forwarding readiness",
                        "ipv4Forwarding", "managementBinding.state",
                        "/api/v1/system/management-reservation",
@@ -147,5 +147,5 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                        "both must succeed", "no legacy `/config/import` fallback",
                        "NIC `device` bindings", "running configuration",
                        "seed readiness", "adoption after a backend restart",
-                       "0.1.39 prerelease"):
+                       "0.1.40 prerelease"):
             self.assertIn(phrase, text)

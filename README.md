@@ -107,7 +107,7 @@ cd rangerdanger
 
 Use `./stage-ssd.sh /Volumes/WORKSHOP_SSD vX.Y.Z` to populate the SSD. The version argument selects the image tags whatever the repo's `.env` says, and the helper verifies both archives against it before reporting success. GitHub releases carry the WSL2 kernel asset, not image tarballs, so students install from an instructor-staged bundle. Full install walkthrough including the offline path and common errors: [`docs/quickstart.md`](docs/quickstart.md). Workshop operators running multi-laptop classroom deployments: [`docs/workshop-ssd.md`](docs/workshop-ssd.md) covers initial staging, mid-workshop delta patches, and recovery.
 
-This release requires containd 0.1.39 or later. Before the first
+This release requires containd 0.1.40 or later. Before the first
 0.1.37 start, stop the lab and back up the complete firewall storage for each
 installed package. The one-way migration to schema 0.1.10 means containd
 0.1.36 cannot read the migrated store; an older image alone is not a rollback.

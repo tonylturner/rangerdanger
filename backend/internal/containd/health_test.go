@@ -3,10 +3,12 @@ package containd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -170,6 +172,12 @@ func TestWaitReadyTimeout(t *testing.T) {
 }
 
 func TestWaitReadyVersionGate(t *testing.T) {
+	minimum := strings.Split(MinimumVersion, ".")
+	patch, err := strconv.Atoi(minimum[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextPrerelease := fmt.Sprintf("%s.%s.%d-rc.1", minimum[0], minimum[1], patch+1)
 	for _, tc := range []struct {
 		build   string
 		allowed bool
@@ -183,10 +191,13 @@ func TestWaitReadyVersionGate(t *testing.T) {
 		{"v0.1.37+source", false},
 		{"0.1.38-rc.1", false},
 		{"0.1.38", false},
+		{"0.1.39", false},
+		{"v0.1.39+source", false},
+		{"0.1.39-rc.1", false},
 		{MinimumVersion, true},
 		{"v" + MinimumVersion + "+source", true},
 		{MinimumVersion + "-rc.1", false},
-		{"0.1.40-rc.1", true},
+		{nextPrerelease, true},
 		{"0.1.36", false},
 		{"v0.1.36+source", false},
 		{"0.1.36-rc.1", false},
