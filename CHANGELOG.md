@@ -6,21 +6,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
+## [v0.2.1] - 2026-11-04
 
-- DNP3 control commands exit nonzero on rejected or timed-out operates, so
-  the Run command log no longer labels a failed control successful.
-- US manual firewall instructions commit operational replacements together
-  with broad-rule removals, avoiding an intermediate field-polling outage.
-- US labs use the correct policy-preview answer and firewall event label,
-  and describe small residual outage current as approximately zero.
-- EU labs explain the Ethernet capture and host-file upload needed for
-  optional containd PCAP Analysis, and the baseline capture's actual
-  rotation timing.
-- Validation reports can be downloaded as markdown; scenario traffic
-  logs describe package-defined flows rather than a fixed protocol list.
-- Validation reports label PCAP paths relative to the install root.
-  EU capture instructions explain copying files out before reset deletes them.
+Patch release for containd 0.1.40. containd 0.1.39 stopped delivering
+firewall rule-hit events, so this release requires containd 0.1.40 or later
+and refuses older builds. It was tested on 0.1.40, the current `latest`, with
+every US and EU gate and a browser walkthrough of both workshops. It also
+brings the EU one-line, trend and quality-display changes below. Native
+Windows installs are not yet validated for this release.
+
+Known issue: in the optional, ungraded EU PCAP Analysis sidebar (Lab 2.4),
+containd 0.1.40 rejects **Review** with "authenticated actor required", so
+suggestions cannot be staged. Capture, import, Analyze and Generate work.
 
 ### Added
 
@@ -65,6 +62,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- DNP3 control commands exit nonzero on rejected or timed-out operates, so
+  the Run command log no longer labels a failed control successful.
+- US manual firewall instructions commit operational replacements together
+  with broad-rule removals, avoiding an intermediate field-polling outage.
+- US labs use the correct policy-preview answer and firewall event label,
+  and describe small residual outage current as approximately zero.
+- EU labs explain the Ethernet capture and host-file upload needed for
+  optional containd PCAP Analysis, and the baseline capture's actual
+  rotation timing.
+- Validation reports can be downloaded as markdown; scenario traffic
+  logs describe package-defined flows rather than a fixed protocol list.
+- Validation reports label PCAP paths relative to the install root.
+  EU capture instructions explain copying files out before reset deletes them.
 - Support containd 0.1.40 and later; policy changes and range startup now wait
   for the committed policy to be protecting, rather than accepting degraded
   firewall readiness.
@@ -3546,7 +3556,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.1...HEAD
+[v0.2.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.1
 [v0.2.0]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0
 [v0.2.0-rc.6]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.6
 [v0.2.0-rc.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.5
