@@ -214,6 +214,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 	{
 		historian.GET("/points", s.handleHistorianPoints)
 		historian.GET("/history", s.handleHistorianHistory)
+		historian.GET("/events", s.handleHistorianEvents)
 	}
 
 	// PCAP capture endpoints (native containd for US; package-specific tcpdump for EU)

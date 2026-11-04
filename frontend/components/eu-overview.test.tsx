@@ -18,7 +18,7 @@ function render(workshop: boolean, state = FEEDER_STATE) {
   client.setQueryData(["operator", "state"], state);
   client.setQueryData(WORKSHOP_STATUS_KEY, { control_centre: { link: "started", gi: "complete" }, firewall_online: true, firewall_config: "improved" });
   client.setQueryData(["historian", "points"], state.points);
-  client.setQueryData(["historian", "history", "oltc-1-bus-kv"], overviewHistory);
+  client.setQueryData(["historian", "trend", "oltc-1-bus-kv"], { samples: overviewHistory, events: [], window: { since: "2026-10-15T09:45:10Z", until: "2026-10-15T10:00:10Z" } });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}><RangeProvider><RangeScope>{workshop ? <EuWorkshopStatus title="EU" /> : <EuDashboard title="EU" />}</RangeScope></RangeProvider></QueryClientProvider>);
   client.clear();
   return html;

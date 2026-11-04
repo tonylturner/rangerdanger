@@ -58,7 +58,7 @@ func (s *store) ingestHandler() http.Handler {
 func (s *store) readHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/points", "/api/history", "/api/health":
+		case "/api/points", "/api/history", "/api/events", "/api/health":
 		default:
 			writeError(w, http.StatusNotFound, "not found")
 			return
@@ -73,6 +73,8 @@ func (s *store) readHandler() http.Handler {
 			writeJSON(w, http.StatusOK, s.health())
 		case "/api/history":
 			s.serveHistory(w, r)
+		case "/api/events":
+			s.serveEvents(w, r)
 		}
 	})
 }
