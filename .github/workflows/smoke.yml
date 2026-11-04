@@ -30,11 +30,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      containd_source:
+      containd_image:
         description: >-
-          Optional containd Docker build context for source mode, for a
-          candidate gate (e.g. https://github.com/tonylturner/containd.git#<full SHA>).
-          Empty builds the compose default tag.
+          Optional published containd candidate image for source mode.
+          Empty pulls ghcr.io/tonylturner/containd:latest.
         required: false
         default: ""
 
@@ -47,7 +46,7 @@ permissions:
 env:
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   # Empty unless a dispatch names a candidate; compose then uses its default.
-  CONTAIND_SOURCE: ${{ inputs.containd_source }}
+  CONTAIND_IMAGE: ${{ inputs.containd_image }}
 
 jobs:
   smoke:
@@ -93,7 +92,7 @@ jobs:
         run: ./scripts/ci-docker-engine.sh
 
       - name: Build and bring up the platform and the US range
-        # setup.sh --from-source: build every platform and package image,
+        # setup.sh --from-source: build RangerDanger images and pull containd :latest,
         # start the platform, wait for /api/health, POST /api/range and
         # wait until the range reports ready.
         run: ./scripts/dev-up.sh
@@ -127,7 +126,7 @@ jobs:
             [ -n "$image" ] && image_list+=("$image")
           done <<<"$ids"
           docker image inspect "${image_list[@]}" > build/smoke-receipts/images.json
-          # Source mode builds the firewall locally; record the image it runs.
+          # Record the published containd image actually running, including a dispatch candidate.
           if image=$(docker inspect --format '{{.Image}}' rangerdanger-firewall 2>/dev/null); then
             docker image inspect "$image" > build/smoke-receipts/containd.json
           fi

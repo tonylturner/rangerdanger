@@ -331,39 +331,22 @@ eu_normalize_firewall_rules() {
     then del(.ics.readOnly) else . end)' "$@"
 }
 eu_commit_manual_policy() {
-  local policy="$1" label="$2" response status warnings running
+  local policy="$1" label="$2" response status warnings
   local revision
   local candidate_file="$TMP_DIR/manual-candidate.json" headers_file="$TMP_DIR/manual-commit.headers"
   # shellcheck disable=SC2034 # ownership is read by eu-cleanup.sh
   state_touched=1
-  # Match containd.Client.ImportConfig: preserve appliance-owned devices by
-  # logical name, then enable enforcement so the commit updates effective nft rules.
-  running=$(eu_firewall_config) || {
-    fail "cannot read appliance bindings before staging manual policy $label"
+  # Read the base revision, then enable enforcement without copying appliance
+  # interfaces. containd owns physical NIC assignments (0.1.41 and later).
+  eu_firewall_config >/dev/null || {
+    fail "cannot read running revision before staging manual policy $label"
     return 1
   }
   revision=$(eu_revision_header "$TMP_DIR/fw-config.headers")
   [ -n "$revision" ] || { fail "running config has no revision header"; return 1; }
-  jq --argjson running "$running" '
-      def string_or_null: type == "string" or type == "null";
-      (if $running.interfaces == null then [] else $running.interfaces end) as $interfaces
-      | if ($interfaces | type) != "array" then
-          error("running interfaces must be an array")
-        elif any($interfaces[];
-          (type != "object" and type != "null")
-          or (.name | string_or_null | not)
-          or (.device | string_or_null | not)) then
-          error("cannot decode running interface bindings")
-        else . end
-      | (reduce $interfaces[] as $iface
-          ({}; .[$iface.name // ""] = ($iface.device // ""))) as $devices
-      | .interfaces |= map(
-          del(.device)
-          | ($devices[.name] // "") as $device
-          | if $device != "" then .device = $device else . end)
-      | .dataplane |= (if type == "object" then . else {} end)
+  jq '.dataplane |= (if type == "object" then . else {} end)
       | .dataplane.enforcement = true' "$policy" >"$candidate_file" || {
-    fail "cannot merge appliance bindings and enable dataplane enforcement for manual policy $label"
+    fail "cannot enable dataplane enforcement for manual policy $label"
     return 1
   }
   response=$(docker exec -i "$FW" curl -sS --max-time 15 -D /dev/stderr -w '\n%{http_code}' \

@@ -22,7 +22,7 @@ func TestGetHealthSuccess(t *testing.T) {
 		if r.URL.Path != "/api/v1/health" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		io.WriteString(w, `{"build":"v0.1.40","component":"mgmt","status":"ok","time":"2026-10-09T12:34:56.789Z"}`)
+		io.WriteString(w, `{"build":"v0.1.41","component":"mgmt","status":"ok","time":"2026-10-09T12:34:56.789Z"}`)
 	}))
 	defer srv.Close()
 
@@ -34,7 +34,7 @@ func TestGetHealthSuccess(t *testing.T) {
 	want := HealthStatus{
 		Status:    "ok",
 		Component: "mgmt",
-		Build:     "v0.1.40",
+		Build:     "v0.1.41",
 		Time:      time.Date(2026, 10, 9, 12, 34, 56, 789000000, time.UTC),
 	}
 	if !health.Time.Equal(want.Time) {
@@ -194,6 +194,7 @@ func TestWaitReadyVersionGate(t *testing.T) {
 		{"0.1.39", false},
 		{"v0.1.39+source", false},
 		{"0.1.39-rc.1", false},
+		{fmt.Sprintf("%s.%s.%d", minimum[0], minimum[1], patch-1), false},
 		{MinimumVersion, true},
 		{"v" + MinimumVersion + "+source", true},
 		{MinimumVersion + "-rc.1", false},

@@ -54,4 +54,4 @@ Keep dataset/hash/revision/proof and withheld reasons separate from the 37-row L
 
 Keep applied policy/plan identity, source/destination/service, fresh-session boundary, counter lifetimes, rule-local deltas/events and independent command/device outcomes. Preserve the NFQUEUE forwarding dependency and rollback owner. Neither TCP proof nor decoded capture certifies command prevention. See [acceptance and handover](#eu-acceptance-handover), [established sessions](#eu-established-sessions) and [GI/quality](#iec104-gi-cot-quality).
 
-References: containd [v0.1.40 ICS DPI guide](https://github.com/tonylturner/containd/blob/v0.1.40/docs/mkdocs/ics-dpi.md) (modes, shadow counters, IEC selectors, PCAP Analysis); EU `firewall/improved.json`, `curriculum/plan.yml`, `protocols/points.json`.
+References: containd [ICS DPI guide](https://github.com/tonylturner/containd/blob/main/docs/mkdocs/ics-dpi.md) (modes, shadow counters, IEC selectors, PCAP Analysis); EU `firewall/improved.json`, `curriculum/plan.yml`, `protocols/points.json`.

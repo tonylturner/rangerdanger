@@ -36,9 +36,8 @@ class ArchitectureTests(unittest.TestCase):
     def test_source_and_release_are_distinct(self):
         for key in ("compose-us", "compose-eu"):
             graph = self.rendered[key]
-            self.assertIn("source: build build/Dockerfile.mgmt", graph)
-            self.assertIn("https://github.com/tonylturner/containd.git", graph)
-            self.assertIn("tag: rangerdanger-firewall", graph)
+            self.assertIn("source: pull $#123;CONTAIND_IMAGE:-ghcr.io/tonylturner/containd:latest#125;", graph)
+            self.assertNotIn("build/Dockerfile.mgmt", graph)
             self.assertIn("release: pull ghcr.io/tonylturner/containd:latest", graph)
 
     def test_dependencies_come_from_compose_and_keep_conditions(self):

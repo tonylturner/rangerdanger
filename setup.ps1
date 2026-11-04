@@ -6,7 +6,7 @@ Acquires every platform/package image before migration. Starts the platform,
 then asks the backend to restart the selected or recorded range.
 Supports only Docker Desktop WSL2 and a physical local-drive checkout.
 .PARAMETER FromSource
-Build all platform/package images instead of pulling release images.
+Build RangerDanger images; pull the published containd image.
 .PARAMETER Package
 First-start package (default US). Omit to restart the backend's recorded package.
 .PARAMETER FromTarballs
@@ -95,7 +95,7 @@ foreach ($port in @(8088, 9080, 9443, 2222)) {
 }
 if ($labPorts.Count) { Say "Ports held by this install: $($labPorts -join ', ') (rerun restarts the range)" }
 if ($portsFree.Count) { Say "Free loopback ports: $($portsFree -join ', ')" }
-$ProbeImage = if ($FromSource) { 'rangerdanger-firewall' } else { 'ghcr.io/tonylturner/containd:latest' }
+$ProbeImage = if ($FromSource -and $env:CONTAIND_IMAGE) { $env:CONTAIND_IMAGE } else { 'ghcr.io/tonylturner/containd:latest' }
 # --- WSL2 kernel (Windows + WSL2 backend only) ------------------------
 # Microsoft's stock WSL2 kernel does not enable CONFIG_NFT_QUEUE, which
 # silently breaks the ICS DPI rules in Lab 2.3 / 2.3-bonus.
@@ -106,7 +106,7 @@ $ProbeImage = if ($FromSource) { 'rangerdanger-firewall' } else { 'ghcr.io/tonyl
 #   2  = not on Windows / not WSL2 backend (skip silently)
 #   13 = no probe could run, so support is unknown (no running firewall,
 #        no local firewall image, and the Alpine fallback had no network)
-# Probe only after acquisition, using the source-built or release
+# Probe only after acquisition, using the acquired published
 # firewall image. An unknown result then is a fault, not a missing
 # kernel feature. CheckOnly never runs this step.
 $kernelProbeEnabled = $false
@@ -235,6 +235,12 @@ Write-SetupEnv $envFile 'VERSION' $Version
 Write-SetupEnv $envFile 'RANGERDANGER_ROOT' $DaemonRoot
 Write-SetupEnv $envFile 'RANGERDANGER_PACKAGE' $Package
 if ($env:CONTAIND_JWT_SECRET) { Write-SetupEnv $envFile 'CONTAIND_JWT_SECRET' $env:CONTAIND_JWT_SECRET }
+# Range Compose in the backend reads .env, not the host's environment.
+if ($Mode -eq 'source' -and $env:CONTAIND_IMAGE) {
+    Write-SetupEnv $envFile 'CONTAIND_IMAGE' $env:CONTAIND_IMAGE
+} else {
+    Write-SetupEnv $envFile 'CONTAIND_IMAGE' ''
+}
 $env:VERSION = $Version
 $env:RANGERDANGER_ROOT = $DaemonRoot
 $env:RANGERDANGER_PACKAGE = $Package
