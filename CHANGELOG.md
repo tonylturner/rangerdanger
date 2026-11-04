@@ -13,6 +13,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rotation timing.
 - Validation reports can be downloaded as markdown; scenario traffic
   logs describe package-defined flows rather than a fixed protocol list.
+- Validation reports label PCAP paths relative to the install root.
+  EU capture instructions explain copying files out before reset deletes them.
 
 ### Added
 

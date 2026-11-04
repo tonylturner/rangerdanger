@@ -127,6 +127,11 @@ export function ValidationReportPanel({ expectations = [] }: { expectations?: Pl
             <div className={report.policy_stable ? "" : "text-amber-300"}>
               Policy stable during proof: {report.policy_stable ? "yes" : "no"}
             </div>
+            <div>
+              PCAP path (relative to the install root):{" "}
+              <span className="break-all font-mono text-slate-300">{report.pcap_path}</span>
+            </div>
+            <p>Copy the PCAP out of the captures folder before any reset; reset deletes captures.</p>
           </div>
           <div className="mb-3 flex flex-wrap gap-3 text-xs">
             <a

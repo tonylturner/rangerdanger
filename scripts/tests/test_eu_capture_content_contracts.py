@@ -19,10 +19,24 @@ class EUCaptureContracts(unittest.TestCase):
                     "host 10.60.60.20 and host 10.30.30.20 and tcp port 2404",
                     "http://10.99.99.21:8080/api/reconnect", "Ctrl-C",
                     "link type 276", "Upload & Analyze PCAP",
-                    "<checkout>/data/eu-iec104-substation/firewall/captures/approved-command.pcap",
-                    "file chooser", "out-of-band", "no demonstrated download control",
+                    "data/eu-iec104-substation/firewall/captures/approved-command.pcap",
+                    "file chooser", "relative to the install root",
+                    "The portal has no download for this manual file.",
+                    "copy the file to that machine first",
+                    "Before any reset, copy the file out of the captures folder: reset deletes captures.",
                 ):
                     self.assertIn(phrase, text)
+                self.assertNotIn("<checkout>", text)
+                self.assertNotIn("no demonstrated download control", text)
+
+    def test_report_explains_markdown_download_and_host_pcap_preservation(self):
+        doc = yaml.safe_load((PACKAGE / "scenarios/eu-validation-evidence.yml").read_text())
+        text = next(s["description"] for s in doc["steps"]
+                    if s["id"] == "generate-the-validation-report")
+        self.assertIn("Use **Download markdown** to save the report", text)
+        self.assertIn("copy the PCAP at the report's path (relative to the install root)", text)
+        self.assertIn("out of the captures folder before any reset or shutdown; reset deletes captures", text)
+        self.assertNotIn("export the markdown/PCAP", text)
 
     def test_baseline_rotation_uses_float_timer_not_reconnect_timer(self):
         doc = yaml.safe_load((PACKAGE / "scenarios/eu-baseline-assessment.yml").read_text())
