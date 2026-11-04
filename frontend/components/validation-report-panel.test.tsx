@@ -33,7 +33,7 @@ async function generate(answer: ValidationReport) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
   render(<ValidationReportPanel expectations={US_PLANS[0].expectations} />);
   fireEvent.click(screen.getByRole("button", { name: "Generate Validation Report" }));
-  await screen.findByText(answer.markdown);
+  await screen.findByRole("button", { name: "Re-run report" });
 }
 
 function text() {
@@ -41,6 +41,19 @@ function text() {
 }
 
 describe("validation proof metadata", () => {
+  it("downloads exactly the markdown shown, including Unicode and reserved characters", async () => {
+    const markdown = "Evidence → CB1\n\n# Policy & captures: 100%";
+    await generate({ ...report, markdown });
+    const link = screen.getByRole("link", { name: "Download markdown" });
+    expect(link.getAttribute("download")).toBe("validation-report.md");
+    expect(link.getAttribute("href")).toBe(`data:text/markdown;charset=utf-8,${encodeURIComponent(markdown)}`);
+  });
+
+  it("offers no report download before generation", () => {
+    render(<ValidationReportPanel />);
+    expect(screen.queryByRole("link", { name: "Download markdown" })).toBeNull();
+  });
+
   it("shows the full hash in mono and the proof window in UTC", async () => {
     await generate(report);
     const hash = document.querySelector("code")!;

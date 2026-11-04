@@ -128,6 +128,15 @@ export function ValidationReportPanel({ expectations = [] }: { expectations?: Pl
               Policy stable during proof: {report.policy_stable ? "yes" : "no"}
             </div>
           </div>
+          <div className="mb-3 flex flex-wrap gap-3 text-xs">
+            <a
+              className="text-sky-300 underline"
+              download="validation-report.md"
+              href={`data:text/markdown;charset=utf-8,${encodeURIComponent(report.markdown)}`}
+            >
+              Download markdown
+            </a>
+          </div>
           <div className="max-h-112 overflow-auto rounded-lg border border-slate-800 bg-slate-950/60 p-4">
             <MarkdownProse>{report.markdown}</MarkdownProse>
           </div>

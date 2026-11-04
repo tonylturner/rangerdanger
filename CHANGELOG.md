@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- EU labs explain the Ethernet capture and host-file upload needed for
+  optional containd PCAP Analysis, and the baseline capture's actual
+  rotation timing.
+- Validation reports can be downloaded as markdown; scenario traffic
+  logs describe package-defined flows rather than a fixed protocol list.
+
 ### Added
 
 - The portal sidebar shows the running RangerDanger version and commit
