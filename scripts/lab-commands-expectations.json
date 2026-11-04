@@ -716,8 +716,7 @@
         "intent": "deny",
         "match": "(?i)(?:timed? out|timeout|filtered)",
         "control_match": "Result: SUCCESS",
-        "nmap": false,
-        "zero_rc_denial": true
+        "nmap": false
       },
       "reason": null
     },

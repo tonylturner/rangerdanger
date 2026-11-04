@@ -129,7 +129,7 @@ class Fixture:
                 self.energized = False
                 result = completed(argv, "  Result: SUCCESS\n")
             else:
-                result = completed(argv, "  Result: FAILED: dial tcp 10.40.40.20:20000: i/o timeout\n")
+                result = completed(argv, "  Result: FAILED: dial tcp 10.40.40.20:20000: i/o timeout\n", rc=2)
         elif argv == M.CONTROL:
             result = completed(argv, POLL_OUTPUT)
         elif argv[1] == "inspect":
@@ -429,7 +429,7 @@ class CoordinatorTests(unittest.TestCase):
             self.f.now += 3
         self.f.gate.event = slow_event
         self.f.gate.runner = lambda argv, **kw: completed(
-            argv, "Result: FAILED: dial tcp 10.40.40.20:20000: i/o timeout\n")
+            argv, "Result: FAILED: dial tcp 10.40.40.20:20000: i/o timeout\n", rc=2)
         result, elapsed = self.f.gate.process(M.OPERATE)
         self.assertEqual(elapsed, 0)
         with self.assertRaisesRegex(M.GateError, "too short"):
@@ -489,7 +489,7 @@ class OracleTests(unittest.TestCase):
     def test_dial_timeout_oracle_rejects_every_other_failure_class(self):
         prefix = "Result: "
         correct = "FAILED: dial tcp 10.40.40.20:20000: i/o timeout"
-        M.operate_result(completed([], prefix + correct), 3.1, True)
+        M.operate_result(completed([], prefix + correct, rc=2), 3.1, True)
         for value, classification in (
                 ("SUCCESS", "unexpected-success"),
                 ("FAILED: dial tcp 10.40.40.20:20000: connect: connection refused", "refusal"),
@@ -501,9 +501,12 @@ class OracleTests(unittest.TestCase):
                 ("FAILED: dial tcp 10.40.40.21:20000: i/o timeout", "not an explicit"),
                 ("FAILED: protocol timeout", "not an explicit")):
             with self.subTest(value=value), self.assertRaisesRegex(M.GateError, classification):
-                M.operate_result(completed([], prefix + value), 3.1, True)
+                M.operate_result(completed([], prefix + value, rc=2), 3.1, True)
         with self.assertRaisesRegex(M.GateError, "too short"):
-            M.operate_result(completed([], prefix + correct), 0.1, True)
+            M.operate_result(completed([], prefix + correct, rc=2), 0.1, True)
+        for rc in (0, 1, 124, 137):
+            with self.subTest(rc=rc), self.assertRaisesRegex(M.GateError, "tool-error"):
+                M.operate_result(completed([], prefix + correct, rc=rc), 3.1, True)
 
     def test_state_positive_and_analytic_outage(self):
         for energized in (True, False):

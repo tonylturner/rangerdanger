@@ -237,6 +237,22 @@ class ExtractTests(unittest.TestCase):
         self.assertFalse(extract.verdict(
             no_ack, 0, sent + "\nNo route to host", "", control=True))
 
+    def test_dnp3_control_failure_exit_contract(self):
+        data = json.loads(extract.EXPECTATIONS.read_text())
+        controls = [(key, row["oracle"]) for key, row in data["commands"].items()
+                    if "|dnp3cmd " in key]
+        self.assertEqual(len(controls), 4)
+        for key, oracle in controls:
+            with self.subTest(key=key):
+                if oracle["intent"] == "deny":
+                    timeout = "Result: FAILED: dial tcp 10.40.40.21:20000: i/o timeout"
+                    self.assertTrue(extract.verdict(oracle, 2, timeout, "", control=True))
+                    if "-no-ack" not in key:
+                        self.assertFalse(extract.verdict(oracle, 0, timeout, "", control=True))
+                else:
+                    self.assertTrue(extract.verdict(oracle, 0, "Result: SUCCESS", ""))
+                    self.assertFalse(extract.verdict(oracle, 2, "Result: BLOCKED", ""))
+
     def test_nmap_zero_rc_needs_filtered_ports_and_control(self):
         oracle = {"intent": "deny", "match": r"5900/tcp\s+filtered", "nmap": True}
         self.assertFalse(extract.verdict(oracle, 0, "5900/tcp open", "", control=True))

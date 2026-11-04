@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- DNP3 control commands exit nonzero on rejected or timed-out operates, so
+  the Run command log no longer labels a failed control successful.
 - EU labs explain the Ethernet capture and host-file upload needed for
   optional containd PCAP Analysis, and the baseline capture's actual
   rotation timing.
