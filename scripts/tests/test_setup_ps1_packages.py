@@ -14,6 +14,29 @@ LOAD_PACKAGE = LOAD + """
 
 
 class WindowsPackageTests(unittest.TestCase):
+    def test_candidate_reaches_backend_env_and_normal_setup_clears_it(self):
+        source = (ROOT / "setup.ps1").read_text()
+        start = source.index("$envFile = Join-Path")
+        end = source.index("$env:VERSION =", start)
+        for mode in ("source", "release", "offline"):
+            for image in ("", "example.invalid/containd:candidate"):
+                with self.subTest(mode=mode, image=image), tempfile.TemporaryDirectory() as tmp:
+                    file = Path(tmp) / ".env"
+                    file.write_text("OTHER=keep\nCONTAIND_IMAGE=stale\n")
+                    result = powershell(LOAD_PACKAGE + """
+$RootDir = $env:TESTROOT
+$DaemonRoot = '/run/desktop/mnt/host/c/range'
+$Version = 'latest'
+$Package = ''
+$Mode = $env:MODE
+""" + source[start:end], TESTROOT=tmp, MODE=mode, CONTAIND_IMAGE=image)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    lines = file.read_text().splitlines()
+                    self.assertIn("OTHER=keep", lines)
+                    candidate = [line for line in lines if line.startswith("CONTAIND_IMAGE=")]
+                    self.assertEqual(candidate, [f"CONTAIND_IMAGE={image}"]
+                                     if mode == "source" and image else [])
+
     def test_models_use_explicit_projects_and_native_project_directory(self):
         for mode, suffix in (("release", "release"), ("offline", "release"), ("source", "source")):
             with self.subTest(mode=mode):
@@ -32,6 +55,19 @@ ConvertTo-Json -InputObject $commands -Compress
                 for command in args[1:]:
                     self.assertEqual(command[2], "rangerdanger")
                     self.assertTrue(command[6].endswith(f"compose.{suffix}.yml"))
+
+    def test_setup_probe_image_matches_mode_and_candidate_override(self):
+        source = (ROOT / "setup.ps1").read_text()
+        assignment = next(line for line in source.splitlines() if line.startswith("$ProbeImage ="))
+        for from_source in (False, True):
+            for override in ("", "example.invalid/containd:candidate"):
+                with self.subTest(from_source=from_source, override=override):
+                    result = powershell("""
+$FromSource = $env:FROM_SOURCE -eq '1'
+""" + assignment + "\n$ProbeImage", FROM_SOURCE=str(int(from_source)), CONTAIND_IMAGE=override)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), override if from_source and override
+                                     else "ghcr.io/tonylturner/containd:latest")
 
     def test_env_is_idempotent_preserves_other_lines_and_has_no_bom(self):
         with tempfile.TemporaryDirectory() as tmp:

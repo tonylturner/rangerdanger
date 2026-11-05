@@ -1,11 +1,8 @@
 name: rangerdanger
 services:
   firewall:
-    image: rangerdanger-firewall
-    build:
-      # Set CONTAIND_SOURCE to a local containd checkout for unpushed work.
-      context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/containd.git#v0.1.40}"
-      dockerfile: build/Dockerfile.mgmt
+    # Source mode builds RangerDanger only; containd is always a published image.
+    image: ${CONTAIND_IMAGE:-ghcr.io/tonylturner/containd:latest}
     container_name: rangerdanger-firewall
     cap_add:
     - NET_ADMIN

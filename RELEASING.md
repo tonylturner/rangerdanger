@@ -167,7 +167,7 @@ its release twin; the package lint checks that the two agree.
 
 RangerDanger and [containd](https://github.com/tonylturner/containd)
 are co-developed by the same maintainer. **This release requires
-containd 0.1.40 or later**, in release, source and offline modes; there is
+containd 0.1.41 or later**, in release, source and offline modes; there is
 no compatibility path for older builds. Release package Compose files
 reference `ghcr.io/tonylturner/containd:latest` rather than a per-release
 pinned tag. A mutable tag is not proof of the minimum version.
@@ -175,15 +175,27 @@ RangerDanger owns fixes to its clients when the containd contract changes;
 containd defects belong upstream. Do not mask a client defect by downgrading
 below the supported minimum.
 
-Source-mode package builds use the containd release tag pinned by the package
-(`v0.1.40`), or an explicit `CONTAIND_SOURCE` override, not the published
-image. Source-mode success does not certify the release's containd digest.
+Source mode also pulls the published `ghcr.io/tonylturner/containd:latest`
+image on every bring-up; it builds only RangerDanger images. For candidate
+image testing in source mode (including CI), set `CONTAIND_IMAGE` to a
+published image reference. Release and offline modes always use the `latest`
+reference; offline installs use the bundled image without pulling.
+For example, `CONTAIND_IMAGE=ghcr.io/tonylturner/containd:candidate ./scripts/dev-up.sh`
+tests a published candidate without building containd. Setup records this
+source-only override in `.env` for the backend's range lifecycle; rerunning
+setup without the override clears it and returns to `latest`.
 The backend checks the minimum version before seeding and before adopting a
-running range after a backend restart; a 0.1.40 prerelease does not qualify.
+running range after a backend restart; a 0.1.41 prerelease does not qualify.
 
-### Back up before the first 0.1.37 start
+### Back up before upgrading containd
 
-containd upgrades its **stored schema to 0.1.10**, a one-way migration:
+containd **0.1.41 migrates firewall `config.db` one-way**; 0.1.40 cannot
+read the migrated store. Stop the lab and take a fresh full pre-upgrade
+firewall data backup even if it already uses schema 0.1.10. Rollback needs
+that complete matching backup, the old image and the older RangerDanger release.
+
+The earlier containd 0.1.37 upgrade moved its **stored schema to 0.1.10**,
+a one-way migration:
 0.1.36 and earlier cannot read it. Before starting 0.1.37 or later for the
 first time, stop the lab using its normal teardown procedure so firewall storage is
 quiescent. Back up the complete firewall `/data`, not just an exported
@@ -200,15 +212,15 @@ directories with their complete matching pre-upgrade backups (do not merge
 old and new database files), restore the old release and image, then restart
 and verify operations. **An older tag or digest alone is not a rollback.**
 Returning to containd 0.1.36 or earlier also requires the older RangerDanger
-release; this release requires 0.1.40 or later. Policy import uses candidate+commit
-only, copying running NIC `device` bindings before staging; it does not undo
-a stored-schema migration.
+release; this release requires 0.1.41 or later. Policy import uses candidate+commit
+only; containd owns physical NIC assignments, so RangerDanger does not copy
+interface `device` fields. Policy import does not undo a stored-schema migration.
 
 The trade-off is workshop-day determinism. `:latest` resolves at pull
 time, so a containd push between your pre-flight check and the morning
 of class can shift behavior under you. **Mitigations for instructors:**
 
-1. **Pre-pull the night before** and lock the resolved digest:
+1. **Pre-pull the night before** and record the resolved digest:
 
    ```sh
    docker pull ghcr.io/tonylturner/containd:latest
@@ -217,8 +229,8 @@ of class can shift behavior under you. **Mitigations for instructors:**
    ```
 
    Save that digest. If anything breaks the morning of class, compare
-   against `:latest`. A known-good digest must still meet the 0.1.40 minimum;
-   if reverting across the schema migration, restore its matching data backup
+   against the currently published `:latest`. Record digests as evidence, not
+   Compose pins. Any binary rollback requires its matching data backup
    and older RangerDanger release as described above.
 
 2. **Run `setup.sh` (or `setup.ps1`) right before class** - the
@@ -236,11 +248,9 @@ of class can shift behavior under you. **Mitigations for instructors:**
    `setup.sh --from-tarballs` loads and starts with `--pull never`.
    Once staged, the SSD is immutable.
 
-If a workshop scenario demands hard determinism (regulatory audit,
-certified curriculum), pin a known-good `containd:vX.Y.Z` tag (0.1.40 or later) in both
-of the package's range Compose files for that engagement and document the pin in the
-engagement's README. The default `:latest` posture is for the public
-project where currency-of-fixes outweighs frozen-behavior.
+For a deterministic offline workshop, stage and verify an SSD bundle instead
+of editing Compose to pin a containd version or digest. Online release and
+source setup refresh the published image on every bring-up.
 
 ## Manual workflow run
 

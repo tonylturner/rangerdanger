@@ -20,7 +20,7 @@ func TestImportConfigSuccess(t *testing.T) {
 	srv := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
 		if r.Method == http.MethodGet {
-			io.WriteString(w, `{}`)
+			io.WriteString(w, `{"interfaces":[{"name":"lan3","device":"obsolete-physical-nic"}]}`)
 			return
 		}
 		if r.Method != http.MethodPost {
@@ -70,6 +70,11 @@ func TestImportConfigSuccess(t *testing.T) {
 	}
 	if dp, _ := sent["dataplane"].(map[string]any); dp == nil || dp["enforcement"] != true {
 		t.Errorf("expected dataplane.enforcement=true, got body: %s", candidateBody)
+	}
+	interfaces := sent["interfaces"].([]any)
+	iface := interfaces[0].(map[string]any)
+	if len(interfaces) != 1 || len(iface) != 2 || iface["name"] != "lan3" || iface["zone"] != "lan3" {
+		t.Errorf("logical interfaces changed during import: %s", candidateBody)
 	}
 	fw, _ := sent["firewall"].(map[string]any)
 	if fw == nil || fw["defaultAction"] != "DENY" {

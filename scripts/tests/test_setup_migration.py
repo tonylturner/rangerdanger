@@ -10,6 +10,27 @@ SOURCE = (ROOT / "setup.sh").read_text()
 
 
 class SetupMigrationTests(unittest.TestCase):
+    def test_candidate_reaches_backend_env_and_normal_setup_clears_it(self):
+        start = SOURCE.index("env_write() {")
+        end = SOURCE.index("# The shell environment overrides .env", start)
+        for mode in ("source", "release", "offline"):
+            for image in ("", "example.invalid/containd:candidate"):
+                with self.subTest(mode=mode, image=image), tempfile.TemporaryDirectory() as tmp:
+                    file = Path(tmp) / ".env"
+                    file.write_text("OTHER=keep\nCONTAIND_IMAGE=stale\n")
+                    result = subprocess.run(
+                        ["bash", "-c", "set -euo pipefail\n" + SOURCE[start:end]],
+                        env=dict(os.environ, ENV_FILE=str(file), ROOT_DIR=tmp,
+                                 VERSION="latest", PACKAGE="", MODE=mode, CONTAIND_IMAGE=image),
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    lines = file.read_text().splitlines()
+                    self.assertIn("OTHER=keep", lines)
+                    candidate = [line for line in lines if line.startswith("CONTAIND_IMAGE=")]
+                    self.assertEqual(candidate, [f"CONTAIND_IMAGE={image}"]
+                                     if mode == "source" and image else [])
+
     def test_acquisition_failure_never_tears_down_and_success_acquires_all_packages(self):
         start = SOURCE.index('# ─── image acquisition')
         end = SOURCE.index('# ─── amd64 emulation', start)
@@ -45,9 +66,12 @@ MGMT_OWNER=rangerdanger RANGE_PROJECT=rangerdanger OLD_PLATFORM=old VERSION=v2
                     self.assertEqual("teardown" in lines, not fail)
                     if not fail:
                         self.assertEqual(lines[-1], "teardown")
-                        if mode != "offline":
-                            self.assertTrue(any("range eu" in line for line in lines))
-                            self.assertTrue(any("range us" in line for line in lines))
+                        if mode == "offline":
+                            self.assertFalse(any("pull" in line for line in lines))
+                        else:
+                            for package in ("us", "eu"):
+                                suffix = " --ignore-buildable" if mode == "source" else ""
+                                self.assertIn(f"range {package} pull{suffix}", lines)
 
     def test_port_probe_distinguishes_refused_listener_unknown_and_bounded_connect(self):
         function = SOURCE.split('probe_port() {', 1)[1].split('\n}', 1)[0]

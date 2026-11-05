@@ -28,9 +28,9 @@ own the platform; each package owns `compose.source.yml` and
 
 Boxes show **source** build/pull declarations separately from **release**
 pulls. A service can declare both `build:` and `image:`: the latter names
-the build output in source mode. In particular, source mode builds
-`rangerdanger-firewall` from the containd git ref in its context (or the
-explicit `CONTAIND_SOURCE` override); release mode pulls containd `latest`.
+the build output in source mode. containd is never built here: release and
+source mode pull the published `latest` image on every bring-up. Source mode
+can select a published candidate via `CONTAIND_IMAGE`; offline uses the bundled image.
 The diagrams describe image preparation, not a promise that the backend
 builds images: lifecycle startup uses prebuilt images.
 
@@ -59,7 +59,7 @@ flowchart TB
     n_us_compose_capbank_sim_6f7dab5aef["capbank_sim<br/>source: build services/Dockerfile :capbank-sim<br/>release: pull ghcr.io/tonylturner/rangerdanger-capbank-sim:$#123;VERSION:-latest#125;"]
     n_us_compose_corp_ws_f0398579f9["corp_ws<br/>source: build Dockerfile.corp-ws<br/>release: pull ghcr.io/tonylturner/rangerdanger-corp-ws:$#123;VERSION:-latest#125;"]
     n_us_compose_eng_workstation_56ddebdbe5["eng_workstation<br/>source: build Dockerfile.eng-ws<br/>release: pull ghcr.io/tonylturner/rangerdanger-eng-ws:$#123;VERSION:-latest#125;"]
-    n_us_compose_firewall_075662beef["firewall<br/>source: build build/Dockerfile.mgmt<br/>context: $#123;CONTAIND_SOURCE:-https://github.com/tonylturner/containd.git#35;v0.1.40#125;<br/>tag: rangerdanger-firewall<br/>release: pull ghcr.io/tonylturner/containd:latest"]
+    n_us_compose_firewall_075662beef["firewall<br/>source: pull $#123;CONTAIND_IMAGE:-ghcr.io/tonylturner/containd:latest#125;<br/>release: pull ghcr.io/tonylturner/containd:latest"]
     n_us_compose_fuxa_hmi_259698b3a3["fuxa_hmi<br/>source: build Dockerfile.fuxa-hmi<br/>tag: rangerdanger-fuxa-hmi<br/>release: pull ghcr.io/tonylturner/rangerdanger-fuxa-hmi:$#123;VERSION:-latest#125;"]
     n_us_compose_gps_sim_f42cfd8c71["gps_sim<br/>source: build services/Dockerfile :gps-sim<br/>release: pull ghcr.io/tonylturner/rangerdanger-gps-sim:$#123;VERSION:-latest#125;"]
     n_us_compose_historian_sim_f4fa42aecb["historian_sim<br/>source: build services/Dockerfile :historian-sim<br/>release: pull ghcr.io/tonylturner/rangerdanger-historian-sim:$#123;VERSION:-latest#125;"]
@@ -122,7 +122,7 @@ flowchart TB
     n_eu_compose_eng_workstation_2d3e74513d["eng_workstation<br/>source: build Dockerfile.eng-ws<br/>release: pull ghcr.io/tonylturner/rangerdanger-eng-ws:$#123;VERSION:-latest#125;"]
     n_eu_compose_f2_breaker_a576e4b257["f2_breaker<br/>source: build services/Dockerfile :field-device-sim<br/>tag: rangerdanger-field-device-sim<br/>release: pull ghcr.io/tonylturner/rangerdanger-field-device-sim:$#123;VERSION:-latest#125;"]
     n_eu_compose_feeder_breaker_7919f5a15f["feeder_breaker<br/>source: build services/Dockerfile :field-device-sim<br/>tag: rangerdanger-field-device-sim<br/>release: pull ghcr.io/tonylturner/rangerdanger-field-device-sim:$#123;VERSION:-latest#125;"]
-    n_eu_compose_firewall_9a9136ac1f["firewall<br/>source: build build/Dockerfile.mgmt<br/>context: $#123;CONTAIND_SOURCE:-https://github.com/tonylturner/containd.git#35;v0.1.40#125;<br/>tag: rangerdanger-firewall<br/>release: pull ghcr.io/tonylturner/containd:latest"]
+    n_eu_compose_firewall_9a9136ac1f["firewall<br/>source: pull $#123;CONTAIND_IMAGE:-ghcr.io/tonylturner/containd:latest#125;<br/>release: pull ghcr.io/tonylturner/containd:latest"]
     n_eu_compose_gps_sim_357317717a["gps_sim<br/>source: build services/Dockerfile :gps-sim<br/>release: pull ghcr.io/tonylturner/rangerdanger-gps-sim:$#123;VERSION:-latest#125;"]
     n_eu_compose_historian_eu_fdd66ce275["historian_eu<br/>source: build services/Dockerfile :historian-eu<br/>tag: rangerdanger-historian-eu<br/>release: pull ghcr.io/tonylturner/rangerdanger-historian-eu:$#123;VERSION:-latest#125;"]
     n_eu_compose_iec104_rtu_40cbbf549c["iec104_rtu<br/>source: build services/iec104/Dockerfile<br/>tag: rangerdanger-iec104<br/>release: pull ghcr.io/tonylturner/rangerdanger-iec104:$#123;VERSION:-latest#125;"]

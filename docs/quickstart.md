@@ -231,26 +231,29 @@ published v0.2.1 images. This patch builds changed images and promotes
 unchanged images when the release's recorded inputs and digests qualify;
 it is not a repository-only hotfix or a forced full rebuild.
 
-**This release requires containd 0.1.40 or later** for online, offline and source
+**This release requires containd 0.1.41 or later** for online, offline and source
 installs. Check the actual containd build, not just the mutable `latest` tag.
 RangerDanger owns its client fixes for the readiness contract introduced in
 0.1.39; older containd builds are not a compatibility option.
 The backend checks the version before seeding and before adopting a running
-range after a backend restart; a 0.1.40 prerelease is too old.
+range after a backend restart; a 0.1.41 prerelease is too old.
 
-Online setup pulls `ghcr.io/tonylturner/containd:latest`, which supplies
-0.1.40 or later once that stable release has been promoted to the channel.
+Online release and source setup pull `ghcr.io/tonylturner/containd:latest`
+on every bring-up; source mode builds only RangerDanger images. Candidate
+image tests may set `CONTAIND_IMAGE` in source mode only.
 The tag is mutable: verify the actual build, not the tag name. Offline
 bundles must carry a verified qualifying image; see the
 [SSD containd update procedure](workshop-ssd.md#pattern-3-containd-update).
 
 **Back up for the v0.2.0 → v0.2.1 update too.** The containd
-[tagged update checklist](https://github.com/tonylturner/containd/blob/v0.1.40/docs/mkdocs/update-policy.md#operator-update-checklist)
+[update checklist](https://github.com/tonylturner/containd/blob/main/docs/mkdocs/update-policy.md#operator-update-checklist)
 requires a config export and preservation of the complete persistent `/data`
 before updating, retained until verification. Its
-[schema documentation](https://github.com/tonylturner/containd/blob/v0.1.40/docs/mkdocs/config-format.md#schema)
-still names schema 0.1.10: an already migrated v0.2.0 store does not cross
-that schema boundary again, but that does not remove the backup requirement.
+[schema documentation](https://github.com/tonylturner/containd/blob/main/docs/mkdocs/config-format.md#schema)
+describes the stored format. containd 0.1.41 migrates firewall `config.db`
+one-way; 0.1.40 cannot read it, even if the store already uses schema 0.1.10.
+Rollback requires the full pre-upgrade firewall data backup, matching old
+image and older RangerDanger release.
 Stop the lab with `./scripts/dev-down.sh` (Windows:
 `.\scripts\dev-down.ps1`) before copying storage. Use the complete
 package paths and matching image/repo preservation described below.
@@ -285,9 +288,9 @@ earlier cannot read. For binary/schema rollback, stop the lab, replace the migra
 directories with their complete pre-upgrade backups (do not merge database
 files), restore the matching older release and image, then restart and
 verify operations. **An older tag alone is not enough.** containd 0.1.36 and earlier
-require the older RangerDanger release too; this release requires 0.1.40 or later.
-A policy import uses candidate+commit only, preserving running NIC `device`
-bindings before staging. It is not a binary/schema rollback.
+require the older RangerDanger release too; this release requires 0.1.41 or later.
+A policy import uses candidate+commit only; containd owns physical NIC
+assignments. It is not a binary/schema rollback.
 
 ### Installing the upgrade
 
@@ -463,8 +466,8 @@ admin on next boot.
 The first source build (`./setup.sh --from-source`) pulls + compiles
 a lot. Subsequent builds reuse the layer cache. To force a clean re-pull
 of just the firewall image when containd publishes a security fix, pull
-it and restart the range on it (release mode only; source mode must rebuild
-from its containd source context). Confirm the image meets the 0.1.40 minimum
+it and restart the range on it (release and source modes both use the
+published image). Confirm the image meets the 0.1.41 minimum
 and, before its first start, follow the [firewall backup procedure](#firewall-storage-backup-and-rollback)
 above. A pull/restart is not a rollback procedure:
 

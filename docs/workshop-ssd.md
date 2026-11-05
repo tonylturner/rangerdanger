@@ -217,7 +217,7 @@ Use [`stage-ssd-delta.sh`](#delta-staging) below.
 
 ### Pattern 3: containd update
 
-This release requires containd 0.1.40 or later, including offline
+This release requires containd 0.1.41 or later, including offline
 bundles. RangerDanger owns its client fixes for that contract; using an older
 containd image is not a compatibility path. Verify the staged build as well
 as its digest.
@@ -233,7 +233,7 @@ in a delta, force it with:
   --include-upstream --include containd
 ```
 
-For the containd 0.1.40 compatibility update, use both flags on every delta:
+For the containd 0.1.41 compatibility update, use both flags on every delta:
 unchanged upstream references can otherwise cause the mutable `latest` image
 to be omitted. Keep the two architecture archives with the release evidence.
 
@@ -267,10 +267,13 @@ Keep all databases, journals, users and captures, not just a config export.
 The stored schema migrates one-way to 0.1.10, which containd 0.1.36 and earlier
 cannot read.
 
-For v0.2.0 → v0.2.1, schema 0.1.10 is already in use, but a fresh full
-storage backup is still required before updating containd. Follow the
+For v0.2.0 → v0.2.1, a fresh full
+storage backup is still required before updating containd. containd 0.1.41
+migrates firewall `config.db` one-way; 0.1.40 cannot read the migrated store.
+Rollback requires the full pre-upgrade firewall data backup and matching old
+image and RangerDanger release, even if schema 0.1.10 was already in use. Follow the
 [current upgrade backup guidance](quickstart.md#upgrading-to-v021), based on
-containd's v0.1.40 update checklist; keep the matching old image and repo
+containd's [update checklist](https://github.com/tonylturner/containd/blob/main/docs/mkdocs/update-policy.md#operator-update-checklist); keep the matching old image and repo
 until the update is verified. The generated delta apply recipe stops the lab
 and snapshots the complete installed tree, including both package stores.
 

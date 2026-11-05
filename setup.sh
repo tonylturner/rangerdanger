@@ -6,7 +6,7 @@
 #   ./setup.sh                              # pull pre-built images from GHCR (default)
 #   ./setup.sh --version v0.1.0             # pin to a specific release
 #   ./setup.sh --from-tarballs <PATH>       # offline: docker load from images-<arch>.tar
-#   ./setup.sh --from-source                # build the images on this host
+#   ./setup.sh --from-source                # build RangerDanger; pull containd :latest
 #   ./setup.sh --package <id>               # first-start range package (default:
 #                                           # us-dnp3-substation)
 #   ./setup.sh --check-only                 # run pre-flight only and exit (no install)
@@ -100,7 +100,7 @@ PLATFORM_PROJECT="rangerdanger-platform"
 RANGE_PROJECT="rangerdanger"
 MGMT_NET="rangerdanger_mgmt_net"
 
-# Mode: source builds on this host, release pulls from GHCR, offline loads
+# Mode: source builds RangerDanger and pulls containd, release pulls from GHCR, offline loads
 # the SSD tarball. Offline is release plus `--pull never`.
 if [ "$FROM_SOURCE" -eq 1 ] && [ -n "$TARBALL_DIR" ]; then
     die "--from-source and --from-tarballs are exclusive."
@@ -425,6 +425,7 @@ fi
 #   RANGERDANGER_ROOT      H; the platform file refuses to start without it
 #   RANGERDANGER_PACKAGE   only with --package: the first-start range
 #   CONTAIND_JWT_SECRET    only when set in this environment
+#   CONTAIND_IMAGE         source-mode candidate only; cleared on normal setup
 env_write() { # <key> [value]: drop the key, then append key=value if given
     local tmp="$ENV_FILE.tmp.$$"
     if [ -f "$ENV_FILE" ]; then
@@ -444,6 +445,12 @@ else
 fi
 if [ -n "${CONTAIND_JWT_SECRET:-}" ]; then
     env_write CONTAIND_JWT_SECRET "$CONTAIND_JWT_SECRET"
+fi
+# The backend's range Compose reads .env, not this host's environment.
+if [ "$MODE" = source ] && [ -n "${CONTAIND_IMAGE:-}" ]; then
+    env_write CONTAIND_IMAGE "$CONTAIND_IMAGE"
+else
+    env_write CONTAIND_IMAGE
 fi
 # The shell environment overrides .env in Compose; make both agree.
 export VERSION RANGERDANGER_ROOT="$ROOT_DIR"
@@ -519,7 +526,8 @@ case "$MODE" in
             say "Range package: $id"
             range_compose "$id" build
         done
-        # Image-only services (containd, nginx, the HMI poller, ...).
+        # Always refresh image-only services, including containd :latest (or the
+        # source-mode candidate image), even when that tag is cached locally.
         with_pull_retry platform_compose pull --ignore-buildable
         for id in $(package_ids); do
             with_pull_retry range_compose "$id" pull --ignore-buildable
