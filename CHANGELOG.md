@@ -8,16 +8,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [v0.2.1] - 2026-11-04
 
-Patch release for containd 0.1.40. containd 0.1.39 stopped delivering
-firewall rule-hit events, so this release requires containd 0.1.40 or later
-and refuses older builds. It was tested on 0.1.40, the current `latest`, with
-every US and EU gate and a browser walkthrough of both workshops. It also
-brings the EU one-line, trend and quality-display changes below. Native
-Windows installs are not yet validated for this release.
+Patch release for containd 0.1.41. containd 0.1.39 stopped delivering
+firewall rule-hit events, and 0.1.40 restored them. RangerDanger now runs
+the published containd `latest` in every install mode, requires containd
+0.1.41 or later, and refuses older builds. It was tested on 0.1.41, the
+current `latest`, with every US and EU gate; both workshops had a browser
+walkthrough on 0.1.40. It also brings the EU one-line, trend and
+quality-display changes below. Native Windows installs are not yet
+validated for this release.
+
+containd 0.1.41 migrates its stored firewall configuration one way; 0.1.40
+cannot read it. Back up the firewall data before upgrading, as the
+quickstart describes, so a rollback can restore it.
 
 Known issue: in the optional, ungraded EU PCAP Analysis sidebar (Lab 2.4),
-containd 0.1.40 rejects **Review** with "authenticated actor required", so
-suggestions cannot be staged. Capture, import, Analyze and Generate work.
+containd rejects **Review** with "authenticated actor required" (0.1.40 and
+0.1.41), so suggestions cannot be staged. Capture, import, Analyze and
+Generate work.
 
 ### Added
 
@@ -57,6 +64,10 @@ suggestions cannot be staged. Capture, import, Analyze and Generate work.
   voltage labels, earth leads, FPI badges and the F2 legend are clearer;
   no-load power factor is distinguished from observation uncertainty using
   sibling current quality, without requiring an exact-zero solver current.
+- Source mode no longer builds containd: every install mode runs the
+  published `ghcr.io/tonylturner/containd:latest`, and source setup pulls it
+  on each bring-up. `CONTAIND_IMAGE` selects another published image for a
+  source-mode test.
 - The overview voltage trend lists the 5 newest snapshots, with a button
   to show the last 30. The Control Centre Trends tab still lists 30.
 
@@ -75,11 +86,9 @@ suggestions cannot be staged. Capture, import, Analyze and Generate work.
   logs describe package-defined flows rather than a fixed protocol list.
 - Validation reports label PCAP paths relative to the install root.
   EU capture instructions explain copying files out before reset deletes them.
-- Support containd 0.1.40 and later; policy changes and range startup now wait
+- Require containd 0.1.41 or later; policy changes and range startup now wait
   for the committed policy to be protecting, rather than accepting degraded
   firewall readiness.
-- Build containd v0.1.40 in source mode for both range packages, matching
-  the supported minimum version.
 - containd 0.1.40 restores firewall rule-hit events.
 - The range restart and switch confirmation now appears above page content
   instead of behind it.
