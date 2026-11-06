@@ -89,11 +89,15 @@ jobs:
           make CC="$CC" HOSTCC="$HOSTCC" olddefconfig
           grep -E '^CONFIG_CC_VERSION_TEXT="gcc-14 ' .config
           # Surface the resolved values for the keys we care about so
-          # the build log proves they ended up enabled.
+          # the build log proves they ended up enabled. Fail on any key
+          # olddefconfig dropped: a renamed or unmet symbol is otherwise
+          # silently discarded and the shipped kernel lacks the feature.
           echo "--- resolved values ---"
+          bad=0
           while IFS= read -r key; do
-              grep -E "^(${key}=|# ${key} is not set)" .config || echo "${key} MISSING"
+              grep -E "^${key}=y" .config || { echo "${key} NOT ENABLED"; bad=1; }
           done < <(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay)
+          test "$bad" -eq 0
 
       - name: Compute SOURCE_DATE_EPOCH (reproducible builds)
         working-directory: kernel

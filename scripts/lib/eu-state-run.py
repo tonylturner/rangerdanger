@@ -37,7 +37,7 @@ def worker(case, directory, timeout):
     directory.mkdir(parents=True)
     start = time.monotonic()
     with (directory / 'run.log').open('w') as log:
-        process = subprocess.Popen(['bash', str(ROOT / 'scripts/eu-state-smoke.sh'), '--worker', case, str(directory)], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        process = subprocess.Popen([shutil.which('bash') or 'bash', str(ROOT / 'scripts/eu-state-smoke.sh'), '--worker', case, str(directory)], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         code = wait_owned(process, timeout)
     result = {'case': case, 'exit_code': code, 'seconds': round(time.monotonic() - start, 2), 'dom': 'enabled'}
     (directory / 'outcome.json').write_text(json.dumps(result, indent=2) + '\n')

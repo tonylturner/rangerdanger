@@ -28,16 +28,35 @@
 #   (Modbus function-code allowlist, DNP3 etc.). Without it, Lab 2.3
 #   and the events-smoke ICS DPI gates cannot enforce.
 #
-# CONFIG_NETFILTER_NETLINK_QUEUE_CT -- includes conntrack info in
+# CONFIG_NETFILTER_NETLINK_GLUE_CT -- includes conntrack info in
 #   packets handed to userspace queues. Required for containd to make
 #   per-flow DPI decisions (verdict differs for new vs established
 #   connections in the ICS allowlist). Cheap to enable; no runtime
-#   cost when no rule requests it.
+#   cost when no rule requests it. (Earlier overlays spelled this
+#   NETFILTER_NETLINK_QUEUE_CT, a name Kconfig no longer has, so
+#   olddefconfig silently dropped it.)
 #
 # CONFIG_NETFILTER_XT_TARGET_NFQUEUE -- the iptables-legacy "-j NFQUEUE"
 #   target. We are nft-only today, but iptables xtables is sometimes
 #   used by debugging or by rangerdanger's stage-zero diagnostic
 #   container; enable for parity.
+#
+# CONFIG_NFT_TPROXY + CONFIG_NF_TPROXY_IPV4/IPV6 -- the nftables `tproxy`
+#   statement. containd 0.1.40+ renders `tproxy ip to 127.0.0.1:<port>`
+#   (and the ip6 form) in EVERY policy, including Weak, to steer marked
+#   flows into its transparent ICS proxy. Without it the whole atomic
+#   ruleset is rejected and the range never reaches ready.
+#
+# CONFIG_NFT_FIB_INET + CONFIG_NFT_FIB_IPV4/IPV6 -- the `fib` expression.
+#   containd renders `fib daddr type local return` beside the tproxy
+#   rules; same failure mode as tproxy when missing.
+#
+# CONFIG_NFT_QUOTA, CONFIG_NFT_SYNPROXY, CONFIG_NFT_OSF -- `quota`,
+#   `synproxy` and `osf` expressions. containd's rule renderer carries
+#   templates for all three; Microsoft's defconfig leaves them off. Enabled
+#   ahead of need so a containd upgrade that starts rendering one does not
+#   break Windows hosts the way tproxy/fib did. NFT_OSF selects
+#   NETFILTER_NETLINK_OSF.
 #
 # ----------------------------------------------------------------------
 #
@@ -48,5 +67,14 @@
 # otherwise re-surface the original symptom in a different form.
 
 CONFIG_NFT_QUEUE=y
-CONFIG_NETFILTER_NETLINK_QUEUE_CT=y
+CONFIG_NETFILTER_NETLINK_GLUE_CT=y
 CONFIG_NETFILTER_XT_TARGET_NFQUEUE=y
+CONFIG_NFT_TPROXY=y
+CONFIG_NF_TPROXY_IPV4=y
+CONFIG_NF_TPROXY_IPV6=y
+CONFIG_NFT_FIB_INET=y
+CONFIG_NFT_FIB_IPV4=y
+CONFIG_NFT_FIB_IPV6=y
+CONFIG_NFT_QUOTA=y
+CONFIG_NFT_SYNPROXY=y
+CONFIG_NFT_OSF=y

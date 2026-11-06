@@ -126,7 +126,7 @@ function Get-KernelProbeResult {
 }
 
 function Write-KernelMissing {
-    Warn "WSL2 kernel: CONFIG_NFT_QUEUE missing -- DPI logging rules may fail to load."
+    Warn "WSL2 kernel: nft queue/tproxy/fib support missing -- containd policies cannot load."
     Warn "  This is a known limitation of the stock WSL2 kernel."
 }
 
@@ -199,7 +199,7 @@ function Install-LabKernel {
 function Invoke-KernelStep {
     if (-not $kernelProbeEnabled) { return }
     switch (Get-KernelProbeResult) {
-        0  { Say "WSL2 kernel: CONFIG_NFT_QUEUE present" }
+        0  { Say "WSL2 kernel: nft queue/tproxy/fib support present" }
         2  { Die "The kernel probe no longer detects Windows/WSL2. Check Docker Desktop before retrying." }
         13 { Die "WSL2 kernel: the nft probe could not run even with the lab images present (see above). Fix Docker, then re-run setup; pass -SkipKernelFix to bypass." }
         default {
@@ -349,7 +349,7 @@ if ($SkipFirewallGate) {
         Warn "Cause (on Windows): the WSL2 kernel is missing CONFIG_NFT_QUEUE."
         Warn "Fix (downloads + sha256-verifies the prebuilt kernel, ~3 min):"
         Warn "    .\scripts\install-wsl-kernel.ps1"
-        Warn "Verify:  .\scripts\firewall-smoke.ps1   (expect 52/52)"
+        Warn "Verify:  .\scripts\firewall-smoke.ps1   (expect 54/54)"
         Warn "------------------------------------------------------------"
     }
     if ($fwFail) {

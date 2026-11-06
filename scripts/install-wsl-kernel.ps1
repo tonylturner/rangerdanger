@@ -192,9 +192,23 @@ $FirewallImage = $ProbeImage
 $AlpineImage   = 'alpine:3.20'
 # The trailing rdprobe-rc marker proves nft itself ran; without it the
 # probe container could not start or had no nft. The table is deleted in
-# the same shell so the queue rule exists only for that instant.
+# the same shell so the probe rules exist only for that instant.
+# One atomic transaction covers every nft feature in wsl-kernel/config-overlay,
+# so a host still on an older lab kernel (queue only) reports Missing and
+# upgrades. tproxy/fib are only valid in prerouting and synproxy only in
+# forward/input, hence three chains. No double quotes: PS 5.1 re-splits them.
 $NftProbeScript = 'command -v nft >/dev/null 2>&1 || { echo rdprobe-nonft; exit 90; }; ' +
-    'nft ''add table inet rdprobe; add chain inet rdprobe c { type filter hook output priority 0; }; add rule inet rdprobe c queue num 999'' 2>&1; ' +
+    'nft ''add table inet rdprobe; ' +
+    'add chain inet rdprobe o { type filter hook output priority 0; }; ' +
+    'add rule inet rdprobe o queue num 999; ' +
+    'add rule inet rdprobe o quota over 1 mbytes; ' +
+    'add chain inet rdprobe p { type filter hook prerouting priority -150; }; ' +
+    'add rule inet rdprobe p fib daddr type local return; ' +
+    'add rule inet rdprobe p meta l4proto tcp tproxy ip to 127.0.0.1:18101; ' +
+    'add rule inet rdprobe p meta l4proto tcp tproxy ip6 to [::1]:18101; ' +
+    'add rule inet rdprobe p osf name Linux accept; ' +
+    'add chain inet rdprobe f { type filter hook forward priority 0; }; ' +
+    'add rule inet rdprobe f meta l4proto tcp synproxy mss 1460 wscale 7'' 2>&1; ' +
     'rc=$?; nft delete table inet rdprobe >/dev/null 2>&1; echo rdprobe-rc=$rc'
 
 function ConvertTo-NftProbeResult($Run, [string]$Source) {
@@ -480,11 +494,11 @@ if ($Test) {
     $probe = Test-NftQueueSupported
     switch ($probe.Result) {
         'Supported' {
-            Say "nft queue rule applies cleanly via $($probe.ProbeSource) -- no install needed."
+            Say "nft queue/tproxy/fib probe rules apply cleanly via $($probe.ProbeSource) -- no install needed."
             exit 0
         }
         'Missing' {
-            Warn "nft queue rule failed via $($probe.ProbeSource):"
+            Warn "nft queue/tproxy/fib probe rules failed via $($probe.ProbeSource):"
             Warn "$($probe.Detail)"
             Warn "Install path needed: .\scripts\install-wsl-kernel.ps1"
             exit 1
@@ -558,7 +572,7 @@ if (-not $DryRun) {
     if (-not $Force) {
         $probe = Test-NftQueueSupported
         if ($probe.Result -eq 'Supported') {
-            Say "nft queue rule already applies via $($probe.ProbeSource) -- nothing to do."
+            Say "nft queue/tproxy/fib probe rules already apply via $($probe.ProbeSource) -- nothing to do."
             Say "(Use -Force to install anyway.)"
             exit 0
         }
@@ -568,7 +582,7 @@ if (-not $DryRun) {
             Warn "or pass -Force to install without probing."
             exit 13
         }
-        Warn "nft queue rule fails on the current kernel. Proceeding with install."
+        Warn "nft queue/tproxy/fib probe rules fail on the current kernel. Proceeding with install."
     }
 
     $architecture = Get-DockerInfoBounded '{{.Architecture}}' 30
@@ -599,7 +613,7 @@ Write-Host "  1. Write $($Managed.WslConfig) (backup at $($Managed.WslConfigBak)
 Write-Host "     Setting kernel = $($Managed.WslConfigKernelValue)"
 Write-Host "  2. Run 'wsl --shutdown' (will stop the Docker Desktop VM and any other WSL2 distros you have running)"
 Write-Host "  3. Wait for Docker Desktop to reconnect"
-Write-Host "  4. Re-probe the nft queue rule to confirm the fix worked"
+Write-Host "  4. Re-probe the nft queue/tproxy/fib rules to confirm the fix worked"
 Write-Host ""
 if ($DryRun) {
     Say "DRY RUN: would acquire the kernel, write .wslconfig, then run 'wsl --shutdown', then poll. No changes made."
@@ -614,6 +628,23 @@ if (-not $Yes) {
     if ($ans -notmatch '^(y|yes)$') {
         Say "Aborted by user. No changes made."
         exit 10
+    }
+}
+
+# An upgrade replaces the kernel the running WSL2 VM has open, and Windows
+# refuses to overwrite it until wsl --shutdown. So acquire into a staged
+# file, swap it in now when the target is free (fresh install), and
+# otherwise after the shutdown below. The old kernel stays in place until
+# the swap succeeds, so .wslconfig never points at a missing file.
+$StagedKernel = "$($Managed.KernelTarget).new"
+function Install-StagedKernel {
+    if (-not (Test-Path -LiteralPath $StagedKernel)) { return $true }
+    try {
+        Move-Item -LiteralPath $StagedKernel -Destination $Managed.KernelTarget -Force -ErrorAction Stop
+        Say "Installed kernel to $($Managed.KernelTarget)"
+        return $true
+    } catch [System.IO.IOException] {
+        return $false
     }
 }
 
@@ -636,11 +667,11 @@ if ($KernelPath) {
         Warn "No -ExpectedSha256 for $kernelSrc -- installing it without verification."
         Warn "Only do this for a kernel you built yourself from wsl-kernel/."
     }
-    # Stage into managed location.
+    # Stage beside the managed location; Install-StagedKernel swaps it in.
     if (-not (Test-Path $Managed.KernelDir)) { New-Item -ItemType Directory -Path $Managed.KernelDir -Force | Out-Null }
     if ($kernelSrc -ne $Managed.KernelTarget) {
-        Copy-Item -Path $kernelSrc -Destination $Managed.KernelTarget -Force
-        Say "Staged kernel to $($Managed.KernelTarget)"
+        Copy-Item -Path $kernelSrc -Destination $StagedKernel -Force
+        Say "Staged kernel to $StagedKernel"
     }
 } else {
     $url = if ($KernelUrl) { $KernelUrl } else { Get-ReleaseAssetUrl $OwnerRepo $ReleaseTag $Managed.KernelFile }
@@ -649,7 +680,7 @@ if ($KernelPath) {
     try {
         Invoke-DownloadVerified $url $shaUrl $ExpectedSha256 $download
         if (-not (Test-Path $Managed.KernelDir)) { New-Item -ItemType Directory -Path $Managed.KernelDir -Force | Out-Null }
-        Copy-Item -LiteralPath $download -Destination $Managed.KernelTarget -Force
+        Copy-Item -LiteralPath $download -Destination $StagedKernel -Force
     } finally {
         Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue
     }
@@ -660,16 +691,37 @@ if ($merge.ExistingKernel -and $merge.ExistingKernel -ne $Managed.WslConfigKerne
     Say "Backed up foreign kernel= configuration to $($Managed.WslConfigBakFg)"
 }
 
-# Write .wslconfig (with backup).
-if (Test-Path $Managed.WslConfig) {
-    Copy-Item -Path $Managed.WslConfig -Destination $Managed.WslConfigBak -Force
-    Say "Backed up existing $($Managed.WslConfig) to $($Managed.WslConfigBak)"
+$kernelSwapped = Install-StagedKernel
+
+# Write .wslconfig (with backup). On an upgrade it already points at our
+# kernel: leave it and its .bak alone, because that .bak holds the user's
+# pre-install config that -Restore puts back. Overwriting it here would
+# make -Restore re-point WSL2 at the kernel file it then deletes.
+if ($merge.ExistingKernel -eq $Managed.WslConfigKernelValue) {
+    Say "$($Managed.WslConfig) unchanged (already points at our kernel)"
+} else {
+    if (Test-Path $Managed.WslConfig) {
+        Copy-Item -Path $Managed.WslConfig -Destination $Managed.WslConfigBak -Force
+        Say "Backed up existing $($Managed.WslConfig) to $($Managed.WslConfigBak)"
+    }
+    Write-WslConfigText $merge.Merged
+    Say "Wrote $($Managed.WslConfig)"
 }
-Write-WslConfigText $merge.Merged
-Say "Wrote $($Managed.WslConfig)"
 
 # Restart.
 Invoke-WslShutdown
+# Docker Desktop restarts the VM on its own, which can reopen the old
+# kernel before the swap lands; shut down again and retry briefly.
+for ($attempt = 1; -not $kernelSwapped -and $attempt -le 5; $attempt++) {
+    $kernelSwapped = Install-StagedKernel
+    if (-not $kernelSwapped) {
+        Start-Sleep -Seconds 1
+        Invoke-WslShutdown
+    }
+}
+if (-not $kernelSwapped) {
+    Die 1 "Could not replace $($Managed.KernelTarget): still in use after wsl --shutdown. The previous kernel is still installed. Quit Docker Desktop, then re-run this installer."
+}
 $newKernel = Wait-DockerReconnect 600
 if (-not $newKernel) {
     Warn "The kernel is installed, but Docker Desktop did not come back in time."
@@ -683,7 +735,7 @@ Banner "Post-install verification"
 $probe2 = Test-NftQueueSupported
 if ($probe2.Result -eq 'Supported') {
     Banner "Success"
-    Say "Custom kernel installed and nft queue rule now applies."
+    Say "Custom kernel installed and nft queue/tproxy/fib rules now apply."
     Say "Docker kernel: $newKernel"
     exit 0
 } elseif ($probe2.Result -eq 'Unknown') {
