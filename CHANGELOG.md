@@ -30,6 +30,9 @@ so suggestions cannot be staged. Capture, import, Analyze and Generate work.
   backup.
 - EU lab-command execution on Windows selects Git Bash instead of the
   WSL shell and uses UTF-8 output, so the package commands run correctly.
+- The quickstart and the final `setup.sh` and `setup.ps1` messages point
+  to the containd UI at `http://localhost:8088/containd/`. Port 9080 is
+  not a reliable management path, and student policies can block it.
 - Rebuilding from refreshed Alpine 3.24 bases brings
   `openssh-server` 10.3_p1-r2, which fixes CVE-2026-123158, into the US
   RTAC simulation image.
