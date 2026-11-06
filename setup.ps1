@@ -380,7 +380,7 @@ Banner 'RangerDanger is up'
 @"
   Web UI:        http://localhost:8088
   Exercises:     http://localhost:8088/exercises
-  containd UI:   http://localhost:9080
+  containd UI:   http://localhost:8088/containd/
   containd SSH:  ssh -p 2222 containd@localhost   (password: containd)
   Range:         $RangePackage (switch packages in the web UI)
 
