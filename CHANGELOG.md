@@ -6,6 +6,34 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.2] - 2026-11-05
+
+Windows fix release: v0.2.1 could not bring up a range on Windows.
+This release supplies a new custom WSL2 kernel; setup installs it for
+Windows hosts that need it, including hosts already using the v0.2.1
+kernel. All 20 first-party images are rebuilt from refreshed bases with
+`[rebuild-all]` and no image promotion. It was tested on containd 0.1.42;
+the minimum remains 0.1.41. This release moves `latest`.
+
+Known issue: in the optional, ungraded EU PCAP Analysis sidebar (Lab 2.4),
+containd 0.1.42 rejects **Review** with "authenticated actor required",
+so suggestions cannot be staged. Capture, import, Analyze and Generate work.
+
+### Fixed
+
+- Windows setup allows the backend's health probe enough time when
+  `localhost` first resolves to the refused IPv6 loopback, instead of
+  failing every range startup.
+- The custom WSL2 kernel enables the nftables features required by
+  containd policies. Setup detects hosts on the old kernel, installs the
+  new release asset after WSL shuts down, and preserves the stock-kernel
+  backup.
+- EU lab-command execution on Windows selects Git Bash instead of the
+  WSL shell and uses UTF-8 output, so the package commands run correctly.
+- Rebuilding from refreshed Alpine 3.24 bases brings
+  `openssh-server` 10.3_p1-r2, which fixes CVE-2026-123158, into the US
+  RTAC simulation image.
+
 ## [v0.2.1] - 2026-11-04
 
 Patch release for containd 0.1.41. containd 0.1.39 stopped delivering
@@ -3565,7 +3593,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.2...HEAD
+[v0.2.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.2
 [v0.2.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.1
 [v0.2.0]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0
 [v0.2.0-rc.6]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0-rc.6
