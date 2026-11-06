@@ -65,7 +65,7 @@ CURL_MODE=timeout-then-success
 t_run eu_wait_for_state /api/operator/state true 2 "slow poll recovers"
 t_expect_eq "$T_STATUS" 0 "a timeout followed by a valid state passes"
 t_expect_eq "$(cat "$CURL_COUNT_FILE")" 2 "the timed-out GET is retried once"
-t_expect_out "continuing wait if budget remains (2s)" "the tolerated timeout is logged"
+t_expect_out "GET /api/operator/state timed out; continuing wait" "the tolerated timeout is logged"
 t_expect_fails 0 "a recovered wait records no gate failure"
 
 printf '0\n' >"$CURL_COUNT_FILE"
@@ -81,9 +81,9 @@ t_run eu_wait_for_state /api/operator/state true 1 "slow poll expires"
 t_expect_eq "$T_STATUS" 1 "repeated transport timeouts fail at the wait budget"
 t_expect_out "did not reach expected state within 1s" "timeout failure keeps the normal budget message"
 t_expect_out "last transport error: curl: (28) fake timeout" "timeout failure includes its last transport error"
-t_expect_out "continuing wait if budget remains (1s)" "each timeout before expiry is logged as tolerated"
+t_expect_out "GET /api/operator/state timed out; continuing wait" "each timeout before expiry is logged as tolerated"
 attempts=$(cat "$CURL_COUNT_FILE")
-retry_logs=$(printf '%s\n' "$T_OUT" | grep -c 'continuing wait if budget remains (1s)')
+retry_logs=$(printf '%s\n' "$T_OUT" | grep -c 'timed out; continuing wait')
 t_expect_eq "$retry_logs" "$((attempts - 1))" "every retried timeout has a log line"
 
 printf '0\n' >"$CURL_COUNT_FILE"

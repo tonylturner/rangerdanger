@@ -223,14 +223,19 @@ eu_action_step() {
 
 eu_wait_for_state() {
   local path="$1" expression="$2" budget="$3" label="$4" start_ms="${5:-}" now_ms
-  local last_transport_error="" poll_timed_out timeout_log_pending=0
+  local last_transport_error=""
   WAIT_BODY=""
   [ -n "$start_ms" ] || start_ms=$(eu_now_ms) || {
     fail "$label cannot establish monotonic timeout"
     return 1
   }
   while :; do
-    if [ -n "$last_transport_error" ]; then
+    if ! eu_api_get "$path"; then
+      if [ "${EU_API_CURL_EXIT_CODE:-0}" -ne 28 ]; then
+        fail "$label returned no valid HTTP 200 JSON response"
+        return 1
+      fi
+      last_transport_error="$EU_API_CURL_ERROR"
       now_ms=$(eu_now_ms) || now_ms=""
       if ! [[ "$now_ms" =~ ^[0-9]+$ ]]; then
         fail "$label cannot read monotonic clock"
@@ -239,36 +244,15 @@ eu_wait_for_state() {
       if [ "$((now_ms - start_ms))" -ge "$((budget * 1000))" ]; then
         break
       fi
-      if [ "$timeout_log_pending" -eq 1 ]; then
-        printf 'GET %s timed out (curl exit 28): %s; continuing wait if budget remains (%ss)\n' \
-          "$path" "$last_transport_error" "$budget" >&2
-        timeout_log_pending=0
-      fi
+      printf 'GET %s timed out; continuing wait\n' "$path" >&2
+      sleep 0.1
+      continue
     fi
-    poll_timed_out=0
-    if ! eu_api_get "$path"; then
-      if [ "${EU_API_CURL_EXIT_CODE:-0}" -eq 28 ]; then
-        last_transport_error="$EU_API_CURL_ERROR"
-        poll_timed_out=1
-        timeout_log_pending=1
-      else
-        fail "$label returned no valid HTTP 200 JSON response"
-        return 1
-      fi
-    else
-      WAIT_BODY="$API_BODY"
-    fi
+    WAIT_BODY="$API_BODY"
     now_ms=$(eu_now_ms) || now_ms=""
     if ! [[ "$now_ms" =~ ^[0-9]+$ ]]; then
       fail "$label cannot read monotonic clock"
       return 1
-    fi
-    if [ "$poll_timed_out" -eq 1 ]; then
-      if [ "$((now_ms - start_ms))" -ge "$((budget * 1000))" ]; then
-        break
-      fi
-      sleep 0.1
-      continue
     fi
     if [ "$((now_ms - start_ms))" -le "$((budget * 1000))" ] \
       && printf '%s' "$WAIT_BODY" | jq -e "$EU_JQ_DEFS $expression" >/dev/null 2>&1; then
