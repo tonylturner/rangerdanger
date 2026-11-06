@@ -9,35 +9,39 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ContaindReleaseDocsTests(unittest.TestCase):
-    def test_current_install_and_staging_commands_select_v021(self):
+    def test_current_install_and_staging_commands_select_v022(self):
         for path in ("README.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
             text = (ROOT / path).read_text()
             with self.subTest(path=path):
-                self.assertIn("v0.2.1", text)
-                self.assertIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.1", text)
+                self.assertIn("v0.2.2", text)
+                self.assertIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.2", text)
                 self.assertNotRegex(text, r"(?:--version|-Version) v0\.2\.0\b")
                 self.assertNotIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0", text)
         for path in ("README.md", "docs/quickstart.md"):
             text = (ROOT / path).read_text()
             with self.subTest(path=path):
-                self.assertIn("./setup.sh --version v0.2.1", text)
-                self.assertIn(r".\setup.ps1 -Version v0.2.1", text)
+                self.assertIn("./setup.sh --version v0.2.2", text)
+                self.assertIn(r".\setup.ps1 -Version v0.2.2", text)
         for path in ("README.md", "docs/v0.1.36-hotfix.md"):
-            self.assertIn("quickstart.md#upgrading-to-v021", (ROOT / path).read_text())
+            self.assertIn("quickstart.md#upgrading-to-v022", (ROOT / path).read_text())
 
-    def test_patch_upgrade_requires_backup_without_rewriting_v020_history(self):
+    def test_v021_upgrade_has_no_migration_but_v020_backup_still_applies(self):
         text = " ".join((ROOT / "docs/quickstart.md").read_text().split())
         current, history = text.split("## Upgrading to v0.2.0", 1)
-        for phrase in ("## Upgrading to v0.2.1", "v0.2.0 → v0.2.1",
-                       "git fetch origin tag v0.2.1", "git checkout --detach v0.2.1",
+        for phrase in ("## Upgrading to v0.2.2", "v0.2.1 → v0.2.2",
+                       "does not require a firewall-data migration",
+                       "git fetch origin tag v0.2.2", "git checkout --detach v0.2.2",
+                       "v0.2.0 still crosses the containd 0.1.41 storage migration",
                        "requires containd 0.1.41 or later", "containd:latest",
-                       "**Back up for the v0.2.0 → v0.2.1 update too.**",
+                       "tested on 0.1.42",
+                       "**Back up when upgrading from v0.2.0.**",
                        "complete persistent `/data`", "migrates firewall `config.db`",
                        "full pre-upgrade firewall data backup",
                        "main/docs/mkdocs/update-policy.md",
                        "main/docs/mkdocs/config-format.md",
                        "./scripts/dev-down.sh", r".\scripts\dev-down.ps1",
-                       "promotes unchanged images", "digests qualify"):
+                       "Every first-party image is rebuilt",
+                       "a fresh full SSD bundle is simpler"):
             self.assertIn(phrase, current)
         for phrase in ("v0.1.x", "rebuilt all 20 first-party images",
                        "minimum was 0.1.37", "one-way to 0.1.10",
@@ -46,14 +50,19 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         self.assertNotIn("once v0.2.0 is published", text)
         self.assertNotIn("git checkout --detach v0.2.0", text)
 
-    def test_both_v021_delta_examples_force_include_containd(self):
+    def test_v022_delta_examples_cover_full_rebuild_and_optional_containd(self):
         text = (ROOT / "docs/workshop-ssd.md").read_text()
-        command = (
-            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1 \\\n"
+        with_containd = (
+            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.2 v0.2.1 v0.2.2 \\\n"
             "  --include-upstream --include containd"
         )
-        self.assertEqual(text.count(command), 2)
-        self.assertIn("fresh full\nstorage backup is still required", text)
+        self.assertEqual(text.count(with_containd), 1)
+        self.assertEqual(text.count(
+            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.2 v0.2.1 v0.2.2"
+        ), 2)
+        self.assertIn("v0.2.0 → v0.2.2, a fresh full\nstorage backup is still required", text)
+        self.assertIn("rebuilds all 20 first-party images", text)
+        self.assertIn("A fresh full bundle is simpler", text)
         self.assertNotIn("This is a future-version example", text)
 
     def test_local_cli_guidance_uses_exit_and_separates_candidate_status(self):
