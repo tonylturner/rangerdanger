@@ -336,7 +336,7 @@ class ErrataContracts(unittest.TestCase):
         text = path.read_text()
         for phrase in ("How to update", "PowerShell", "full image release",
                        "All 16 first-party images", "`latest` moves", "SSD",
-                       "quickstart.md#upgrading-to-v021", "workshop-ssd.md#delta-staging"):
+                       "quickstart.md#upgrading-to-v022", "workshop-ssd.md#delta-staging"):
             self.assertIn(phrase, text)
         for stale in ("existing v0.1.35 images", "no pull, no rebuild",
                       "Do not run `./setup.sh --version v0.1.36`", "./scripts/apply-repo-update.sh"):
@@ -357,17 +357,21 @@ class ErrataContracts(unittest.TestCase):
                 self.assertNotRegex(doc, r"v0\.1\.36-rc\.[123]\b")
 
     def test_release_update_uses_standard_setup_and_delta_paths(self):
-        quickstart = (ROOT / "docs/quickstart.md").read_text()
-        for phrase in ("git fetch origin tag v0.2.1", "git checkout --detach v0.2.1",
-                       "./setup.sh --version v0.2.1 --package us-dnp3-substation",
-                       "eu-iec104-substation", "PowerShell", "parity",
-                       "workshop reset", "DELTA-README.md", "close to a full set"):
+        quickstart = " ".join((ROOT / "docs/quickstart.md").read_text().split())
+        for phrase in ("git fetch origin tag v0.2.2", "git checkout --detach v0.2.2",
+                       "./setup.sh --version v0.2.2 --package us-dnp3-substation",
+                       "v0.2.1 → v0.2.2", "does not require a firewall-data migration",
+                       "An upgrade directly from v0.2.0 still crosses the containd 0.1.41 storage",
+                       "eu-iec104-substation", "PowerShell", "validated on Windows 11",
+                       "workshop reset", "DELTA-README.md", "close to a full set",
+                       "new v0.2.2 kernel", "asset when needed"):
             self.assertIn(phrase, quickstart)
-        ssd = (ROOT / "docs/workshop-ssd.md").read_text()
-        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.1",
-                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1",
+        ssd = " ".join((ROOT / "docs/workshop-ssd.md").read_text().split())
+        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.2",
+                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.2 v0.2.1 v0.2.2",
                        "v0.1.x SSD baseline lacks it", "package Compose metadata",
-                       "close to a full set", "[rebuild-all]"):
+                       "close to a full bundle", "[rebuild-all]",
+                       "v0.2.0 → v0.2.2", "does not require a containd migration backup"):
             self.assertIn(phrase, ssd)
         readme = (ROOT / "README.md").read_text()
         self.assertNotIn("> [!IMPORTANT]", readme)
