@@ -361,7 +361,7 @@ the matching complete pre-upgrade storage, image and older RangerDanger release.
 | | URL | Credentials |
 |---|---|---|
 | RangerDanger UI | http://localhost:8088 | - |
-| containd Web UI | http://localhost:9080 | containd / containd |
+| containd Web UI | http://localhost:8088/containd/ | containd / containd |
 | containd SSH | `ssh -p 2222 containd@localhost` | containd / containd |
 | FUXA HMI | http://localhost:8088/apps/fuxa-hmi/ | - |
 | OpenPLC | http://localhost:8088/apps/openplc/ | openplc / openplc |
