@@ -9,7 +9,10 @@ function Wait-SetupHealth([string]$Api, [int]$BudgetSec = 120) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     while ($clock.Elapsed.TotalSeconds -lt $BudgetSec) {
         try {
-            $r = Invoke-WebRequest -Uri "$Api/api/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+            # Ports bind 127.0.0.1 only. Windows resolves localhost to ::1
+            # first and spends ~2.1 s on the refused IPv6 connect before
+            # falling back, so a 2 s timeout never reaches IPv4.
+            $r = Invoke-WebRequest -Uri "$Api/api/health" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
             if ($r.StatusCode -eq 200) { return }
         } catch { Write-Verbose "Backend is not ready: $_" }
         Start-Sleep -Seconds 2

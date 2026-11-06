@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -9,6 +10,9 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 EU = "eu-iec104-substation"
+# Resolve via PATH: a bare "bash" on Windows hits System32ash.exe (WSL)
+# before PATH, not the Git Bash the preflight found.
+BASH = shutil.which("bash") or "bash"
 
 
 def request(api, path, body=None):
@@ -77,7 +81,7 @@ class EUAdapter:
     def helper(self, *args):
         with (self.directory / "lifecycle.log").open("a") as log:
             subprocess.run(
-                ["bash", (ROOT / "scripts/lib/lab-commands-eu.sh").as_posix(),
+                [BASH, (ROOT / "scripts/lib/lab-commands-eu.sh").as_posix(),
                  self.directory.as_posix(), *args], check=True, timeout=180,
                 stdout=log, stderr=subprocess.STDOUT,
                 env={**os.environ, "RANGERDANGER_API": self.api})

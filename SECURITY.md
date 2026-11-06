@@ -143,12 +143,22 @@ images and before it starts the stack.
 
 A vanilla Microsoft WSL2 kernel
 ([`microsoft/WSL2-Linux-Kernel`](https://github.com/microsoft/WSL2-Linux-Kernel))
-at a pinned tag, with **three** Kconfig flags additionally enabled:
+at a pinned tag, with only these netfilter Kconfig flags additionally
+enabled:
 
 ```
 CONFIG_NFT_QUEUE=y
-CONFIG_NETFILTER_NETLINK_QUEUE_CT=y
+CONFIG_NETFILTER_NETLINK_GLUE_CT=y
 CONFIG_NETFILTER_XT_TARGET_NFQUEUE=y
+CONFIG_NFT_TPROXY=y
+CONFIG_NF_TPROXY_IPV4=y
+CONFIG_NF_TPROXY_IPV6=y
+CONFIG_NFT_FIB_INET=y
+CONFIG_NFT_FIB_IPV4=y
+CONFIG_NFT_FIB_IPV6=y
+CONFIG_NFT_QUOTA=y
+CONFIG_NFT_SYNPROXY=y
+CONFIG_NFT_OSF=y
 ```
 
 That's the entire delta. We do not patch the kernel source. The

@@ -2,8 +2,9 @@
 
 This directory contains the only thing rangerdanger contributes to the
 custom WSL2 kernel it ships for Windows students: a small Kconfig
-overlay (`config-overlay`) that enables `CONFIG_NFT_QUEUE=y` plus two
-related netfilter options on top of Microsoft's stock WSL2 defconfig.
+overlay (`config-overlay`) that enables `CONFIG_NFT_QUEUE=y`, the
+nftables `tproxy`/`fib` expressions, and a few related netfilter options
+on top of Microsoft's stock WSL2 defconfig.
 
 We do not patch, fork, or otherwise modify the Linux kernel source.
 
@@ -22,9 +23,18 @@ inspection. Without the kernel-side `queue` verdict, the DPI rules cannot
 load, so the labs cannot demonstrate detection and logging. The L4 source
 pin enforces; DPI detects and logs.
 
+containd 0.1.40 and later also render `tproxy ip/ip6 to ...` and
+`fib daddr type local` in every policy, Weak included, to steer flows into
+its transparent ICS proxy. Microsoft's defconfig leaves `NFT_TPROXY` and
+`NFT_FIB_*` off too, and nftables applies a ruleset atomically, so on a
+stock (or older RangerDanger) kernel the whole policy is rejected and the
+range never reaches ready. The overlay also enables `quota`, `synproxy`
+and `osf`, which containd's renderer carries templates for, so the next
+containd upgrade does not reopen the same gap.
+
 Rather than redesign the lab around what one specific Linux kernel
 flavor happens to omit, we ship a build of the same Microsoft kernel
-tree with that one config flag flipped.
+tree with those config flags flipped.
 
 ## What's in the build
 
@@ -33,8 +43,17 @@ defconfig:
 
 ```
 CONFIG_NFT_QUEUE=y
-CONFIG_NETFILTER_NETLINK_QUEUE_CT=y
+CONFIG_NETFILTER_NETLINK_GLUE_CT=y
 CONFIG_NETFILTER_XT_TARGET_NFQUEUE=y
+CONFIG_NFT_TPROXY=y
+CONFIG_NF_TPROXY_IPV4=y
+CONFIG_NF_TPROXY_IPV6=y
+CONFIG_NFT_FIB_INET=y
+CONFIG_NFT_FIB_IPV4=y
+CONFIG_NFT_FIB_IPV6=y
+CONFIG_NFT_QUOTA=y
+CONFIG_NFT_SYNPROXY=y
+CONFIG_NFT_OSF=y
 ```
 
 The build process (see `.github/workflows/build-wsl-kernel.yml`):
@@ -43,7 +62,7 @@ The build process (see `.github/workflows/build-wsl-kernel.yml`):
    [`microsoft/WSL2-Linux-Kernel`](https://github.com/microsoft/WSL2-Linux-Kernel)
    at a pinned tag (workflow input `kernel_tag`).
 2. Starts from `Microsoft/config-wsl` (Microsoft's stock defconfig).
-3. Appends the three lines above.
+3. Appends the lines above.
 4. Runs `make olddefconfig` to resolve dependencies.
 5. Runs `make bzImage` to produce `arch/x86/boot/bzImage`.
 6. Computes the SHA-256 of the resulting binary.
@@ -51,7 +70,7 @@ The build process (see `.github/workflows/build-wsl-kernel.yml`):
    the rangerdanger GitHub release that triggered the build.
 
 There are no patches, no module loads, no out-of-tree code. The
-build log is public; the diff is the three lines above.
+build log is public; the diff is the lines above.
 
 ## Reproducing the build locally
 

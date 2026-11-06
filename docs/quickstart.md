@@ -114,6 +114,11 @@ cd rangerdanger
 .\setup.ps1 -Version v0.2.1
 ```
 
+Windows 11 blocks local scripts by default ("running scripts is disabled on
+this system"). Allow them once for your account with
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or run a single
+command as `powershell -ExecutionPolicy Bypass -File .\setup.ps1 ...`.
+
 `setup.sh` checks Docker, the Compose (2.36.0+) and Engine API (1.49+)
 versions, architecture, and loopback ports; it refuses older Docker.
 Its disk and memory checks only warn: disk is measured on the checkout

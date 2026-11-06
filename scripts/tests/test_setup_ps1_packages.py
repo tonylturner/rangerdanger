@@ -176,7 +176,7 @@ $script:gets = 0
 function Start-Sleep { }
 function Invoke-WebRequest($Uri, $Method, $ContentType, $Body, [switch]$UseBasicParsing, $TimeoutSec, $ErrorAction) {
     if ($Uri.EndsWith('/health')) {
-        if ($TimeoutSec -ne 2) { throw 'unbounded health' }
+        if ($TimeoutSec -ne 10) { throw 'unbounded health' }
         return [pscustomobject]@{ StatusCode=200 }
     }
     if ($TimeoutSec -ne 30 -or $Method -ne 'POST') { throw 'unbounded POST' }

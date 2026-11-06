@@ -31,6 +31,13 @@ function Resolve-Python3 {
 }
 
 function Invoke-LabCommandWorker([string[]]$WorkerArgs) {
+    # Windows Python defaults files and pipes to the ANSI code page, which
+    # cannot encode lab text such as U+2192; force UTF-8 for the worker.
+    $env:PYTHONUTF8 = '1'
+    # EU helpers run under Git Bash with native jq/docker. Git Bash must still
+    # turn /c/... host paths into C:/... for jq, but must not rewrite Linux
+    # paths that docker exec passes into containers (/etc, /data, ...).
+    $env:MSYS2_ARG_CONV_EXCL = '/etc;/tmp;/var;/usr;/opt;/proc;/run;/root;/home;/app;/data;/sys;/dev;/bin;/sbin;/lib;/srv;/mnt'
     # Keep both streams visible; only the shared worker decides semantic success.
     & $PythonExe @PythonPrefix @WorkerArgs | Out-Host
     return $LASTEXITCODE
