@@ -47,11 +47,17 @@ eu_log_response() {
 eu_api_get() {
   local path="$1" budget="${2:-2}"
   API_BODY=""
-  HTTP_STATUS=$(curl -sS --max-time "$budget" -o "$TMP_DIR/api-get.json" \
-    -w '%{http_code}' "$API$path" 2>"$TMP_DIR/curl.err") || {
+  EU_API_CURL_EXIT_CODE=0
+  EU_API_CURL_ERROR=""
+  if HTTP_STATUS=$(curl -sS --max-time "$budget" -o "$TMP_DIR/api-get.json" \
+    -w '%{http_code}' "$API$path" 2>"$TMP_DIR/curl.err"); then
+    :
+  else
+    EU_API_CURL_EXIT_CODE=$?
+    EU_API_CURL_ERROR=$(cat "$TMP_DIR/curl.err")
     printf 'GET %s failed: %s\n' "$path" "$(cat "$TMP_DIR/curl.err")" >&2
     return 1
-  }
+  fi
   API_BODY=$(cat "$TMP_DIR/api-get.json")
   eu_log_response GET "$path"
   if [ "$HTTP_STATUS" != "200" ]; then
@@ -217,20 +223,52 @@ eu_action_step() {
 
 eu_wait_for_state() {
   local path="$1" expression="$2" budget="$3" label="$4" start_ms="${5:-}" now_ms
+  local last_transport_error="" poll_timed_out timeout_log_pending=0
+  WAIT_BODY=""
   [ -n "$start_ms" ] || start_ms=$(eu_now_ms) || {
     fail "$label cannot establish monotonic timeout"
     return 1
   }
   while :; do
-    if ! eu_api_get "$path"; then
-      fail "$label returned no valid HTTP 200 JSON response"
-      return 1
+    if [ -n "$last_transport_error" ]; then
+      now_ms=$(eu_now_ms) || now_ms=""
+      if ! [[ "$now_ms" =~ ^[0-9]+$ ]]; then
+        fail "$label cannot read monotonic clock"
+        return 1
+      fi
+      if [ "$((now_ms - start_ms))" -ge "$((budget * 1000))" ]; then
+        break
+      fi
+      if [ "$timeout_log_pending" -eq 1 ]; then
+        printf 'GET %s timed out (curl exit 28): %s; continuing wait if budget remains (%ss)\n' \
+          "$path" "$last_transport_error" "$budget" >&2
+        timeout_log_pending=0
+      fi
     fi
-    WAIT_BODY="$API_BODY"
+    poll_timed_out=0
+    if ! eu_api_get "$path"; then
+      if [ "${EU_API_CURL_EXIT_CODE:-0}" -eq 28 ]; then
+        last_transport_error="$EU_API_CURL_ERROR"
+        poll_timed_out=1
+        timeout_log_pending=1
+      else
+        fail "$label returned no valid HTTP 200 JSON response"
+        return 1
+      fi
+    else
+      WAIT_BODY="$API_BODY"
+    fi
     now_ms=$(eu_now_ms) || now_ms=""
     if ! [[ "$now_ms" =~ ^[0-9]+$ ]]; then
       fail "$label cannot read monotonic clock"
       return 1
+    fi
+    if [ "$poll_timed_out" -eq 1 ]; then
+      if [ "$((now_ms - start_ms))" -ge "$((budget * 1000))" ]; then
+        break
+      fi
+      sleep 0.1
+      continue
     fi
     if [ "$((now_ms - start_ms))" -le "$((budget * 1000))" ] \
       && printf '%s' "$WAIT_BODY" | jq -e "$EU_JQ_DEFS $expression" >/dev/null 2>&1; then
@@ -241,7 +279,11 @@ eu_wait_for_state() {
     fi
     sleep 0.1
   done
-  fail "$label did not reach expected state within ${budget}s; last response: $WAIT_BODY"
+  if [ -n "$last_transport_error" ]; then
+    fail "$label did not reach expected state within ${budget}s; last response: $WAIT_BODY; last transport error: $last_transport_error"
+  else
+    fail "$label did not reach expected state within ${budget}s; last response: $WAIT_BODY"
+  fi
   return 1
 }
 
