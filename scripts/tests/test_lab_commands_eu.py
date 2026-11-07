@@ -23,7 +23,7 @@ class EUOracleTests(unittest.TestCase):
         rows = [r for r in worker.extract(package_id=eu.EU)
                 if r["command"].startswith("nmap ")]
         data = json.loads((ROOT / "scripts/lab-commands-expectations-eu-iec104-substation.json").read_text())
-        self.assertEqual(len(rows), 9)
+        self.assertEqual(len(rows), 12)
         for row in rows:
             with self.subTest(command=worker.gate.key(row)):
                 self.assertRegex(row["command"], r"^nmap -Pn -p [\d,]+ \S+ --max-retries 1 -T4$")
