@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- EU gate waits retry curl transport timeouts while their wait budget remains.
+
 ## [v0.2.2] - 2026-11-05
 
 Windows fix release: v0.2.1 could not bring up a range on Windows.
