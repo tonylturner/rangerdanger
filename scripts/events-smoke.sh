@@ -3,7 +3,7 @@
 # pipeline + ICS DPI detection/logging that the traffic-only smoke
 # (firewall-smoke.sh) doesn't cover.
 #
-# Four checks:
+# Six checks:
 #
 #   1. L4 events flow under improved policy
 #      Apply improved → kali Modbus probe → expect at least one
@@ -31,12 +31,17 @@
 #   4. DNP3 ICS DPI function-code detection/logging, under the same
 #      NFQUEUE prerequisite, for an RTAC Direct Operate probe.
 #
+#   5–6. Fresh Modbus/DNP3 DPI requests under the corresponding singleton
+#      compiled plan, with plan provenance checked before and after traffic.
+#
 # Assumes rangerdanger stack is up + backend healthy (run
 # scripts/smoke-test.sh --keep first).
 
 set -uo pipefail
 
 API="${RANGERDANGER_API:-http://localhost:8088}"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+relay_touched=0
 JWT_SECRET="${CONTAIND_JWT_SECRET:-rangerdanger-dev}"
 PROBE_WAIT="${PROBE_WAIT:-4}"          # initial wait before first event check
 EVENT_POLL_BUDGET="${EVENT_POLL_BUDGET:-45}"  # max additional seconds to wait
@@ -148,6 +153,27 @@ apply_policy() {
     return 1
   fi
 }
+
+# Every mutating path, including failed evidence checks, returns to named Weak.
+cleanup_events() {
+  local rc=$? breaker=""
+  trap - EXIT
+  apply_policy weak || rc=1
+  if [ "$relay_touched" -eq 1 ]; then
+    docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close >/dev/null 2>&1 || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      breaker=$(curl -fsS --max-time 5 "$API/api/substation/state" 2>/dev/null | python3 -c 'import json,sys; print(str(json.load(sys.stdin)["devices"]["relay"]["breaker_closed"]).lower())' 2>/dev/null)
+      [ "$breaker" = "true" ] && break
+      sleep 1
+    done
+    if [ "$breaker" != "true" ]; then
+      err "cleanup: relay breaker still open after the DNP3 close (breaker_closed=${breaker:-unknown})"
+      rc=1
+    fi
+  fi
+  return "$rc"
+}
+trap 'cleanup_events || exit 1' EXIT
 
 # ─────────────────────────────────────────────────────────────────────
 # Gate 1: L4 firewall.rule.hit events flow under improved policy
@@ -347,6 +373,96 @@ else
   err "template preview rejected hyphenated name: $tmpl_resp"
 fi
 
+# One probe/evidence path for both the named-policy and compiled-plan gates.
+install_modbus_probe() {
+  cat <<'PY' | docker exec -i rangerdanger-rtac-sim sh -c "cat > /tmp/_smoke_modbus.py"
+import socket, struct, sys
+target, fc = sys.argv[1], sys.argv[2]
+def mbap(pdu, tx=1):
+    return struct.pack(">HHHB", tx, 0, len(pdu)+1, 1) + pdu
+fc_map = {
+    "fc3": mbap(struct.pack(">BHH", 3, 0, 1)),     # read holding regs (allowlisted)
+    "fc8": mbap(struct.pack(">BHH", 8, 0, 0)),     # diagnostics (NOT in allowlist)
+}
+s = socket.socket(); s.settimeout(3)
+try:
+    s.connect((target, 502)); s.send(fc_map[fc])
+    try: print(s.recv(256).hex())
+    except socket.timeout: print("timeout")
+finally: s.close()
+PY
+}
+
+observe_dpi_request() {
+  local proto="$1" function_code port boundary count result
+  case "$proto" in
+    modbus) function_code=8; port=502 ;;
+    dnp3) function_code=5; port=20000 ;;
+    *) err "unknown DPI protocol: $proto"; return 1 ;;
+  esac
+  boundary=$(docker exec rangerdanger-firewall date -u +%s%N) || {
+    err "cannot capture range-clock $proto event boundary"; return 1;
+  }
+  if ! [[ "$boundary" =~ ^[0-9]{19}$ ]]; then
+    err "invalid range-clock $proto event boundary: $boundary"; return 1
+  fi
+  if [ "$proto" = modbus ]; then
+    docker exec rangerdanger-rtac-sim python3 /tmp/_smoke_modbus.py 10.40.40.20 fc8 >/dev/null 2>&1 || true
+  else
+    relay_touched=1
+    docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip >/dev/null 2>&1 || true
+  fi
+  if count=$(wait_for_dpi_request "$proto" "$function_code" 10.30.30.20 10.40.40.20 "$port" "$boundary"); then
+    ok "$count fresh $proto FC$function_code request event(s) for 10.30.30.20 -> 10.40.40.20:$port"
+  else
+    result=$?
+    if [ "$result" -eq 2 ]; then
+      err "cannot read or parse bounded $proto DPI events"
+    else
+      err "no fresh $proto FC$function_code request event within ${EVENT_POLL_BUDGET}s"
+    fi
+    return 1
+  fi
+}
+
+require_plan_active() {
+  local action="$1" golden="$2" receipt="$3"
+  curl -fsS --max-time 10 "$API/api/firewall/active" >"$receipt" \
+    && jq -e --arg action "$action" --slurpfile golden "$golden" '
+      .active_config == "custom" and .policy_source == "plan"
+      and .plan.actionIds == [$action]
+      and .plan.policyHash == $golden[0].policyHash
+    ' "$receipt" >/dev/null || {
+    err "$action plan provenance is not active"; return 1;
+  }
+}
+
+plan_dpi_case() {
+  local proto="$1" action="${1}-dpi" golden receipts request result=0
+  golden="frontend/lib/testdata/plans/us-$action.json"
+  receipts="build/smoke-receipts/events-plans/$action"
+  mkdir -p "$receipts" || return 1
+  request=$(jq -ce -L scripts/tests/fixtures 'include "plan-gate"; plan_request' "$golden") || return 1
+  printf '%s\n' "$request" >"$receipts/plan.json" || return 1
+  curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' \
+    --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-plan" >"$receipts/apply.json" \
+    && jq -e -L scripts/tests/fixtures --slurpfile golden "$golden" \
+      'include "plan-gate"; plan_applied($golden[0])' "$receipts/apply.json" >/dev/null \
+    && python3 "$SCRIPT_DIR/lib/containd_readiness.py" --backend-receipt <"$receipts/apply.json" || {
+    err "$action apply failed or did not become protecting"; return 1;
+  }
+  require_plan_active "$action" "$golden" "$receipts/active-before.json" || return 1
+  if [ "$proto" = modbus ]; then
+    install_modbus_probe || { err "cannot install Modbus probe"; return 1; }
+  elif ! docker exec rangerdanger-rtac-sim which dnp3cmd >/dev/null 2>&1; then
+    err "rtac-sim lacks required dnp3cmd plan probe"; return 1
+  fi
+  observe_dpi_request "$proto" || result=1
+  # Close the provenance window even when traffic evidence failed.
+  require_plan_active "$action" "$golden" "$receipts/active-after.json" || result=1
+  return "$result"
+}
+
 # ─────────────────────────────────────────────────────────────────────
 # Gate 3: ICS DPI function-code detection/logging (NFQUEUE path) —
 # the L4 source pin enforces; DPI detects and logs.
@@ -370,41 +486,8 @@ else
     skip "ICS DPI detection/logging" "rtac-sim lacks required python3 probe" required
   else
     # Install probe — single source of truth so the smoke is self-contained.
-    cat <<'PY' | docker exec -i rangerdanger-rtac-sim sh -c "cat > /tmp/_smoke_modbus.py"
-import socket, struct, sys
-target, fc = sys.argv[1], sys.argv[2]
-def mbap(pdu, tx=1):
-    return struct.pack(">HHHB", tx, 0, len(pdu)+1, 1) + pdu
-fc_map = {
-    "fc3": mbap(struct.pack(">BHH", 3, 0, 1)),     # read holding regs (allowlisted)
-    "fc8": mbap(struct.pack(">BHH", 8, 0, 0)),     # diagnostics (NOT in allowlist)
-}
-s = socket.socket(); s.settimeout(3)
-try:
-    s.connect((target, 502)); s.send(fc_map[fc])
-    try: print(s.recv(256).hex())
-    except socket.timeout: print("timeout")
-finally: s.close()
-PY
-
-    # Fire FC8 from RTAC and check fresh decoded DPI event evidence.
-    dpi_boundary=$(docker exec rangerdanger-firewall date -u +%s%N) || {
-      err "cannot capture range-clock Modbus event boundary"; exit 1;
-    }
-    if ! [[ "$dpi_boundary" =~ ^[0-9]{19}$ ]]; then
-      err "invalid range-clock Modbus event boundary: $dpi_boundary"; exit 1
-    fi
-    docker exec rangerdanger-rtac-sim python3 /tmp/_smoke_modbus.py 10.40.40.20 fc8 >/dev/null 2>&1 || true
-    if dpi_count=$(wait_for_dpi_request modbus 8 10.30.30.20 10.40.40.20 502 "$dpi_boundary"); then
-      ok "$dpi_count fresh Modbus FC8 request event(s) for 10.30.30.20 -> 10.40.40.20:502"
-    else
-      result=$?
-      if [ "$result" -eq 2 ]; then
-        err "cannot read or parse bounded Modbus DPI events"
-      else
-        err "no fresh Modbus FC8 request event for 10.30.30.20 -> 10.40.40.20:502 within ${EVENT_POLL_BUDGET}s"
-      fi
-    fi
+    install_modbus_probe || { err "cannot install Modbus probe"; exit 1; }
+    observe_dpi_request modbus || fail=1
   fi
 fi
 
@@ -426,41 +509,15 @@ else
   # gate 1 applied improved, but re-assert in case a later gate changed it.
   apply_policy improved || exit 1
 
-  # Fire a DNP3 Direct Operate (FC5) from the RTAC to the relay and check
-  # the fresh decoded DPI event. Restore the relay afterwards.
-  dpi_boundary=$(docker exec rangerdanger-firewall date -u +%s%N) || {
-    err "cannot capture range-clock DNP3 event boundary"; exit 1;
-  }
-  if ! [[ "$dpi_boundary" =~ ^[0-9]{19}$ ]]; then
-    err "invalid range-clock DNP3 event boundary: $dpi_boundary"; exit 1
-  fi
-  docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip >/dev/null 2>&1 || true
-  if dnp3_count=$(wait_for_dpi_request dnp3 5 10.30.30.20 10.40.40.20 20000 "$dpi_boundary"); then
-    ok "$dnp3_count fresh DNP3 FC5 request event(s) for 10.30.30.20 -> 10.40.40.20:20000"
-  else
-    result=$?
-    if [ "$result" -eq 2 ]; then
-      err "cannot read or parse bounded DNP3 DPI events"
-    else
-      err "no fresh DNP3 FC5 request event for 10.30.30.20 -> 10.40.40.20:20000 within ${EVENT_POLL_BUDGET}s"
-    fi
-  fi
-
-  # Restore the baseline before cleaning up the flow record, then close
-  # the relay after the dataplane has returned to weak.
-  # Ending on weak also matches the lab default that gate 1 moved away from.
-  apply_policy weak || exit 1
-  docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close >/dev/null 2>&1 || true
-  # Report cleanup only on failure so the summary does not count an
-  # implicit pass. A breaker left open de-energizes the feeder for later gates.
-  breaker=""
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    breaker=$(curl -fsS --max-time 5 "$API/api/substation/state" 2>/dev/null | python3 -c 'import json,sys; print(str(json.load(sys.stdin)["devices"]["relay"]["breaker_closed"]).lower())' 2>/dev/null)
-    [ "$breaker" = "true" ] && break
-    sleep 1
-  done
-  [ "$breaker" = "true" ] || err "cleanup: relay breaker still open after the DNP3 close (breaker_closed=${breaker:-unknown})"
+  observe_dpi_request dnp3 || fail=1
 fi
+
+note "gate 5: Modbus DPI under singleton plan"
+plan_dpi_case modbus || { err "Modbus singleton-plan DPI gate failed"; }
+note "gate 6: DNP3 DPI under singleton plan"
+plan_dpi_case dnp3 || { err "DNP3 singleton-plan DPI gate failed"; }
+
+cleanup_events || fail=1
 
 # ─────────────────────────────────────────────────────────────────────
 note "summary"

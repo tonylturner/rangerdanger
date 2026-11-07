@@ -58,9 +58,9 @@ func TestCompareRulesMonitorObservations(t *testing.T) {
 // firewall_compare.go drives the lab UI's "what changed between weak
 // and improved" panel. The pure-logic helpers (compareRuleSets,
 // usCompare.label, loadFirewallRules) are testable without a server.
-// The HTTP handlers (handleFirewallApply, handleFirewallApplyCustom)
-// route through the generation's containd client — those need a
-// mocked containd to test cleanly and are deferred.
+// The HTTP handlers (handleFirewallApply and handleFirewallApplyPlan)
+// are exercised with a real containd.Client against an httptest fake in
+// firewall_apply_test.go; plan_test.go covers plan provenance.
 //
 // NB: same external-data caveat as firewall_config_test.go — these
 // tests read JSON from lab-definitions/firewall/ at runtime via
