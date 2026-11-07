@@ -57,7 +57,7 @@ describe("compiled tables", () => {
     expect(observations[1]).toContain("| would allow (monitor) |");
     expect(observations[2]).toContain("| would allow (monitor) |");
     for (const row of observations) {
-      expect(row).toContain("observation: Iec104 dpi (iec104-dpi) — monitor only, not an L4 rule");
+      expect(row).toContain("observation: Monitor IEC 104 commands (iec104-dpi) — monitor only, not an L4 rule");
       expect(row).not.toMatch(/\| (ALLOW|DENY) \|/);
     }
     expect(table.split("\n").find((row) => row.includes("control-centre-to-rtu-iec104:"))).toContain("| ALLOW | required |");
