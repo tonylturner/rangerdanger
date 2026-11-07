@@ -231,7 +231,9 @@ steps:
        remote/auto.
     3. **Policy identity** — the running policy matches an accepted non-weak plan.
 
-    Keep policy identity, UTC bounds and device source attribution for Lab 2.4.
+    Keep policy identity, UTC bounds and device source attribution with this
+    lab's evidence. The bonus is optional: Lab 2.4 builds its evidence package
+    from the core labs and never asks for these records.
 
     PASS checks only the current sampled plan verdicts (both hops), RMU baseline positions and OLTC remote/auto mode. It does not certify a completed interactive login/pivot or earlier successful FC6 attack, absence of all foreign operations, fresh CC visibility, feeder supply or DPI enforcement; preserve those separately. Step-level continuity checks are not all part of this bonus completion validator.
 
