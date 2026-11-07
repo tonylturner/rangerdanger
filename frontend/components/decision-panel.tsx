@@ -303,12 +303,6 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                   {hasBlocked && isSelected && <div className="mt-1 text-[11px] text-red-300">Saved selection excluded from totals and coverage. Click to remove.</div>}
                   <div className="mt-1 text-[11px] leading-relaxed text-slate-400 whitespace-pre-line">
                     {a.why}
-                    {" — "}
-                    {isSelected
-                      ? "selected for your plan"
-                      : hasBlocked
-                        ? "not currently selectable for your plan"
-                        : "available to select for your plan"}
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {a.roles.map((role) => (
@@ -373,7 +367,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
           the bar room so it doesn't overlap the footer text. */}
       {hasAnyVerdict && (
         <div className="sticky bottom-2 z-10 -mx-3">
-          <div className="mx-3 rounded-lg border border-slate-700 bg-slate-950/95 backdrop-blur-sm shadow-lg shadow-slate-950/50">
+          <div className="mx-3 rounded-lg border border-slate-700 bg-slate-950 shadow-lg shadow-slate-950/50">
             <button
               onClick={() => setCoverageOpen(!coverageOpen)}
               className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-900/60 transition-colors rounded-lg"
