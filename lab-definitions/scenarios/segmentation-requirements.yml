@@ -21,189 +21,121 @@ steps:
     title: "Translate findings into design requirements"
     expected_config: weak
     description: |
-      **Time budget:** ~10 minutes (Guided path). This is a design and
-      decision lab - no commands to run.
+      **Time budget:** ~10 minutes (Guided path).
 
-      ### Look at the policy that's running today
-
-      Before you decide what *should* be allowed, look at what the
-      active firewall actually permits right now. Open the
-      [Network Map](/console). On the **left edge** of the map
-      you'll see a narrow vertical strip of icons. Click this one:
-
-      :::icon name="shield" color="amber" label="Segmentation Policy"
-      :::
-
-      The Segmentation Policy drawer slides open from the left.
-
-      You'll see:
-
-      - **Active Policy** banner - the **Weak Baseline** is red and
-        named *"All zones can reach field devices directly."*
-      - **Evaluation** table - one row per zone-pair with an ALLOW
-        or DENY chip. Walk down it and notice how many explicit ALLOW
-        rows exist between Enterprise / Vendor and OT / Field zones.
-        These are the exposure paths you observed in Lab 1.2, now
-        confirmed at the policy level. Rows tagged
-        *"(implicit default-deny - no explicit rule)"* are zone pairs
-        that fall through to the firewall's `defaultAction` -
-        denied at the policy edge even though no rule says so
-        directly.
-
-      Now use the dropdown to **preview Hardened Segmentation** -
-      don't click Apply, just inspect. The Evaluation table
-      compares zone-pair action labels, not individual rules or packet tests.
-      Six of the fourteen rows change from ALLOW to DENY or MIXED (a mix of
-      allow and deny rules). Enterprise → Vendor stays ALLOW even though its
-      allowed ports narrow. The six reverse-direction rows remain implicit
-      default-deny; they do not gain explicit logged denies. Rows tagged
-      *"-> would change"* have a different action label from the active policy.
+      Inspect the **Weak Baseline** in the Segmentation Policy drawer, then preview **Hardened Segmentation** without applying it. The table shows zone-pair outcomes, not packet tests; keep Weak active.
 
       :::decision id=current-policy-allowable options=MOSTLY_ALLOW,MOSTLY_DENY,MIXED correct=MOSTLY_ALLOW
-      **Looking at the Evaluation table for the weak baseline - how
-      would you characterize the current zone-pair allow/deny mix?**
+      How would you characterize the Weak Baseline's zone-pair allow/deny mix?
+      :::why
+      The Weak Baseline allows most evaluated zone pairs. A policy row describes configured permission, not proof that traffic was observed.
       :::
 
       :::decision id=hardened-changes-rough-count options=FEW_CHANGES,ABOUT_HALF,MOST_ROWS correct=ABOUT_HALF
-      **When you previewed Hardened Segmentation, roughly what
-      fraction of zone-pair rows showed "-> would change"?**
+      When you preview Hardened Segmentation, roughly what fraction of zone-pair rows show a change?
+      :::why
+      Six of the fourteen rows change from ALLOW to DENY or MIXED. Enterprise→Vendor remains ALLOW with narrower ports, while reverse-direction rows remain implicit default-deny.
       :::
 
-      :::hint Optional: see the Security Level target for the firewall
-      With the **Purdue Model view** toggled on in [/console](/console),
-      hover the **firewall node**. The SL-3 number is a design target only.
-      The badge reports selected segmentation criteria for the conduit:
-      restricted enterprise/vendor direct field access and source-pinned
-      permitted cross-zone field traffic. `MET` follows the backend-reported active Hardened
-      reference policy, not a packet-path test. Empty, custom, partial or
-      unknown summaries show `NOT ASSESSED`, never `MET`.
-      This is not an IEC 62443 SL assessment.
-      The L4 source pin enforces; DPI detects and logs.
-      See [IEC 62443 Security Levels Explained](/knowledge#iec-62443-security-levels)
-      for what SL-1 through SL-4 mean, and
-      [Purdue Model Levels (L0–L5)](/knowledge#purdue-model)
-      for the architectural levels the bands represent.
-      :::
-
-      ### From observation to design
-
-      In Lab 1.2 you **observed** five exposure categories and recorded what was present in the capture. Lab 1.3 is where you **decide** what the design should *do* about each finding - the firewall's spec, in the form of a verdict per category.
-
-      Your Lab 1.2 findings are shown below in two panels - the passive capture findings (step 6) and the active probe result (step 7). For each design decision, commit to a design verdict: BLOCK, BLOCK and LOG, RESTRICT, or ALLOW. Your verdicts need to address **both** the exposures you observed in passive capture *and* the latent paths active probing revealed.
-
-      :::findings-panel from=baseline-assessment title="Passive capture findings (Lab 1.2 step 6)"
+      :::findings-panel from=baseline-assessment title="Passive findings"
       enterprise-to-field: Enterprise → Field on Modbus/DNP3
       enterprise-to-ot: Enterprise → OT Operations on ICS ports
       vendor-to-ot: Vendor DMZ → OT Operations on Modbus/HMI control
       non-rtac-to-field: Non-RTAC OT hosts → Field devices
-      unauth-modbus-writes: Unauthorized Modbus writes / DNP3 Direct Operate
+      unauth-modbus-writes: Foreign-source Modbus writes / DNP3 Direct Operate
       :::
 
-      :::findings-panel from=baseline-assessment title="Active probe result (Lab 1.2 step 7)"
-      latent-exposure-confirmed: Latent exposure confirmed beyond passive observation
+      :::findings-panel from=baseline-assessment title="Latent exposure and required conduits"
+      latent-exposure-confirmed: Active probe confirmed latent exposure
+      required-cross-zone-conduits: Required cross-zone conduits
+      intra-zone-dependencies: Same-zone operational dependencies
+      continuity-with-minimal-conduits: Continuity with required conduits
       :::
 
       :::decision id=enterprise-to-field
-      **Requirement: Enterprise → Field** on Modbus 502 / DNP3 20000.
+      Enterprise → Field on Modbus/DNP3 — choose your requirement.
+      :::why
+      Reference design: **BLOCK**. Corporate IT should not reach field devices over control protocols.
       :::
 
       :::decision id=enterprise-to-ot
-      **Requirement: Enterprise → OT Operations** on any ICS port.
+      Enterprise → OT Operations on ICS ports — choose your requirement.
+      :::why
+      Reference design: **BLOCK**. Enterprise access to OT stays on constrained management paths, not Modbus or DNP3.
       :::
 
       :::decision id=vendor-to-ot
-      **Requirement: Vendor DMZ → OT Operations** on Modbus / HMI control.
+      Vendor DMZ → OT Operations on Modbus/HMI control — choose your requirement.
+      :::why
+      Reference design: **RESTRICT**. Permit named encrypted management access, not direct Modbus or HMI control.
       :::
 
       :::decision id=non-rtac-to-field
-      **Requirement: Non-RTAC OT hosts → Field devices**.
+      Non-RTAC OT hosts → Field devices — choose your requirement.
+      :::why
+      Reference design: **BLOCK**. The RTAC is the field-control source; pin field access to its OT Ops address.
       :::
 
       :::decision id=unauth-modbus-writes
-      **Requirement: Foreign-source Modbus writes / DNP3 Direct Operate**.
-      This covers enterprise, vendor and non-RTAC OT paths, not command
-      authorization on an allowed RTAC session.
+      Foreign-source Modbus writes / DNP3 Direct Operate — choose your requirement.
+      :::why
+      Reference design: **BLOCK**. Close foreign-source paths at L4. The L4 source pin enforces; DPI detects and logs. Detection alone cannot meet a BLOCK requirement.
       :::
-
-      :::hint Reveal expected requirements
-      A hardened substation lands at:
-
-      1. **Enterprise → Field on Modbus/DNP3:** `BLOCK`. Corporate IT should never speak control-plane protocols to field devices. This is the attack hardened in the **Protocol-Hardened Configurations** exercise.
-      2. **Enterprise → OT Ops on ICS ports:** `BLOCK`. Enterprise reaches OT only via constrained management paths, never on Modbus/DNP3. Closes the Modbus-override staging path.
-      3. **Vendor → OT Ops on Modbus/HMI control:** `RESTRICT`. Vendor remote access stays on encrypted management protocols (HTTPS, SSH); direct Modbus/HMI control is the **Vendor Remote Access Compromise** vector.
-      4. **Non-RTAC OT Ops → Field:** `BLOCK`. Only the RTAC (pinned to source `10.30.30.20`) should reach field devices. A compromised HMI or OpenPLC must not become an attack path.
-      5. **Foreign-source Modbus writes / DNP3 Direct Operate:** `BLOCK and LOG`. Select the enterprise, vendor and non-RTAC OT field closures plus logging. The L4 source pin enforces; DPI detects and logs. Detection alone cannot meet a prevention requirement.
-
-      Your design might differ - that's fine. The verdict you commit drives Lab 1.4's labor budget against *your* stated design, not against this answer key.
-      :::
-
-      :::hint Zone-pair reference (the rules these requirements imply)
-      The verdicts above translate into per-zone-pair rules. Use this as a quick reference when you build the policy in Lab 2.2:
-
-      | From → To | Allowed protocols | Notes |
-      |---|---|---|
-      | Enterprise → Vendor/DMZ | SSH (22), HTTP/S (80, 443) | jump-box access |
-      | Enterprise → OT Ops | - | DENY all (1.3 verdict 2) |
-      | Enterprise → Field | - | DENY all (1.3 verdict 1) |
-      | Vendor/DMZ → OT Ops | SSH (22), HTTPS (443) | management only (1.3 verdict 3 RESTRICT) |
-      | Vendor/DMZ → Field | - | DENY all |
-      | OT Ops intra-zone | Modbus (502), DNP3 (20000), HTTP (8080), FUXA (1881), NTP (123) | HMI ↔ RTAC, etc. |
-      | OT Ops → Field | Modbus (502), DNP3 (20000), HTTP (8080) - **RTAC only** | source-pin to `10.30.30.20` (1.3 verdict 4). HTTP/8080 is the field devices' lab-only status API the RTAC polls for health (`/api/state` on each device) - kept open because the RTAC reads it for liveness; would not exist on a production relay. |
-
-      Detection layer (1.3 verdict 5):
-      - `modbus-dpi` and `dnp3-dpi` add protocol visibility, not prevention.
-      - L4 controls foreign-source reachability. They do not authorize commands
-        within an allowed RTAC session. Keep that residual risk explicit.
-      :::
-
   - id: resourcing-reality-check
     title: "Resourcing reality check"
     expected_config: weak
     description: |
-      Real OT segmentation projects fail more often on resourcing than on technology - vendor change windows that never materialise, OT engineers stretched between operations and security work, unclear risk-acceptance authority. Before you pick remediation actions in Lab 1.4, commit to your team's current state. Lab 1.4 will surface dependencies on these answers per action.
+      Before planning, select the team's current readiness. The answers below adjust capacity, effort and action eligibility in Lab 1.4.
 
       :::decision id=ot-eng-availability options=AVAILABLE,STRETCHED,UNAVAILABLE
-      **OT engineering capacity** - do you have a dedicated OT engineer for this segmentation work, or is that person also covering operations / on-call?
+      **OT engineering capacity** — is a dedicated OT engineer available for this work, or is the person also covering operations/on-call?
+      :::why
+      Lab 1.4 gives OT Engineer a 120h cap when AVAILABLE, 60h when STRETCHED, and 0h when UNAVAILABLE; UNAVAILABLE blocks OT-touching work.
       :::
 
       :::decision id=fw-admin-skills options=IN_HOUSE,VENDOR_LED,GAP
-      **Firewall admin skills** - who actually configures containd? In-house staff who understand it, vendor-led with your team observing, or a real skills gap that needs hiring or training?
+      **Firewall admin skills** — is configuration handled in-house, vendor-led, or by a team with a skills gap?
+      :::why
+      IN_HOUSE keeps the 140h cap. VENDOR_LED sets 80h and adds 20h per DPI action; GAP sets 40h and blocks DPI actions.
       :::
 
       :::decision id=vendor-change-window options=SECURED,NEGOTIATING,NOT_DISCUSSED
-      **Vendor change windows** - have you secured outage / change windows for the vendor-touching changes (vendor-to-OT restriction, vendor-to-field block)?
+      **Vendor change windows** — are vendor-touching changes scheduled?
+      :::why
+      NEGOTIATING multiplies vendor-restriction effort by 1.5; NOT_DISCUSSED blocks vendor-touching actions.
       :::
 
       :::decision id=risk-acceptance-authority options=CLEAR,UNCLEAR,DISPUTED
-      **Risk-acceptance authority** - for residual risk in OT (e.g. an attack path you're deferring), is it clear who signs off? Or is the authority ambiguous / contested between IT, OT, and operations leadership?
+      **Risk-acceptance authority** — is the person who accepts residual OT risk clear and agreed?
+      :::why
+      UNCLEAR leaves signoff pending; DISPUTED blocks high-impact deny actions until authority is resolved.
       :::
-
-      :::hint Why this matters
-      Lab 1.3 readiness reshapes the Lab 1.4 labor model. OT engineering `STRETCHED` reduces its cap from 120h to 60h; `UNAVAILABLE` reduces it to 0h and blocks OT-touching actions. Firewall skills `VENDOR_LED` sets an 80h cap and adds 20h per DPI action; `GAP` sets a 40h cap and blocks DPI actions. A `NEGOTIATING` vendor window multiplies the vendor restriction effort by 1.5; `NOT_DISCUSSED` blocks vendor-touching actions. `UNCLEAR` risk authority means signoff pending; `DISPUTED` blocks high-impact deny actions.
-
-      The total envelope remains 500h. The planner shows original → adjusted values and the answer behind each change. **Use default budget** restores default caps, effort and eligibility for comparison; the setting is saved per package and revision. Readiness-blocked saved choices stay visible but are excluded from draft totals, coverage and Apply Your Plan, even if you change readiness without reopening Lab 1.4. Changing readiness back restores those saved choices. An already-applied plan keeps its recorded provenance and proof expectations. Budget or role overrun alone remains a warning, not an apply limit.
-      :::
-
   - id: define-success-criteria-for-segmentation
     title: "Define success criteria for segmentation"
     description: |
-      Before moving on, write down what **"good"** looks like for this substation. These are concrete, testable statements - not a plan, not a matrix. You will use them in Lab 2.4 (Testing & Validation) to validate your changes worked.
+      Use these shared pass/fail criteria as a reference before planning:
 
-      ### Good segmentation for this substation means
+      - A denied path should time out (expected result: timeout); connection refused means the host was reached.
+      - Restrict engineering access to named sources and services; close unrelated remote access.
+      - Preserve A/E autonomous and F/G intra-zone operations; the B/C/D maintenance paths fail under the reference in this version.
+      - Verify fresh, valid device/process state after a change.
+      - The L4 source pin enforces; DPI detects and logs but does not prevent traffic.
+      - Keep policy identity, test results, capture and residual-risk ownership together as evidence.
 
-      1. **Enterprise cannot directly reach Field devices.**
-         *Test:* `tcpdump -i lan2` on the firewall (its field interface) should show zero packets originating from `10.10.10.0/24`.
+      :::decision id=deny-test-outcome options=TIMEOUT,CONNECTION_REFUSED,OPEN correct=TIMEOUT
+      What result shows a denied test path?
+      :::why
+      A filtered path times out. A refusal means the destination was reached and rejected the connection; it is not the expected deny result.
+      :::
 
-      2. **Vendor access to OT Ops is constrained and brokered.**
-         *Test:* vendor DMZ can reach the RTAC/HMI only on approved management ports, not on raw Modbus/DNP3.
+      :::decision id=source-pin-enforcement options=L4_SOURCE_PIN,DPI,LOGGING correct=L4_SOURCE_PIN
+      Which control enforces a foreign-source boundary?
+      :::why
+      The L4 source pin enforces reachability; DPI detects and logs matching protocol traffic but does not block it.
+      :::
 
-      3. **Unauthorized writes are blocked and logged.**
-         *Test:* a Modbus FC6 write or DNP3 Direct Operate from a non-RTAC source should be denied and produce a firewall event.
-
-      4. **Enterprise ransomware cannot propagate into OT.**
-         *Test:* SMB, RDP, and SSH from `10.10.10.0/24` to `10.30.30.0/24` or `10.40.40.0/24` should be denied.
-
-      5. **Operations are not broken by the segmentation change.**
-         *Test:* A/E autonomous and F/G intra-zone operational dependencies continue; B/C/D insecure maintenance tuples fail under reference in this version. Verify the actual authorized/unauthorized matrix and healthy HMI.
-
-      > **Operational continuity is a hard constraint.** Preserve A/E and F/G from Lab 1.2. In this version the hardened reference blocks B/C HTTP8080 and D FUXA1881; engineering/vendor access after hardening uses RTAC SSH/HTTPS management, not encrypted replacements for those editors.
+      :::decision id=continuity-evidence options=FRESH_VALID_OPERATIONAL_STATE,CONNECTED_SOCKET_ONLY,STATIC_STATUS_ONLY correct=FRESH_VALID_OPERATIONAL_STATE
+      What evidence supports operational continuity after a change?
+      :::why
+      Use a completed protocol operation with fresh valid observations and healthy device/process state—not a socket or stale status alone.
+      :::
