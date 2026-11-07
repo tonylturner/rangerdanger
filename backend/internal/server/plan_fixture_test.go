@@ -32,14 +32,32 @@ func TestPlanFixtures(t *testing.T) {
 			for _, action := range tc.gen.Package.Curriculum.Catalog {
 				all = append(all, action.ID)
 			}
-			for _, selection := range []struct {
+			kinds := map[string]string{}
+			for _, slot := range tc.gen.Package.Curriculum.Plan.Rules {
+				if slot.Action != "" {
+					kinds[slot.Action] = "enforce"
+				}
+			}
+			for id := range tc.gen.Package.Curriculum.Plan.Detect {
+				kinds[id] = "detect"
+			}
+			selections := []struct {
 				name string
 				ids  []string
 			}{
 				{"empty", []string{}},
 				{"partial", []string{"restrict-enterprise-to-vendor"}},
 				{"full", all},
-			} {
+			}
+			for _, action := range tc.gen.Package.Curriculum.Catalog {
+				if kinds[action.ID] == "enforce" || kinds[action.ID] == "detect" {
+					selections = append(selections, struct {
+						name string
+						ids  []string
+					}{action.ID, []string{action.ID}})
+				}
+			}
+			for _, selection := range selections {
 				t.Run(selection.name, func(t *testing.T) {
 					rec, _ := invoke(s, s.handlePlanCompile, http.MethodPost, "/api/plan/compile", planRequest(s, selection.ids...))
 					if rec.Code != http.StatusOK {
