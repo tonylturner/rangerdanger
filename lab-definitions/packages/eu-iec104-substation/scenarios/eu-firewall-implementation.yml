@@ -152,11 +152,29 @@ steps:
 
     ### Review a proposed change
 
-    **Prepared change request CR-22:** remove broad cross-zone trust and retain
-    management plus the required operational conduits. It accidentally omits CC→RTU TCP/2404.
-    Compare it with the operational requirements before approving it. Review only:
-    never apply an incomplete request to create an outage. Keep a known-good export
-    and agree a rollback owner and trigger before any actual change.
+    **Prepared change request CR-22** removes broad cross-zone trust, keeps
+    management access, and keeps only these operational allows:
+
+    | Allow | Source → destination | Port |
+    |---|---|---|
+    | RTU→field | 10.30.30.20→10.40.40.20…24 | TCP/502 |
+    | PLC→OLTC | 10.30.30.30→10.40.40.23 | TCP/502 |
+    | CC→historian ingest | 10.60.60.20→10.70.70.40 | TCP/8081 |
+    | Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |
+    | Engineering→PLC web | 10.20.20.20→10.30.30.30 | TCP/8080 |
+
+    Compare it with the operational conduits from your Lab 1.3 design before
+    approving it. Review only: never apply an incomplete request to create an
+    outage. Keep a known-good export and agree a rollback owner and trigger
+    before any actual change.
+
+    :::decision id=change-request-gap options=CC_TO_RTU_IEC104,VENDOR_TO_RTU_IEC104,ENTERPRISE_TO_HISTORIAN_READ,NOTHING_MISSING correct=CC_TO_RTU_IEC104
+    Which required conduit does CR-22 drop?
+    :::why
+    The Control Centre's IEC 104 link to the RTU (10.60.60.20→10.30.30.20 TCP/2404) is
+    missing. Vendor→RTU IEC 104 is an exposure to remove, not a requirement.
+    Enterprise→historian read is in the request.
+    :::
 
     :::decision id=change-request-review options=APPROVE_AS_WRITTEN,CORRECT_BEFORE_COMMIT,UNCLEAR correct=CORRECT_BEFORE_COMMIT
     What should happen to this proposed change before commit?

@@ -83,7 +83,7 @@ it("retains EU CR-22 and post-commit reconnect for every plan", () => {
   const lab = scenario(`${euDir}/scenarios`, "eu-firewall-implementation");
   for (const plan of EU_PLANS) {
     const text = lab.steps.map((s) => injectDynamicContent(s.description, s.id, plan, binding)).join("\n");
-    for (const expected of ["CR-22", "accidentally omits CC→RTU", "POST http://localhost:8088/api/operator/reconnect", "link.since", "PLC-originated", "GI"]) {
+    for (const expected of ["CR-22", "Which required conduit does CR-22 drop?", "POST http://localhost:8088/api/operator/reconnect", "link.since", "PLC-originated", "GI"]) {
       expect(text).toContain(expected);
     }
     expect(text).toContain("A missing CC allow stops established traffic on its next packet after commit");

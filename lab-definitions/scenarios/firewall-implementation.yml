@@ -178,11 +178,27 @@ steps:
 
       ### Review a proposed change
 
-      **Prepared change request CR-22:** remove broad cross-zone trust and retain
-      management plus the required operational conduits, but omit **RTAC→field TCP/502 and TCP/20000**.
-      Compare it with the operational requirements before approving it. Review only:
-      never apply an incomplete request to create an outage. Keep a known-good export
-      and agree a rollback owner and trigger before any actual change.
+      **Prepared change request CR-22** removes broad cross-zone trust, keeps
+      management access, and keeps only these operational allows:
+
+      | Allow | Source → destination | Port |
+      |---|---|---|
+      | RTAC→field web | 10.30.30.20→field devices | TCP/8080 |
+      | GPS→field time | 10.30.30.50→field devices | UDP/123 |
+
+      Compare it with the operational conduits from your Lab 1.3 design before
+      approving it. Review only: never apply an incomplete request to create an
+      outage. Keep a known-good export and agree a rollback owner and trigger
+      before any actual change.
+
+      :::decision id=change-request-gap options=RTAC_TO_FIELD_POLLING,ENTERPRISE_TO_FIELD_DNP3,GPS_TO_FIELD_TIME,NOTHING_MISSING correct=RTAC_TO_FIELD_POLLING
+      Which required conduit does CR-22 drop?
+      :::why
+      RTAC field polling (10.30.30.20→field on TCP/502 Modbus and TCP/20000 DNP3) is
+      missing, so the RTAC loses its field data and the HMI goes stale.
+      Enterprise→field DNP3 is the attack path to remove, not a requirement.
+      GPS→field time is in the request.
+      :::
 
       :::decision id=change-request-review options=APPROVE_AS_WRITTEN,CORRECT_BEFORE_COMMIT,UNCLEAR correct=CORRECT_BEFORE_COMMIT
       What should happen to this proposed change before commit?
