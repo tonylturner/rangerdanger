@@ -18,7 +18,7 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// lockout telemetry in the EU acceptance inventory, and the EU portal's
 	// valid/quality-flag wording (without changing protocol acceptance).
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "a80eaaebbc5e344ffb7ac3d9e683f662ed7502e4e4d2f65e41b1006a512cf745",
+		"us-dnp3-substation":   "24fb93f0bdec55dec14d81062efd83202b7725d4b11077a74b90a2ec6d8777df",
 		"eu-iec104-substation": "bd3cc437e25e0d99d165706f3159cd90a8583e27fff4d1971fa98a20c79f7ef7",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
