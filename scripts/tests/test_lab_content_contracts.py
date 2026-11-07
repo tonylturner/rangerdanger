@@ -657,7 +657,7 @@ class BaselineContracts(unittest.TestCase):
         paths.extend((ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios").glob("*.yml"))
 
         def sends_command(action):
-            return action.get("type") in {"command", "sequence"} or any(
+            return action.get("type") == "sequence" or any(
                 sends_command(child) for child in action.get("steps", [])
             )
 

@@ -126,7 +126,7 @@ export type DecisionAction = {
 };
 
 export type StepAction = {
-  type: "command" | "check" | "firewall" | "sequence" | "manual" | "decision" | "probe" | "session-cut";
+  type: "check" | "firewall" | "sequence" | "manual" | "decision" | "probe" | "session-cut";
   device?: string;
   command?: string;
   source?: string;

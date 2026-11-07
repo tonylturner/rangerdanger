@@ -89,10 +89,6 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 	var results []StepActionResult
 
 	switch step.Action.Type {
-	case "command":
-		result := s.executeCommand(ctx, gen, step.Action.Device, step.Action.Command, step.Action.Source, step.Action.Value)
-		results = append(results, result)
-
 	case "sequence":
 		for _, cmd := range step.Action.Commands {
 			result := s.executeCommand(ctx, gen, cmd.Device, cmd.Command, cmd.Source, cmd.Value)

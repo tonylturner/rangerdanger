@@ -39,9 +39,9 @@ func seedEUScenario(t *testing.T, s *Server) []labs.ScenarioStep {
 	// The canonical hardening scenario now has a manual wire attack and a
 	// restoration sequence; outage/session-cut deep dives live in knowledge.
 	steps = append(steps,
-		labs.ScenarioStep{ID: "local-trip", Title: "Fault fixture", Action: &labs.StepAction{Type: "command", Device: "process", Command: "fault_s1"}},
-		labs.ScenarioStep{ID: "clear-fault", Title: "Clear fixture", Action: &labs.StepAction{Type: "command", Device: "process", Command: "clear_fault"}},
-		labs.ScenarioStep{ID: "restore-device", Title: "Reset fixture", Action: &labs.StepAction{Type: "command", Device: "breaker", Command: "reset"}},
+		labs.ScenarioStep{ID: "local-trip", Title: "Fault fixture", Action: &labs.StepAction{Type: "sequence", Commands: []labs.StepActionCmd{{Device: "process", Command: "fault_s1"}}}},
+		labs.ScenarioStep{ID: "clear-fault", Title: "Clear fixture", Action: &labs.StepAction{Type: "sequence", Commands: []labs.StepActionCmd{{Device: "process", Command: "clear_fault"}}}},
+		labs.ScenarioStep{ID: "restore-device", Title: "Reset fixture", Action: &labs.StepAction{Type: "sequence", Commands: []labs.StepActionCmd{{Device: "breaker", Command: "reset"}}}},
 		labs.ScenarioStep{ID: "cut-session", Title: "Session fixture", Action: &labs.StepAction{Type: "session-cut", Flow: "cc-rtu"}},
 	)
 	data, err := json.Marshal(steps)
@@ -81,7 +81,7 @@ func TestEUDevicePrimitiveSteps(t *testing.T) {
 	s := rangeServer(euGeneration(t, nil, map[string]string{"feeder_breaker": device.URL, "opendss_sim": device.URL}), "improved")
 	steps := seedEUScenario(t, s)
 	for _, id := range []string{"local-trip", "clear-fault", "restore-device"} {
-		if result := executeAuthoredStep(t, s, steps, id); !result.Success || result.ActionType != "command" {
+		if result := executeAuthoredStep(t, s, steps, id); !result.Success || result.ActionType != "sequence" {
 			t.Errorf("%s = %+v", id, result)
 		}
 	}

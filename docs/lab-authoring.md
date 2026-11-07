@@ -402,7 +402,7 @@ Supported `type` values:
   and readiness mappings belong in that package's `curriculum/`.
 - `check` - a state-check action with `expect: {key: value}` against the substation API. Used to confirm "the lab is in known-good state" between phases.
 - `probe` - TCP reachability check from `step.node` (or a per-target `from` topology node). Set `outcome: reachable|blocked` and one or more `targets` with IPv4 `host`, TCP `port` (1–65535), and optional `note`. Every target must match the outcome. Fast connection refusal counts as reachable; a timeout counts as blocked; any other exit status is a probe error and fails the target. UDP is not supported.
-- `command`, `firewall`, `sequence` - older patterns for auto-running specific commands. Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks. A manual step has no `action`; `type: manual` is invalid.
+- `firewall`, `sequence` - older patterns for auto-running specific commands (a `sequence` carries one or more device commands; the former single-command `command` type was retired and the loader rejects it). Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks. A manual step has no `action`; `type: manual` is invalid.
 
 `DecisionPanel` automatically reads:
 

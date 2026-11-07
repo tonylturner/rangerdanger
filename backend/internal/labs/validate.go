@@ -10,15 +10,15 @@ import (
 )
 
 var validActionTypes = map[string]struct{}{
-	"command": {}, "sequence": {}, "firewall": {}, "check": {}, "decision": {}, "probe": {}, "session-cut": {},
+	"sequence": {}, "firewall": {}, "check": {}, "decision": {}, "probe": {}, "session-cut": {},
 }
 
 // vocabularyActionTypes are the action types checked against a
 // capability's action vocabulary.
-var vocabularyActionTypes = map[string]bool{"command": true, "sequence": true, "check": true}
+var vocabularyActionTypes = map[string]bool{"sequence": true, "check": true}
 
 // actionVocabulary is the device-command and check-key vocabulary a
-// capability brings to command, sequence and check actions.
+// capability brings to sequence and check actions.
 type actionVocabulary struct {
 	commands      map[string][]string
 	checkKeys     map[string]bool
@@ -271,8 +271,6 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 	}
 
 	switch action.Type {
-	case "command":
-		vocabulary.validateCommand(action.Device, action.Command, action.Value, "", add)
 	case "sequence":
 		if len(action.Commands) == 0 {
 			add("sequence must contain at least one command")

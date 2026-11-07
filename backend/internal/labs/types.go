@@ -70,7 +70,7 @@ type ScenarioStep struct {
 
 // StepAction defines an executable action for a scenario step.
 type StepAction struct {
-	Type     string          `yaml:"type" json:"type"`                             // "command", "check", "firewall", "sequence", "decision", "probe", "session-cut"
+	Type     string          `yaml:"type" json:"type"`                             // "check", "firewall", "sequence", "decision", "probe", "session-cut"
 	Device   string          `yaml:"device,omitempty" json:"device,omitempty"`     // for type=command
 	Command  string          `yaml:"command,omitempty" json:"command,omitempty"`   // for type=command
 	Source   string          `yaml:"source,omitempty" json:"source,omitempty"`     // for type=command
