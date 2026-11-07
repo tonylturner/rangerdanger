@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-EXECUTED_TYPES = {"command", "sequence", "firewall", "check", "probe"}
+EXECUTED_TYPES = {"sequence", "firewall", "check", "probe"}
 
 
 def expected_table(directory):

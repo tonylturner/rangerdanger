@@ -58,7 +58,7 @@ t_expect_fails 1 "HTTP success cannot hide unknown command outcome"
 # The served scenario has a non-fixed number of steps. The gate resolves the
 # authored ID and then uses the current array index expected by the API.
 CALLS=""
-SCENARIO_STEPS='[{"id":"first","title":"First","action":{"type":"command"}},{"id":"middle","title":"Middle"},{"id":"target-action","title":"Target","action":{"type":"probe"}}]'
+SCENARIO_STEPS='[{"id":"first","title":"First","action":{"type":"sequence"}},{"id":"middle","title":"Middle"},{"id":"target-action","title":"Target","action":{"type":"probe"}}]'
 eu_api_get() {
   CALLS="$CALLS GET:$1"
   HTTP_STATUS=200
@@ -73,7 +73,7 @@ CALLS=""
 t_run eu_lab_step served-workshop middle
 t_expect_eq "$T_STATUS" 0 "manual steps are served without an executor action"
 t_expect_eq "$CALLS" " GET:/api/scenarios/served-workshop" "manual step is not executed"
-SCENARIO_STEPS='[{"id":"duplicate","action":{"type":"command"}},{"id":"duplicate","action":{"type":"command"}}]'
+SCENARIO_STEPS='[{"id":"duplicate","action":{"type":"sequence"}},{"id":"duplicate","action":{"type":"sequence"}}]'
 t_run eu_lab_step served-workshop duplicate
 t_expect_eq "$T_STATUS" 1 "duplicate authored IDs fail closed"
 t_expect_fails 1 "ambiguous steps are reported"

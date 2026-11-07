@@ -8,9 +8,9 @@
 POSTS=0
 GETS=0
 POST_PATH=""
-RESPONSE='{"success":true,"action_type":"command","results":[{"success":true}]}'
+RESPONSE='{"success":true,"action_type":"sequence","results":[{"success":true}]}'
 RESPONSE_STATUS=200
-SCENARIO='{"steps":"[{\"id\":\"observe\"},{\"id\":\"authored-action\",\"action\":{\"type\":\"command\"}}]"}'
+SCENARIO='{"steps":"[{\"id\":\"observe\"},{\"id\":\"authored-action\",\"action\":{\"type\":\"sequence\"}}]"}'
 eu_api_get() {
   GETS=$((GETS + 1))
   HTTP_STATUS=200
@@ -37,10 +37,10 @@ t_expect_fails 0 "device actions retain the physical readback shape check"
 t_expect_out "device /api/state shape" "the gate asserts physical state, not just the execution acknowledgement"
 
 for RESPONSE in \
-  '{"success":false,"action_type":"command","results":[{"success":false}]}' \
+  '{"success":false,"action_type":"sequence","results":[{"success":false}]}' \
   '{"success":true,"action_type":"manual","results":[{"success":true}]}' \
-  '{"success":true,"action_type":"command","results":[]}' \
-  '{"success":true,"action_type":"command","results":[{"success":false}]}'; do
+  '{"success":true,"action_type":"sequence","results":[]}' \
+  '{"success":true,"action_type":"sequence","results":[{"success":false}]}'; do
   before="$POSTS"
   t_run eu_execute_step authored-action "failed action" served-workshop
   t_expect_fails 1 "failed, manual or empty execution results fail closed"
