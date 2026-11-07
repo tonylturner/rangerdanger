@@ -132,25 +132,33 @@ describe("SegmentationView", () => {
     for (const policy of ["weak", "improved", "custom"]) {
       const html = renderText(pkg, policy);
       const label = policy === "custom" ? "Custom policy"
-        : pkg === US_PACKAGE ? (policy === "weak" ? "Weak Baseline" : "Hardened Segmentation") : policy;
+        : pkg.policies.find((p) => p.name === policy)!.label;
       expect(html).toContain(`Live Firewall Events · ${label}`);
       expect(html).not.toContain("Live DPI Events");
     }
     expect(renderText(pkg, null)).toContain("Live Firewall Events · Policy loading…");
   });
 
-  it("uses EU-specific named policy descriptions", () => {
-    const weak = renderText(EU_PACKAGE, "weak");
-    expect(weak).toContain(
-      "Enterprise, vendor, and Control Centre sources can reach the RTU over IEC 104",
-    );
-    expect(weak).toContain("any station-zone host can reach the feeder breaker over Modbus TCP");
-    expect(weak).not.toContain("RTAC");
+  it.each([EU_PACKAGE, US_PACKAGE])("uses $id's package labels and descriptions", (pkg) => {
+    for (const policy of pkg.policies) {
+      const html = renderText(pkg, policy.name);
+      expect(html).toContain(`Active Policy ${policy.label} ${policy.description}`);
+      expect(html).not.toContain("has no logged rules");
+      expect(html).toContain("No recent events");
+    }
+  });
 
-    const improved = renderText(EU_PACKAGE, "improved");
-    expect(improved).toContain("Only the Control Centre (10.60.60.20/32)");
-    expect(improved).toContain("TCP/2404");
-    expect(improved).toContain("TCP/502");
+  it("takes comparison controls and active wording from package data, not a name table", () => {
+    const pkg = {
+      ...EU_PACKAGE,
+      policies: EU_PACKAGE.policies.map((policy) => ({
+        ...policy, label: `Authored ${policy.name}`, description: `Description for ${policy.name}`,
+      })),
+    };
+    const html = renderText(pkg, "improved");
+    expect(html).toContain("Active Policy Authored improved Description for improved");
+    expect(html).toContain("Inspect Policy Authored weak Authored improved · active");
+    expect(html).toContain("Live Firewall Events · Authored improved");
   });
 
   it("shows a custom active policy without baseline metadata or an active diff claim", () => {
@@ -168,7 +176,8 @@ describe("SegmentationView", () => {
     try {
       const html = renderText(US_PACKAGE, "weak", false);
       expect(html).toContain("Loading named policy comparison");
-      expect(html).toContain("Apply");
+      expect(html).toContain("Inspect Policy Weak Baseline · active Hardened Segmentation");
+      expect(html).toContain("Active Weak Baseline Hardened Segmentation");
     } finally {
       vi.unstubAllGlobals();
     }

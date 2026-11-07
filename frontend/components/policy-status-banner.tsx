@@ -11,7 +11,6 @@ import {
   matchesExpected,
   policyWording,
   type PackagePolicies,
-  type PolicyWording,
 } from "../lib/policy-wording";
 
 /**
@@ -25,25 +24,8 @@ import {
  * active package's policies and the current step's expected_config to
  * decide which variant to render.
  *
- * Resting states by activeConfig + policy_source:
- *   activeConfig=the hardened policy      -> "Hardened reference" (emerald)
- *   activeConfig=another package policy   -> "Weak baseline" (rose)
- *   activeConfig=custom + plan            -> "Your plan — Weak/Partial/Hardened" (sky)
- *   activeConfig=custom + manual-custom   -> "Your custom policy
- *                                            (your containd commit)" (sky)
- *   activeConfig=custom + ""              -> "Your custom policy" (sky)
- * The quoted names are the US package's; another package's policies
- * show by their declared names, without a description.
- *
- * Mismatched (amber): the step's expected_config differs from active.
- *
- * Buttons (Apply Hardened / Apply Your Plan / Reset to Weak) live in
- * the policy-actions panel below the step in scenario-runner.tsx, not
- * here. This component is the announcement; that panel is where the
- * actions are. The
- * mismatch variant just tells the student which button to click and
- * lets them aim. Other packages have no such panel: their prompt
- * points at the Network Console policy menu.
+ * Labels and descriptions come from the package. Policy actions live
+ * in the panel below the step for every package.
  */
 
 // "weak" is any package policy but the hardened one.
@@ -129,13 +111,6 @@ const STATE_STYLES: Record<Kind, Style> = {
   },
 };
 
-// The label and sub of a package policy ("weak" and
-// "hardened-reference" styles) in the US package's words.
-const US_BANNER_WORDING: Record<string, PolicyWording> = {
-  weak: { label: "Weak baseline", description: "Cross-zone attacks succeed under this config." },
-  improved: { label: "Hardened reference", description: "Canned reference policy (substation-improved.json)." },
-};
-
 function deriveKind(activeConfig: string | null, policySource: PolicySource, policies: PackagePolicies | undefined): Kind {
   if (!activeConfig || !policies) return "unknown";
   if (activeConfig === CUSTOM_POLICY) {
@@ -143,7 +118,7 @@ function deriveKind(activeConfig: string | null, policySource: PolicySource, pol
     if (policySource === "manual-custom") return "manual-custom";
     return "other-custom";
   }
-  if (!policies.names.includes(activeConfig)) return "unknown";
+  if (!policies.some((policy) => policy.name === activeConfig)) return "unknown";
   return isHardened(activeConfig) ? "hardened-reference" : "weak";
 }
 
@@ -151,29 +126,24 @@ function deriveKind(activeConfig: string | null, policySource: PolicySource, pol
 function bannerStyle(kind: Kind, activeConfig: string | null, policies: PackagePolicies | undefined): Style {
   const style = STATE_STYLES[kind];
   if ((kind !== "weak" && kind !== "hardened-reference") || !activeConfig || !policies) return style;
-  const wording = policyWording(activeConfig, policies, US_BANNER_WORDING);
+  const wording = policyWording(activeConfig, policies);
   return { ...style, label: wording.label, sub: wording.description };
 }
 
 // What the mismatch variant asks for, and how to get there.
-function mismatchText(expectedConfig: string, usWording: boolean): { need: string; action: string } {
-  if (usWording) {
-    return expectedConfig === "weak"
-      ? {
-          need: "weak baseline",
-          action: "Click Reset to Weak in the policy-actions panel below to restore the baseline.",
-        }
-      : {
-          need: "hardened policy (reference or your custom)",
-          action:
-            "Click Apply Hardened (canned reference) or Apply Your Plan (built from your Lab 1.4 picks) in the policy-actions panel below.",
-        };
+function mismatchText(expectedConfig: string, policies: PackagePolicies): { need: string; action: string } {
+  if (expectedConfig === HARDENED_ALIAS || expectedConfig === HARDENED_POLICY) {
+    return {
+      need: `${policyWording(HARDENED_POLICY, policies).label} (reference or your custom policy)`,
+      action: "Click Apply Hardened (canned reference) or Apply Your Plan (built from your Lab 1.4 picks) in the policy-actions panel below.",
+    };
   }
-  const need =
-    expectedConfig === HARDENED_ALIAS || expectedConfig === HARDENED_POLICY
-      ? `${HARDENED_POLICY} policy (or a custom policy)`
-      : `${expectedConfig} policy`;
-  return { need, action: "Apply it from the Firewall policy menu in the Network Console." };
+  return {
+    need: policyWording(expectedConfig, policies).label,
+    action: expectedConfig === "weak"
+      ? "Click Reset to Weak in the policy-actions panel below to restore the baseline."
+      : "Apply the required policy in the policy-actions panel below.",
+  };
 }
 
 function StateIcon({ kind, className }: { kind: Kind; className?: string }) {
@@ -211,7 +181,7 @@ export function PolicyStatusBanner({
 
   // Mismatch variant - amber warning, action prompt inline.
   if (!matched && expectedConfig && activeConfig && policies) {
-    const { need: needLabel, action: promptedAction } = mismatchText(expectedConfig, policies.usWording);
+    const { need: needLabel, action: promptedAction } = mismatchText(expectedConfig, policies);
 
     return (
       <div className="sticky top-0 z-10 -mx-4 mb-3 bg-slate-950">

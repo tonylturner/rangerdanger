@@ -8,7 +8,13 @@ knowledge: knowledge/index.yml
 scenarios: scenarios
 capabilities: [policy.containd, protocol.iec104, process.truth]
 policies:
-  weak: firewall/weak.json
-  improved: firewall/improved.json
+  weak:
+    file: firewall/weak.json
+    label: Weak Baseline
+    description: Cross-zone attacks succeed under this policy.
+  improved:
+    file: firewall/improved.json
+    label: Hardened Segmentation
+    description: The reference segmentation policy for this range.
 operator_view: eu-iec104
 ics_rules: forbidden

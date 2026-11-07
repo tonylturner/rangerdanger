@@ -19,51 +19,18 @@ import {
   type PlanProvenance,
 } from "../lib/api";
 import { FIREWALL_ACTIVE_KEY, useSubstationNetworkEvents } from "../lib/live-queries";
-import { useOperatorView, usePackagePolicies } from "../lib/operator-queries";
+import { usePackagePolicies } from "../lib/operator-queries";
 import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
 import {
   HARDENED_POLICY,
   isHardened,
   activePolicyWording,
-  policyWording,
   type PackagePolicies,
   type PolicyWording,
 } from "../lib/policy-wording";
 import { errorMessage } from "../lib/utils";
-import { EU_OPERATOR_VIEW, isView } from "../lib/operator-view";
 
 export const FIREWALL_COMPARISON_KEY = ["firewall-comparison"] as const;
-
-// The policies are the active package's (package.yml `policies`). The
-// US package keeps its own wording; any other package's policies show
-// by their declared names, without a description.
-const US_DRAWER_WORDING: Record<string, PolicyWording> = {
-  weak: {
-    label: "Weak Baseline",
-    description:
-      "All zones can reach field devices directly. Attackers have clear paths to breakers and regulators.",
-  },
-  improved: {
-    label: "Hardened Segmentation",
-    description: "Only the RTAC can reach field devices. Enterprise and vendor zones are blocked.",
-  },
-};
-const US_PILL_WORDING: Record<string, PolicyWording> = {
-  weak: { label: "Weak", description: "" },
-  improved: { label: "Hardened", description: "" },
-};
-const EU_DRAWER_WORDING: Record<string, PolicyWording> = {
-  weak: {
-    label: "weak",
-    description:
-      "Enterprise, vendor, and Control Centre sources can reach the RTU over IEC 104; any station-zone host can reach the feeder breaker over Modbus TCP.",
-  },
-  improved: {
-    label: "improved",
-    description:
-      "Only the Control Centre (10.60.60.20/32) can reach the RTU (10.30.30.20/32) over TCP/2404, and only the RTU (10.30.30.20/32) can reach the feeder breaker (10.40.40.20/32) over TCP/502.",
-  },
-};
 
 // The columns of PolicyComparison.diffs per named policy pair.
 type ComparisonFields = {
@@ -82,17 +49,16 @@ type PolicyMeta = PolicyWording & {
   toneInactive: string;
 };
 
-function policyMetas(policies: PackagePolicies, euWording: boolean): PolicyMeta[] {
-  return policies.names.map((id) => ({
-    id,
-    ...(euWording
-      ? EU_DRAWER_WORDING[id] ?? { label: id, description: "" }
-      : policyWording(id, policies, US_DRAWER_WORDING)),
-    pill: policyWording(id, policies, US_PILL_WORDING).label,
-    toneActive: isHardened(id)
+function policyMetas(policies: PackagePolicies): PolicyMeta[] {
+  return policies.map(({ name, label, description }) => ({
+    id: name,
+    label,
+    description,
+    pill: label,
+    toneActive: isHardened(name)
       ? "border-green-700/60 bg-green-950/15 text-green-400"
       : "border-red-700/60 bg-red-950/15 text-red-400",
-    toneInactive: isHardened(id)
+    toneInactive: isHardened(name)
       ? "border-slate-700 text-slate-400 hover:border-green-700 hover:text-green-400"
       : "border-slate-700 text-slate-400 hover:border-red-700 hover:text-red-400",
   }));
@@ -109,14 +75,12 @@ function activePolicyMeta(
 ): PolicyMeta | undefined {
   const declared = metas.find((p) => p.id === activeConfig);
   if (declared || !activeConfig) return declared ?? metas[0];
-  const wording = activePolicyWording(activeConfig, policies, US_DRAWER_WORDING, source, plan);
+  const wording = activePolicyWording(activeConfig, policies, source, plan);
   return { id: activeConfig, ...wording, pill: wording.label, toneActive: "", toneInactive: "" };
 }
 
 export function SegmentationView({ compact = false }: { compact?: boolean }) {
   const packagePolicies = usePackagePolicies();
-  const operatorView = useOperatorView();
-  const euWording = isView(operatorView, EU_OPERATOR_VIEW);
   const apply = useApplyPolicy();
   const applying = apply.isPending;
   // Which policy the evaluation panel is previewing. Defaults to
@@ -140,8 +104,8 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   });
   const activeConfig = activeData?.active_config ?? null;
   const policies = useMemo(
-    () => (packagePolicies ? policyMetas(packagePolicies, euWording) : []),
-    [packagePolicies, euWording],
+    () => (packagePolicies ? policyMetas(packagePolicies) : []),
+    [packagePolicies],
   );
   const comparisonQuery = useQuery({
     queryKey: FIREWALL_COMPARISON_KEY,
@@ -289,11 +253,8 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
         )}
       </div>
 
-      {/* Live containd DPI events - shows real allow/deny decisions
-          on the wire so students can watch the policy enforce when
-          they fire a probe from a terminal. Empty under the weak
-          baseline by design (no rules have log:true). */}
-      <LiveEvents compact={compact} activeConfig={activeConfig} activePolicyLabel={activeConfig ? activeMeta.label : "Policy loading…"} usWording={packagePolicies.usWording} />
+      {/* Live rule hits and monitor observations, not a delivery guarantee. */}
+      <LiveEvents compact={compact} activePolicyLabel={activeConfig ? activeMeta.label : "Policy loading…"} />
 
       {/* Dynamic policy evaluation - driven by the dropdown selection.
           Rows that differ from the currently-active policy get a
@@ -433,14 +394,10 @@ function eventEndpoints(e: NetworkEvent): { src: string; dst: string } {
 
 function LiveEvents({
   compact,
-  activeConfig,
   activePolicyLabel,
-  usWording,
 }: {
   compact: boolean;
-  activeConfig: string | null;
   activePolicyLabel: string;
-  usWording: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   // 2.5s poll matches the substation Command Audit cadence and keeps
@@ -489,7 +446,7 @@ function LiveEvents({
               containd unreachable
             </div>
           ) : events.length === 0 && !data?.engineError ? (
-            <EmptyEventsHint compact={compact} activeConfig={activeConfig} usWording={usWording} />
+            <EmptyEventsHint />
           ) : (
             events.slice(0, maxRows).map((e, i) => <LiveEventRow key={`${e.id}-${i}`} e={e} />)
           )}
@@ -499,54 +456,11 @@ function LiveEvents({
   );
 }
 
-// EmptyEventsHint - policy-aware empty-state message for the Live Firewall
-// Events panel. Under the weak baseline the panel is silent by design
-// (no shipped rule has log:true - mirrors a real misconfigured
-// firewall and is part of the segmentation lesson); under hardened
-// the panel is "empty because no probe has been fired yet"; outside
-// those two there's not enough context to be more specific. The two
-// specific hints describe the US policy files and tools, so another
-// package gets the generic one.
-function EmptyEventsHint({
-  compact,
-  activeConfig,
-  usWording,
-}: {
-  compact: boolean;
-  activeConfig: string | null;
-  usWording: boolean;
-}) {
-  if (usWording && activeConfig === "weak") {
-    return (
-      <div className="space-y-1 py-2 px-1 text-[10px] leading-snug text-slate-500">
-        <div className="font-medium text-slate-400">
-          Weak baseline has no logged rules.
-        </div>
-        <div>
-          No rule in the weak config has <span className="font-mono text-amber-400">log: true</span>,
-          so containd emits zero firewall.rule.hit events while it&apos;s active.
-          {!compact && " That silence IS part of the weak-baseline lesson - real misconfigured firewalls also lack observability."}
-        </div>
-        <div>
-          To see this panel light up, <span className="text-slate-300">Apply Hardened</span> in the
-          controls above - the hardened config has logging on every cross-zone rule.
-        </div>
-      </div>
-    );
-  }
-  if (usWording && activeConfig === "improved") {
-    return (
-      <div className="py-2 px-1 text-[10px] leading-snug text-slate-500">
-        Hardened policy is active and rules have <span className="font-mono text-amber-400">log: true</span>,
-        but no traffic has matched yet. Run a probe from a terminal (e.g.{" "}
-        <span className="font-mono text-slate-300">mbpoll</span> or{" "}
-        <span className="font-mono text-slate-300">dnp3poll</span> from kali) to see enforcement.
-      </div>
-    );
-  }
+// An empty event feed alone says nothing about rule logging or delivery.
+function EmptyEventsHint() {
   return (
     <div className="py-2 text-center text-[10px] text-slate-600">
-      No recent events - run a probe from a terminal to see enforcement
+      No recent events — run a probe from a terminal and inspect the device state too.
     </div>
   );
 }

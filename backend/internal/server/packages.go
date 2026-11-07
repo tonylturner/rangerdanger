@@ -20,10 +20,13 @@ type packageSummary struct {
 	Active     bool             `json:"active"`
 	// OperatorView selects the frontend operator page for the package.
 	OperatorView string `json:"operator_view"`
-	// Policies are the names package.yml declares under `policies`, the
-	// ones POST /api/firewall/apply accepts: the topology's default
-	// policy first, then the others by name.
-	Policies []string `json:"policies"`
+	// Policies list package-owned wording, default first, then by name.
+	Policies []policySummary `json:"policies"`
+}
+
+type policySummary struct {
+	Name string `json:"name"`
+	labs.PolicyWording
 }
 
 // policyNames orders the package's policy names default first, then by
@@ -41,6 +44,16 @@ func policyNames(pkg labs.Package) []string {
 		names = append([]string{defaultName}, names...)
 	}
 	return names
+}
+
+// packagePolicies attaches package-owned wording to the ordered names.
+func packagePolicies(pkg labs.Package) []policySummary {
+	names := policyNames(pkg)
+	policies := make([]policySummary, 0, len(names))
+	for _, name := range names {
+		policies = append(policies, policySummary{Name: name, PolicyWording: pkg.PolicyWording[name]})
+	}
+	return policies
 }
 
 // setCatalog replaces the loaded package catalog after a successful seed.
@@ -94,7 +107,7 @@ func (s *Server) handleListPackages(c *gin.Context) {
 			Revision:     pkg.Revision,
 			Active:       pkg.ID == active,
 			OperatorView: pkg.OperatorView,
-			Policies:     policyNames(pkg),
+			Policies:     packagePolicies(pkg),
 			Curriculum:   pkg.Curriculum,
 		})
 	}

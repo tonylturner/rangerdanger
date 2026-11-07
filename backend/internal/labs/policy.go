@@ -288,7 +288,7 @@ func escapePointer(token string) string {
 // directory, keeps every file inside the definitions directory, lints each
 // one, and returns the name → definitions-relative path map. Two names may
 // not share a file: the active policy name is found by exact path match.
-func resolvePolicies(definitionsDir, packageDir string, declared map[string]string, icsRules string) (map[string]string, error) {
+func resolvePolicies(definitionsDir, packageDir string, declared map[string]PolicyYAML, icsRules string) (map[string]string, error) {
 	if len(declared) == 0 {
 		return nil, fmt.Errorf("policies must name at least one policy file")
 	}
@@ -302,13 +302,20 @@ func resolvePolicies(definitionsDir, packageDir string, declared map[string]stri
 	owners := make(map[string]string, len(declared))
 	var problems []string
 	for _, name := range names {
-		value := declared[name]
+		policy := declared[name]
+		value := policy.File
 		if !slugPattern.MatchString(name) {
 			problems = append(problems, fmt.Sprintf("policy name %q must be %s", name, slugRule))
 			continue
 		}
-		if value == "" {
-			problems = append(problems, fmt.Sprintf("policy %s: path must not be empty", name))
+		if strings.TrimSpace(policy.Label) == "" {
+			problems = append(problems, fmt.Sprintf("policy %s: label must not be empty", name))
+		}
+		if strings.TrimSpace(policy.Description) == "" {
+			problems = append(problems, fmt.Sprintf("policy %s: description must not be empty", name))
+		}
+		if strings.TrimSpace(value) == "" {
+			problems = append(problems, fmt.Sprintf("policy %s: file must not be empty", name))
 			continue
 		}
 		path := filepath.Join(packageDir, value)

@@ -191,6 +191,24 @@ published candidate image for source-mode tests only. Offline installs use
 the bundled `latest` image without pulling. Policies are declared by each package's
 `package.yml`: US uses `lab-definitions/firewall/`, EU uses
 `lab-definitions/packages/eu-iec104-substation/firewall/`.
+Each entry under `policies` declares a file relative to `package.yml` and
+required student-facing wording, for example:
+
+```yaml
+policies:
+  weak:
+    file: firewall/weak.json
+    label: Weak Baseline
+    description: Cross-zone attacks succeed under this policy.
+  improved:
+    file: firewall/improved.json
+    label: Hardened Segmentation
+    description: The reference segmentation policy for this range.
+```
+
+The portal uses this wording from `/api/packages` on every policy surface.
+The loader and package lint reject missing or blank file, label or description
+fields; the old name-to-file scalar format is not supported.
 RangerDanger doesn't modify containd source - only configuration.
 
 Capabilities used:
