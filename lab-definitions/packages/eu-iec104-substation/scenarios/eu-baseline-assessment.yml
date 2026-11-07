@@ -38,14 +38,20 @@ steps:
 
     :::decision id=zones-located options=ALL_SIX,SOME_MISSING,COULDNT_FIND correct=ALL_SIX
     Did you locate all six teaching zones on the canvas?
+    :::why
+    Six teaching zones are shown on the map; identifying their boundaries helps interpret the policy and capture.
     :::
 
     :::decision id=ent-to-field-protocols options=NO_ICS,MODBUS,UNCLEAR correct=MODBUS
     What control protocol does the weak Enterprise→Field policy crossing expose?
+    :::why
+    The Weak Baseline permits Modbus on the Enterprise-to-Field crossing.
     :::
 
     :::decision id=station-to-field-protocols options=MODBUS,HTTP_ONLY,NOTHING correct=MODBUS
     What protocol crosses Station→Field for RTU polling and PLC regulation?
+    :::why
+    The RTU polls field devices and the PLC controls the OLTC over Modbus.
     :::
   action:
     type: check
@@ -58,12 +64,6 @@ steps:
   description: |
     On the Network Map, start **Generate scenario traffic** before capturing. Leave it running during the capture, then stop it. The generator makes real engineering→PLC maintenance GETs, enterprise→historian reads and vendor→historian reads under weak policy. These are scenario flows, not autonomous control polls.
 
-    :::hint What should appear
-    CC↔RTU IEC 104, RTU→field Modbus and PLC→OLTC run autonomously. A vendor historian read does not confer ingest authority. The generator does not send unauthorized control writes: absence of such a write is NOT evidence that writes are blocked.
-    :::
-
-    Start the real scenario flows here:
-
     :::generate-traffic-button
     :::
 
@@ -71,10 +71,18 @@ steps:
 
     :::decision id=matrix-rtu-to-field options=ACTIVE,QUIET,NOT_SEEN correct=ACTIVE
     How active is RTU↔field-device traffic in the live Traffic Matrix?
+    :::why
+    Normal RTU polling makes station-to-field traffic active during the baseline.
     :::
 
     :::decision id=matrix-enterprise-to-station-visible options=YES_VISIBLE,NO_NOT_SEEN,UNCLEAR correct=NO_NOT_SEEN
     Did you see enterprise traffic reaching station control or field subnets? The EU generator does make enterprise historian reads, but not enterprise RTU/field probes; those come in the latent-exposure step.
+    :::why
+    The generator includes Enterprise historian reads, but no Enterprise RTU or field probe; distinguish those paths.
+    :::
+
+    :::hint Optional depth
+    Traffic describes what occurred; a policy row describes what is allowed. Compare the two without treating them as interchangeable.
     :::
 - id: capture-traffic-at-the-firewall
   title: Capture traffic at the firewall
@@ -112,9 +120,8 @@ steps:
 - id: critical-conduits-what-must-flow
   title: Critical conduits - what MUST flow
   description: |
-    Which flows MUST survive hardening? In Notes answer: (1) which cross-zone flows were operational, (2) which same-subnet relationships were invisible, and (3) could the feeder run with only required cross-zone flows allowed?
+    Use the capture and station-state evidence to distinguish required cross-zone flows from same-zone dependencies and other observed access.
 
-    :::hint Required flow answer key
     | Required conduit | Pin | Port |
     |---|---|---|
     | CC→RTU | 10.60.60.20→10.30.30.20 | TCP/2404 |
@@ -124,35 +131,66 @@ steps:
     | Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |
     | Engineering→PLC web | 10.20.20.20→10.30.30.30 | TCP/8080 |
 
-    The six intents above preserve operations. RTU↔PLC/GPS remains intra-zone; protect it with endpoint controls and station architecture, not a fictional cross-zone rule. Vendor historian reading under weak is exposure to review, not an ingest conduit to preserve.
+    RTU↔PLC and RTU↔GPS remain inside the station subnet; vendor historian reads are exposure, not ingest authority.
+
+    :::decision id=required-cross-zone-conduits options=SIX_OPERATIONAL_INTENTS,EVERY_OBSERVED_FLOW,CC_ONLY correct=SIX_OPERATIONAL_INTENTS
+    Which cross-zone flows must remain available for normal operation?
+    :::why
+    The six required intents are CC→RTU, RTU→field, PLC→OLTC, CC historian ingest, enterprise historian read, and engineering→PLC web. Vendor historian reads are not a required ingest path.
+    :::
+
+    :::decision id=intra-zone-dependencies options=RTU_PLC_AND_RTU_GPS,CC_TO_RTU,PLC_TO_OLTC correct=RTU_PLC_AND_RTU_GPS
+    Which important relationship is absent from the firewall capture because it stays within one subnet?
+    :::why
+    RTU↔PLC status and RTU↔GPS time traffic stays inside the station subnet and needs endpoint or station controls, not a cross-zone rule.
+    :::
+
+    :::decision id=continuity-with-minimal-conduits options=YES_REQUIRED_CROSS_ZONE_PLUS_INTRAZONE,NO_ALL_WEAK_FLOWS,YES_CC_SESSION_ONLY correct=YES_REQUIRED_CROSS_ZONE_PLUS_INTRAZONE
+    Would the feeder remain operational if only the required cross-zone flows were allowed?
+    :::why
+    Yes, if the six required intents and the same-zone RTU dependencies remain healthy; a permitted CC socket alone is not proof of operational continuity.
+    :::
+
+    :::hint Optional depth
+    A firewall capture and the station state API observe different network boundaries; neither replaces the other's evidence.
     :::
 - id: findings-what-you-observed
   title: Findings - what you observed
   description: |
-    Record what you SAW, not what you want to block. The next lab owns design verdicts.
+    Record what appeared in the passive capture, not what you want to block. Lab 1.3 owns the design verdicts.
 
     :::decision id=enterprise-to-field options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=NOT_OBSERVED
     Enterprise/vendor → field on Modbus/502 — what did the passive capture show?
+    :::why
+    The generator makes no enterprise control probes or field polls. NOT_OBSERVED describes this capture, not a denied path.
     :::
 
     :::decision id=enterprise-to-station options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=NOT_OBSERVED
     Enterprise → station RTU on IEC 104/2404 — what did the passive capture show?
+    :::why
+    The generator does not probe the RTU from Enterprise. A missing flow in passive capture is not proof that the weak policy denies it.
     :::
 
-    :::decision id=vendor-to-station options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=EXPOSURE_OBSERVED
+    :::decision id=vendor-to-station options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED"
     Vendor DMZ → station engineering access — what did the passive capture show?
+    :::why
+    Whether vendor traffic appears depends on whether the capture window overlaps an active exchange. Record what appeared; absence is not evidence of denial.
     :::
 
     :::decision id=non-rtu-to-field options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=NOT_OBSERVED
-    Non-RTU hosts → field (except PLC→OLTC) — what did the passive capture show?
+    Non-RTU station sources → field (except PLC→OLTC) — what did the passive capture show?
+    :::why
+    The RTU is the regular field poller; a foreign-source field attempt is not in the passive generator traffic. NOT_OBSERVED is not a reachability result.
     :::
 
     :::decision id=unauth-control options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=NOT_OBSERVED
-    Unauthorized IEC 104 commands / Modbus writes — what did the passive capture show?
+    Cross-zone foreign-source IEC 104 / Modbus attempts — what did the passive capture show?
+    :::why
+    The capture does not generate foreign-source control attempts. It cannot establish whether an allowed CC session authorizes a command.
     :::
 
-    :::hint Expected passive findings
-    Engineering→PLC web exposes broad vendor-zone trust, so vendor-to-station is observed. The generator makes no enterprise control probes, foreign field polls or unauthorized writes: the other four are NOT_OBSERVED, not proven safe. PLC→OLTC is a legitimate exception to the RTU-only field rule. Passive capture tells you what was used, not what is possible.
+    :::hint Optional depth
+    Record the capture start and end times so later comparisons use the same observation window.
     :::
 - id: probe-for-latent-exposure
   title: Probe for latent exposure
@@ -170,6 +208,8 @@ steps:
 
     :::decision id=latent-exposure-confirmed options="YES,NO,UNSURE" correct=YES
     Did active probing reveal exposure missed in passive capture?
+    :::why
+    The Weak Baseline permits the probed paths. Active reachability can exist even when a passive capture did not show it.
     :::
 
     :::hint Dormant is not denied
@@ -185,12 +225,12 @@ steps:
 - id: transition-decide-what-to-fix-first
   title: Transition - decide what to fix first
   description: |
-    Confirm the known-good baseline still operates: five field devices, 44 IEC 104 points including F2 position/trip/lockout/current/MW; five commands unchanged. You have observed traffic, identified six operational conduits, recorded five passive findings and tested latent reachability. Write measurable success criteria in Notes.
+    Confirm the known-good baseline: five field devices, 44 IEC 104 points including F2 position/trip/lockout/current/MW, and five unchanged commands. You have classified passive findings and active reachability; Lab 1.3 now turns those structured answers into design verdicts and test criteria.
 
-    Next, [Lab 1.3](/exercises/eu-segmentation-requirements) converts these observations into design verdicts. [Lab 1.4](/exercises/eu-remediation-planning) funds selected changes. You cannot fix everything at once: deferred exposure remains risk, not a completed control.
+    [Continue to Lab 1.3](/exercises/eu-segmentation-requirements), then use Lab 1.4 to choose which changes to fund. Deferred exposure remains risk, not a completed control.
 
     :::hint Keep the evidence
-    Retain PCAP, source/destination inventory and baseline quality/receipt times. They are the comparison point for the implementation and change-board evidence.
+    Retain the PCAP and source/destination inventory as evidence for implementation and change review.
     :::
   action:
     type: check
