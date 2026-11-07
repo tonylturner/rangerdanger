@@ -142,7 +142,7 @@ describe("package-bound curriculum presentation", () => {
     expect(html).toContain("Firewall Admin");
     expect(html).toContain("iec104 dpi");
     expect(html).not.toMatch(/DNP3|RTAC/);
-    expect(html).toContain("planned until applied in your plan");
+    expect(html).toContain("available to select for your plan");
   });
 
   it("renders nothing for the same planning directives without a binding", () => {
