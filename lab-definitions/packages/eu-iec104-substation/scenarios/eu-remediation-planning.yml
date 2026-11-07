@@ -66,12 +66,12 @@ steps:
     | Network Engineer | 120h |
     | Security Analyst | 120h |
 
-    - **OT Engineer** reviews operational impact and continuity.
-    - **Firewall Admin** configures and reviews firewall policy.
-    - **Network Engineer** supports network access and interfaces.
-    - **Security Analyst** checks requirements and test evidence.
+    - **OT Engineer** understands station operation and reviews changes that can affect control or protection.
+    - **Firewall Admin** owns containd policy and configures enforcement rules.
+    - **Network Engineer** handles network access and zone/interface configuration.
+    - **Security Analyst** writes requirements, reviews captures and validates evidence.
 
-    An action's effort is split across its required roles. For example, an 80h IEC 104 DPI action shared by three roles is about 27h per role after rounding.
+    Actions need one or more roles at the same time. Effort is split evenly across the action's required roles; for example, an 80h action shared by three roles is about 27h per role after rounding.
 
     Readiness can change caps, effort or eligibility. Use default budget to compare with the unconstrained model; blocked selections stay saved but are excluded from effective totals and coverage. Selecting all technical actions gives Firewall Admin 149h vs 140h capacity (a 9h overrun); this is a warning, not an apply limit.
 
@@ -84,6 +84,9 @@ steps:
     Select a defensible subset in the planner. Some actions change L4 reachability; others add observation or remain planning-only.
 
     IEC 104 monitoring adds evidence, not prevention. The L4 source pin enforces; DPI detects and logs. Modbus inspection and the organizational actions are planning work only.
+
+    Partial plans are valid; empty or planning-only plans leave Weak exposures open. Selection alone does not apply changes: test saved choices with Apply Your Plan in Lab 2.2.
+    After selecting actions, review Remaining hours and role utilization. Selections save automatically; click **Mark Complete** to continue to the reflection.
 
     :::hint Optional depth
     Confirm the site test owner and operational window before scheduling policy changes.

@@ -18,9 +18,18 @@ steps:
   title: Translate findings into design requirements
   expected_config: weak
   description: |
-    **Time budget:** ~12 minutes (Guided path).
+    **Time budget:** ~12 minutes (Guided path). This is a design and decision lab—no commands to run.
 
-    Inspect the **Weak Baseline**, then preview **Hardened Segmentation** without clicking Apply. Compare zone-pair outcomes and keep the active policy unchanged.
+    ### Look at the policy that's running today
+
+    Before deciding what the station should permit, inspect the active policy. Open the [Network Map](/console). On its **left edge**, click the shield icon:
+
+    :::icon name="shield" color="amber" label="Segmentation Policy"
+    :::
+
+    The Segmentation Policy drawer opens from the left. The **Active Policy** banner identifies the **Weak Baseline**. The **Evaluation** table lists zone-pair outcomes with ALLOW or DENY chips; the Weak Baseline allows 8 of the 10 evaluated pairs. Rows marked as implicit default-deny are denied at the policy edge even though there is no explicit rule.
+
+    Use the policy dropdown to preview **Hardened Segmentation**—do not click Apply. The table compares zone-pair outcomes, not individual rules or packet tests. Hardened changes 8 of 10 evaluated rows; a changed row may become DENY or MIXED. This preview does not alter the active Weak Baseline.
 
     :::decision id=current-policy-allowable options="MOSTLY_ALLOW,MOSTLY_DENY,MIXED" correct=MOSTLY_ALLOW
     How would you characterize the Weak Baseline's zone-pair allow/deny mix?
@@ -33,6 +42,14 @@ steps:
     :::why
     Hardened Segmentation changes 8 of 10 rows, which is most rows. This compares the evaluated zone-pair outcomes, not individual rules or packet tests.
     :::
+
+    :::hint Optional: see the Security Level target for the firewall
+    With the **Purdue Model view** enabled on the Network Map, hover over the firewall. The SL-3 number is a design target, not a Security Level assessment. The badge reports selected segmentation criteria for the conduit; `MET` follows the backend-reported active Hardened reference policy, not a packet-path test. Empty, custom, partial or unknown summaries show `NOT ASSESSED`, never `MET`. The L4 source pin enforces; DPI detects and logs. Read [Security Levels](/knowledge#eu-iec62443-security-levels) for SL-1 through SL-4 and [Purdue Model](/knowledge#eu-purdue-model) for the architectural bands.
+    :::
+
+    ### From observation to design
+
+    Lab 1.2 separated five passive exposure categories from latent reachability and required operational conduits. Here you decide what the design should *do* about each finding. Use both the passive findings and the active probe result; absence from a capture does not remove a reachable path from the design.
 
     :::findings-panel from=eu-baseline-assessment title="Passive findings"
     enterprise-to-field: Enterprise/vendor → field on Modbus/502
@@ -52,32 +69,55 @@ steps:
     :::decision id=enterprise-to-field
     Enterprise/vendor → field on Modbus/502 — choose your requirement.
     :::why
-    Reference design: **BLOCK**. Enterprise and vendor sources should not reach field devices over Modbus.
+    Reference design: **BLOCK**. Enterprise and vendor sources should not reach field devices over Modbus. The field boundary is closed to direct office and vendor control access.
     :::
 
     :::decision id=enterprise-to-station
     Enterprise → station RTU on IEC 104/2404 — choose your requirement.
     :::why
-    Reference design: **BLOCK**. The RTU control path is reserved for the Control Centre, not Enterprise.
+    Reference design: **BLOCK**. The RTU control path is reserved for the Control Centre, not Enterprise. Historian reads do not authorize Enterprise access to station control.
     :::
 
     :::decision id=vendor-to-station
     Vendor DMZ → station engineering access — choose your requirement.
     :::why
-    Reference design: **RESTRICT**. Limit engineering access to the named eng-ws→PLC web conduit, not the whole vendor zone.
+    Reference design: **RESTRICT**. Limit engineering access to the named eng-ws→PLC web conduit, not the whole vendor zone. Vendor historian reads are exposure to review, not historian-ingest authority.
     :::
 
     :::decision id=non-rtu-to-field
     Non-RTU station sources → field (except PLC→OLTC) — choose your requirement.
     :::why
-    Reference design: **BLOCK**. Pin field access to the RTU; preserve the explicit PLC→OLTC exception.
+    Reference design: **BLOCK**. Pin ordinary field polling to the RTU; preserve the explicit PLC→OLTC exception. Other station sources must not become substitute field-control paths.
     :::
 
     :::decision id=unauth-control
     Cross-zone foreign-source IEC 104 / Modbus attempts — choose your requirement.
     This does not cover command authorization within an allowed CC session or same-subnet traffic.
     :::why
-    Reference design: **BLOCK**. Close foreign-source paths at L4. The L4 source pin enforces; DPI detects and logs but never prevents commands.
+    Reference design: **BLOCK**. Close foreign-source paths at L4. The L4 source pin enforces; DPI detects and logs but never prevents commands within an allowed Control Centre session.
+    :::
+
+    Your design may differ; the reference is guidance, not an answer key. Your verdicts drive Lab 1.4's labor budget against the design you commit.
+
+    :::hint Zone-pair reference (the rules these requirements imply)
+    Use this quick reference when you build and test the policy in Lab 2.2:
+
+    | From → To | Required or permitted path | Notes |
+    |---|---|---|
+    | Enterprise → Operations DMZ | Historian read, HTTP/8080 | Read access is not control authority |
+    | Enterprise → Vendor/Engineering | No direct RDP/VNC on 3389/5900 | Use only approved named management paths |
+    | Enterprise → Station / Field | None for control traffic | DENY direct IEC 104, Modbus and field access |
+    | Vendor/Engineering → Station | `10.20.20.20` → PLC `10.30.30.30`, HTTP/8080 | Named engineering web access only |
+    | Vendor/Engineering → Field | None | DENY |
+    | Control Centre → Station | `10.60.60.20` → RTU `10.30.30.20`, IEC 104/2404 | Required control path |
+    | Station → Field | RTU `10.30.30.20` and PLC `10.30.30.30` → field | Modbus/502; pin sources, including PLC→OLTC exception |
+    | Control Centre → Operations DMZ | Historian ingest, HTTP/8081 | Separate from HTTP/8080 reads |
+
+    RTU↔PLC status and RTU↔GPS time are intra-zone; do not invent cross-zone rules for them. The L4 source pin enforces; DPI adds visibility, not prevention.
+    :::
+
+    :::hint Limits of enforcement and monitoring
+    Required diagnostic deny rules log the blocked attempt. IEC 104 DPI adds monitor-only observations of allowed Control Centre commands; Modbus DPI and logging selections do not create enforcing rules. Monitoring never satisfies a BLOCK requirement, and an allowed port does not establish a user's identity.
     :::
 
     :::hint Optional depth
@@ -87,7 +127,7 @@ steps:
   title: Resourcing reality check
   expected_config: weak
   description: |
-    Before planning, select the team's current readiness. The answers below adjust capacity, effort and action eligibility in Lab 1.4.
+    Real station-segmentation projects fail more often on resourcing than on technology—vendor change windows that never materialise, OT engineers stretched between operations and security work, unclear risk-acceptance authority. Before choosing remediation actions in Lab 1.4, set your team's current readiness through these structured answers. Lab 1.4 will show how each answer affects the work.
 
     :::decision id=ot-eng-availability options=AVAILABLE,STRETCHED,UNAVAILABLE
     **OT engineering capacity** — is a dedicated OT engineer available for this work, or is the person also covering operations/on-call?
@@ -113,19 +153,28 @@ steps:
     UNCLEAR leaves signoff pending; DISPUTED blocks high-impact deny actions until authority is resolved.
     :::
 
-    :::hint Optional depth
-    Consider who is available on-call and whether vendor windows align with operational change windows.
+    :::hint How readiness appears in the planner
+    The total envelope remains 500h. The planner shows original and adjusted values and the readiness answer behind each change. **Use default budget** restores default caps, effort and eligibility for comparison; the setting is saved per package and revision. Readiness-blocked saved choices stay visible but are excluded from draft totals, coverage and Apply Your Plan, even if readiness changes without reopening Lab 1.4. Restoring readiness restores those saved choices. An already-applied plan keeps its recorded provenance and proof expectations. Budget or role overrun alone is a warning, not an apply limit.
     :::
 - id: define-success-criteria-for-segmentation
   title: Define success criteria for segmentation
   description: |
-    Use these shared pass/fail criteria as a reference before planning. For IEC 104, a completed current-connection GI and fresh valid observations support station continuity:
+    Review these concrete, testable statements before planning. They are criteria to verify—not a request to write them again.
 
-    - A denied path should time out (expected result: timeout); connection refused means the host was reached.
-    - Restrict engineering access to named sources and services; close unrelated remote access.
-    - Preserve the required operational conduits and verify fresh, valid device/process state.
-    - The L4 source pin enforces; DPI detects and logs but does not prevent traffic.
-    - Keep policy identity, test results, capture and residual-risk ownership together as evidence.
+    1. **New Enterprise → RTU and Enterprise/Vendor → Field paths are denied.**
+       *Test:* new Kali→RTU:2404 and Enterprise/Vendor→Field:502 connections time out under Hardened.
+
+    2. **Vendor engineering access is named-source PLC web only.**
+       *Test:* `10.20.20.20` can reach the PLC's HTTP/8080 service; Enterprise→Vendor RDP/VNC on ports 3389/5900 is closed.
+
+    3. **All six operational intents survive the change.**
+       *Test:* complete a current-connection GI within the attempt window; verify non-null valid observations received since it started and healthy device/process state. Quiet valid status does not age out; if GI evidence is missing, use **Interrogate station**, not a forced reconnect.
+
+    4. **Foreign-source control is constrained, while protocol evidence remains distinct.**
+       *Test:* the L4 source pin enforces the boundary; explicit IEC 104 monitoring records allowed-Control-Centre command matches but does not prevent them. Verify applied shadow evidence separately from TCP proof.
+
+    5. **The change is reviewable and residual risk has an owner.**
+       *Test:* export policy, test results, UTC bounds and PCAP; name an owner for each deferred risk.
 
     :::decision id=deny-test-outcome options=TIMEOUT,CONNECTION_REFUSED,OPEN correct=TIMEOUT
     What result shows a denied test path?
@@ -145,8 +194,8 @@ steps:
     Use a completed protocol operation with fresh valid observations and healthy device/process state—not a socket or stale status alone.
     :::
 
-    :::hint Optional depth
-    Attach a named owner and retest window to any evidence package used for change approval.
+    :::hint IEC 62443, NIS2 and BDEW
+    Treat zones/conduits as an engineering design and continuity as a hard constraint. Record change approval, rollback, residual-risk authority and evidence retention. A range PASS is not regulatory certification. Read [Risk design](/knowledge#eu-iec62443-risk-design).
     :::
 nodes:
 - kali-1

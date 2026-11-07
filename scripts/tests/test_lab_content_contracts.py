@@ -723,8 +723,10 @@ class BaselineContracts(unittest.TestCase):
             with self.subTest(row=row):
                 # Status is authored per version, not an assertion these tuples
                 # must be denied forever. A future policy and text can change together.
-                status = row.split("|")[-2].lower()
+                columns = row.split("|")
+                status = columns[-3].lower()
                 self.assertTrue("preserve" in status or "blocked" in status)
+                self.assertTrue(columns[-2].strip())
                 expected = "DENY" if "blocked" in status else "ALLOW"
                 addresses = re.findall(r"`(10\.[^`]+)`", row)
                 source, destinations = addresses[:2]
