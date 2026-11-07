@@ -99,14 +99,13 @@ describe("US Apply Your Plan content", () => {
     }
   });
 
-  it("labels every catalog action by its compiled kind", () => {
+  it("keeps the planner intro concise and leaves action details to the planner", () => {
     const text = scenario("remediation-planning").steps[2].description;
-    const rows = text.split("\n").filter((line) => /^\| (Enforceable|Detection-only|Planning-only) /.test(line));
-    const labels = { enforce: "Enforceable", detect: "Detection-only", plan: "Planning-only" };
-    for (const action of US_PLANS[0].actions) {
-      expect(rows.find((line) => line.startsWith(`| ${labels[action.kind]} |`))).toContain(`\`${action.id}\``);
-    }
-    for (const required of ["empty", "partial", "Budget overrun is a warning only"]) expect(text).toContain(required);
+    expect(text).toContain("Select a defensible subset in the planner.");
+    expect(text).toContain("The L4 source pin enforces; DPI detects and logs.");
+    expect(text).toContain("remain planning-only");
+    expect(text).not.toMatch(/`[a-z]+-[a-z-]+`/);
+    expect(text).not.toMatch(/catalog authority|authored slots|selection order/i);
   });
 
   it("names retest owners and preserves restoration without fixed HMI answers", () => {

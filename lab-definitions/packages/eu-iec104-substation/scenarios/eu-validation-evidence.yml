@@ -81,7 +81,7 @@ steps:
     Are operations intact after validation?
     :::
     :::decision id=neg-test-no-impact options="UNCHANGED,DEGRADED,UNCLEAR"
-    Were operations unchanged? Record deferred reachable paths in Notes.
+    Were operations unchanged? Compare this result with the report and structured plan coverage.
     :::
 
     :::hint Advanced: verify by hand
@@ -149,7 +149,7 @@ steps:
     :::plan-coverage title="Selected actions vs committed design"
     :::
 
-    In Notes answer: which findings did your plan close, which remain deferred and why, which role constrained it, and what would you fund next quarter? Map every residual to operational consequence, owner, acceptance authority and retest. What endpoint or station architecture control addresses same-subnet blind spots?
+    The findings, design verdicts and selected actions already carry forward as structured inputs. Use the report and plan-coverage panel; do not transcribe the Lab 1.4 action deferrals again. In Notes, discuss which positive or negative result most changed your confidence, what technical or evidence limitation remains, and the owner plus retest condition needed before approval.
 
     :::hint Honest handover
     IEC 104 monitoring adds observation evidence, not command restriction or a promise of later enforcement. Modbus DPI remains planning-only. Breaker control on an allowed CC session remains a residual risk. L4 is live but cannot distinguish commands on an allowed CC session. Keep this residual explicit alongside IEC 62443 design and NIS2/BDEW change accountability. Retain policy, report and PCAP before reset.

@@ -113,7 +113,7 @@ steps:
       :::
 
       :::decision id=neg-test-no-impact options=UNCHANGED,DEGRADED,UNCLEAR
-      Did operations remain unchanged? Record any deferred reachable paths in Notes.
+      Did operations remain unchanged? Compare this result with the validation report and structured plan coverage.
       :::
 
       :::hint Advanced: run the positive tests by hand
@@ -259,20 +259,20 @@ steps:
       - **Firewall visibility blind spot at the RTAC.** The RTAC is multi-homed (it polls field devices over DNP3/Modbus) but its application traffic is routed through containd by preinstalled host-level hardening. The `rtac-architecture-review` action plans a review; it installs no control. Worth noting as a compensating control on your evidence package, not a network-layer enforcement. The RTAC is the *only* host with a leg in field_net - every other OT host is single-homed on ot_ops_net.
       - **No protocol-aware constraints by default.** L4 port filtering does not distinguish reads from writes. The `modbus-dpi` and `dnp3-dpi` actions add visibility only. The L4 source pin enforces; DPI detects and logs.
 
-      ### What your plan closed vs deferred
+      ### Review the structured plan coverage
 
       :::plan-coverage title="Coverage of your committed Lab 1.3 design"
       :::
 
-      The panel above is computed live from your Lab 1.4 selections. Each requirement is marked **fully addressed**, **partial**, **deferred** (gap), or **n/a** (you marked the verdict as ALLOW or didn't commit one). This is the structured input for your reflection - answer the prompts below against what the panel shows.
+      The panel above is computed live from your Lab 1.4 selections. Each requirement is marked **fully addressed**, **partial**, **deferred** (gap), or **n/a** (you marked the verdict as ALLOW or didn't commit one). Use the panel and report together; the design verdicts and funded/deferred actions already carry forward as structured inputs.
 
       ### Now reflect
 
-      Take five minutes in your Exercise Notes to answer:
+      Take five minutes in your Exercise Notes to discuss the validation evidence:
 
-      1. **Which findings did your plan close?** The "fully addressed" rows above. Map each to the action in your plan that implements it.
-      2. **Which findings remain open as residual risk?** The "deferred" or "partial" rows. What's the operational impact if those residuals are exploited? Why did you defer them - labor budget, role capacity, or design choice?
-      3. **What would you revisit next quarter?** Given a fresh labor budget, which deferred remediation would you pull in first? Why?
-      4. **What would you change about the substation architecture itself?** The firewall is one layer; what additional controls (host hardening, monitoring, change management) would deepen defense in depth?
+      1. Which positive or negative test result most changed your confidence in the running policy?
+      2. What does the report prove, and what remains outside its scope?
+      3. What evidence, operational owner or retest is needed before this change could be approved?
+      4. What additional architecture or monitoring control would reduce a visibility blind spot?
 
-      These answers travel with you into the next planning cycle. Defensible segmentation is continuous - this is the start of the next iteration, not the end.
+      These discussion notes add context to the report; they do not replace its evidence or repeat the structured plan inputs.
