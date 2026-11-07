@@ -226,6 +226,7 @@ func (s *Server) executeRTACCommand(ctx context.Context, gen *lifecycle.Generati
 
 // executeFirewallAction applies a firewall configuration.
 func (s *Server) executeFirewallAction(ctx context.Context, gen *lifecycle.Generation, configName string) StepActionResult {
+	label := policyLabel(gen.Package, configName)
 	applied, err := s.applyFirewallConfigInternal(ctx, gen, configName)
 	if err != nil {
 		var receipt *containd.ApplyReceipt
@@ -234,17 +235,13 @@ func (s *Server) executeFirewallAction(ctx context.Context, gen *lifecycle.Gener
 		}
 		return StepActionResult{
 			Containd: receipt, applyError: err,
-			Action:  "Apply firewall: " + configName,
+			Action:  "Apply firewall: " + label,
 			Success: false,
 			Detail:  err.Error(),
 		}
 	}
 
 	warnings := applied.Warnings
-	label := configName
-	if recipe, err := recipeFor(gen); err == nil {
-		label = recipe.policyLabel(configName)
-	}
 	detail := "containd policy set to " + label
 	if len(warnings) > 0 {
 		// Surface containd's commit warnings so a partial-apply (e.g. nft
@@ -254,7 +251,7 @@ func (s *Server) executeFirewallAction(ctx context.Context, gen *lifecycle.Gener
 	}
 	return StepActionResult{
 		Containd: applied.Receipt,
-		Action:   "Apply firewall: " + configName,
+		Action:   "Apply firewall: " + label,
 		Success:  true,
 		Detail:   detail,
 		Warnings: warnings,

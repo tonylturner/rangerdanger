@@ -89,7 +89,7 @@ scenarios: scenarios
 knowledge: knowledge/index.yml
 capabilities: [process.electrical]
 policies:
-  weak: firewall/weak.json
+  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}
 operator_view: us-dnp3-substation
 `
 }
@@ -174,6 +174,9 @@ func TestSeedImportsPackage(t *testing.T) {
 	}
 	if got, want := catalog.Packages[0].Policies, map[string]string{"weak": "packages/alpha/firewall/weak.json"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("policies = %v, want %v (resolved from the package directory)", got, want)
+	}
+	if got := catalog.Packages[0].PolicyWording["weak"]; got != (PolicyWording{Label: "Policy label", Description: "Policy description"}) {
+		t.Errorf("policy wording = %#v, want the manifest's label and description", got)
 	}
 	if got := catalog.Packages[0].ICSRules; got != ICSRulesAllowed {
 		t.Errorf("ics_rules = %q, want the %q default", got, ICSRulesAllowed)
@@ -423,25 +426,46 @@ func TestLoadRejectsInvalidPackages(t *testing.T) {
 		}, `operator_view must be us-dnp3-substation or eu-iec104, got "hmi"`},
 		{"unknown ics rules", "package.yml", func(s string) string { return s + "ics_rules: maybe\n" }, `ics_rules must be allowed, forbidden or monitor, got "maybe"`},
 		{"missing policies", "package.yml", func(s string) string {
-			return strings.Replace(s, "policies:\n  weak: firewall/weak.json\n", "", 1)
+			return strings.Replace(s, "policies:\n  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}\n", "", 1)
 		}, "policies must name at least one policy file"},
 		{"empty policies", "package.yml", func(s string) string {
-			return strings.Replace(s, "policies:\n  weak: firewall/weak.json\n", "policies: {}\n", 1)
+			return strings.Replace(s, "policies:\n  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}\n", "policies: {}\n", 1)
 		}, "policies must name at least one policy file"},
+		{"old policy shape", "package.yml", func(s string) string {
+			return strings.Replace(s, "{file: firewall/weak.json, label: Policy label, description: Policy description}", "firewall/weak.json", 1)
+		}, "cannot unmarshal"},
+		{"missing policy file field", "package.yml", func(s string) string {
+			return strings.Replace(s, "file: firewall/weak.json, ", "", 1)
+		}, "policy weak: file must not be empty"},
+		{"missing policy label", "package.yml", func(s string) string {
+			return strings.Replace(s, "label: Policy label, ", "", 1)
+		}, "policy weak: label must not be empty"},
+		{"blank policy label", "package.yml", func(s string) string {
+			return strings.Replace(s, "label: Policy label", `label: "  "`, 1)
+		}, "policy weak: label must not be empty"},
+		{"missing policy description", "package.yml", func(s string) string {
+			return strings.Replace(s, ", description: Policy description", "", 1)
+		}, "policy weak: description must not be empty"},
+		{"blank policy description", "package.yml", func(s string) string {
+			return strings.Replace(s, "description: Policy description", `description: "  "`, 1)
+		}, "policy weak: description must not be empty"},
+		{"unknown policy field", "package.yml", func(s string) string {
+			return strings.Replace(s, "label: Policy label", "label: Policy label, title: Typo", 1)
+		}, "field title not found"},
 		{"policy name not a slug", "package.yml", func(s string) string {
-			return strings.Replace(s, "  weak: firewall/weak.json", "  weak: firewall/weak.json\n  Strict: firewall/strict.json", 1)
+			return strings.Replace(s, "  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}", "  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}\n  Strict: {file: firewall/strict.json, label: Policy label, description: Policy description}", 1)
 		}, `policy name "Strict" must be lowercase`},
 		{"missing policy file", "package.yml", func(s string) string {
-			return strings.Replace(s, "  weak: firewall/weak.json", "  weak: firewall/weak.json\n  improved: firewall/missing.json", 1)
+			return strings.Replace(s, "  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}", "  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}\n  improved: {file: firewall/missing.json, label: Policy label, description: Policy description}", 1)
 		}, "policy improved: open"},
 		{"policy outside definitions", "package.yml", func(s string) string {
-			return strings.Replace(s, "  weak: firewall/weak.json", "  weak: firewall/weak.json\n  improved: ../../../outside.json", 1)
+			return strings.Replace(s, "  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}", "  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}\n  improved: {file: ../../../outside.json, label: Policy label, description: Policy description}", 1)
 		}, `policy improved "../../../outside.json": must stay inside the definitions directory`},
 		{"two names share a policy file", "package.yml", func(s string) string {
-			return strings.Replace(s, "  weak: firewall/weak.json", "  weak: firewall/weak.json\n  baseline: firewall/../firewall/weak.json", 1)
+			return strings.Replace(s, "  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}", "  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}\n  baseline: {file: firewall/../firewall/weak.json, label: Policy label, description: Policy description}", 1)
 		}, "policies baseline and weak name the same file packages/alpha/firewall/weak.json"},
 		{"default is not a named policy", "package.yml", func(s string) string {
-			return strings.Replace(s, "  weak: firewall/weak.json", "  improved: firewall/improved.json", 1)
+			return strings.Replace(s, "  weak: {file: firewall/weak.json, label: Policy label, description: Policy description}", "  improved: {file: firewall/improved.json, label: Policy label, description: Policy description}", 1)
 		}, "firewall_config packages/alpha/firewall/weak.json is not one of the package policies"},
 		{"missing default policy", "topology.yml", func(s string) string {
 			return strings.Replace(s, "firewall_config: firewall/weak.json\n", "", 1)

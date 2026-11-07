@@ -68,6 +68,13 @@ func serve(s *Server, method, path string) *httptest.ResponseRecorder {
 
 func TestListPackagesMarksActive(t *testing.T) {
 	s := routedServer(t)
+	for i := range s.catalog.Packages {
+		pkg := &s.catalog.Packages[i]
+		pkg.PolicyWording = make(map[string]labs.PolicyWording)
+		for name := range pkg.Policies {
+			pkg.PolicyWording[name] = labs.PolicyWording{Label: "Label " + name, Description: "Description " + name}
+		}
+	}
 	rec := serve(s, http.MethodGet, "/api/packages")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/packages = %d %s", rec.Code, rec.Body)
@@ -76,15 +83,22 @@ func TestListPackagesMarksActive(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
+	summary := func(names ...string) []policySummary {
+		result := make([]policySummary, 0, len(names))
+		for _, name := range names {
+			result = append(result, policySummary{Name: name, PolicyWording: labs.PolicyWording{Label: "Label " + name, Description: "Description " + name}})
+		}
+		return result
+	}
 	// Policies list the default first, then the rest by name.
 	want := []packageSummary{
-		{ID: "other-package", Title: "Other", Revision: 2, OperatorView: "eu-iec104", Policies: []string{"open", "audit", "strict"}},
-		{ID: testPackageID, Title: "Test", Revision: 1, Active: true, OperatorView: "us-dnp3-substation", Policies: []string{"weak", "improved"}},
+		{ID: "other-package", Title: "Other", Revision: 2, OperatorView: "eu-iec104", Policies: summary("open", "audit", "strict")},
+		{ID: testPackageID, Title: "Test", Revision: 1, Active: true, OperatorView: "us-dnp3-substation", Policies: summary("weak", "improved")},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("packages = %#v, want %#v", got, want)
 	}
-	for _, field := range []string{`"operator_view":"eu-iec104"`, `"policies":["weak","improved"]`} {
+	for _, field := range []string{`"operator_view":"eu-iec104"`, `"policies":[{"name":"weak","label":"Label weak","description":"Description weak"},{"name":"improved","label":"Label improved","description":"Description improved"}]`} {
 		if !strings.Contains(rec.Body.String(), field) {
 			t.Errorf("GET /api/packages = %s, want %s", rec.Body, field)
 		}

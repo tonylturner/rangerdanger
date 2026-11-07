@@ -67,6 +67,18 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // only checks that declared keys exist and that the package can serve them.
 type ValidatorRequirements map[string][]string
 
+// PolicyWording is the package-owned presentation of a named policy.
+type PolicyWording struct {
+	Label       string `yaml:"label" json:"label"`
+	Description string `yaml:"description" json:"description"`
+}
+
+// PolicyYAML declares a policy file and its student-facing wording.
+type PolicyYAML struct {
+	File          string `yaml:"file"`
+	PolicyWording `yaml:",inline"`
+}
+
 // PackageYAML mirrors lab-definitions/packages/<id>/package.yml.
 type PackageYAML struct {
 	Curriculum   *CurriculumBinding `yaml:"curriculum"`
@@ -79,9 +91,9 @@ type PackageYAML struct {
 	Knowledge    string             `yaml:"knowledge"` // required knowledge index, relative to package.yml
 	Capabilities []string           `yaml:"capabilities"`
 	// Policies maps the names the firewall buttons and actions apply
-	// ("weak", "improved") to policy files relative to package.yml.
-	Policies     map[string]string `yaml:"policies"`
-	OperatorView string            `yaml:"operator_view"`
+	// ("weak", "improved") to files and wording owned by the package.
+	Policies     map[string]PolicyYAML `yaml:"policies"`
+	OperatorView string                `yaml:"operator_view"`
 	// ICSRules is ICSRulesAllowed, ICSRulesForbidden or ICSRulesMonitor; empty means allowed.
 	ICSRules string `yaml:"ics_rules"`
 }
@@ -106,8 +118,10 @@ type Package struct {
 	FirewallConfigPath string
 	// Policies maps each named policy to its file relative to the
 	// definitions directory. FirewallConfigPath is one of the values.
-	Policies     map[string]string
-	OperatorView string
+	Policies map[string]string
+	// PolicyWording holds the validated display metadata for each named policy.
+	PolicyWording map[string]PolicyWording
+	OperatorView  string
 	// ICSRules is ICSRulesAllowed, ICSRulesForbidden or ICSRulesMonitor, never empty.
 	ICSRules  string
 	Scenarios []ScenarioYAML
@@ -281,6 +295,10 @@ func readDefinition(definitionsDir, manifestPath string) (Package, string, error
 	if err != nil {
 		return Package{}, "", err
 	}
+	wording := make(map[string]PolicyWording, len(manifest.Policies))
+	for name, policy := range manifest.Policies {
+		wording[name] = policy.PolicyWording
+	}
 	pkg := Package{
 		ID:                 manifest.ID,
 		Title:              manifest.Title,
@@ -289,6 +307,7 @@ func readDefinition(definitionsDir, manifestPath string) (Package, string, error
 		Template:           def,
 		FirewallConfigPath: firewallConfigPath,
 		Policies:           policies,
+		PolicyWording:      wording,
 		OperatorView:       manifest.OperatorView,
 		ICSRules:           icsRules,
 	}

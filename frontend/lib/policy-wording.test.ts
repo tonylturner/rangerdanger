@@ -6,58 +6,33 @@ import {
   matchesExpected,
   packagePolicies,
   policyWording,
-  US_WORKSHOP_POLICY_WORDING,
 } from "./policy-wording";
 
-const US_TABLE = { weak: { label: "Weak Baseline", description: "US text" } };
-
-describe("packagePolicies", () => {
-  it("takes the names from the package and US wording only for the US package", () => {
-    expect(packagePolicies(US_PACKAGE)).toEqual({ names: ["weak", "improved"], usWording: true });
-    expect(packagePolicies(EU_PACKAGE)).toEqual({ names: ["weak", "improved"], usWording: false });
-  });
-});
-
-describe("policyWording", () => {
-  it("uses the US table for the US package", () => {
-    expect(policyWording("weak", packagePolicies(US_PACKAGE), US_TABLE)).toEqual(US_TABLE.weak);
+describe("package policy wording", () => {
+  it.each([US_PACKAGE, EU_PACKAGE])("takes every label and description from $id", (pkg) => {
+    expect(packagePolicies(pkg)).toBe(pkg.policies);
+    for (const { name, label, description } of pkg.policies) {
+      expect(policyWording(name, packagePolicies(pkg))).toEqual({ label, description });
+      expect(activePolicyWording(name, packagePolicies(pkg))).toEqual({ label, description });
+    }
   });
 
-  it("shows any other package's policy by its declared name", () => {
-    expect(policyWording("weak", packagePolicies(EU_PACKAGE), US_TABLE)).toEqual({ label: "weak", description: "" });
+  it("uses authored wording even when names and operator view are unfamiliar", () => {
+    const pkg = { ...EU_PACKAGE, operator_view: "new-view", policies: [{ name: "audit", label: "Review mode", description: "Observe the range." }] };
+    expect(policyWording("audit", packagePolicies(pkg))).toEqual({ label: "Review mode", description: "Observe the range." });
   });
 
-  it("falls back to the name for a US policy the table does not know", () => {
-    expect(policyWording("audit", packagePolicies(US_PACKAGE), US_TABLE)).toEqual({ label: "audit", description: "" });
-  });
-});
-
-describe("activePolicyWording", () => {
   it.each(["weak", "partial", "hardened"] as const)("labels an applied %s plan without changing the custom identity", (label) => {
-    const plan = { packageId: US_PACKAGE.id, revision: 2, label, actionIds: [], policyHash: "abc", appliedAt: "now" };
-    expect(activePolicyWording("custom", packagePolicies(US_PACKAGE), US_WORKSHOP_POLICY_WORDING, "plan", plan).label).toBe(`Your plan — ${label[0].toUpperCase() + label.slice(1)}`);
+    for (const pkg of [US_PACKAGE, EU_PACKAGE]) {
+      const plan = { packageId: pkg.id, revision: pkg.revision, label, actionIds: [], policyHash: "abc", appliedAt: "now" };
+      expect(activePolicyWording("custom", packagePolicies(pkg), "plan", plan).label).toBe(`Your plan — ${label[0].toUpperCase() + label.slice(1)}`);
+    }
   });
 
-  it("uses exact US wording and consistently labels a custom policy", () => {
-    expect(activePolicyWording("weak", packagePolicies(US_PACKAGE), US_WORKSHOP_POLICY_WORDING)).toEqual({
-      label: "Weak Baseline",
-      description: "",
-    });
-    expect(activePolicyWording("custom", packagePolicies(US_PACKAGE), US_WORKSHOP_POLICY_WORDING)).toEqual({
-      label: "Custom policy",
-      description: "",
-    });
-  });
-
-  it("preserves declared names outside the US and for unknown configurations", () => {
-    expect(activePolicyWording("improved", packagePolicies(EU_PACKAGE), US_WORKSHOP_POLICY_WORDING)).toEqual({
-      label: "improved",
-      description: "",
-    });
-    expect(activePolicyWording("audit", packagePolicies(US_PACKAGE), US_WORKSHOP_POLICY_WORDING)).toEqual({
-      label: "audit",
-      description: "",
-    });
+  it("distinguishes custom and unknown configurations from named policies", () => {
+    expect(activePolicyWording("custom", packagePolicies(US_PACKAGE))).toEqual({ label: "Custom policy", description: "" });
+    expect(activePolicyWording("unknown", packagePolicies(US_PACKAGE))).toEqual({ label: "unknown", description: "" });
+    expect(activePolicyWording("weak", undefined)).toEqual({ label: "Loading…", description: "" });
   });
 });
 

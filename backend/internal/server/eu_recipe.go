@@ -47,8 +47,4 @@ var euRecipe = &packageRecipe{
 			"dmz":  "Vendor",
 		},
 	},
-	policyLabels: map[string]string{
-		"weak":     "weak baseline",
-		"improved": "improved (source-pinned IEC 104 and Modbus control, PLC maintenance and historian conduits)",
-	},
 }

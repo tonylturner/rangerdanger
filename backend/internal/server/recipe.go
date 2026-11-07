@@ -57,9 +57,6 @@ type packageRecipe struct {
 	staticRules []containd.ZoneRuleSummary
 	// workshopName overrides the topology name in /workshop/status.
 	workshopName string
-	// policyLabels describe named policies in step results; a policy
-	// without one is shown by name.
-	policyLabels map[string]string
 }
 
 // deviceCommand is one RTAC device command; value is its argument, if any.
@@ -132,14 +129,6 @@ func supportedRecipe(c *gin.Context, supports func(*packageRecipe) bool) (*packa
 		return nil, false
 	}
 	return recipe, true
-}
-
-// policyLabel describes a named policy in step results.
-func (r *packageRecipe) policyLabel(name string) string {
-	if label := r.policyLabels[name]; label != "" {
-		return label
-	}
-	return name
 }
 
 // defaultPolicy is the policy every range of the package starts on, the

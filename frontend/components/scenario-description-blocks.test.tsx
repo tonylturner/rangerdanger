@@ -150,7 +150,7 @@ describe("package-bound curriculum presentation", () => {
   });
 
   it("shows compiler action kinds with one wording for both packages", () => {
-    expect(render(US_CURRICULUM)).toContain('href="/exercises"');
+    expect(render(US_CURRICULUM)).toContain(`href="/exercises/${US_CURRICULUM.roles.planning}"`);
     for (const [plans, binding] of [[US_PLANS, US_CURRICULUM], [EU_PLANS, EU]] as const) {
       for (const plan of plans) {
         const html = renderToStaticMarkup(<CompiledPlanSummary plan={plan} binding={binding} />);

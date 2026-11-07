@@ -6,7 +6,7 @@ import type { PackageSummary, WorkshopStatus, PlanProvenance } from "../lib/api"
 import { FIREWALL_ACTIVE_KEY, WORKSHOP_STATUS_KEY } from "../lib/live-queries";
 import { EU_PACKAGE, US_PACKAGE } from "../lib/operator-fixtures.test-util";
 import { packagePolicies } from "../lib/policy-wording";
-import { EuDashboard } from "./eu-overview";
+import { EuDashboard, EuWorkshopStatus } from "./eu-overview";
 import { PolicyBadge } from "./network-drawers";
 import { PolicyStatusBanner } from "./policy-status-banner";
 import { UsDashboard } from "./us-dashboard";
@@ -26,7 +26,26 @@ function renderWith(pkg: PackageSummary | undefined, node: ReactNode, status?: W
   return text(html);
 }
 
-const US_TEXT = /Hardened|Weak [Bb]aseline|RTAC|substation-improved|Lab 1\.4|Apply Hardened|Reset to Weak/;
+it.each([US_PACKAGE, EU_PACKAGE])("propagates $id's authored wording to every status surface", (pkg) => {
+  const authored = { ...pkg, policies: [{ name: "weak", label: "Training baseline", description: "Package-owned teaching text." }] };
+  const status: WorkshopStatus = {
+    workshop_id: pkg.id, workshop_name: pkg.title, firewall_online: true,
+    firewall_config: "weak", scenario_count: 1,
+  };
+  const banner = text(renderToStaticMarkup(
+    <PolicyStatusBanner activeConfig="weak" policySource="" policies={packagePolicies(authored)} />,
+  ));
+  expect(banner).toContain("Training baseline Package-owned teaching text.");
+  for (const node of [
+    <PolicyBadge key="badge" activeConfig="weak" />,
+    <UsDashboard key="us-dashboard" />,
+    <UsWorkshopStatus key="us-workshop" />,
+    <EuDashboard key="eu-dashboard" title="EU" />,
+    <EuWorkshopStatus key="eu-workshop" title="EU" />,
+  ]) {
+    expect(renderWith(authored, node, status)).toContain("Training baseline");
+  }
+});
 
 describe("PolicyStatusBanner", () => {
   it.each(["weak", "partial", "hardened"] as const)("shows the %s label for a custom plan in both packages", (label) => {
@@ -50,30 +69,14 @@ describe("PolicyStatusBanner", () => {
       ),
     );
 
-  it("keeps the US wording", () => {
-    expect(banner(US_PACKAGE, "weak")).toBe("Currently running Weak baseline Cross-zone attacks succeed under this config.");
-    expect(banner(US_PACKAGE, "improved")).toBe(
-      "Currently running Hardened reference Canned reference policy (substation-improved.json).",
-    );
-    expect(banner(US_PACKAGE, "improved", "weak")).toBe(
-      "Policy mismatch This step expects the weak baseline , but the firewall is currently running Hardened reference . Click Reset to Weak in the policy-actions panel below to restore the baseline.",
-    );
-    expect(banner(US_PACKAGE, "weak", "hardened")).toMatch(
-      /expects the hardened policy \(reference or your custom\) .* Click Apply Hardened \(canned reference\) or Apply Your Plan/,
-    );
-  });
-
-  it("names another package's policies by their declared names, without US text", () => {
-    expect(banner(EU_PACKAGE, "weak")).toBe("Currently running weak");
-    expect(banner(EU_PACKAGE, "improved")).toBe("Currently running improved");
-    const mismatch = banner(EU_PACKAGE, "weak", "hardened");
-    expect(mismatch).toBe(
-      "Policy mismatch This step expects the improved policy (or a custom policy) , but the firewall is currently running weak . Apply it from the Firewall policy menu in the Network Console.",
-    );
-    expect(banner(EU_PACKAGE, "custom", "weak")).toMatch(/expects the weak policy , but the firewall is currently running Your custom policy/);
-    for (const out of [banner(EU_PACKAGE, "weak"), banner(EU_PACKAGE, "improved"), mismatch]) {
-      expect(out).not.toMatch(US_TEXT);
-    }
+  it.each([US_PACKAGE, EU_PACKAGE])("uses $id's labels and the shared policy-actions instruction", (pkg) => {
+    expect(banner(pkg, "weak")).toBe("Currently running Weak Baseline Cross-zone attacks succeed under this policy.");
+    expect(banner(pkg, "improved")).toBe("Currently running Hardened Segmentation The reference segmentation policy for this range.");
+    expect(banner(pkg, "improved", "weak")).toContain("Click Reset to Weak in the policy-actions panel below");
+    expect(banner(pkg, "weak", "hardened")).toContain("Hardened Segmentation (reference or your custom policy)");
+    expect(banner(pkg, "weak", "hardened")).toContain("Click Apply Hardened (canned reference) or Apply Your Plan");
+    expect(banner(pkg, "weak", "improved")).not.toContain("Network Console");
+    expect(banner(pkg, "custom", "weak")).toContain("expects the Weak Baseline");
   });
 
   it("waits for the package before naming a policy", () => {
@@ -90,12 +93,10 @@ describe("PolicyBadge", () => {
     expect(renderWith(US_PACKAGE, <PolicyBadge activeConfig="improved" />, undefined, plan)).toContain("Your plan — Weak");
   });
 
-  it("keeps the US words and shows another package's active policy by name", () => {
-    expect(renderWith(US_PACKAGE, <PolicyBadge activeConfig="improved" />)).toBe("Firewall · Hardened");
-    expect(renderWith(US_PACKAGE, <PolicyBadge activeConfig="weak" />)).toBe("Firewall · Weak baseline");
-    expect(renderWith(EU_PACKAGE, <PolicyBadge activeConfig="improved" />)).toBe("Firewall · improved");
-    expect(renderWith(EU_PACKAGE, <PolicyBadge activeConfig="custom" />)).toBe("Firewall · Custom policy");
-    expect(renderWith(US_PACKAGE, <PolicyBadge activeConfig="custom" />)).toBe("Firewall · Custom policy");
+  it.each([US_PACKAGE, EU_PACKAGE])("uses $id's package labels and distinguishes custom", (pkg) => {
+    expect(renderWith(pkg, <PolicyBadge activeConfig="improved" />)).toBe("Firewall · Hardened Segmentation");
+    expect(renderWith(pkg, <PolicyBadge activeConfig="weak" />)).toBe("Firewall · Weak Baseline");
+    expect(renderWith(pkg, <PolicyBadge activeConfig="custom" />)).toBe("Firewall · Custom policy");
   });
 
   it("waits for the package", () => {
@@ -113,10 +114,10 @@ describe("EuDashboard firewall card", () => {
     control_centre: { link: "started", gi: "complete" },
   };
 
-  it("shows the declared policy name", () => {
+  it("shows the package label on the dashboard and workshop status", () => {
     const out = renderWith(EU_PACKAGE, <EuDashboard title="EU" />, status);
-    expect(out).toContain("Firewall Policy improved");
-    expect(out).not.toMatch(US_TEXT);
+    expect(out).toContain("Firewall Policy Hardened Segmentation");
+    expect(renderWith(EU_PACKAGE, <EuWorkshopStatus title="EU" />, status)).toContain("Hardened Segmentation");
   });
 });
 
@@ -144,6 +145,6 @@ describe("US firewall status wording", () => {
     ).toContain("Firewall Policy Weak Baseline");
     expect(
       renderWith(US_PACKAGE, <UsDashboard />, { ...status, firewall_config: "improved" }),
-    ).toContain("Firewall Policy Hardened");
+    ).toContain("Firewall Policy Hardened Segmentation");
   });
 });

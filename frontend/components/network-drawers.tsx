@@ -9,9 +9,7 @@ import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
 import {
   activePolicyWording,
   isHardened,
-  policyWording,
   type PackagePolicies,
-  type PolicyWording,
 } from "../lib/policy-wording";
 import {
   ViewMode,
@@ -73,22 +71,9 @@ export function StatusDot({
   );
 }
 
-// The US package's menu wording; any other package's policies show by
-// their declared names (lib/policy-wording.ts).
-const US_MENU_WORDING: Record<string, PolicyWording> = {
-  weak: { label: "Weak Baseline", description: "All zones allowed - over-permissive" },
-  improved: { label: "Hardened", description: "Deny-default, RTAC-only field access" },
-};
-
-// The badge's short US words; other packages show the active name.
-const US_BADGE_WORDING: Record<string, PolicyWording> = {
-  weak: { label: "Weak baseline", description: "" },
-  improved: { label: "Hardened", description: "" },
-};
-
 function policyBadgeText(activeConfig: string | undefined, policies: PackagePolicies, source?: PolicySource, plan?: PlanProvenance): string {
   if (!activeConfig) return "—";
-  return activePolicyWording(activeConfig, policies, US_BADGE_WORDING, source, plan).label;
+  return activePolicyWording(activeConfig, policies, source, plan).label;
 }
 
 // Policy badge + quick-switch dropdown in the header. Styled as a
@@ -107,7 +92,7 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
 
   const hardened = isHardened(activeConfig);
 
-  const policies = packagePolicies.names.map((id) => ({ id, ...policyWording(id, packagePolicies, US_MENU_WORDING) }));
+  const policies = packagePolicies.map(({ name, ...wording }) => ({ id: name, ...wording }));
 
   const handleApply = (config: string) => {
     if (config === activeConfig || applying) return;
