@@ -2,7 +2,7 @@ id: eu-validation-evidence
 order: '2.4'
 name: Testing & Validation
 summary: Generate the EU positive/negative matrix and PCAP report, confirm continuity and reflect on deferred risk.
-estimated_minutes: 6
+estimated_minutes: 7
 validator: eu-validation-evidence
 description: Validate the policy actually running, not the intended design. Generate a change-board report, inspect
   authorized and unauthorized results, confirm the feeder still operates and explain residual risk. The report is
@@ -35,9 +35,23 @@ steps:
     enterprise-to-field: Enterprise/vendor → field on Modbus/502
     enterprise-to-station: Enterprise → station RTU on IEC 104/2404
     vendor-to-station: Vendor DMZ → station engineering access
-    non-rtu-to-field: Non-RTU hosts → field (except PLC→OLTC)
-    unauth-control: Unauthorized IEC 104 commands / Modbus writes
+    non-rtu-to-field: Non-RTU station sources → field (except PLC→OLTC)
+    unauth-control: Cross-zone foreign-source IEC 104 / Modbus attempts
     :::
+
+    :::findings-panel from=eu-firewall-implementation title="Your evidence status (Lab 2.2)"
+    evidence-policy: Running policy export and identity
+    evidence-positive: Positive tests and operational continuity
+    evidence-negative: Negative tests and deferred exposures
+    evidence-capture: PCAP tied to the test window
+    :::
+
+    These are your earlier evidence statuses, not current proof. Resolve missing or
+    unclear items and regenerate the report for this policy commit.
+
+    **Time budget:** ~7 minutes for the Guided core path: report, continuity
+    review and reflection. Advanced manual tests, shadow comparisons and the
+    instructor PCAP walk are optional depth and take extra time.
 
     :::hint Running, not candidate
     In containd inspect running configuration and its identity. Six operational conduits must remain. Hardened includes three separate explicit-monitor IEC 104 rules; a plan includes them only when `iec104-dpi` is selected. Verify running rules, not candidate-only entries. No command enforcement is claimed.
@@ -60,8 +74,8 @@ steps:
     - **Plan proof** checks this applied plan. It requires 0 skipped and a stable
       recorded plan hash before and after probing.
     - **Hardened acceptance** requires authorized **10/10** and unauthorized
-      denied **27/27**, 0 skipped, capture and a stable running hash. Confirm a
-      healthy HMI and fresh CC observations separately.
+      denied **27/27**, 0 skipped, capture and a stable running hash. Confirm
+      Control Centre / process continuity with fresh valid CC observations separately.
 
     A partial plan can pass plan proof while leaving Hardened prevention gaps.
     Keep each gap by row ID. Deferred exposures stay reachable; they are not
@@ -69,7 +83,7 @@ steps:
 
     Completion uses the backend-retained result for the judging target, full running firewall hash and probe UTC window from this range and latest policy commit. The running policy is read before and after probing; a change or unreadable hash fails the report. Reapplying even the same policy invalidates the previous commit window: generate again. The backend retains the latest generated report until range/backend restart. Use **Download markdown** to save the report, and copy the PCAP at the report's path (relative to the install root) out of the captures folder before any reset or shutdown; reset deletes captures. A local screenshot or old browser report cannot substitute for the retained proof.
 
-    Read every row: a failed positive blocks operations; a failed negative leaves exposure. The package-derived matrix rows cover all six required intents and all five field devices including F2. Retain every inventory point after a fresh GI; F2 has five indications, no command. If you performed Lab 2.2's instructor-supervised F2 visibility check, retain its last-value IV/NT loss, healthy-peer and restored-GI evidence with the report. Negatives actively probe Kali→RTU, foreign→field, enterprise→PLC and Kali→vendor RDP/VNC. Only connect timeout is denied; connection refused is reached, tool/container errors fail honestly. Default-deny drops need not emit logs.
+    Read every row: a failed positive blocks operations; a failed negative leaves exposure. The package-derived matrix rows cover all six required intents and all five field devices including F2. Retain every inventory point after a fresh general interrogation (GI); F2 has five indications, no command. Negatives actively probe Kali→RTU, foreign→field, enterprise→PLC and Kali→vendor RDP/VNC. Only connect timeout is denied; connection refused is reached, tool/container errors fail honestly. Default-deny drops need not emit logs.
 
     Inspect PCAP source analysis: RTU **and PLC→OLTC** are legitimate field sources. RTU↔PLC/GPS stays invisible at the firewall. A SYN captured on ingress does not prove a completed control operation.
 
@@ -77,27 +91,123 @@ steps:
     compiled. Hardened acceptance separately shows whether all sampled
     prevention gaps are closed. Keep both results.
 
-    :::decision id=pos-test-ops-intact options="NORMAL_OPS,DEGRADED,ALARMS_PRESENT" correct=NORMAL_OPS
+    :::decision id=pos-test-ops-intact options="NORMAL_OPS,DEGRADED,ALARMS_PRESENT"
     Are operations intact after validation?
+    :::why
+    NORMAL_OPS needs healthy operator observations and independent device/process continuity, not only open TCP ports. DEGRADED or ALARMS_PRESENT needs investigation and restoration; the dropdown records your run and is not an acceptance test.
     :::
     :::decision id=neg-test-no-impact options="UNCHANGED,DEGRADED,UNCLEAR"
     Were operations unchanged? Compare this result with the report and structured plan coverage.
+    :::why
+    UNCHANGED needs before/after operational evidence alongside the report. DEGRADED means investigate impact; UNCLEAR means collect a comparable baseline. A timeout alone does not establish that operations were unaffected.
     :::
 
-    :::hint Advanced: verify by hand
-    Use the six-conduit inventory from Lab 2.2. From Kali read historian /api/points; from eng-ws GET PLC /login. Require a completed current-connection GI inside the ten-minute attempt window and non-null valid CC points received since that GI start, PLC heartbeat and advancing historian samples, not sockets alone. If GI evidence is missing or outside the window, press **Interrogate station** in the **Control Centre** and validate again. Quiet valid status need not have a recent receipt; floats have a cyclic-report watchdog. Repeat negatives from the named terminal tabs. At fw-1, type `exit` if the configuration CLI is open; RangerDanger then starts Linux bash. Capture there with tcpdump -i any using ports 2404/502/8080/8081, then use `containd cli` to return and export the running policy. Preserve UTC windows with the PCAP.
+    :::hint Advanced: run the positive tests by hand
+    Open a node on the [Network Map](/console), then **Show terminal**.
+    Use the six-conduit inventory from Lab 2.2; every plan preserves these flows.
+    In the **Control Centre**, reconnect after the commit and require a completed
+    current-connection general interrogation (GI) within the ten-minute attempt
+    window, with every inventory point non-null, valid and received since its
+    GI start. If this evidence is missing, press **Interrogate station** and
+    validate again. Quiet valid status need not advance continuously; float
+    observations have a cyclic-report watchdog.
+
+    From the **Kali terminal**, test authorized historian reader access:
+
+        curl -fsS --max-time 3 http://10.70.70.40:8080/api/points
+
+    Expect a points response; this tests reading, not the separate CC ingest
+    conduit. Confirm advancing archive samples for ingest.
+
+    From the **eng-ws terminal**, test the named engineering web exception:
+
+        curl -fsS --max-time 3 http://10.30.30.30:8080/login
+
+    Expect the PLC login page, not permission for vendor field control. Confirm
+    RTU field points, PLC heartbeat and post-commit PLC-originated OLTC motion
+    using Lab 2.2's controlled regulation loop. The operator screen needs fresh
+    valid observations, normal breakers/RMUs, auto regulation and supply.
+    Same-subnet successes are endpoint evidence, not routed firewall proof.
+    See [acceptance and handover](/knowledge#eu-acceptance-handover).
+    :::
+
+    :::hint Advanced: run the negative tests by hand
+    The full report lists all 27 unauthorized rows. Check these source/path
+    groups, not just the first failed connection:
+
+    - Kali → RTU TCP/2404, all five field devices TCP/502, PLC TCP/8080,
+      vendor TCP/3389 and TCP/5900, and historian ingest TCP/8081.
+    - Vendor-jump → RTU TCP/2404, PLC TCP/8080, all five field devices TCP/502,
+      historian read TCP/8080 and ingest TCP/8081.
+    - Eng-ws → all five field devices TCP/502.
+    - PLC and GPS → breaker TCP/502 (non-RTU source-pin tests).
+    - CC → GPS TCP/2404 (the authorized CC is not allowed every destination).
+
+    From **Kali**, sample the enterprise-to-station and field paths:
+
+        nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4
+        nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4
+        nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4
+
+    `-Pn` skips host discovery. Under Hardened expect `filtered` / timeout,
+    compared with an open-port Weak control. Under a partial plan compare the
+    owning action: a deferred exposure may remain reachable. Connection refused
+    is reached, never denied; a missing tool is missing evidence. Repeat from
+    each named source using the report's destination and port; these samples
+    cannot replace the matrix. Keep the Control Centre and process healthy while
+    probing. See [port and source boundaries](/knowledge#eu-port-source-boundary).
+    :::
+
+    :::hint Advanced: capture PCAP by hand
+    From the **fw-1 terminal**, type `exit` if the configuration CLI is open;
+    the wrapper starts Linux bash. Start a bounded capture while the report or
+    named-source probes run in another terminal:
+
+        tcpdump -i any -nn 'tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081' -G 12 -W 1 -w /data/captures/validation.pcap
+
+    This collects a twelve-second window of telecontrol, field Modbus, reader/web
+    and ingest traffic. A listening message is normal; wait for the capture to
+    finish. Read it back from the **fw-1 terminal**:
+
+        tcpdump -r /data/captures/validation.pcap -nn
+
+    With `any`, a routed packet may appear on multiple interfaces; packet counts
+    are not operation counts. Compare tuples and UTC times. RTU and the explicit
+    PLC→OLTC exception are legitimate field sources; same-subnet RTU↔PLC/GPS
+    traffic is invisible here. An ingress SYN alone is not delivery proof. This
+    cooked capture is report evidence, not the Ethernet input for the optional
+    instructor PCAP Analysis walk. Use `containd cli` to return to the CLI.
+    See [tcpdump](/knowledge#eu-tool-tcpdump).
+    :::
+
+    :::hint Advanced: assemble the evidence package by hand
+    From the **fw-1 terminal**, use `containd cli` if still in bash, then:
+
+        export config
+        show audit
+
+    `export config` prints redacted running JSON: copy it, not shell redirection.
+    Full export needs explicit administrator intent; do not share secrets.
+    `show audit` provides commit identity/timing, not per-flow verdicts. Attach
+    the plan record when applicable, matrix results, PCAP and UTC window with a
+    Control Centre / Physical System screenshot showing fresh valid observations
+    and normal supply/regulation. Correlate Live Firewall Events by tuple/time;
+    silent default drops need not emit logs. The L4 source pin enforces; DPI
+    detects and logs. Monitoring is not prevention and cannot satisfy BLOCK.
+    See [evidence lifecycle](/knowledge#eu-evidence-lifecycle).
     :::
 
     :::hint Optional historian-gap evidence
     [Historian uncertainty](/knowledge#eu-historian) explains link-loss stale samples and archive gaps. This sidebar is optional, not a mandatory outage exercise or report prerequisite.
     :::
 
-    ### Shadow evidence for the handover
-
-    Retain Lab 2.2's applied three-rule readback and embedded containd **Firewall/ICS tables** baseline/deltas, snapshotVersion, since, unit, rule IDs and UTC window. Pair `ics.decision` monitor events (`would_allow` / `would_drop`, configured action and reason) with independent command feedback/field outcomes and the restored operating state. Retain the OLTC lower→step-only and raise→both comparison. A fully decoded SBO action normally adds two matches per matching rule, not guaranteed; require ≥1, never exactly two. Counts are matching rule × decoded message, not object counts, operation totals or full-policy predictions. A would-deny match is not a denied command; monitoring never satisfies a BLOCK requirement.
+    :::hint Optional depth: shadow evidence for a local handover
+    If you chose the optional Lab 2.2 monitoring work, retain its applied three-rule readback and embedded containd **Firewall/ICS tables** baseline/deltas, snapshotVersion, since, unit, rule IDs and UTC window. Pair `ics.decision` monitor events (`would_allow` / `would_drop`, configured action and reason) with independent command feedback/field outcomes and the restored operating state. Retain the OLTC lower→step-only and raise→both comparison. A fully decoded select-before-operate (SBO) action normally adds two matches per matching rule, not guaranteed; require ≥1, never exactly two. Counts are matching rule × decoded message, not object counts, operation totals or full-policy predictions. A would-deny match is not a denied command; monitoring never satisfies a BLOCK requirement.
     Expand **Inspect rule** for Conditions, ICS Filter and full Shadow matches. On ICS, inspect **Active inspection**, **Why?** and **Inspection details**; **Technical details** retains queue/interface values.
 
     Successful apply resets counters; engine restart loses them. `available:false`, missing rules, a changed snapshotVersion/since or retention gaps are evidence limitations, never zero. Export before another apply/reset; if monitoring was deferred, name that gap. The 37-row report remains TCP-only and cannot certify command authorization. Monitoring uses NFQUEUE 101 with no queue bypass and adds latency: if the engine is down, the CC conduit drops. Record this forwarding dependency, rollback owner and separate GI/PLC/historian continuity proof.
+
+    :::
 
     :::hint Optional instructor-led PCAP Analysis sidebar — not graded
     The instructor demonstrates and does not grade anything in this optional sidebar. Make a separate **Ethernet classic PCAP**: in fw-1's Linux terminal (`exit` from the configuration CLI first), run `mkdir -p /data/captures`, then manually run `tcpdump -i lan4 -nn -s 0 -U -w /data/captures/approved-command.pcap 'host 10.60.60.20 and host 10.30.30.20 and tcp port 2404'`. Leave this terminal capturing; do not use the bounded Run button. After tcpdump reports it is listening, use a separate cc-1 terminal to run `wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect`. Wait for connect GI, then repeat Lab 2.2's approved CB1 OPEN and CLOSE in the Control Centre. Confirm fresh feedback, breaker closed and supply restored before pressing Ctrl-C in fw-1. Starting capture before reconnect retains SYN through the controlled commands.
@@ -130,8 +240,8 @@ steps:
     enterprise-to-field: Enterprise/vendor → field on Modbus/502
     enterprise-to-station: Enterprise → station RTU on IEC 104/2404
     vendor-to-station: Vendor DMZ → station engineering access
-    non-rtu-to-field: Non-RTU hosts → field (except PLC→OLTC)
-    unauth-control: Unauthorized IEC 104 commands / Modbus writes
+    non-rtu-to-field: Non-RTU station sources → field (except PLC→OLTC)
+    unauth-control: Cross-zone foreign-source IEC 104 / Modbus attempts
     :::
 
     :::findings-panel from=eu-baseline-assessment title="Latent exposure"
@@ -142,14 +252,29 @@ steps:
     enterprise-to-field: Enterprise/vendor → field on Modbus/502
     enterprise-to-station: Enterprise → station RTU on IEC 104/2404
     vendor-to-station: Vendor DMZ → station engineering access
-    non-rtu-to-field: Non-RTU hosts → field (except PLC→OLTC)
-    unauth-control: Unauthorized IEC 104 commands / Modbus writes
+    non-rtu-to-field: Non-RTU station sources → field (except PLC→OLTC)
+    unauth-control: Cross-zone foreign-source IEC 104 / Modbus attempts
     :::
 
     :::plan-coverage title="Selected actions vs committed design"
     :::
 
-    The findings, design verdicts and selected actions already carry forward as structured inputs. Use the report and plan-coverage panel; do not transcribe the Lab 1.4 action deferrals again. In Notes, discuss which positive or negative result most changed your confidence, what technical or evidence limitation remains, and the owner plus retest condition needed before approval.
+    The findings, design verdicts, selected actions and Lab 2.2 evidence statuses
+    carry forward as structured inputs. Use them alongside the report; do not
+    transcribe the Lab 1.4 deferrals again.
+
+    ### Now reflect
+
+    In your Exercise Notes, discuss the validation evidence:
+
+    1. Which positive or negative test result most changed your confidence in the running policy?
+    2. What does the report prove, and what remains outside its scope?
+    3. What evidence, operational owner or retest is needed before this change could be approved?
+    4. What additional architecture or monitoring control would reduce a visibility blind spot?
+
+    These discussion notes add context, not a replacement for evidence or a
+    second transcription of structured inputs. For EU, consider the same-subnet
+    RTU/PLC/GPS blind spot and command authority on an allowed CC connection.
 
     :::hint Honest handover
     IEC 104 monitoring adds observation evidence, not command restriction or a promise of later enforcement. Modbus DPI remains planning-only. Breaker control on an allowed CC session remains a residual risk. L4 is live but cannot distinguish commands on an allowed CC session. Keep this residual explicit alongside IEC 62443 design and NIS2/BDEW change accountability. Retain policy, report and PCAP before reset.

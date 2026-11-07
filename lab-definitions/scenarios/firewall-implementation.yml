@@ -123,7 +123,7 @@ steps:
     expected_config: weak
     node: kali-1
     description: |
-      Before you change anything, run the commands that confirmed your latent exposure in Lab 1.2 step 7 - this time with intent. Document what the weak baseline allows. This is your "before" picture; every test below should succeed now. After apply, each result follows its owning action.
+      Before you change anything, run the commands that confirmed your latent exposure in Lab 1.2 step 7 - this time with intent. Observe what the weak baseline allows. This is your "before" picture; every test below should succeed now. After apply, each result follows its owning action.
 
       **From the kali terminal** (`kali-1` on the [Network Map](/console)):
 
@@ -175,6 +175,22 @@ steps:
       Inspect the final **Default** row: both reference policies already use
       DENY. Only if needed, use **Change default** → **DENY** → **Stage default**.
       Review consequences and the complete candidate diff before commit.
+
+      ### Review a proposed change
+
+      **Prepared change request CR-22:** remove broad cross-zone trust and retain
+      management plus the required operational conduits, but omit **RTAC→field TCP/502 and TCP/20000**.
+      Compare it with the operational requirements before approving it. Review only:
+      never apply an incomplete request to create an outage. Keep a known-good export
+      and agree a rollback owner and trigger before any actual change.
+
+      :::decision id=change-request-review options=APPROVE_AS_WRITTEN,CORRECT_BEFORE_COMMIT,UNCLEAR correct=CORRECT_BEFORE_COMMIT
+      What should happen to this proposed change before commit?
+      :::why
+      Correct the missing operational allow before commit: RTAC field polling fails and the HMI loses fresh device communications.
+      Default DENY cannot replace a required allow. Execute Step checks the running
+      policy; it does not grade this review or approve the request.
+      :::
 
       :::guided
       Apply Your Plan in the next step. Use Apply Hardened only for the reference.
@@ -356,12 +372,12 @@ steps:
 
       | Path | Owning action | Selected / deferred |
       |---|---|---|
-      | Kali→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
-      | Enterprise→OT ICS and web | `block-enterprise-to-ot` | deny / allow |
-      | Enterprise→field | `block-enterprise-to-field` | deny / allow |
-      | Vendor→OT Modbus and web | `restrict-vendor-to-ot` | deny / allow |
-      | Vendor and eng-ws→field | `block-vendor-to-field` | deny / allow |
-      | Non-RTAC OT hosts→field | `pin-rtac-to-field` | deny / allow |
+      | Kali→vendor RDP/3389 and VNC/5900 | Restrict enterprise → vendor remote access | deny / allow |
+      | Enterprise→OT ICS and web | Block enterprise → OT Operations ICS ports | deny / allow |
+      | Enterprise→field | Block enterprise → field direct access | deny / allow |
+      | Vendor→OT Modbus and web | Restrict vendor → OT to SSH/HTTPS only | deny / allow |
+      | Vendor and eng-ws→field | Block vendor → field devices entirely | deny / allow |
+      | Non-RTAC OT hosts→field | Pin field-device access to RTAC source IP | deny / allow |
 
       A deferred exposure is a prevention gap against Hardened, not a failed
       plan proof if it matches this plan. Do not change policy just to hide the gap.
@@ -429,9 +445,41 @@ steps:
       hash. Check `GET /api/firewall/active` to confirm the current plan and
       running hash before and after probing.
 
-      A partial plan is not equivalent to Hardened. List its deferred exposures
-      and preserve both plan proof and Hardened acceptance results. Named and
+      A partial plan is not equivalent to Hardened. Use structured plan coverage
+      for its deferred exposures and preserve both plan proof and Hardened acceptance results. Named and
       manual policies are judged against Hardened; they have no plan proof.
+
+      ### Save evidence status for Lab 2.4
+
+      These statuses carry forward automatically; they describe your evidence, not a
+      passing score. Keep the actual artifacts with their UTC window and running hash.
+      Update the statuses if you collect missing evidence; Lab 2.4 regenerates proof
+      against its own current policy window.
+
+      :::decision id=evidence-policy options=READY,MISSING,UNCLEAR
+      Do you have the running policy export and its identity (plus the plan record when applicable)?
+      :::why
+      READY means the export and running identity agree. MISSING needs collection; UNCLEAR needs an identity check before approval.
+      :::
+
+      :::decision id=evidence-positive options=READY,MISSING,UNCLEAR
+      Do you have positive-test and operational-continuity evidence?
+      :::why
+      READY needs authorized flows and independent operator/process observations. MISSING or UNCLEAR means connectivity alone has not established continuity.
+      :::
+
+      :::decision id=evidence-negative options=READY,MISSING,UNCLEAR
+      Do you have the negative-test results, including deferred exposures?
+      :::why
+      READY means real-source results are retained with the plan comparison. Deferred reachable paths remain prevention gaps, not skipped tests.
+      :::
+
+      :::decision id=evidence-capture options=READY,MISSING,UNCLEAR
+      Do you have PCAP evidence tied to the test window?
+      :::why
+      READY means the capture is retained and correlated with the policy and test times. MISSING or UNCLEAR needs capture review; an ingress SYN alone is not delivery proof.
+      :::
+
     action:
       type: check
       expect:
