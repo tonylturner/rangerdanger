@@ -12,6 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Every dropdown explains its answer. Factual questions are graded; judgment questions show the reference answer.
 - Lab 2.2 has a shared change-request review in both ranges. Its evidence answers carry forward into Lab 2.4.
 - Attack and retest steps use real wire commands in both ranges. Execute Step reads the device state and never sends a command.
+- A failed Execute Step check now shows an amber `[NOT MET]` in the Command Log instead of `[BLOCKED]`, which implied a firewall decision.
 - Policy labels and descriptions come from each package and are the same on every portal surface, in step results and in validation reports.
 - Lab text names plan actions by their planner titles.
 - The Network Map's Purdue Model View shows the Purdue levels each package declares, in both ranges.
