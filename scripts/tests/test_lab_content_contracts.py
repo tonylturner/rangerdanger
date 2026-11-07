@@ -612,7 +612,7 @@ class EnforcementContracts(unittest.TestCase):
 
 
 class BaselineContracts(unittest.TestCase):
-    def test_section_one_decisions_explain_answers_and_no_decision_offers_log(self):
+    def test_all_decisions_explain_answers_and_no_decision_offers_log(self):
         package_scenarios = [
             ROOT / "lab-definitions/packages/us-dnp3-substation/scenarios",
             ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios",
@@ -624,7 +624,6 @@ class BaselineContracts(unittest.TestCase):
         decision_count = 0
         for path in paths:
             doc = yaml.safe_load(path.read_text())
-            section_one = str(doc.get("order", "")).startswith("1.")
             for step in doc.get("steps", []):
                 lines = step.get("description", "").splitlines()
                 for index, line in enumerate(lines):
@@ -637,17 +636,68 @@ class BaselineContracts(unittest.TestCase):
                     )
                     self.assertIsNotNone(closing, f"{path}: unclosed decision")
                     block = lines[index:closing + 1]
-                    if section_one:
+                    with self.subTest(scenario=doc["id"], step=step["id"], decision=line.strip()):
                         self.assertEqual(
                             sum(item.strip() == ":::why" for item in block),
                             1,
-                            f"{path}: section 1 decision lacks exactly one :::why",
+                            f"{path}: decision lacks exactly one :::why",
+                        )
+                        self.assertTrue(
+                            "\n".join(block).split(":::why", 1)[-1].removesuffix(":::").strip(),
+                            f"{path}: empty decision explanation",
                         )
                     options = re.search(r'\boptions=(?:"([^"]*)"|\'([^\']*)\'|([^\s]+))', line)
                     if options:
                         values = next(value for value in options.groups() if value is not None).split(",")
                         self.assertNotIn("LOG", values, f"{path}: standalone LOG decision option")
         self.assertGreater(decision_count, 0)
+
+    def test_attack_and_retest_steps_never_send_simulated_commands(self):
+        paths = list(SCENARIOS.glob("*.yml"))
+        paths.extend((ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios").glob("*.yml"))
+
+        def sends_command(action):
+            return action.get("type") in {"command", "sequence"} or any(
+                sends_command(child) for child in action.get("steps", [])
+            )
+
+        reviewed = 0
+        for path in paths:
+            doc = yaml.safe_load(path.read_text())
+            for step in doc["steps"]:
+                # Restoration sequences remain operator actions, not attacks.
+                if not (step["id"].startswith("attack-") or step["id"] in {
+                    "re-test-the-attack-under-the-hardened-policy",
+                    "use-the-vendor-foothold-to-attack-field-devices",
+                    "re-attempt-the-pivot",
+                }):
+                    continue
+                reviewed += 1
+                with self.subTest(scenario=doc["id"], step=step["id"]):
+                    self.assertFalse(sends_command(step.get("action") or {}))
+        self.assertEqual(reviewed, 8)
+
+    def test_evidence_status_carries_from_implementation_to_validation(self):
+        for directory, prefix in (
+            (SCENARIOS, ""),
+            (ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios", "eu-"),
+        ):
+            implementation = yaml.safe_load((directory / f"{prefix}firewall-implementation.yml").read_text())
+            validation = yaml.safe_load((directory / f"{prefix}validation-evidence.yml").read_text())
+            source = "\n".join(step["description"] for step in implementation["steps"])
+            target = validation["steps"][0]["description"]
+            with self.subTest(package=prefix or "us"):
+                self.assertIn(":::decision id=change-request-review", source)
+                self.assertIn(f":::findings-panel from={implementation['id']}", target)
+                for kind in ("policy", "positive", "negative", "capture"):
+                    opening = next(line for line in source.splitlines()
+                                   if f":::decision id=evidence-{kind} " in line)
+                    self.assertNotIn("correct=", opening)
+                    self.assertIn(f"evidence-{kind}:", target)
+                for step in validation["steps"]:
+                    for line in step["description"].splitlines():
+                        if line.startswith(":::decision"):
+                            self.assertNotIn("correct=", line)
 
     def test_section_one_conduit_and_criteria_questions_match_across_packages(self):
         scenarios = {
