@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
@@ -80,9 +81,9 @@ func TestEUCheckDispatchAndMissingEvidence(t *testing.T) {
 				}
 			}
 			s := rangeServer(gen, "custom")
-			expect := map[string]any{"breaker_closed": true, "supply_present": true, "cc_link_fresh": true, "rmu_normal": true, "oltc_auto": true, "firewall_config": "improved"}
+			expect := map[string]any{"breaker_closed": true, "supply_present": true, "cc_link_fresh": true, "rmu_normal": true, "oltc_auto": true}
 			results := s.executeCheck(t.Context(), gen, expect)
-			if len(results) != 6 {
+			if len(results) != 5 {
 				t.Fatalf("results=%+v", results)
 			}
 			pass := true
@@ -154,12 +155,208 @@ func TestEUCheckNegativeAndBoundaryValues(t *testing.T) {
 	}
 }
 
-func TestEUCheckOnlyPolicyDoesNotFetchDevices(t *testing.T) {
-	s := rangeServer(euGeneration(t, containd.NewClient(closedURL(t)), nil), "custom")
-	got := s.executeCheck(t.Context(), s.rng.(*fakeRange).gen, map[string]any{"firewall_config": "improved"})
-	if len(got) != 1 || !got[0].Success {
-		t.Fatal(fmt.Sprint(got))
+func TestEUFirewallConfigCheckUsesSharedPlanJudgment(t *testing.T) {
+	for _, mode := range []string{"applied plan", "weak baseline", "divergent recorded identity", "divergent plan provenance"} {
+		t.Run(mode, func(t *testing.T) {
+			s, gen, setRunning, _ := euPolicyCheckFixture(t)
+			compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			hash, err := containd.FirewallHashFromBytes(compiled.Config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			setRunning(compiled.Config)
+			s.activeConfig, s.policySource, s.lastAppliedHash = "custom", "plan", hash
+			s.planProvenance = &planProvenance{PolicyHash: hash}
+			snapshot := compiled
+			s.appliedPlan = &snapshot
+			if mode == "weak baseline" {
+				weak, err := os.ReadFile(filepath.Join(manifest.Dir(repoRoot(), euPackageID), "firewall", "weak.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				weakHash, err := containd.FirewallHashFromBytes(weak)
+				if err != nil {
+					t.Fatal(err)
+				}
+				setRunning(weak)
+				s.policySource, s.lastAppliedHash = "weak", weakHash
+				s.planProvenance, s.appliedPlan = nil, nil
+			}
+			if mode == "divergent recorded identity" {
+				s.lastAppliedHash = hash + "-different"
+			}
+			if mode == "divergent plan provenance" {
+				s.planProvenance.PolicyHash = hash + "-different"
+			}
+			results := s.executeEUCheck(t.Context(), gen, map[string]any{"firewall_config": "improved"})
+			wantPass := mode == "applied plan"
+			if len(results) != 1 || results[0].Success != wantPass {
+				t.Fatalf("results=%+v", results)
+			}
+			if mode == "applied plan" {
+				labelOnly := s.executeEUCheck(t.Context(), gen, map[string]any{"firewall_config": "custom"})
+				if len(labelOnly) != 1 || labelOnly[0].Success || !strings.Contains(labelOnly[0].Detail, "unsupported firewall_config expectation") {
+					t.Fatalf("label-only expectation was not rejected: %+v", labelOnly)
+				}
+			}
+			switch mode {
+			case "weak baseline":
+				if !strings.Contains(results[0].Detail, "weak baseline remains active") {
+					t.Fatalf("weak baseline was not identified: %+v", results[0])
+				}
+			case "divergent recorded identity":
+				if !strings.Contains(results[0].Detail, "differs from recorded identity") {
+					t.Fatalf("identity divergence was not identified: %+v", results[0])
+				}
+			case "divergent plan provenance":
+				if !strings.Contains(results[0].Detail, "applied plan identity missing or divergent") {
+					t.Fatalf("plan provenance divergence was not identified: %+v", results[0])
+				}
+			}
+		})
 	}
+}
+
+func TestEUAppliedPlanMatchingWeakHashPassesWithPreventionGaps(t *testing.T) {
+	s, gen, setRunning, _ := euPolicyCheckFixture(t)
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weak, err := os.ReadFile(filepath.Join(manifest.Dir(repoRoot(), euPackageID), "firewall", "weak.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Model an applied empty plan whose compiled policy is exactly Weak. The
+	// checked-in EU curriculum currently compiles a different policy document.
+	compiled.Config = weak
+	hash, err := containd.FirewallHashFromBytes(compiled.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weakHash, err := containd.FirewallHashFromBytes(weak)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != weakHash {
+		t.Fatalf("empty EU plan hash %s differs from Weak hash %s", hash, weakHash)
+	}
+
+	gaps := []string{}
+	for _, expectation := range compiled.Expectations {
+		if expectation.PlanVerdict != expectation.HardenedVerdict {
+			gaps = append(gaps, expectation.ID)
+		}
+	}
+	if len(gaps) == 0 {
+		t.Fatal("empty EU plan has no Hardened prevention gaps")
+	}
+
+	setRunning(compiled.Config)
+	s.activeConfig, s.policySource, s.lastAppliedHash = "custom", "plan", hash
+	s.planProvenance = &planProvenance{PolicyHash: hash}
+	snapshot := compiled
+	s.appliedPlan = &snapshot
+	results := s.executeEUCheck(t.Context(), gen, map[string]any{"firewall_config": "improved"})
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("weak-equivalent applied plan failed: %+v", results)
+	}
+	if !strings.Contains(results[0].Detail, "applied plan; Hardened prevention gaps:") {
+		t.Fatalf("judgment omitted applied-plan gaps: %+v", results[0])
+	}
+	for _, gap := range gaps {
+		if !strings.Contains(results[0].Detail, gap) {
+			t.Fatalf("judgment omitted prevention gap %q: %+v", gap, results[0])
+		}
+	}
+}
+
+func TestEUFirewallPolicyPhaseExecuteDoesNotApply(t *testing.T) {
+	s, gen, setRunning, applyCalls := euPolicyCheckFixture(t)
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := containd.FirewallHashFromBytes(compiled.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRunning(compiled.Config)
+	s.activeConfig, s.policySource, s.lastAppliedHash = "custom", "plan", hash
+	s.planProvenance = &planProvenance{PolicyHash: hash}
+	snapshot := compiled
+	s.appliedPlan = &snapshot
+	seedEUScenario(t, s)
+	phases := []struct {
+		scenario string
+		stepID   string
+	}{
+		{"eu-firewall-implementation", "implement-rules"},
+		{"eu-hardening-configurations", "apply-the-hardened-policy"},
+		{"eu-vendor-rdp-compromise", "apply-hardened-policy"},
+	}
+	for _, phase := range phases {
+		t.Run(phase.stepID, func(t *testing.T) {
+			scenario, err := s.findActiveScenario(phase.scenario)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var authored []labs.ScenarioStep
+			if err := json.Unmarshal([]byte(scenario.Steps), &authored); err != nil {
+				t.Fatal(err)
+			}
+			stepIndex := -1
+			for index, step := range authored {
+				if step.ID == phase.stepID {
+					stepIndex = index
+					if step.Action == nil || step.Action.Type != "check" {
+						t.Fatalf("%s action = %#v, want check", step.ID, step.Action)
+					}
+					break
+				}
+			}
+			if stepIndex < 0 {
+				t.Fatalf("missing policy phase %s", phase.stepID)
+			}
+			path := fmt.Sprintf("/api/scenarios/%s/steps/%d/execute", phase.scenario, stepIndex)
+			rec := callRoute(s, s.handleExecuteStep, http.MethodPost,
+				"/api/scenarios/:id/steps/:stepIdx/execute", path, "")
+			var result StepExecutionResult
+			if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != http.StatusOK || result.ActionType != "check" || !result.Success {
+				t.Fatalf("execution=%d %s", rec.Code, rec.Body)
+			}
+		})
+	}
+	if got := applyCalls(); got != 0 {
+		t.Fatalf("Execute Step made %d policy mutation request(s)", got)
+	}
+}
+
+func euPolicyCheckFixture(t *testing.T) (*Server, *lifecycle.Generation, func([]byte), func() int) {
+	t.Helper()
+	var running []byte
+	reads, mutations := 0, 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/config" {
+			mutations++
+			http.Error(w, "unexpected policy mutation", http.StatusMethodNotAllowed)
+			return
+		}
+		reads++
+		_, _ = w.Write(running)
+	}))
+	t.Cleanup(upstream.Close)
+	gen := euGeneration(t, containd.NewClient(upstream.URL), nil)
+	s := rangeServer(gen, "custom")
+	setRunning := func(data []byte) { running = data }
+	mutationCount := func() int { return mutations }
+	return s, gen, setRunning, mutationCount
 }
 
 func TestEUWorkshopCollectorUsesLivePolicyAndEUOnlySources(t *testing.T) {

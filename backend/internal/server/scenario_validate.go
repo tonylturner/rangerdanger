@@ -680,21 +680,21 @@ func init() {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
 		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
 			checks := validateFirewallImplementation(in.state)
-			return append(checks, s.usPolicyJudgment(ctx, in.gen))
+			return append(checks, s.policyJudgment(ctx, in.gen))
 		},
 	})
 	registerScenarioValidator("us-hardening-configurations", scenarioValidator{
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind, labs.CapabilityAuditDeviceControl},
 		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
 			checks := validateHardeningConfigurations(in.state)
-			return append(checks, s.usPolicyJudgment(ctx, in.gen), s.usAuditJudgment(in.gen, in.audit))
+			return append(checks, s.policyJudgment(ctx, in.gen), s.usAuditJudgment(in.gen, in.audit))
 		},
 	})
 	registerScenarioValidator("us-vendor-rdp-compromise", scenarioValidator{
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
 		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
 			checks := validateVendorRDPCompromise(in.state)
-			return append(checks, s.usPolicyJudgment(ctx, in.gen))
+			return append(checks, s.policyJudgment(ctx, in.gen))
 		},
 	})
 
@@ -702,7 +702,7 @@ func init() {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
 		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
 			checks := validateValidationEvidence(in.state)
-			return append(checks, s.usPolicyJudgment(ctx, in.gen), s.usRetainedReport(in.gen))
+			return append(checks, s.policyJudgment(ctx, in.gen), s.usRetainedReport(in.gen))
 		},
 	})
 

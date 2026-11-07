@@ -346,7 +346,7 @@ func (s *Server) executeUSCheck(ctx context.Context, gen *lifecycle.Generation, 
 		case "firewall_config":
 			expected, _ := expectedVal.(string)
 			if expected == "improved" {
-				judgment := s.usPolicyJudgment(ctx, gen)
+				judgment := s.policyJudgment(ctx, gen)
 				results = append(results, StepActionResult{Action: judgment.Name, Success: judgment.Status == "pass", Detail: judgment.Detail})
 			} else {
 				s.activeConfigMu.RLock()

@@ -214,12 +214,15 @@ func (s *Server) executeEUCheck(ctx context.Context, gen *lifecycle.Generation, 
 				actual, err = euOLTCAuto(state)
 			}
 		case "firewall_config":
-			s.activeConfigMu.RLock()
-			active := s.activeConfig
-			s.activeConfigMu.RUnlock()
 			expected, ok := expect[key].(string)
-			result.Success = ok && (active == expected || expected == "improved" && active == "custom")
-			result.Detail = fmt.Sprintf("Expected %v; active config: %s", expect[key], active)
+			if !ok || expected != "improved" {
+				result.Detail = fmt.Sprintf("unsupported firewall_config expectation %v", expect[key])
+			} else {
+				judgment := s.policyJudgment(ctx, gen)
+				result.Action = judgment.Name
+				result.Success = judgment.Status == "pass"
+				result.Detail = judgment.Detail
+			}
 			results = append(results, result)
 			continue
 		default:
