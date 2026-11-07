@@ -87,6 +87,7 @@ eu_api_get() {
 }
 eu_apply_named() {
   CALLS="$CALLS APPLY:$1"
+  EU_APPLY_RESPONSE='{"containd":{"applyId":"a1","protection":"protecting"}}'
   API_BODY='{"active_config":"improved","policy_source":"hardened-reference"}'
 }
 eu_execute_step() {
@@ -101,9 +102,9 @@ for step_id in implement-rules apply-the-hardened-policy apply-hardened-policy; 
   t_expect_eq "$CALLS" \
     " APPLY:improved GET:/api/scenarios/served-workshop EXEC:$step_id:served-workshop" \
     "$step_id is a non-mutating Execute after explicit API apply"
-  t_expect_eq "$EU_POLICY_APPLY_READBACK" \
-    '{"active_config":"improved","policy_source":"hardened-reference"}' \
-    "$step_id preserves the explicit apply readback"
+  t_expect_eq "$EU_APPLY_RESPONSE" \
+    '{"containd":{"applyId":"a1","protection":"protecting"}}' \
+    "$step_id keeps the apply receipt, not the active-policy readback"
 done
 
 # Every validator attempt is preceded by a reset, and PASS has its own reset

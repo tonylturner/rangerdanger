@@ -25,7 +25,9 @@ eu_lab_step() {
 }
 eu_apply_named() {
   EVENT_LOG="$EVENT_LOG apply:$1"
-  API_BODY=$(cat "$TMP_DIR/seed/G22-improved-apply.json")
+  # shellcheck disable=SC2034 # read by the sourced eu-gates-labs.sh
+  EU_APPLY_RESPONSE=$(cat "$TMP_DIR/seed/G22-improved-apply.json")
+  API_BODY='{"active_config":"improved","policy_source":"hardened-reference"}'
 }
 eu_wait_for_field() {
   local name

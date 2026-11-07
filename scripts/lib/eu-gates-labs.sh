@@ -73,7 +73,6 @@ eu_lab_step() {
 eu_lab_apply_then_check() {
   local scenario="$1" step_id="$2" policy="$3"
   eu_apply_named "$policy" || return
-  EU_POLICY_APPLY_READBACK="$API_BODY"
   eu_lab_step "$scenario" "$step_id"
 }
 
@@ -389,7 +388,7 @@ eu_lab_g22_walk() {
   eu_lab_g22_wait_cc "$restore_start" closed || return
   eu_lab_g22_event restoration-cc "$WAIT_BODY" || return
   eu_lab_apply_then_check "$scenario" apply-the-hardened-policy improved || return
-  eu_lab_g22_event improved-apply "$EU_POLICY_APPLY_READBACK" || return
+  eu_lab_g22_event improved-apply "$EU_APPLY_RESPONSE" || return
   eu_lab_reconnect_cc || return
   eu_lab_g22_event improved-control-before "$WAIT_BODY" || return
   eu_lab_step "$scenario" re-test-the-attack-under-the-hardened-policy || return

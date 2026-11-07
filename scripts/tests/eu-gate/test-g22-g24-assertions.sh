@@ -26,6 +26,8 @@ G22_CLOCK=0
 eu_lab_step() { EVENTS="$EVENTS step:$2"; }
 eu_apply_named() {
   EVENTS="$EVENTS apply:$1"
+  # shellcheck disable=SC2034 # read by the sourced eu-gates-labs.sh
+  EU_APPLY_RESPONSE='{"containd":{"applyId":"a1","protection":"protecting"}}'
   API_BODY='{"active_config":"improved","policy_source":"hardened-reference"}'
 }
 eu_lab_exec() { API_BODY='{"exit_code":0,"stdout":"","stderr":""}'; }
