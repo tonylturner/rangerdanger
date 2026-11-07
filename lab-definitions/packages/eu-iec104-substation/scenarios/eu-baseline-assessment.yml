@@ -206,7 +206,7 @@ steps:
     | Flow | Source → Destination | Protocol | Proof it exists |
     |---|---|---|---|
     | **RTU → PLC status** | Station subnet | Status exchange | RTU/PLC state and valid Control Centre observations |
-    | **RTU ↔ GPS time** | Station subnet | NTP | RTU time-state and valid Control Centre receipt times |
+    | **RTU → GPS time** | Station subnet | HTTP/8080 polling | RTU time-state and valid Control Centre receipt times |
 
     Use Control Centre quality and receipt times together with physical observations; a permitted socket alone is not evidence of fresh operation.
     :::
@@ -273,7 +273,7 @@ steps:
     :::
 
     :::hint Dormant is not denied
-    A path absent from a 30-second capture may still be available on demand. Carry both passive findings and active reachability into Lab 1.3.
+    A path absent from a short capture window may still be available on demand. Carry both passive findings and active reachability into Lab 1.3.
     :::
   action:
     type: probe
