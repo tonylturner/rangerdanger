@@ -211,22 +211,28 @@ steps:
 
       :::decision id=vendor-attack-hmi-impact options=DOWNSTREAM_OUTAGE,FEEDER_OUTAGE,LOW_VOLTAGE_ALARM,NO_ALARM correct=DOWNSTREAM_OUTAGE
       **What alarm did the Feeder One-Line tab show after this attack?**
+      :::why
+      The vendor-originated Modbus writes disabled auto-reclose and tripped the
+      recloser, so every load downstream of the recloser went dark while the
+      substation bus stayed energized — a downstream outage, not a whole-feeder
+      outage and not a voltage alarm.
       :::
 
       :::decision id=vendor-source-attribution options=ATTACKER_IP,VENDOR_JUMP_IP,RTAC_IP correct=VENDOR_JUMP_IP
       **In containd Sessions, which SRC address do the rows to
       `10.40.40.21:502` show?** The attack laundered through the vendor
       session.
+      :::why
+      The firewall attributes the write to the session it saw. The packet left
+      the vendor jump host, so containd Sessions shows SRC `10.20.20.10`, not the
+      attacker's enterprise address and not the RTAC. Laundering through a trusted
+      host is exactly why the enterprise→vendor hop must be closed.
       :::
     action:
-      type: sequence
-      commands:
-        - device: recloser
-          command: disable_reclose
-          source: "10.20.20.10"
-        - device: recloser
-          command: inject_fault
-          source: "10.20.20.10"
+      type: check
+      expect:
+        recloser_closed: false
+        reclose_enabled: false
 
   - id: restore-service
     title: "Restore service"
@@ -301,11 +307,21 @@ steps:
 
       :::decision id=vendor-retest-hmi-state options=NORMAL_OPS,AUTO_RECLOSE_DISABLED,DOWNSTREAM_OUTAGE,UNCHANGED_FROM_ATTACK
       What did the HMI show? Record auto-reclose and the owning action in Notes.
+      :::why
+      This depends on your plan, so it is not graded. If a selected closure breaks
+      either hop, the recloser stays closed and the HMI reads NORMAL_OPS. If both
+      owning actions are deferred, the write still lands and the HMI shows
+      AUTO_RECLOSE_DISABLED. Read the device state, not the Execute Step label.
       :::
 
-      :::decision id=vendor-retest-defense-layer options=ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER
+      :::decision id=vendor-retest-defense-layer options=ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER,NEITHER_LAYER
       Which selected layer closed this chain? If neither was selected, record
       that both links remain open in Notes.
+      :::why
+      Either hop closes the two-hop chain, so this is not graded on one answer.
+      `restrict-enterprise-to-vendor` closes hop one; `block-vendor-to-field`
+      closes hop two; selecting both is defense in depth. NEITHER_LAYER means both
+      links stay open and the chain still works end to end.
       :::
 
       Restore auto-reclose and normal feeder state before Validate for every plan.
@@ -321,11 +337,21 @@ steps:
     title: "Validate"
     expected_config: hardened
     description: |
-      Keep the applied plan active. Record each link's observation against that
-      plan and against Hardened. Named or manual policies use Hardened expectations.
-      Restore auto-reclose, closed breaker/recloser and energized loads for every
-      plan. Validate checks restored operation; retain the actual TCP and device
-      results separately. A green banner does not prove either link was denied.
+      Keep the applied plan active. Completion evidence falls into three
+      categories, the same ones the EU bonus uses with its own devices:
+
+      1. **Plan verdicts** — record each chain link's result under your plan:
+         enterprise→vendor RDP/VNC and vendor→field Modbus/DNP3. A green banner
+         does not prove either link was denied; keep the actual TCP and device
+         results.
+      2. **Restored operation** — auto-reclose enabled, recloser and breaker
+         closed, and loads energized for every plan.
+      3. **Policy identity** — the running policy matches an accepted non-weak
+         plan. Named or manual policies use Hardened expectations.
+
+      This completion check validates the recloser recovery and the evaluated
+      policy. It does not certify a successful interactive RDP/VNC login, nor that
+      every foreign path is closed — retain that evidence separately.
     action:
       type: check
       expect:

@@ -353,7 +353,6 @@ eu_lab_g22_walk() {
     and (point("feeder-breaker-position") | good and .value == "closed")' \
     15 "G22 independent GOOD closed CC baseline" || return
   eu_lab_g22_event baseline-cc "$WAIT_BODY" || return
-  eu_lab_step "$scenario" attack-iec104-breaker-open || return
   eu_window_start G22-weak || return
   eu_lab_g22_event start || return
   start="$G22_TIME"
@@ -372,6 +371,10 @@ eu_lab_g22_walk() {
   eu_lab_g22_event consequence-field "$WAIT_BODY" || return
   eu_lab_g22_wait_cc "$start" || return
   eu_lab_g22_event consequence-cc "$WAIT_BODY" || return
+  # D1: the attack step now reads device state with a non-mutating check, so run
+  # it after the real wire command has opened the breaker (Execute Step confirms
+  # the state the student just caused; it never sends the command).
+  eu_lab_step "$scenario" attack-iec104-breaker-open || return
   eu_lab_g22_event end || return
   end="$G22_TIME"
   eu_window_finish G22-weak || return
@@ -494,13 +497,15 @@ eu_lab_vendor_walk() {
   eu_lab_step "$scenario" confirm-the-lateral-path-is-open || return
   eu_lab_nmap_vendor open || return
   eu_lab_step "$scenario" pivot-via-rdp-or-vnc || return
-  eu_lab_step "$scenario" use-the-vendor-foothold-to-attack-field-devices || return
   eu_lab_vendor 10.40.40.21 1 || return
   eu_get_field || return
   if ! printf '%s' "$API_BODY" | jq -e '.devices["rmu-1"].position == "open"' >/dev/null; then
     fail "vendor-originated FC6 did not open RMU1"
     return 1
   fi
+  # D1: the foothold attack step reads device state with a non-mutating check, so
+  # run it after the real vendor-originated wire write has opened RMU1.
+  eu_lab_step "$scenario" use-the-vendor-foothold-to-attack-field-devices || return
   eu_lab_step "$scenario" restore-service || return
   eu_wait_for_field '.devices["rmu-1"].position == "closed" and .devices["rmu-2"].position == "open"
     and .process.truth_stale == false' 15 "student vendor lab device restore" || return
