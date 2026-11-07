@@ -152,9 +152,10 @@ each checks `GET /api/range` for that before it asserts anything:
 #    containers.
 ./scripts/lab-commands-smoke.sh
 
-# 4. Workshop test-suite (CI gate 6). Runs every scenario and checks step
-#    outcomes plus state resets; this resets the lab state.
-./scripts/test-suite-smoke.sh
+# 4. Workshop test-suite (CI gate 6). Runs every scenario of the named
+#    package and checks step outcomes plus state resets; this resets the
+#    lab state. The range must be running that package.
+./scripts/test-suite-smoke.sh us-dnp3-substation   # or eu-iec104-substation
 
 # Single scenario instead of all:
 ./scripts/lab-commands-smoke.sh baseline-assessment

@@ -6,6 +6,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.3] - 2026-11-07
+
+Lab parity release: sections 1 and 2 use the same activity design in the
+US and EU ranges, Purdue levels come from each package, and the EU gate
+waits handle slow API polls. Tested on containd 0.1.42; the minimum remains
+0.1.41. No firewall-data migration is required from v0.2.2. This release
+moves `latest`.
+
+Known issue: in the optional, ungraded EU PCAP Analysis sidebar (Lab 2.4),
+containd 0.1.42 rejects **Review** with "authenticated actor required",
+so suggestions cannot be staged. Capture, import, Analyze and Generate work.
+
 ### Changed
 
 - Labs 1.2–1.4 and 2.2–2.4 and the vendor bonus lab use the same activity design in the US and EU ranges.
@@ -3617,7 +3629,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.3...HEAD
+[v0.2.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.3
 [v0.2.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.2
 [v0.2.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.1
 [v0.2.0]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.0
