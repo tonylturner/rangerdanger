@@ -14,6 +14,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Attack and retest steps use real wire commands in both ranges. Execute Step reads the device state and never sends a command.
 - Policy labels and descriptions come from each package and are the same on every portal surface, in step results and in validation reports.
 - Lab text names plan actions by their planner titles.
+- The Network Map's Purdue Model View shows the Purdue levels each package declares, in both ranges.
 - EU Execute Step on policy phases checks the student's policy and never applies one.
 
 ### Removed
