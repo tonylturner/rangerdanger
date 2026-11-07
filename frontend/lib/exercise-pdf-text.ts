@@ -66,6 +66,8 @@ export function splitDescription(text: string): Segment[] {
         return [segment];
       case "decision":
         return [
+          // Keep answer-key material out of the student workbook: the
+          // question and choices print, but correct/explanation do not.
           ...splitDescription(segment.body),
           { type: "prose", value: `Choices: ${segment.options.join(" / ")}\n\nYour answer: __________` },
         ];

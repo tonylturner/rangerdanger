@@ -10,7 +10,7 @@ import { curriculumKey, decisionName, REMEDIATION_PLAN, writeCurriculum } from "
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { US_PLANS, EU_PLANS } from "../lib/plan-fixtures.test-util";
 import { CompiledPlanSummary } from "./compiled-plan-summary";
-import { CommandBlock, PlanCoveragePanel } from "./scenario-description-blocks";
+import { CommandBlock, DecisionBlock, FindingsPanel, PlanCoveragePanel } from "./scenario-description-blocks";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { TooltipProvider } from "./ui/tooltip";
@@ -24,6 +24,25 @@ vi.mock("next/link", async () => {
 });
 
 const EU = fixtureCurriculum("backend/internal/labs/testdata/curriculum-eu");
+function mountDecision({ correct, explanation = "" }: { correct?: string; explanation?: string }) {
+  const pkg: PackageSummary = {
+    id: "us-dnp3-substation", revision: 1, title: "US", active: true,
+    operator_view: "us-dnp3", policies: [], curriculum: US_CURRICULUM,
+  };
+  return rtlRender(
+    <CurriculumScopeProvider pkg={pkg}>
+      <DecisionBlock
+        scenarioId="decision-feedback-test"
+        decisionId="verdict"
+        options={["BLOCK", "ALLOW"]}
+        body="What should happen?"
+        explanation={explanation}
+        correct={correct}
+      />
+    </CurriculumScopeProvider>,
+  );
+}
+
 beforeEach(() => vi.stubGlobal("localStorage", memoryStorage()));
 afterEach(() => vi.unstubAllGlobals());
 
@@ -55,6 +74,61 @@ describe("configuration CLI command blocks", () => {
     fireEvent.click(screen.getByRole("button", { name: "copy" }));
     expect(writeText).toHaveBeenCalledExactlyOnceWith("show running-config");
     expect(onRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("shared decision feedback", () => {
+  it("shows the keyed correct chip and markdown explanation only after an answer", () => {
+    const tree = mountDecision({ correct: "BLOCK", explanation: "Reference design: **BLOCK**." });
+    expect(screen.queryByText("✓ Correct")).toBeNull();
+    expect(screen.queryByText("Why")).toBeNull();
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "BLOCK" } });
+
+    expect(screen.getByText("✓ Correct")).toBeTruthy();
+    expect(screen.getByText("Why")).toBeTruthy();
+    expect(tree.container.querySelector("strong")?.textContent).toBe("BLOCK");
+  });
+
+  it("shows the expected answer for an incorrect keyed answer", () => {
+    mountDecision({ correct: "BLOCK", explanation: "Reference design: **BLOCK**." });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "ALLOW" } });
+    expect(screen.getByText("✗ Expected BLOCK")).toBeTruthy();
+    expect(screen.getByText("Why")).toBeTruthy();
+    expect(screen.queryByText(/capture|doesn.t match/i)).toBeNull();
+  });
+
+  it("shows unkeyed explanation without a grade chip and hides it when cleared", () => {
+    mountDecision({ explanation: "Compare the consequences of each option." });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "ALLOW" } });
+    expect(screen.queryByText("✓ Correct")).toBeNull();
+    expect(screen.queryByText("✗ Expected")).toBeNull();
+    expect(screen.getByText("Why")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "clear" }));
+    expect(screen.queryByText("Why")).toBeNull();
+    expect(screen.queryByText(/Compare the consequences/)).toBeNull();
+  });
+});
+
+describe("findings panel source label", () => {
+  it("labels the upstream link by the scenario order, not its raw id", () => {
+    const pkg: PackageSummary = {
+      id: "us-dnp3-substation", revision: 1, title: "US", active: true,
+      operator_view: "us-dnp3", policies: [], curriculum: US_CURRICULUM,
+    };
+    const tree = rtlRender(
+      <CurriculumScopeProvider pkg={pkg}>
+        <FindingsPanel
+          sourceScenario="eu-baseline-assessment"
+          sourceScenarioOrder="1.2"
+          title="Findings"
+          items={[{ id: "flow", label: "Flow" }]}
+        />
+      </CurriculumScopeProvider>,
+    );
+    expect(tree.getByRole("link", { name: "Lab 1.2" }).getAttribute("href")).toBe("/exercises/eu-baseline-assessment");
+    expect(tree.container.textContent).not.toContain("Lab eu-baseline-assessment");
   });
 });
 

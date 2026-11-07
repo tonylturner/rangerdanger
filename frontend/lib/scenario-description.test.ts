@@ -175,6 +175,29 @@ describe("splitDescription — :::decision", () => {
     expect(d.correct).toBe("BLOCK");
     expect(d.defaultFrom).toBe("");
     expect(d.body).toContain("Enterprise → Field");
+    expect(d.explanation).toBe("");
+  });
+
+  it("splits one trimmed :::why line into a markdown explanation", () => {
+    const d = segAt(splitDescription(
+      ":::decision id=foo\nWhich design?\n  :::why  \n**Reference design:** BLOCK.\n:::",
+    ), 0, "decision");
+    expect(d.body).toBe("Which design?");
+    expect(d.explanation).toBe("**Reference design:** BLOCK.");
+  });
+
+  it("leaves an absent :::why explanation empty", () => {
+    const d = segAt(splitDescription(":::decision id=foo\nWhich design?\n:::"), 0, "decision");
+    expect(d.body).toBe("Which design?");
+    expect(d.explanation).toBe("");
+  });
+
+  it("treats only the first :::why as the split", () => {
+    const d = segAt(splitDescription(
+      ":::decision id=foo\nWhich design?\n:::why\nFirst explanation.\n:::why\nStill explanation.\n:::",
+    ), 0, "decision");
+    expect(d.body).toBe("Which design?");
+    expect(d.explanation).toBe("First explanation.\n:::why\nStill explanation.");
   });
 
   it("falls back to default options when not specified", () => {
