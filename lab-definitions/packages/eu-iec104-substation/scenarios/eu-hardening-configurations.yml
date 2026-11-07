@@ -186,7 +186,7 @@ steps:
     wire/audit/solve evidence first. Use the prescribed breaker restoration,
     not Reset Lab to improve a verdict. Reset Lab reapplies Weak; if recovery
     needs it, reapply the intended plan and collect a new evidence window.
-    Required CC/RTU, HMI, GI and supply checks do not depend on the selected plan.
+    Required CC→RTU link, GI and supply checks do not depend on the selected plan.
 
     :::hint Preserve both claims
     A deferred command can match plan proof while failing Hardened acceptance.
