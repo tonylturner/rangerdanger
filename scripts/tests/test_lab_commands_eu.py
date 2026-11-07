@@ -142,7 +142,7 @@ class EUOracleTests(unittest.TestCase):
         self.assertFalse(eu.audit_verdict(*values, peer, False))
 
     def test_eu_exec_uses_node_api_and_retains_both_streams(self):
-        row = {"scenario": "fixture", "step": 1, "command": "iec104cmd station gi --json",
+        row = {"scenario": "fixture", "step": 1, "command": "iec104cmd station gi --json", "prompt": "shell",
                "node": "kali-1"}
         response = dict(stdout='{"event":"result","op":"gi","status":"ok"}', stderr="diagnostic",
                         exit_code=0, duration_ms=1)
@@ -156,6 +156,21 @@ class EUOracleTests(unittest.TestCase):
             self.assertEqual(request.call_args.args[2]["command"], row["command"])
             self.assertEqual((path / "command.stderr").read_text(), "diagnostic")
             self.assertEqual((path / "command.stdout").read_text(), response["stdout"])
+
+    def test_containd_cli_rows_use_the_shared_cli_path_not_the_exec_api(self):
+        rows = [r for r in worker.extract(package_id=eu.EU) if r["prompt"] == "cli"]
+        self.assertTrue(rows)
+        oracle = {"intent": "cli", "match": "wan"}
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(eu, "request") as request, \
+                patch.object(worker.gate, "execute", return_value=True) as shared:
+            path = Path(directory)
+            adapter = eu.EUAdapter("http://fixture", path)
+            for row in rows:
+                self.assertTrue(adapter.execute(worker.gate, row, oracle, path, 10))
+        request.assert_not_called()
+        self.assertEqual(shared.call_count, len(rows))
+        self.assertEqual(shared.call_args.args[:2], (rows[-1], oracle))
 
 
 class LifecycleTests(unittest.TestCase):
