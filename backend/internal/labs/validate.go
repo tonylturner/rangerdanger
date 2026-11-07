@@ -13,6 +13,24 @@ var validActionTypes = map[string]struct{}{
 	"sequence": {}, "firewall": {}, "check": {}, "decision": {}, "probe": {}, "session-cut": {},
 }
 
+// ValidateNetworks checks package-authored architectural labels and optional
+// security-level design targets, not network reachability or enforcement.
+func ValidateNetworks(networks []NetworkYAML) error {
+	var problems []string
+	for _, network := range networks {
+		if strings.TrimSpace(network.Purdue) == "" {
+			problems = append(problems, fmt.Sprintf("network %q: purdue must not be empty", network.ID))
+		}
+		if network.TargetSL != nil && (*network.TargetSL < 1 || *network.TargetSL > 4) {
+			problems = append(problems, fmt.Sprintf("network %q: target_sl must be 1-4, got %d", network.ID, *network.TargetSL))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("network validation failed:\n%s", strings.Join(problems, "\n"))
+	}
+	return nil
+}
+
 // vocabularyActionTypes are the action types checked against a
 // capability's action vocabulary.
 var vocabularyActionTypes = map[string]bool{"sequence": true, "check": true}

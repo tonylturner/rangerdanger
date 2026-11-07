@@ -535,28 +535,36 @@
       "name": "Enterprise Zone",
       "subnet": "10.10.10.0/24",
       "zone": "wan",
-      "description": "Corporate IT environment - lowest trust, common attacker foothold"
+      "description": "Corporate IT environment - lowest trust, common attacker foothold",
+      "purdue": "Level 4",
+      "target_sl": 1
     },
     {
       "id": "vendor_net",
       "name": "Vendor / Engineering Zone",
       "subnet": "10.20.20.0/24",
       "zone": "dmz",
-      "description": "Remote support, contractor access, engineering maintenance"
+      "description": "Remote support, contractor access, engineering maintenance",
+      "purdue": "Level 3.5",
+      "target_sl": 2
     },
     {
       "id": "ot_ops_net",
       "name": "OT Operations Zone",
       "subnet": "10.30.30.0/24",
       "zone": "lan1",
-      "description": "Substation operational services - HMI, RTAC, supervisory control"
+      "description": "Substation operational services - HMI, RTAC, supervisory control",
+      "purdue": "Level 3",
+      "target_sl": 3
     },
     {
       "id": "field_net",
       "name": "Field Device Zone",
       "subnet": "10.40.40.0/24",
       "zone": "lan2",
-      "description": "Substation and feeder control endpoints - relay, recloser, regulator"
+      "description": "Substation and feeder control endpoints - relay, recloser, regulator",
+      "purdue": "Level 1",
+      "target_sl": 2
     }
   ],
   "operations": {

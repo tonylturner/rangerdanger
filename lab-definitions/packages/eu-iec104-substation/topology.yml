@@ -11,36 +11,42 @@ firewall_config: firewall/weak.json
 
 networks:
   - id: enterprise_net
+    purdue: Level 4
     name: Enterprise Zone
     subnet: 10.10.10.0/24
     zone: wan
     description: Enterprise attacker workstation and untrusted ingress
 
   - id: vendor_net
+    purdue: Level 3.5
     name: Vendor / Engineering Zone
     subnet: 10.20.20.0/24
     zone: dmz
     description: Vendor access and engineering maintenance
 
   - id: station_net
+    purdue: Level 1–2
     name: Station Zone
     subnet: 10.30.30.0/24
     zone: lan1
     description: IEC104 RTU, OpenPLC voltage controller and station clock
 
   - id: field_net
+    purdue: Level 1
     name: Field Device Zone
     subnet: 10.40.40.0/24
     zone: lan2
     description: Two breakers, two RMUs and OLTC Modbus endpoints
 
   - id: control_centre_net
+    purdue: Level 3
     name: Control Centre Zone
     subnet: 10.60.60.0/24
     zone: lan4
     description: IEC104 control-centre client
 
   - id: ops_dmz_net
+    purdue: Level 3.5
     name: Operations DMZ
     subnet: 10.70.70.0/24
     zone: lan5

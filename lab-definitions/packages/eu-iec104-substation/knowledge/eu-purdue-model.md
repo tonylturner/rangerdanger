@@ -5,20 +5,20 @@ The Purdue Model is a functional reference for discussing how industrial operati
 | Level | Typical function | EU range interpretation |
 |---|---|---|
 | **L0** | Physical process | The modeled feeder and connected load are solved by the process engine; separate field-device simulators expose corresponding equipment state. This is a simulation, not physical substation equipment. |
-| **L1** | Basic control and field functions | Breaker, RMU and OLTC endpoints represent field-side equipment. Their network placement does not by itself define every control function's Purdue level. |
-| **L2** | Area supervisory functions | Operator supervision belongs to this general functional tier; the range's Control Centre (CC) provides supervisory operation, but its exact level depends on the system boundary being modeled. |
-| **L3** | Site operations | Site-wide operational and engineering functions may be discussed at this tier. The EU station subnet is not a Purdue level: it contains the RTU, PLC and clock, whose different roles should not be collapsed into one asset category. |
-| **L3.5** | IDMZ or controlled exchange tier | An IDMZ mediates selected exchanges between operational and business environments. It is an architectural role, not a synonym for every network named “DMZ.” |
-| **L4** | Site business systems | Business-side services sit above site operations. The range's Enterprise network is a teaching boundary; its Kali host is a probe, not a model of a production business system. |
+| **L1** | Basic control and field functions | **Level 1 · Field Device Zone** contains the breaker, RMU and OLTC endpoints. The PLC also performs L1 control, but lives in the mixed Station zone. |
+| **L2** | Area supervisory functions | **Level 1–2 · Station Zone** mixes the RTU gateway (L1–2), PLC (L1) and station clock. This band spans roles; it does not assign every station asset the same function. |
+| **L3** | Site operations | **Level 3 · Control Centre Zone** contains the site-wide supervisory master (CC), which supervises the feeder through the RTU. |
+| **L3.5** | IDMZ or controlled exchange tier | **Level 3.5 · Vendor / Engineering Zone** provides maintenance access; **Level 3.5 · Operations DMZ** contains the read-only historian for controlled data exchange. Both are labeled L3.5 but have distinct roles and boundaries. |
+| **L4** | Site business systems | **Level 4 · Enterprise Zone** represents the business-side teaching boundary; its Kali host is a probe, not a model of a production business system. |
 | **L5** | Enterprise-wide systems | Central enterprise services are generally outside a substation's operational scope. This package does not model an L5 environment. |
 
-These labels are useful questions, not an automatic assignment for every device. The EU RTU is a station gateway: it terminates the CC's IEC 104 connection and separately polls field devices over Modbus TCP. It has a station interface only and is not a packet-forwarding router. The [telecontrol architecture](#eu-telecontrol-architecture) describes those two protocol hops and their separate evidence.
+These package-declared labels are the teaching mapping shown by **Purdue Model View** on the Network Map, not an automatic assignment for every device. The EU RTU is a station gateway: it terminates the CC's IEC 104 connection and separately polls field devices over Modbus TCP. It has a station interface only and is not a packet-forwarding router. The [telecontrol architecture](#eu-telecontrol-architecture) describes those two protocol hops and their separate evidence.
 
 ### An IDMZ is a design role, not a magic subnet
 
 The purpose of an IDMZ is to avoid an uncontrolled direct path between enterprise services and lower-level control. A design may place brokers, jump services or replicated data there, but the appropriate services and permitted directions depend on the system's requirements. A label alone does not prove that a boundary is mediated or secure.
 
-Keep the EU package's two similarly named areas distinct. Vendor/Engineering is `10.20.20.0/24` (`dmz`); the Historian is in the separate Operations DMZ, `10.70.70.0/24` (`lan5`). The CC pushes observations to the Historian, while Enterprise clients read its archive. This is a bounded data path, not evidence that the two DMZs are one Purdue layer or that the Historian is a general-purpose proxy. See the [range node map](#eu-range-node-map) and [zone and conduit design](#eu-zone-conduit-design) for actual roles and permitted flows.
+Keep the EU package's two similarly named areas distinct. Vendor/Engineering is `10.20.20.0/24` (`dmz`); the Historian is in the separate Operations DMZ, `10.70.70.0/24` (`lan5`). The CC pushes observations to the Historian, while Enterprise clients read its archive. Sharing the L3.5 label does not merge these zones or make the Historian a general-purpose proxy. See the [range node map](#eu-range-node-map) and [zone and conduit design](#eu-zone-conduit-design) for actual roles and permitted flows.
 
 ### Purdue levels are not IEC 62443 security levels
 
