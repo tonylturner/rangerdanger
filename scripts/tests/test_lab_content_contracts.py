@@ -165,7 +165,9 @@ class CrossPackageContracts(unittest.TestCase):
             for name, text in texts.items():
                 with self.subTest(package=package, path=name):
                     for action_id, title in catalog.items():
-                        self.assertNotIn(f"`{action_id}`", text)
+                        # Bare or backticked; a longer slug such as a rule ID
+                        # that merely contains the action ID is not a hit.
+                        self.assertNotRegex(text, rf"(?<![a-z0-9_-]){re.escape(action_id)}(?![a-z0-9_-])")
                         if title in text:
                             cited.add(action_id)
             # The titles are in use, so the rule is not vacuous.
