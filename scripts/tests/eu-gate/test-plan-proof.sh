@@ -9,8 +9,9 @@
 ORIGINAL_ROOT="$ROOT"
 ROOT="$TMP_DIR/root"
 mkdir -p "$ROOT/frontend/lib/testdata/plans" "$ROOT/scripts/tests/fixtures"
-cp "$ORIGINAL_ROOT"/frontend/lib/testdata/plans/eu-{full,partial}.json "$ROOT/frontend/lib/testdata/plans/"
+cp "$ORIGINAL_ROOT"/frontend/lib/testdata/plans/eu-*.json "$ROOT/frontend/lib/testdata/plans/"
 cp "$ORIGINAL_ROOT/scripts/tests/fixtures/plan-gate.jq" "$ROOT/scripts/tests/fixtures/"
+EU_GATE_EVIDENCE_DIR="$TMP_DIR/retained"
 CALLS=""
 CASE_INDEX=0
 CASE_NOW=""
@@ -58,7 +59,9 @@ eu_api_post() {
       case "$CASE_INDEX" in
         1) CASE_NOW=full ;;
         2) CASE_NOW=partial ;;
-        *) return 99 ;;
+        *) CASE_NOW=$(jq -er --argjson index "$((CASE_INDEX - 3))" \
+          '[.actions[] | select(.kind == "enforce" or .kind == "detect") | .id][$index]' \
+          "$ROOT/frontend/lib/testdata/plans/eu-full.json") || return 99 ;;
       esac
       CALLS="$CALLS plan:$CASE_NOW:$3"
       file="$ROOT/frontend/lib/testdata/plans/eu-$CASE_NOW.json"
@@ -103,13 +106,25 @@ run_plan_gate() {
 run_plan_gate
 t_expect_eq "$T_STATUS" 0 "golden full and partial plans pass their independent judgements"
 t_expect_fails 0 "partial hardened rejection is expected, not a failed plan proof"
-t_expect_eq "$CALLS" \
-  ' plan:full:60 report:full:90 plan:partial:60 report:partial:90 named:{"config":"weak"} active' \
-  "G28 runs full then partial with bounded calls, then named weak and provenance readback"
+expected_calls=' plan:full:60 report:full:90 plan:partial:60 report:partial:90'
+for action in $(jq -r '.actions[] | select(.kind == "enforce" or .kind == "detect") | .id' \
+  "$ROOT/frontend/lib/testdata/plans/eu-full.json"); do
+  expected_calls="$expected_calls plan:$action:60 report:$action:90"
+done
+expected_calls="$expected_calls named:{\"config\":\"weak\"} active"
+t_expect_eq "$CALLS" "$expected_calls" \
+  "G28 runs full, partial and every catalog enforce/detect singleton before named weak"
 t_run jq -e --slurpfile golden "$ROOT/frontend/lib/testdata/plans/eu-partial.json" \
   '. == ($golden[0] | {packageId,revision,actionIds:[.actions[] | select(.chosen) | .id]})' \
   "$TMP_DIR/G28-partial-request.json"
 t_expect_eq "$T_STATUS" 0 "request evidence contains the golden-derived partial selection"
+for selection in full partial $(jq -r '.actions[] | select(.kind == "enforce" or .kind == "detect") | .id' \
+  "$ROOT/frontend/lib/testdata/plans/eu-full.json"); do
+  for artifact in request apply report; do
+    t_run test -s "$EU_GATE_EVIDENCE_DIR/G28/G28-$selection-$artifact.json"
+    t_expect_eq "$T_STATUS" 0 "retained G28 $selection $artifact JSON is available"
+  done
+done
 
 # Changing labels, revision, selected IDs, counts and gap IDs proves the gate
 # reads the goldens, rather than merely mentioning their paths.
@@ -122,6 +137,15 @@ for selection in full partial; do
         // .expectations[0]) as $extra
     | .expectations += [$extra | .id += "-extra"]
   ' "$file" >"$TMP_DIR/changed.json" && cp "$TMP_DIR/changed.json" "$file"
+done
+for fixture in "$ROOT"/frontend/lib/testdata/plans/eu-*.json; do
+  case "${fixture##*/}" in
+    eu-empty.json|eu-full.json|eu-partial.json) continue ;;
+  esac
+  renamed="${fixture%.json}-fixture.json"
+  jq '.actions[].id += "-fixture"' "$fixture" >"$TMP_DIR/changed.json" \
+    && mv "$TMP_DIR/changed.json" "$renamed" \
+    && rm "$fixture"
 done
 run_plan_gate
 t_expect_eq "$T_STATUS" 0 "gate follows changed golden labels, requests, tuple counts and prevention gaps"

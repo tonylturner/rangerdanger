@@ -113,6 +113,9 @@ mkdir -p "$PACKAGE/firewall" "$PACKAGE/process"
 cp "$POLICY" "$PACKAGE/firewall/improved.json"
 cp "$ORIGINAL_PACKAGE/firewall/weak.json" "$PACKAGE/firewall/weak.json"
 cp "$ORIGINAL_PACKAGE/process/reference-cases.json" "$PACKAGE/process/reference-cases.json"
+PLAN_GOLDEN="$ROOT/frontend/lib/testdata/plans/eu-iec104-dpi.json"
+PLAN_CONFIG="$TMP_DIR/plan-config.json"
+jq '.config' "$PLAN_GOLDEN" >"$PLAN_CONFIG"
 CALLS=""
 COMMANDS=""
 APPLIED_POLICY=weak
@@ -120,6 +123,7 @@ COUNTS=$(cat "$BASE")
 FAIL_AT=""
 HEALTH_MUTATION="."
 CONFIG_MUTATION="."
+PLAN_ACTIVE_MUTATION="."
 TAP=0
 POSITION=closed
 AUTO=true
@@ -135,7 +139,33 @@ eu_reset_all() {
   TAP=$(jq -er '.initial_tap' "$PACKAGE/process/reference-cases.json")
 }
 eu_lab_reconnect_cc() { CALLS="$CALLS reconnect"; }
-eu_firewall_config() { jq "$CONFIG_MUTATION" "$PACKAGE/firewall/$APPLIED_POLICY.json"; }
+eu_firewall_config() {
+  if [ "$APPLIED_POLICY" = plan ]; then
+    jq "$CONFIG_MUTATION" "$PLAN_CONFIG"
+  else
+    jq "$CONFIG_MUTATION" "$PACKAGE/firewall/$APPLIED_POLICY.json"
+  fi
+}
+eu_api_post() {
+  CALLS="$CALLS post:$1"
+  [ "$1" = /api/firewall/apply-plan ] || return 99
+  APPLIED_POLICY=plan
+  COUNTS=$(cat "$BASE")
+  API_BODY=$(jq -n --slurpfile golden "$PLAN_GOLDEN" '{
+    applied:true,warnings:[],plan:$golden[0],
+    containd:{applyId:"plan-id",protection:"protecting"}
+  }')
+  # shellcheck disable=SC2034 # consumed by eu_shadow_plan_case
+  HTTP_STATUS=200
+}
+eu_api_get() {
+  CALLS="$CALLS api-get:$1"
+  [ "$1" = /api/firewall/active ] || return 99
+  API_BODY=$(jq -n --slurpfile golden "$PLAN_GOLDEN" '
+    {active_config:"custom",policy_source:"plan",
+      plan:{actionIds:["iec104-dpi"],policyHash:$golden[0].policyHash}}
+    | '"$PLAN_ACTIVE_MUTATION")
+}
 eu_get_field() {
   API_BODY=$(jq -n --argjson tap "$TAP" --arg position "$POSITION" --argjson auto "$AUTO" \
     "{devices:{\"breaker-1\":{position:\$position},\"oltc-1\":{tap:\$tap,moving:false,auto:\$auto}},
@@ -215,8 +245,12 @@ t_expect_eq "${CALLS%% get:/health*}" \
   " profile:false reset apply:improved reconnect command:oltc-1-mode:manual:completed" \
   "reset precedes Improved apply and fresh CC session before health and counter baseline"
 t_expect_eq "$COMMANDS" \
-  " oltc-1-mode:manual:completed feeder-breaker-command:open:completed feeder-breaker-command:close:completed oltc-1-step:lower:completed oltc-1-step:raise:completed oltc-1-mode:manual:completed oltc-1-mode:auto:completed" \
-  "G29 uses audited eu_command for every phase and mode restore in order"
+  " oltc-1-mode:manual:completed feeder-breaker-command:open:completed feeder-breaker-command:close:completed oltc-1-step:lower:completed oltc-1-step:raise:completed feeder-breaker-command:open:completed feeder-breaker-command:close:completed oltc-1-step:lower:completed oltc-1-step:raise:completed oltc-1-mode:manual:completed oltc-1-mode:auto:completed" \
+  "G29 uses audited commands under Improved and the monitor-only plan, then restores mode"
+t_expect_out "G29 IEC104 plan emitted breaker and OLTC observations without blocking commands" \
+  "the singleton plan stays active while commands complete and produce evidence"
+t_expect_out "G29-plan raise monitor deltas and windowed events agree" \
+  "plan-based OLTC raise exercises the raise-only monitor"
 t_expect_eq "${CALLS#* lab-cc:}" "$CALLS" "G29 never uses the all-points-good student helper"
 t_expect_eq "$TAP:$AUTO:$POSITION" "0:true:closed" "cleanup restores reference tap, auto and CB1 command"
 for FAIL_AT in baseline breaker lower raise final; do
@@ -260,4 +294,13 @@ for CONFIG_MUTATION in '.dataplane.dpiEnabled=false' '.dataplane.nfqueueGroup=0'
   t_run eu_gate_G29
   t_expect_eq "$T_STATUS" 1 "G29 refuses unapplied/disabled monitoring: $CONFIG_MUTATION"
 done
+CONFIG_MUTATION="."
+PLAN_ACTIVE_MUTATION='.policy_source="manual-custom"'
+CALLS=""
+COMMANDS=""
+COUNTS=$(cat "$BASE")
+t_run eu_gate_G29
+t_expect_eq "$T_STATUS" 1 "G29 rejects monitor events if the compiled plan provenance is not active"
+t_expect_eq "$TAP:$AUTO:$POSITION" "0:true:closed" "wrong plan provenance still restores field state"
+t_expect_eq "${CALLS##* profile:true}" " apply:weak" "wrong plan provenance still restores profile and weak"
 t_finish

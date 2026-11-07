@@ -4,6 +4,13 @@ import { ALL_PLANS, EU_PLANS, US_PLANS } from "./plan-fixtures.test-util";
 import { fixtureCurriculum, US_CURRICULUM } from "./curriculum-storage.test-util";
 import { renderPlanTests, renderRuleTable } from "./plan-presentation";
 
+const singletonPlans = Object.entries(import.meta.glob<{ default: (typeof ALL_PLANS)[number] }>(
+  "./testdata/plans/{eu,us}-*.json",
+  { eager: true },
+))
+  .filter(([path]) => !/(?:empty|partial|full)\.json$/.test(path))
+  .map(([, module]) => module.default);
+
 afterEach(() => vi.unstubAllGlobals());
 describe("server-owned plans across packages and selection states", () => {
   it.each([
@@ -64,7 +71,20 @@ describe("server-owned plans across packages and selection states", () => {
       }
     }
   });
-  it.each(ALL_PLANS)("round-trips $packageId $label unchanged", async (plan) => {
+  it("has a generated singleton for every catalog enforcement or detection action", () => {
+    const expected = [US_PLANS[2], EU_PLANS[2]].flatMap((plan) =>
+      plan.actions.filter(({ kind }) => kind === "enforce" || kind === "detect")
+        .map(({ id }) => `${plan.packageId}:${id}`),
+    ).sort();
+    const actual = singletonPlans.map((plan) => {
+      const chosen = plan.actions.filter((action) => action.chosen);
+      expect(chosen).toHaveLength(1);
+      expect(["enforce", "detect"]).toContain(chosen[0].kind);
+      return `${plan.packageId}:${chosen[0].id}`;
+    }).sort();
+    expect(actual).toEqual(expected);
+  });
+  it.each([...ALL_PLANS, ...singletonPlans])("round-trips $packageId $label unchanged", async (plan) => {
     const body = { packageId: plan.packageId, revision: plan.revision, actionIds: plan.actions.filter((a) => a.chosen).map((a) => a.id) };
     const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(plan)))
       .mockResolvedValueOnce(new Response(JSON.stringify({ applied: true, warnings: ["Budget warning"], plan })));

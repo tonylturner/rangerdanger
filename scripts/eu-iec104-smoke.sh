@@ -169,8 +169,8 @@ EU IEC104 gate plan (no Docker or backend access):
   G25 eu-validation-evidence validator: hardened report and continuity walk
   G26 eu-segmentation-requirements served decisions and package-bound catalog
   G27 eu-remediation-planning served decision step and package-bound catalog
-  G28 Full and partial compiled plans: faithful proof, hardened acceptance and golden prevention gaps; restore weak without provenance
-  G29 Improved monitor-only shadow evidence: fresh CC session, CB1 would-deny with field operation, OLTC lower/raise selector comparison; restore tap/mode
+  G28 Full, partial and each catalog enforce/detect singleton compiled plan: faithful proof, hardened acceptance and golden prevention gaps; retain evidence and restore weak without provenance
+  G29 Improved and IEC104 singleton-plan monitor evidence: fresh CC session, CB1 would-deny with field operation, OLTC lower/raise selector comparison, policy_source=plan kept; restore tap/mode
   G14 Device reset recovers the chain; apply weak
   EXIT Keep evidence on failure; restore weak + device reset; unpause services paused by this run
 PLAN
