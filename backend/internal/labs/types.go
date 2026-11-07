@@ -1,5 +1,11 @@
 package labs
 
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
+
 // LabYAML mirrors the YAML schema for a package's topology template.
 type LabYAML struct {
 	ID             string                     `yaml:"id"`
@@ -18,12 +24,26 @@ type LabYAML struct {
 
 // NetworkYAML defines a virtual network.
 type NetworkYAML struct {
-	ID          string `yaml:"id" json:"id,omitempty"`
-	Name        string `yaml:"name" json:"name"`
-	CIDR        string `yaml:"cidr" json:"cidr,omitempty"`
-	Subnet      string `yaml:"subnet" json:"subnet,omitempty"`
-	Zone        string `yaml:"zone" json:"zone,omitempty"`
-	Description string `yaml:"description" json:"description,omitempty"`
+	ID          string               `yaml:"id" json:"id,omitempty"`
+	Name        string               `yaml:"name" json:"name"`
+	Purdue      string               `yaml:"purdue" json:"purdue"`
+	TargetSL    *TargetSecurityLevel `yaml:"target_sl,omitempty" json:"target_sl,omitempty"`
+	CIDR        string               `yaml:"cidr" json:"cidr,omitempty"`
+	Subnet      string               `yaml:"subnet" json:"subnet,omitempty"`
+	Zone        string               `yaml:"zone" json:"zone,omitempty"`
+	Description string               `yaml:"description" json:"description,omitempty"`
+}
+
+// TargetSecurityLevel is an integer design target, never a measured level.
+type TargetSecurityLevel int
+
+// UnmarshalYAML rejects non-integer scalars rather than silently truncating
+// fractions as yaml.v3's ordinary int decoding does.
+func (sl *TargetSecurityLevel) UnmarshalYAML(value *yaml.Node) error {
+	if value.Tag != "!!int" {
+		return fmt.Errorf("target_sl must be an integer (1-4)")
+	}
+	return value.Decode((*int)(sl))
 }
 
 // NodeYAML describes a node template in YAML.

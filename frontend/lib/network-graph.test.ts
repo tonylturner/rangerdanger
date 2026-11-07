@@ -6,6 +6,44 @@ import usFixture from "../../backend/internal/labs/testdata/us-flow-graph.json";
 import { aggregateFlows, createFlowContext } from "./observed-flows";
 
 describe("buildStyledGraph", () => {
+  it.each([euFixture, usFixture])("uses package-authored Purdue labels and optional targets for $networks.0.name", (fixture) => {
+    const graph = structuredClone(fixture) as LabGraph;
+    // Neither labels nor targets can be inferred from familiar zone IDs.
+    graph.networks = graph.networks.map((network, i) => ({
+      ...network, purdue: `Custom tier ${i}`, name: `Current zone ${i}`,
+      target_sl: i % 2 ? 4 : undefined,
+    }));
+    const result = buildStyledGraph(graph, [], { traffic: false, policyDim: true, iec62443: true });
+    const bands = result.nodes.filter((n) => n.type === "zoneBoundary");
+    expect(bands).toHaveLength(graph.networks.length);
+    for (const network of graph.networks) {
+      const band = bands.find((n) => n.id === `zone-boundary-${network.id}`)!;
+      expect(band.data.label).toBe(`${network.purdue} · ${network.name}${network.target_sl === undefined ? "" : ` · Target SL-${network.target_sl}`}`);
+      expect(band.data.securityLevel).toBe(network.target_sl);
+    }
+    expect(result.nodes.find((n) => n.type === "firewall")?.data.targetSL).toBe(4);
+  });
+
+  it.each([euFixture, usFixture])("shows the declared package mapping in the existing zone order for $networks.0.name", (fixture) => {
+    const graph = fixture as LabGraph;
+    const result = buildStyledGraph(graph, [], { traffic: false, policyDim: true, iec62443: true });
+    const eu = graph.networks.some((n) => n.id === "station_net");
+    expect(result.nodes.filter((n) => n.type === "zoneBoundary").map((n) => [n.data.zone, n.data.label])).toEqual(eu ? [
+      ["enterprise_net", "Level 4 · Enterprise Zone"],
+      ["vendor_net", "Level 3.5 · Vendor / Engineering Zone"],
+      ["ops_dmz_net", "Level 3.5 · Operations DMZ"],
+      ["control_centre_net", "Level 3 · Control Centre Zone"],
+      ["station_net", "Level 1–2 · Station Zone"],
+      ["field_net", "Level 1 · Field Device Zone"],
+    ] : [
+      ["enterprise_net", "Level 4 · Enterprise Zone · Target SL-1"],
+      ["vendor_net", "Level 3.5 · Vendor / Engineering Zone · Target SL-2"],
+      ["ot_ops_net", "Level 3 · OT Operations Zone · Target SL-3"],
+      ["field_net", "Level 1 · Field Device Zone · Target SL-2"],
+    ]);
+    expect(result.nodes.find((n) => n.type === "firewall")?.data.targetSL).toBe(eu ? undefined : 3);
+  });
+
   it.each([euFixture, usFixture])("keeps label lanes stable across traffic filters for $networks.0.name", (fixture) => {
     const graph = fixture as LabGraph;
     const context = createFlowContext(graph, {});
@@ -104,7 +142,8 @@ describe("buildStyledGraph", () => {
         aggregateFlows(context, filter).map((r) => `${r.source}->${r.target}`),
       );
       if (iec62443) {
-        expect(result.nodes.map((n) => n.data.label).join(" ")).not.toMatch(/Level \d|SL-\d/);
+        expect(result.nodes.map((n) => n.data.label).join(" ")).toContain("Level 1–2 · Station Zone");
+        expect(result.nodes.map((n) => n.data.label).join(" ")).not.toMatch(/SL-\d/);
         expect(result.nodes.every((n) => n.data.securityLevel === undefined)).toBe(true);
       }
     }
@@ -143,7 +182,7 @@ describe("increment-4 map inventory", () => {
     const g = graph();
     const result = buildStyledGraph(g, [], { policyDim: true, traffic: false, iec62443 });
     for (const id of ["rmu-1", "rmu-2", "oltc-1", "plc-1", "historian-1"]) expect(result.nodes.find((n) => n.id === id)?.data.nodeType).toBe(g.nodes.find((n) => n.id === id)!.type);
-    expect(result.nodes.find((n) => n.id === "zone-boundary-ops_dmz_net")?.data.label).toBe("Operations DMZ");
+    expect(result.nodes.find((n) => n.id === "zone-boundary-ops_dmz_net")?.data.label).toBe(iec62443 ? "Level 3.5 · Operations DMZ" : "Operations DMZ");
     expect(result.edges.find((e) => e.id === "fw-to-ops_dmz_net")?.data.zoneMeta.role).toBe("lan5");
     const dmz = result.nodes.find((n) => n.id === "zone-boundary-ops_dmz_net")!;
     const cc = result.nodes.find((n) => n.id === "zone-boundary-control_centre_net")!;

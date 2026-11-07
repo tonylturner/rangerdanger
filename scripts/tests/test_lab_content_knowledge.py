@@ -2,6 +2,8 @@
 
 import unittest
 
+import yaml
+
 from scripts.tests.test_lab_content_contracts import ROOT, SCENARIOS, scenario
 
 
@@ -116,6 +118,28 @@ class ChangeManagementContracts(unittest.TestCase):
 
 
 class AuditTeachingContracts(unittest.TestCase):
+    def test_purdue_teaching_matches_package_band_labels(self):
+        eu = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        article = (eu / "knowledge/eu-purdue-model.md").read_text()
+        for topology, baseline in (
+            (ROOT / "lab-definitions/substation-segmentation.yml",
+             SCENARIOS / "baseline-assessment.yml"),
+            (eu / "topology.yml", eu / "scenarios/eu-baseline-assessment.yml"),
+        ):
+            text = baseline.read_text()
+            for network in yaml.safe_load(topology.read_text())["networks"]:
+                label = f'{network["purdue"]} · {network["name"]}'
+                with self.subTest(topology=topology, zone=network["id"]):
+                    self.assertIn(label, text)
+                    if topology == eu / "topology.yml":
+                        self.assertIn(label, article)
+                        self.assertNotIn("target_sl", network)
+            self.assertIn("Lab 2.4 validates actual paths and continuity", text)
+            self.assertNotIn("you'll use these labels in Lab 1.3 and 2.4", text)
+        for caveat in ("teaching aid", "not a required network diagram or a security policy",
+                       "no automatic mapping", "Sharing the L3.5 label does not merge"):
+            self.assertIn(caveat, article)
+
     def test_sl_targets_do_not_certify_policy_or_dpi_filtering(self):
         paths = sorted(SCENARIOS.glob("*.yml"))
         for package in ("us-dnp3-substation", "eu-iec104-substation"):

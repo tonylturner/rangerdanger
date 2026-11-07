@@ -50,6 +50,7 @@ firewall_config: firewall/weak.json
 networks:
   - id: ot-ops
     name: OT Operations
+    purdue: Level 3
     cidr: 10.30.30.0/24
     zone: lan2
 nodes:

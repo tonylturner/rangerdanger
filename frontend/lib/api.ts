@@ -97,6 +97,8 @@ export type LivenessBinding =
 export type TopologyNetwork = {
   id: string;
   name: string;
+  purdue: string;
+  target_sl?: number;
   zone?: string;
   subnet?: string;
   cidr?: string;

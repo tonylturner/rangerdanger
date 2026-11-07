@@ -245,6 +245,24 @@ they map to in `packages/us-dnp3-substation/compose.source.yml` and
 (`/console`) is rendered from this file via the
 `GET /api/workshop/graph` endpoint.
 
+Each entry in `networks` requires a non-empty `purdue` string. Purdue
+Model View labels its band as `<purdue> · <name>` in the existing zone
+order. An optional integer `target_sl` must be 1–4; when present it adds
+`· Target SL-<n>` and supplies the illustrative Security Level overlay.
+Omit it when the package does not declare a numeric design target.
+Neither field changes networking or enforcement, and there is no automatic
+Purdue-to-SL mapping. For example:
+
+```yaml
+networks:
+  - id: enterprise_net
+    name: Enterprise Zone
+    purdue: Level 4
+    target_sl: 1
+    subnet: 10.10.10.0/24
+    zone: wan
+```
+
 If you change network membership here, you must also change
 both package Compose models to match - the YAML is the source of truth for
 the UI but Docker is the source of truth for actual reachability. Update the

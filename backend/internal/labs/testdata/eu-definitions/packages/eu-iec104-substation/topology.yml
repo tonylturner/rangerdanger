@@ -5,10 +5,12 @@ firewall_config: firewall/weak.json
 networks:
   - id: station_net
     name: Station
+    purdue: Level 1–2
     cidr: 10.30.30.0/24
     zone: lan1
   - id: control_centre_net
     name: Control centre
+    purdue: Level 3
     cidr: 10.60.60.0/24
     zone: lan4
 nodes:

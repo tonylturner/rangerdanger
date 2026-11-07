@@ -110,8 +110,7 @@ export function buildStyledGraph(
 
     // ── Purdue Model band layout ──────────────────────────────────
     // Horizontal architectural bands stacked top-to-bottom, mapping
-    // lab zones to Purdue levels (L4 → L3.5 → L3 → L1). The firewall
-    // sits on the L3.5 IDMZ boundary. This is *Purdue* architecture,
+    // lab zones to package-declared Purdue levels. This is *Purdue* architecture,
     // not IEC 62443 - IEC 62443 contributes the Security Level (SL)
     // overlay rendered alongside each conduit. Both frameworks are in
     // play here, but the *band layout* is Purdue-driven.
@@ -129,34 +128,18 @@ export function buildStyledGraph(
       const NODE_START_X_OFFSET = 30;
       const FW_X = BAND_START_X + BAND_WIDTH + 120; // firewall to the right of bands
 
-      // Illustrative IEC 62443 design targets for the US workshop zones.
-      // SL 0 = none, SL 1 = casual, SL 2 = intentional/simple,
-      // SL 3 = sophisticated, SL 4 = state-sponsored.
-      const ZONE_SL: Record<string, number> = {
-        enterprise_net: 1, // IT-managed, casual threat model
-        vendor_net: 2,     // authenticated remote access
-        ot_ops_net: 3,     // critical SCADA, sophisticated threats
-        field_net: 2,      // limited compute, physical hardening
-      };
-
-      // Purdue level mapping - ALL levels top to bottom (firewall is NOT between them)
-      const purdueOrder: Array<{ zone: string; label: string }> = [
-        { zone: "enterprise_net", label: "Level 4 \u00B7 Enterprise" },
-        { zone: "vendor_net", label: "Level 3.5 \u00B7 DMZ" },
-        { zone: "ot_ops_net", label: "Level 3 \u00B7 Supervisory" },
-        { zone: "field_net", label: "Level 1 \u00B7 Field Devices" },
-      ];
-      const architecturalOnly = activeZones.includes("station_net") || activeZones.includes("control_centre_net");
-      const activeLevels = architecturalOnly
-        ? activeZones.map((zone) => ({ zone, label: graph.networks.find((n) => n.id === zone)?.name ?? zone }))
-        : purdueOrder.filter((p) => activeZones.includes(p.zone));
+      const activeLevels = activeZones.map((zone) => ({
+        zone,
+        network: graph.networks.find((n) => n.id === zone)!,
+      }));
 
       const styledNodes: Node[] = [];
       let curY = 0;
 
       // Render all Purdue bands sequentially
       for (const level of activeLevels) {
-        const sl = ZONE_SL[level.zone] ?? 0;
+        const { network } = level;
+        const sl = network.target_sl;
 
         styledNodes.push({
           id: `zone-boundary-${level.zone}`,
@@ -164,11 +147,11 @@ export function buildStyledGraph(
           position: { x: BAND_START_X, y: curY },
           data: {
             zone: level.zone,
-            label: architecturalOnly ? level.label : `${level.label}  \u00B7  Target SL-${sl}`,
-            subnet: graph.networks.find((n) => n.id === level.zone)?.subnet ?? graph.networks.find((n) => n.id === level.zone)?.cidr,
+            label: `${network.purdue} · ${network.name}${sl === undefined ? "" : ` · Target SL-${sl}`}`,
+            subnet: network.subnet ?? network.cidr,
             width: BAND_WIDTH,
             height: BAND_HEIGHT,
-            securityLevel: architecturalOnly ? undefined : sl,
+            securityLevel: sl,
           },
           selectable: false,
           draggable: false,
@@ -228,7 +211,8 @@ export function buildStyledGraph(
         curY += BAND_HEIGHT + BAND_GAP;
       }
 
-      const targetSL = Math.max(...activeLevels.map((l) => ZONE_SL[l.zone] ?? 0));
+      const targets = activeLevels.flatMap(({ network }) => network.target_sl === undefined ? [] : [network.target_sl]);
+      const targetSL = targets.length ? Math.max(...targets) : undefined;
       // Summaries cannot establish source pinning or a security level. Only a
       // backend-reported named reference policy can identify the scoped criteria;
       // missing/contradictory summaries withhold even that bounded status.
@@ -271,7 +255,7 @@ export function buildStyledGraph(
             health: fwHealth.health,
             healthSource: fwHealth.healthSource,
             // Extra 62443 fields for the label area
-            targetSL: architecturalOnly ? undefined : targetSL,
+            targetSL,
             segmentationStatus,
           },
           draggable: true,
