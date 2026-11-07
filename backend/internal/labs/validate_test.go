@@ -55,6 +55,13 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 			problem: `unsupported action type "manual"`,
 		},
 		{
+			name: "retired command action type",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].Action = &StepAction{Type: "command", Commands: []StepActionCmd{{Device: "relay", Command: "trip"}}}
+			},
+			problem: `unsupported action type "command"`,
+		},
+		{
 			name: "bad expected config",
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
 				scenario.Steps[0].ExpectedConfig = "strict"
@@ -78,16 +85,16 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 		{
 			name: "unknown command device",
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
-				scenario.Steps[0].Action = &StepAction{Type: "command", Device: "pump", Command: "start"}
+				scenario.Steps[0].Action = &StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "pump", Command: "start"}}}
 			},
-			problem: `unknown device "pump"`,
+			problem: `commands[0] unknown device "pump"`,
 		},
 		{
 			name: "unknown command for known device",
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
-				scenario.Steps[0].Action = &StepAction{Type: "command", Device: "relay", Command: "reboot"}
+				scenario.Steps[0].Action = &StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "relay", Command: "reboot"}}}
 			},
-			problem: `unknown command "reboot" for device "relay"`,
+			problem: `commands[0] unknown command "reboot" for device "relay"`,
 		},
 		{
 			name: "bad firewall config",
@@ -123,6 +130,50 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 				scenario.Steps[0].Action = &StepAction{Type: "check"}
 			},
 			problem: "check expect must not be empty",
+		},
+		{
+			name: "run on a non-check action",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].Action = &StepAction{
+					Type:     "sequence",
+					Commands: []StepActionCmd{{Device: "relay", Command: "trip"}},
+					Run:      []StepRun{{Node: "relay-1", Command: "dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip"}},
+				}
+			},
+			problem: `run is only valid on check actions, not "sequence"`,
+		},
+		{
+			name: "run entry unknown node",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].Action = &StepAction{
+					Type:   "check",
+					Expect: map[string]any{"breaker_closed": false},
+					Run:    []StepRun{{Node: "ghost", Command: "dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip"}},
+				}
+			},
+			problem: `run[0] unknown node "ghost"`,
+		},
+		{
+			name: "run entry empty command",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].Action = &StepAction{
+					Type:   "check",
+					Expect: map[string]any{"breaker_closed": false},
+					Run:    []StepRun{{Node: "relay-1", Command: "  "}},
+				}
+			},
+			problem: "run[0] command must not be empty",
+		},
+		{
+			name: "run entry command off the allowlist",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].Action = &StepAction{
+					Type:   "check",
+					Expect: map[string]any{"breaker_closed": false},
+					Run:    []StepRun{{Node: "relay-1", Command: "rm -rf /"}},
+				}
+			},
+			problem: `run[0] command "rm -rf /" is not in the exec allowlist`,
 		},
 		{
 			name: "empty sequence",
@@ -196,11 +247,11 @@ func TestValidateLabRejectsMissingRequiredFields(t *testing.T) {
 		{"scenario order", func(_ *LabYAML, scenario *ScenarioYAML) { scenario.Order = "" }, "scenario order must not be empty"},
 		{"step title", func(_ *LabYAML, scenario *ScenarioYAML) { scenario.Steps[0].Title = "" }, "step title must not be empty"},
 		{"command device", func(_ *LabYAML, scenario *ScenarioYAML) {
-			scenario.Steps[0].Action = &StepAction{Type: "command", Command: "trip"}
-		}, "command device must not be empty"},
+			scenario.Steps[0].Action = &StepAction{Type: "sequence", Commands: []StepActionCmd{{Command: "trip"}}}
+		}, "commands[0] command device must not be empty"},
 		{"command name", func(_ *LabYAML, scenario *ScenarioYAML) {
-			scenario.Steps[0].Action = &StepAction{Type: "command", Device: "relay"}
-		}, "command name must not be empty"},
+			scenario.Steps[0].Action = &StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "relay"}}}
+		}, "commands[0] command name must not be empty"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -337,6 +388,22 @@ func TestValidateProbe(t *testing.T) {
 	}
 }
 
+func TestValidateLabAcceptsCheckRun(t *testing.T) {
+	def, scenario := validatorFixture()
+	scenario.Steps[0].Node = "kali-1"
+	def.Nodes = append(def.Nodes, NodeYAML{ID: "kali-1", IP: "10.10.10.50", Networks: []string{"ot-ops"}})
+	scenario.Steps[0].Action = &StepAction{
+		Type:   "check",
+		Expect: map[string]any{"recloser_closed": false},
+		Run: []StepRun{
+			{Node: "kali-1", Command: "dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip"},
+		},
+	}
+	if err := validateElectrical(def, scenario); err != nil {
+		t.Fatalf("ValidateLab() = %v, want a check with an allowlisted run on a known node to pass", err)
+	}
+}
+
 func TestValidateLabAcceptsDeclaredValidator(t *testing.T) {
 	def, scenario := validatorFixture()
 	scenario.Validator = "electrical-check"
@@ -376,7 +443,6 @@ func TestValidateLabRejectsNonSlugScenarioID(t *testing.T) {
 
 func TestValidateLabGatesActionVocabularyOnCapability(t *testing.T) {
 	for _, action := range []*StepAction{
-		{Type: "command", Device: "relay", Command: "trip"},
 		{Type: "sequence", Commands: []StepActionCmd{{Device: "relay", Command: "trip"}}},
 		{Type: "check", Expect: map[string]any{"breaker_closed": true}},
 	} {

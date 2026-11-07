@@ -71,14 +71,18 @@ class SetupBoundsTests(unittest.TestCase):
         env["ROOT"] = str(ROOT)
         # Record the actual call-site budgets independently of polling sleeps.
         # Exercise the unchanged helper body with a short, real deadline so
-        # stalled-client tests do not wait 15/20/30 seconds per probe.
+        # stalled-client tests do not wait 15/20/30 seconds per probe. Other
+        # tests get room for the fake client's interpreter start under load:
+        # a 1 s deadline killed it before it recorded its call (suite flake).
+        deadline = 1 if (config or {}).get("stall") else 5
         instrumented = BOUNDED.replace("docker_bounded() {", "test_docker_bounded() {") + r'''
 docker_bounded() {
     printf '%s\n' "$1" >>"$FAKE_ROOT/budgets"
     shift
-    test_docker_bounded 1 "$@"
+    test_docker_bounded "$FAKE_DEADLINE" "$@"
 }
 '''
+        env["FAKE_DEADLINE"] = str(deadline)
         script = script.replace('. "$ROOT/scripts/lib/docker-bounded.sh"', instrumented)
         result = subprocess.run(
             ["bash", "-c", "set -euo pipefail\n" + script],

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
+import { US_PACKAGE, EU_PACKAGE } from "../lib/operator-fixtures.test-util";
 import { ApiError, type PackageSummary } from "../lib/api";
 import { RANGE_QUERY_KEY, RangeNotReadyError, type RangePhase, type RangeStatus } from "../lib/range";
 import { RangeBannerView } from "./range-banner";
@@ -11,8 +12,8 @@ import { RangeControl, RangeControlView, currentPackageId, rangeRequestErrorText
 import { RangeProvider } from "./range-context";
 
 const PACKAGES: PackageSummary[] = [
-  { id: "us-dnp3-substation", title: "US DNP3 Substation", revision: 3, active: true, operator_view: "us-dnp3-substation", policies: ["weak", "improved"] },
-  { id: "eu-iec104-substation", title: "EU IEC 104 Substation", revision: 1, active: false, operator_view: "eu-iec104", policies: ["weak", "improved"] },
+  { id: "us-dnp3-substation", title: "US DNP3 Substation", revision: 3, active: true, operator_view: "us-dnp3-substation", policies: US_PACKAGE.policies },
+  { id: "eu-iec104-substation", title: "EU IEC 104 Substation", revision: 1, active: false, operator_view: "eu-iec104", policies: EU_PACKAGE.policies },
 ];
 
 function status(phase: RangePhase, extra: Partial<RangeStatus> = {}): RangeStatus {

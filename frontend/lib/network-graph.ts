@@ -110,8 +110,7 @@ export function buildStyledGraph(
 
     // ── Purdue Model band layout ──────────────────────────────────
     // Horizontal architectural bands stacked top-to-bottom, mapping
-    // lab zones to Purdue levels (L4 → L3.5 → L3 → L1). The firewall
-    // sits on the L3.5 IDMZ boundary. This is *Purdue* architecture,
+    // lab zones to package-declared Purdue levels. This is *Purdue* architecture,
     // not IEC 62443 - IEC 62443 contributes the Security Level (SL)
     // overlay rendered alongside each conduit. Both frameworks are in
     // play here, but the *band layout* is Purdue-driven.
@@ -121,114 +120,133 @@ export function buildStyledGraph(
       // bounded reference-policy criteria status below.
 
       const NODE_SPACING_X = Math.max(130, HOST_ENVELOPE.width + LABEL_GAP + sameZone.count * (sameZone.maxWidth + LABEL_GAP));
-      const BAND_WIDTH = Math.max(700, 60 + HOST_ENVELOPE.width +
-        (Math.max(...Object.values(nodesByZone).map((hosts) => hosts.length)) - 1) * NODE_SPACING_X);
       const BAND_HEIGHT = 200;
       const BAND_GAP = 30;
+      const ROW_GAP_X = 30;
       const BAND_START_X = -400;
       const NODE_START_X_OFFSET = 30;
-      const FW_X = BAND_START_X + BAND_WIDTH + 120; // firewall to the right of bands
 
-      // Illustrative IEC 62443 design targets for the US workshop zones.
-      // SL 0 = none, SL 1 = casual, SL 2 = intentional/simple,
-      // SL 3 = sophisticated, SL 4 = state-sponsored.
-      const ZONE_SL: Record<string, number> = {
-        enterprise_net: 1, // IT-managed, casual threat model
-        vendor_net: 2,     // authenticated remote access
-        ot_ops_net: 3,     // critical SCADA, sophisticated threats
-        field_net: 2,      // limited compute, physical hardening
-      };
-
-      // Purdue level mapping - ALL levels top to bottom (firewall is NOT between them)
-      const purdueOrder: Array<{ zone: string; label: string }> = [
-        { zone: "enterprise_net", label: "Level 4 \u00B7 Enterprise" },
-        { zone: "vendor_net", label: "Level 3.5 \u00B7 DMZ" },
-        { zone: "ot_ops_net", label: "Level 3 \u00B7 Supervisory" },
-        { zone: "field_net", label: "Level 1 \u00B7 Field Devices" },
-      ];
-      const architecturalOnly = activeZones.includes("station_net") || activeZones.includes("control_centre_net");
-      const activeLevels = architecturalOnly
-        ? activeZones.map((zone) => ({ zone, label: graph.networks.find((n) => n.id === zone)?.name ?? zone }))
-        : purdueOrder.filter((p) => activeZones.includes(p.zone));
+      const activeLevels = activeZones.map((zone) => ({
+        zone,
+        network: graph.networks.find((n) => n.id === zone)!,
+      }));
+      // Only adjacent equal levels share a row; never reorder package zones.
+      const rows: Array<typeof activeLevels> = [];
+      for (const level of activeLevels) {
+        const previous = rows[rows.length - 1];
+        if (previous?.[0].network.purdue === level.network.purdue) previous.push(level);
+        else rows.push([level]);
+      }
+      const minimumWidth = (zone: string) => 2 * NODE_START_X_OFFSET + HOST_ENVELOPE.width +
+        (nodesByZone[zone].length - 1) * NODE_SPACING_X;
+      // Keep single-zone geometry, but widen the canvas when a shared row
+      // needs more space. Host envelopes and their traffic lanes stay intact.
+      const BAND_WIDTH = Math.max(700, ...rows.map((row) =>
+        row.reduce((width, level) => width + minimumWidth(level.zone), 0) + (row.length - 1) * ROW_GAP_X));
+      const FW_X = BAND_START_X + BAND_WIDTH + 120;
 
       const styledNodes: Node[] = [];
+      const conduitWaypoints = new Map<string, string>();
       let curY = 0;
 
-      // Render all Purdue bands sequentially
-      for (const level of activeLevels) {
-        const sl = ZONE_SL[level.zone] ?? 0;
-
-        styledNodes.push({
-          id: `zone-boundary-${level.zone}`,
-          type: "zoneBoundary",
-          position: { x: BAND_START_X, y: curY },
-          data: {
-            zone: level.zone,
-            label: architecturalOnly ? level.label : `${level.label}  \u00B7  Target SL-${sl}`,
-            subnet: graph.networks.find((n) => n.id === level.zone)?.subnet ?? graph.networks.find((n) => n.id === level.zone)?.cidr,
-            width: BAND_WIDTH,
-            height: BAND_HEIGHT,
-            securityLevel: architecturalOnly ? undefined : sl,
-          },
-          selectable: false,
-          draggable: false,
-          zIndex: 0,
-        });
-
-        // Zone anchor at the RIGHT EDGE of the band, vertically
-        // centered - conduit lines go from here to the firewall.
-        styledNodes.push({
-          id: `zone-${level.zone}`,
-          type: "zone",
-          position: {
-            x: BAND_START_X + BAND_WIDTH,
-            y: curY + BAND_HEIGHT / 2,
-          },
-          data: { label: "", zone: level.zone, subnet: undefined },
-          selectable: false,
-          draggable: false,
-          zIndex: 1,
-        });
-
-        // Host nodes inside the band
-        const zoneNodes = nodesByZone[level.zone] || [];
-        zoneNodes.forEach((n, nodeIdx) => {
-          const allInterfaceZones = n.data.interface_ips
-            ? Object.keys(n.data.interface_ips).filter((z) => zones.includes(z as typeof zones[number]))
-            : (n.data.networks || []);
-          const additionalZones = allInterfaceZones.filter((z) => z !== level.zone);
-          const nodeHealth = deriveNodeHealth(n.id, workshopOnline);
+      for (const row of rows) {
+        const spareWidth = BAND_WIDTH - (row.length - 1) * ROW_GAP_X -
+          row.reduce((width, level) => width + minimumWidth(level.zone), 0);
+        let bandX = BAND_START_X;
+        for (const level of row) {
+          const { network } = level;
+          const sl = network.target_sl;
+          const bandWidth = minimumWidth(level.zone) + spareWidth / row.length;
+          const lastInRow = level === row[row.length - 1];
 
           styledNodes.push({
-            id: n.id,
-            type: "host",
-            position: {
-              x: BAND_START_X + NODE_START_X_OFFSET + nodeIdx * NODE_SPACING_X,
-              y: curY + 50,
-            },
+            id: `zone-boundary-${level.zone}`,
+            type: "zoneBoundary",
+            position: { x: bandX, y: curY },
             data: {
-              label: n.data.label || n.id,
-              nodeType: n.type,
               zone: level.zone,
-              status: n.data.status || "running",
-              ip: n.data.ip,
-              interface_ips: n.data.interface_ips,
-              networks: n.data.networks,
-              ui_path: n.data.ui_path,
-              external_ui_url: n.data.external_ui_url,
-              multiHomedZones: additionalZones,
-              health: nodeHealth.health,
-              healthSource: nodeHealth.healthSource,
-              verticalOnly: true,
+              label: `${network.purdue} · ${network.name}${sl === undefined ? "" : ` · Target SL-${sl}`}`,
+              subnet: network.subnet ?? network.cidr,
+              width: bandWidth,
+              height: BAND_HEIGHT,
+              securityLevel: sl,
             },
-            draggable: true,
+            selectable: false,
+            draggable: false,
+            zIndex: 0,
           });
-        });
 
+          // Interior boxes exit above the row. A second invisible anchor
+          // keeps the horizontal leg in that gap until it clears every box;
+          // the existing policy edge then bends toward the firewall.
+          styledNodes.push({
+            id: `zone-${level.zone}`,
+            type: "zone",
+            position: {
+              x: bandX + bandWidth,
+              y: lastInRow ? curY + BAND_HEIGHT / 2 : curY - BAND_GAP / 2,
+            },
+            data: { label: "", zone: level.zone, subnet: undefined },
+            selectable: false,
+            draggable: false,
+            zIndex: 1,
+          });
+          if (!lastInRow && firewallNode) {
+            const waypoint = `conduit-waypoint-${level.zone}`;
+            conduitWaypoints.set(level.zone, waypoint);
+            styledNodes.push({
+              id: waypoint,
+              type: "zone",
+              position: { x: BAND_START_X + BAND_WIDTH + ROW_GAP_X, y: curY - BAND_GAP / 2 },
+              data: { label: "", zone: level.zone },
+              selectable: false,
+              draggable: false,
+              zIndex: 1,
+            });
+          }
+
+          // Host nodes inside the band
+          const zoneNodes = nodesByZone[level.zone] || [];
+          zoneNodes.forEach((n, nodeIdx) => {
+            const allInterfaceZones = n.data.interface_ips
+              ? Object.keys(n.data.interface_ips).filter((z) => zones.includes(z as typeof zones[number]))
+              : (n.data.networks || []);
+            const additionalZones = allInterfaceZones.filter((z) => z !== level.zone);
+            const nodeHealth = deriveNodeHealth(n.id, workshopOnline);
+
+            styledNodes.push({
+              id: n.id,
+              type: "host",
+              position: {
+                x: bandX + NODE_START_X_OFFSET + nodeIdx * NODE_SPACING_X,
+                y: curY + 50,
+              },
+              data: {
+                label: n.data.label || n.id,
+                nodeType: n.type,
+                zone: level.zone,
+                status: n.data.status || "running",
+                ip: n.data.ip,
+                interface_ips: n.data.interface_ips,
+                networks: n.data.networks,
+                ui_path: n.data.ui_path,
+                external_ui_url: n.data.external_ui_url,
+                multiHomedZones: additionalZones,
+                health: nodeHealth.health,
+                healthSource: nodeHealth.healthSource,
+                verticalOnly: true,
+              },
+              draggable: true,
+            });
+          });
+
+          bandX += bandWidth + ROW_GAP_X;
+        }
         curY += BAND_HEIGHT + BAND_GAP;
       }
 
-      const targetSL = Math.max(...activeLevels.map((l) => ZONE_SL[l.zone] ?? 0));
+      const targets = activeLevels.flatMap(({ network }) => network.target_sl === undefined ? [] : [network.target_sl]);
+      const targetSL = targets.length ? Math.max(...targets) : undefined;
       // Summaries cannot establish source pinning or a security level. Only a
       // backend-reported named reference policy can identify the scoped criteria;
       // missing/contradictory summaries withhold even that bounded status.
@@ -271,7 +289,7 @@ export function buildStyledGraph(
             health: fwHealth.health,
             healthSource: fwHealth.healthSource,
             // Extra 62443 fields for the label area
-            targetSL: architecturalOnly ? undefined : targetSL,
+            targetSL,
             segmentationStatus,
           },
           draggable: true,
@@ -290,10 +308,11 @@ export function buildStyledGraph(
         activeZones.forEach((zone) => {
           const zoneStroke = zoneColors[zone]?.border || "#64748b";
           const policyInfo = getZonePolicyInfo(zone, ruleSummaries, graph.networks);
+          const waypoint = conduitWaypoints.get(zone);
 
-          styledEdges.push({
+          const conduit: Edge = {
             id: `fw-to-${zone}`,
-            source: `zone-${zone}`,
+            source: waypoint ?? `zone-${zone}`,
             sourceHandle: "right",
             target: firewallNode.id,
             targetHandle: "left",
@@ -315,7 +334,18 @@ export function buildStyledGraph(
               pulse: false,
               zoneMeta: zoneInterfaceMeta(graph, zone),
             },
-          });
+          };
+          if (waypoint) {
+            styledEdges.push({
+              ...conduit,
+              id: `conduit-gap-${zone}`,
+              source: `zone-${zone}`,
+              target: waypoint,
+              // One label on the final leg; both legs retain interface tooltips.
+              data: { ...conduit.data, label: "" },
+            });
+          }
+          styledEdges.push(conduit);
         });
       }
 

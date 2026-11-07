@@ -2,9 +2,9 @@
 
 import { CONTROL_CENTRE_IP, IEC104_PORT, RTU_IP } from "../lib/firewall-sessions";
 import { controlCentreHealth, controlCentreLinkText, telemetrySummary, telemetryText } from "../lib/operator-format";
-import { useWorkshopStatus } from "../lib/live-queries";
-import { useOperatorState } from "../lib/operator-queries";
-import { isHardened } from "../lib/policy-wording";
+import { useActiveFirewall, useWorkshopStatus } from "../lib/live-queries";
+import { useOperatorState, usePackagePolicies } from "../lib/operator-queries";
+import { activePolicyWording, isHardened } from "../lib/policy-wording";
 import { isRangeNotReady } from "../lib/range";
 import type { OperatorState } from "../lib/operator-api";
 import { deviceCommsHealth } from "../lib/operator-workstation";
@@ -15,15 +15,22 @@ import { DashboardStatusCard, QuickLink, WorkshopStatusCard } from "./overview-c
 // GI come from the workshop status (its control_centre part); the
 // telemetry summary needs the points, so it reads the control centre.
 // There is no RTAC or US field-device health here. The firewall policy
-// shows by the name the package declares (lib/policy-wording.ts).
+// uses the package-owned label (lib/policy-wording.ts).
 
 const CC_FLOW = `${CONTROL_CENTRE_IP} → ${RTU_IP}:${IEC104_PORT}`;
 
 function useEuStatus() {
   const ws = useWorkshopStatus(5000);
   const operator = useOperatorState(5000);
+  const policies = usePackagePolicies();
+  const active = useActiveFirewall(5000).data;
+  const activeConfig = active?.active_config ?? ws.data?.firewall_config;
+  const firewallPolicy = activeConfig
+    ? activePolicyWording(activeConfig, policies, active?.policy_source, active?.plan).label
+    : "Loading…";
   return {
     ws: ws.data,
+    firewallPolicy,
     waiting: isRangeNotReady(ws.error),
     operator: operator.data,
     operatorDown: !!operator.error && !isRangeNotReady(operator.error),
@@ -38,7 +45,7 @@ export function DeviceComms({ state, unavailable = false }: { state: OperatorSta
   </section>;
 }
 export function EuDashboard({ title }: { title: string }) {
-  const { ws, waiting, operator, operatorDown } = useEuStatus();
+  const { ws, firewallPolicy, waiting, operator, operatorDown } = useEuStatus();
   const summary = operator ? telemetrySummary(operator.points) : null;
   const cc = ws?.control_centre;
   return (
@@ -65,7 +72,7 @@ export function EuDashboard({ title }: { title: string }) {
         />
         <DashboardStatusCard
           label="Firewall Policy"
-          value={waiting ? "WAITING" : ws?.firewall_config || "—"}
+          value={waiting ? "WAITING" : firewallPolicy}
           ok={waiting || !ws ? undefined : isHardened(ws.firewall_config)}
         />
         <DashboardStatusCard
@@ -95,7 +102,7 @@ export function EuDashboard({ title }: { title: string }) {
 }
 
 export function EuWorkshopStatus({ title }: { title: string }) {
-  const { ws, waiting, operator, operatorDown } = useEuStatus();
+  const { ws, firewallPolicy, waiting, operator, operatorDown } = useEuStatus();
   const summary = operator ? telemetrySummary(operator.points) : null;
   const cc = ws?.control_centre;
   const linkStatus = waiting ? "waiting" : controlCentreHealth(cc);
@@ -122,7 +129,7 @@ export function EuWorkshopStatus({ title }: { title: string }) {
             <WorkshopStatusCard
               label="containd NGFW"
               status={waiting ? "waiting" : ws?.firewall_online ? "online" : "offline"}
-              detail={ws?.firewall_config ? `${ws.firewall_config} policy` : "—"}
+              detail={firewallPolicy}
             />
             <WorkshopStatusCard
               label="Control Centre Link"

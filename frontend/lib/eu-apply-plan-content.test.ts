@@ -62,12 +62,16 @@ describe("EU Apply Your Plan content", () => {
   it("names each pivot owner and keeps restoration common", () => {
     const vendor = scenario(scenarios, `${prefix}vendor-rdp-compromise`);
     const text = vendor.steps.map((s) => s.description).join("\n");
-    expect(text).toContain("restrict-enterprise-to-vendor");
-    expect(text).toContain("block-vendor-to-field");
+    const title = (id: string) => binding.catalog.find((a) => a.id === id)!.title;
+    for (const owner of ["restrict-enterprise-to-vendor", "block-vendor-to-field"]) {
+      expect(text).toContain(title(owner));
+      expect(text).not.toContain(`\`${owner}\``);
+    }
     expect(text).toContain("Restore");
     const hardening = scenario(scenarios, `${prefix}hardening-configurations`);
     const retest = hardening.steps.find((s) => s.id === "re-test-the-attack-under-the-hardened-policy")!.description;
-    expect(retest).toContain("block-enterprise-to-station");
+    expect(retest).toContain(title("block-enterprise-to-station"));
+    expect(retest).not.toContain("`block-enterprise-to-station`");
     expect(retest).toContain("still");
     expect(retest).toContain("Restore");
     expect(retest).not.toMatch(/evade DPI|not enforced until Phase 4|Planned Phase 4/);
@@ -79,7 +83,7 @@ it("retains EU CR-22 and post-commit reconnect for every plan", () => {
   const lab = scenario(`${euDir}/scenarios`, "eu-firewall-implementation");
   for (const plan of EU_PLANS) {
     const text = lab.steps.map((s) => injectDynamicContent(s.description, s.id, plan, binding)).join("\n");
-    for (const expected of ["CR-22", "accidentally omits CC→RTU", "POST http://localhost:8088/api/operator/reconnect", "link.since", "PLC-originated", "GI"]) {
+    for (const expected of ["CR-22", "Which required conduit does CR-22 drop?", "POST http://localhost:8088/api/operator/reconnect", "link.since", "PLC-originated", "GI"]) {
       expect(text).toContain(expected);
     }
     expect(text).toContain("A missing CC allow stops established traffic on its next packet after commit");

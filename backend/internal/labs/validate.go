@@ -10,15 +10,54 @@ import (
 )
 
 var validActionTypes = map[string]struct{}{
-	"command": {}, "sequence": {}, "firewall": {}, "check": {}, "decision": {}, "probe": {}, "session-cut": {},
+	"sequence": {}, "firewall": {}, "check": {}, "decision": {}, "probe": {}, "session-cut": {},
+}
+
+// allowedCommandPrefixes is the exec allowlist. It is the single source for
+// both the workshop exec endpoint and a check step's authored run commands,
+// so a replayed wire command can never ask for a tool the endpoint refuses.
+var allowedCommandPrefixes = []string{
+	"nmap", "mbpoll", "dnp3poll", "dnp3cmd", "iec104cmd", "curl", "tshark",
+	"tcpdump", "nc", "ping", "traceroute", "wget", "cat", "ls",
+	"ip", "ss", "netstat",
+}
+
+// IsAllowedCommand reports whether a command begins with an allowed tool,
+// matching the workshop exec endpoint's allowlist exactly.
+func IsAllowedCommand(cmd string) bool {
+	trimmed := strings.TrimSpace(cmd)
+	for _, prefix := range allowedCommandPrefixes {
+		if strings.HasPrefix(trimmed, prefix+" ") || trimmed == prefix {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateNetworks checks package-authored architectural labels and optional
+// security-level design targets, not network reachability or enforcement.
+func ValidateNetworks(networks []NetworkYAML) error {
+	var problems []string
+	for _, network := range networks {
+		if strings.TrimSpace(network.Purdue) == "" {
+			problems = append(problems, fmt.Sprintf("network %q: purdue must not be empty", network.ID))
+		}
+		if network.TargetSL != nil && (*network.TargetSL < 1 || *network.TargetSL > 4) {
+			problems = append(problems, fmt.Sprintf("network %q: target_sl must be 1-4, got %d", network.ID, *network.TargetSL))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("network validation failed:\n%s", strings.Join(problems, "\n"))
+	}
+	return nil
 }
 
 // vocabularyActionTypes are the action types checked against a
 // capability's action vocabulary.
-var vocabularyActionTypes = map[string]bool{"command": true, "sequence": true, "check": true}
+var vocabularyActionTypes = map[string]bool{"sequence": true, "check": true}
 
 // actionVocabulary is the device-command and check-key vocabulary a
-// capability brings to command, sequence and check actions.
+// capability brings to sequence and check actions.
 type actionVocabulary struct {
 	commands      map[string][]string
 	checkKeys     map[string]bool
@@ -269,10 +308,11 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 		add(fmt.Sprintf("%s actions need a package capability with an action vocabulary (%s)", action.Type, CapabilityProcessElectrical))
 		return
 	}
+	if len(action.Run) > 0 && action.Type != "check" {
+		add(fmt.Sprintf("run is only valid on check actions, not %q", action.Type))
+	}
 
 	switch action.Type {
-	case "command":
-		vocabulary.validateCommand(action.Device, action.Command, action.Value, "", add)
 	case "sequence":
 		if len(action.Commands) == 0 {
 			add("sequence must contain at least one command")
@@ -310,6 +350,17 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 			}
 			if _, ok := value.(bool); !ok {
 				add(fmt.Sprintf("check %s value must be a boolean", key))
+			}
+		}
+		for index, entry := range action.Run {
+			prefix := fmt.Sprintf("run[%d] ", index)
+			if entry.Node == "" || !nodeIDs[entry.Node] {
+				add(prefix + fmt.Sprintf("unknown node %q", entry.Node))
+			}
+			if strings.TrimSpace(entry.Command) == "" {
+				add(prefix + "command must not be empty")
+			} else if !IsAllowedCommand(entry.Command) {
+				add(prefix + fmt.Sprintf("command %q is not in the exec allowlist", entry.Command))
 			}
 		}
 	case "probe":

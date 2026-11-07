@@ -14,6 +14,7 @@ import (
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/db"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
 )
@@ -278,19 +279,31 @@ func TestEUPcapUsesTheCaptureFilter(t *testing.T) {
 	}
 }
 
-func TestFirewallStepLabelsFollowTheRecipe(t *testing.T) {
+func TestFirewallStepLabelsFollowThePackage(t *testing.T) {
 	fw, _ := fakeContaind(t, http.StatusOK, http.StatusOK)
-	eu := rangeServer(euGeneration(t, containd.NewClient(fw.URL), nil), "weak")
-	got := eu.executeFirewallAction(t.Context(), eu.rng.(*fakeRange).gen, "improved")
-	if !got.Success || got.Detail != "containd policy set to improved (source-pinned IEC 104 and Modbus control, PLC maintenance and historian conduits)" {
-		t.Errorf("EU firewall step = %+v", got)
-	}
-	us := rangeServer(usGeneration(containd.NewClient(fw.URL)), "weak")
-	for policy, want := range map[string]string{"weak": "weak baseline", "improved": "hardened (RTAC-only field access)"} {
-		got := us.executeFirewallAction(t.Context(), us.rng.(*fakeRange).gen, policy)
-		if got.Detail != "containd policy set to "+want {
-			t.Errorf("US firewall step %s = %+v", policy, got)
-		}
+	for _, gen := range []*lifecycle.Generation{usGeneration(containd.NewClient(fw.URL)), euGeneration(t, containd.NewClient(fw.URL), nil)} {
+		t.Run(gen.Package.ID, func(t *testing.T) {
+			s := rangeServer(gen, "weak")
+			for _, policy := range []string{"weak", "improved"} {
+				label := gen.Package.PolicyWording[policy].Label
+				if label == "" {
+					t.Fatalf("loaded policy %s has no label", policy)
+				}
+				got := s.executeFirewallAction(t.Context(), gen, policy)
+				if !got.Success || got.Detail != "containd policy set to "+label || got.Action != "Apply firewall: "+label {
+					t.Errorf("firewall step %s = %+v", policy, got)
+				}
+			}
+			// A generation's authored wording must win even without a recipe.
+			wording := gen.Package.PolicyWording["improved"]
+			wording.Label = "Operator-authored reference"
+			gen.Package.PolicyWording["improved"] = wording
+			gen.Package.ID = "package-without-recipe"
+			got := s.executeFirewallAction(t.Context(), gen, "improved")
+			if !got.Success || got.Detail != "containd policy set to "+wording.Label || got.Action != "Apply firewall: "+wording.Label {
+				t.Errorf("authored firewall label not used: %+v", got)
+			}
+		})
 	}
 }
 

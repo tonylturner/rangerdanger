@@ -87,7 +87,7 @@ describe("US Apply Your Plan content", () => {
       origin: { kind: "selected", action: "restrict-vendor-to-ot" },
     });
     const text = scenario("firewall-implementation").steps.find((s) => s.id === "phase-4-enable-logging-and-visibility")!.description;
-    for (const phrase of ["`deny-vendor-to-ot`", "`improve-logging` enables its log flag", "TCP 8080, 1881, 502 and 20000", "Default DENY is a silent backstop"]) {
+    for (const phrase of ["`deny-vendor-to-ot`", "**Improve firewall logging and PCAP retention** enables its log flag", "TCP 8080, 1881, 502 and 20000", "Default DENY is a silent backstop"]) {
       expect(text).toContain(phrase);
     }
     for (const [i, plan] of US_PLANS.entries()) {
@@ -115,7 +115,11 @@ describe("US Apply Your Plan content", () => {
     ] as const) {
       const lab = scenario(id);
       const text = lab.steps.map((s) => s.description).join("\n");
-      for (const owner of owners) expect(text).toContain(owner);
+      // Students read catalog titles; the action ID stays out of the lab text.
+      for (const owner of owners) {
+        expect(text).toContain(binding.catalog.find((a) => a.id === owner)!.title);
+        expect(text).not.toContain(`\`${owner}\``);
+      }
       const retest = lab.steps[index].description;
       expect(retest).toMatch(/deferred|Deferred/);
       expect(retest).toContain("Restore");

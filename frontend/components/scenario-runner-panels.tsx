@@ -89,7 +89,7 @@ export function CommandAuditPanels({
           <div key={i} className={`font-mono text-[11px] ${
             msg.startsWith("[SUCCEEDED]") || msg.startsWith("[OK]")
               ? "text-green-400"
-              : msg.startsWith("[BLOCKED]") || msg.startsWith("[RESET]")
+              : msg.startsWith("[BLOCKED]") || msg.startsWith("[NOT MET]") || msg.startsWith("[RESET]")
               ? "text-amber-400"
               : msg.startsWith("[ERROR]") || msg.startsWith("[EXIT")
               ? "text-red-400"

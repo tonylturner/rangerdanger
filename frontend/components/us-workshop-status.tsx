@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getSubstationHealth } from "../lib/api";
 import { useActiveFirewall, useWorkshopStatus } from "../lib/live-queries";
 import { usePackagePolicies } from "../lib/operator-queries";
-import { activePolicyWording, US_WORKSHOP_POLICY_WORDING } from "../lib/policy-wording";
+import { activePolicyWording } from "../lib/policy-wording";
 import { isRangeNotReady } from "../lib/range";
 import { WorkshopStatusCard } from "./overview-cards";
 
@@ -28,8 +28,8 @@ export function UsWorkshopStatus() {
   const onlineCount = ws?.device_comms ? Object.values(ws.device_comms).filter(Boolean).length : 0;
   const activeConfig = active?.active_config ?? ws?.firewall_config;
   const firewallPolicy = activeConfig
-    ? activePolicyWording(activeConfig, policies, US_WORKSHOP_POLICY_WORDING, active?.policy_source, active?.plan).label
-    : "Weak Baseline";
+    ? activePolicyWording(activeConfig, policies, active?.policy_source, active?.plan).label
+    : "Loading…";
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-10">

@@ -14,6 +14,10 @@ type stepExecutors struct {
 	probe         func(step labs.ScenarioStep) []StepActionResult
 	sessionCut    func(flow string) StepActionResult
 	sequencePause func()
+	// runWire replays a check step's authored wire commands and returns a
+	// detail string recording each exit. The check stays the oracle; a
+	// non-zero exit is reported, not treated as a failure.
+	runWire func(run []labs.StepRun) string
 }
 
 func evaluateTestStep(index int, step labs.ScenarioStep, executors stepExecutors) stepTestResult {
@@ -26,15 +30,6 @@ func evaluateTestStep(index int, step labs.ScenarioStep, executors stepExecutors
 	}
 
 	switch step.Action.Type {
-	case "command":
-		r := executors.command(step.Action.Device, step.Action.Command, step.Action.Source, step.Action.Value)
-		result.Passed = r.Success
-		if !r.Success && r.Blocked {
-			result.Passed = true
-			r.Detail += " (expected — hardened policy is working)"
-		}
-		result.Detail = r.Detail
-
 	case "sequence":
 		allOK := true
 		for _, cmd := range step.Action.Commands {
@@ -55,6 +50,10 @@ func evaluateTestStep(index int, step labs.ScenarioStep, executors stepExecutors
 		result.Detail = r.Detail
 
 	case "check":
+		var runDetail string
+		if len(step.Action.Run) > 0 && executors.runWire != nil {
+			runDetail = executors.runWire(step.Action.Run)
+		}
 		checks := executors.check(step.Action.Expect)
 		allPass := true
 		for _, check := range checks {
@@ -65,6 +64,9 @@ func evaluateTestStep(index int, step labs.ScenarioStep, executors stepExecutors
 		}
 		result.Passed = allPass
 		result.Detail = fmt.Sprintf("%d checks, all pass: %v", len(checks), allPass)
+		if runDetail != "" {
+			result.Detail = runDetail + "; " + result.Detail
+		}
 
 	case "probe":
 		probes := executors.probe(step)

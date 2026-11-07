@@ -16,10 +16,11 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// probes without host discovery, commit-time established-flow re-evaluation,
 	// containd 0.1.39 configuration-CLI and review navigation, and breaker
 	// lockout telemetry in the EU acceptance inventory, and the EU portal's
-	// valid/quality-flag wording (without changing protocol acceptance).
+	// valid/quality-flag wording (without changing protocol acceptance), and
+	// catalog titles instead of action IDs in implementation prose.
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "a80eaaebbc5e344ffb7ac3d9e683f662ed7502e4e4d2f65e41b1006a512cf745",
-		"eu-iec104-substation": "9bd4b8e82daf2816868c711916fb1c7dfb8b3bb7bab12afedd73d743442d58fb",
+		"us-dnp3-substation":   "d293e78dba6f52c4bc85e518c237d27950ffbb188031b03a3329835c8b98e6e4",
+		"eu-iec104-substation": "05023057ced0dc60058c46ed657b824c2fc6201f7539dee6519cadce693c2944",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

@@ -17,7 +17,6 @@ export function injectDynamicContent(desc: string, stepId: string, plan: Compile
 }
 export function actionLabel(type: string): string {
   switch (type) {
-    case "command": return "auto";
     case "check": return "verify";
     case "firewall": return "config";
     case "sequence": return "auto";

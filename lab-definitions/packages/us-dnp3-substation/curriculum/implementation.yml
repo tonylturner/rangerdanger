@@ -17,7 +17,7 @@ phases:
     The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
     On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
     For manual work, use Hardened as the judging target. With
-    `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
+    **Restrict enterprise → vendor remote access** selected, replace broad enterprise→vendor
     access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
     remain reachable. **Create rule** and **Delete** do not reload the firewall.
     Run `commit` in the configuration CLI or **Commit** on the **Configuration** page.
@@ -93,12 +93,12 @@ phases:
 
     | Path | Owning action | Selected / deferred |
     |---|---|---|
-    | Kali→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
-    | Enterprise→OT ICS and web | `block-enterprise-to-ot` | deny / allow |
-    | Enterprise→field | `block-enterprise-to-field` | deny / allow |
-    | Vendor→OT Modbus and web | `restrict-vendor-to-ot` | deny / allow |
-    | Vendor and eng-ws→field | `block-vendor-to-field` | deny / allow |
-    | Non-RTAC OT hosts→field | `pin-rtac-to-field` | deny / allow |
+    | Kali→vendor RDP/3389 and VNC/5900 | Restrict enterprise → vendor remote access | deny / allow |
+    | Enterprise→OT ICS and web | Block enterprise → OT Operations ICS ports | deny / allow |
+    | Enterprise→field | Block enterprise → field direct access | deny / allow |
+    | Vendor→OT Modbus and web | Restrict vendor → OT to SSH/HTTPS only | deny / allow |
+    | Vendor and eng-ws→field | Block vendor → field devices entirely | deny / allow |
+    | Non-RTAC OT hosts→field | Pin field-device access to RTAC source IP | deny / allow |
 
     A deferred exposure is a prevention gap against Hardened, not a failed
     plan proof if it matches this plan. Do not change policy just to hide the gap.

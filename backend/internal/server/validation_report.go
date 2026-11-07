@@ -13,6 +13,8 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/gin-gonic/gin"
+
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
 // validation_report.go powers Lab 2.4's "Generate Validation Report"
@@ -208,7 +210,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	authPass, authTotal := tally.authPass, tally.authTotal
 	unauthPass, unauthTotal := tally.unauthPass, tally.unauthTotal
 	skipped, result := tally.skipped, acceptance.Pass
-	md := recipe.renderValidationMarkdown(active, source, hash, pcapHostPath, pcapOK, pcapSummary,
+	md := recipe.renderValidationMarkdown(gen.Package, active, source, hash, pcapHostPath, pcapOK, pcapSummary,
 		rows, authPass, authTotal, unauthPass, unauthTotal, skipped, result)
 
 	md += fmt.Sprintf("\nPolicy proof window: %s — %s; full firewall hash `%s`; stable: %t.\n", reportStart.Format(time.RFC3339Nano), reportEnd.Format(time.RFC3339Nano), fullHash, stable)
@@ -397,24 +399,15 @@ func (s *Server) execDetached(ctx context.Context, cli *client.Client, container
 	return execID.ID, nil
 }
 
-func (recipe *packageRecipe) renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK bool, pcapSummary string,
+func (recipe *packageRecipe) renderValidationMarkdown(pkg labs.Package, active, source, hash, pcapHostPath string, pcapOK bool, pcapSummary string,
 	rows []validationRow, authPass, authTotal, unauthPass, unauthTotal, skipped int, result bool) string {
-
-	policyLabel := map[string]string{
-		"weak":     "weak baseline",
-		"improved": "hardened reference",
-		"custom":   "your custom policy",
-	}[active]
-	if policyLabel == "" {
-		policyLabel = active
-	}
 
 	var b strings.Builder
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	fmt.Fprintf(&b, "# %s\n\n", recipe.report.title)
 	fmt.Fprintf(&b, "| Field | Value |\n|---|---|\n")
 	fmt.Fprintf(&b, "| **Generated** | %s |\n", now)
-	fmt.Fprintf(&b, "| **Policy** | %s (source: `%s`, sha256:%s) |\n", policyLabel, source, hash)
+	fmt.Fprintf(&b, "| **Policy** | %s (source: `%s`, sha256:%s) |\n", policyLabel(pkg, active), source, hash)
 	if pcapOK {
 		fmt.Fprintf(&b, "| **PCAP evidence** | `%s` |\n", pcapHostPath)
 	} else if strings.HasPrefix(pcapSummary, "Capture ") {

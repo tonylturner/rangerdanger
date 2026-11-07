@@ -1,5 +1,11 @@
 package labs
 
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
+
 // LabYAML mirrors the YAML schema for a package's topology template.
 type LabYAML struct {
 	ID             string                     `yaml:"id"`
@@ -18,12 +24,26 @@ type LabYAML struct {
 
 // NetworkYAML defines a virtual network.
 type NetworkYAML struct {
-	ID          string `yaml:"id" json:"id,omitempty"`
-	Name        string `yaml:"name" json:"name"`
-	CIDR        string `yaml:"cidr" json:"cidr,omitempty"`
-	Subnet      string `yaml:"subnet" json:"subnet,omitempty"`
-	Zone        string `yaml:"zone" json:"zone,omitempty"`
-	Description string `yaml:"description" json:"description,omitempty"`
+	ID          string               `yaml:"id" json:"id,omitempty"`
+	Name        string               `yaml:"name" json:"name"`
+	Purdue      string               `yaml:"purdue" json:"purdue"`
+	TargetSL    *TargetSecurityLevel `yaml:"target_sl,omitempty" json:"target_sl,omitempty"`
+	CIDR        string               `yaml:"cidr" json:"cidr,omitempty"`
+	Subnet      string               `yaml:"subnet" json:"subnet,omitempty"`
+	Zone        string               `yaml:"zone" json:"zone,omitempty"`
+	Description string               `yaml:"description" json:"description,omitempty"`
+}
+
+// TargetSecurityLevel is an integer design target, never a measured level.
+type TargetSecurityLevel int
+
+// UnmarshalYAML rejects non-integer scalars rather than silently truncating
+// fractions as yaml.v3's ordinary int decoding does.
+func (sl *TargetSecurityLevel) UnmarshalYAML(value *yaml.Node) error {
+	if value.Tag != "!!int" {
+		return fmt.Errorf("target_sl must be an integer (1-4)")
+	}
+	return value.Decode((*int)(sl))
 }
 
 // NodeYAML describes a node template in YAML.
@@ -70,16 +90,23 @@ type ScenarioStep struct {
 
 // StepAction defines an executable action for a scenario step.
 type StepAction struct {
-	Type     string          `yaml:"type" json:"type"`                             // "command", "check", "firewall", "sequence", "decision", "probe", "session-cut"
-	Device   string          `yaml:"device,omitempty" json:"device,omitempty"`     // for type=command
-	Command  string          `yaml:"command,omitempty" json:"command,omitempty"`   // for type=command
-	Source   string          `yaml:"source,omitempty" json:"source,omitempty"`     // for type=command
-	Value    *float64        `yaml:"value,omitempty" json:"value,omitempty"`       // for type=command (e.g. set_tap)
+	Type     string          `yaml:"type" json:"type"`                             // "check", "firewall", "sequence", "decision", "probe", "session-cut"
 	Flow     string          `yaml:"flow,omitempty" json:"flow,omitempty"`         // for type=session-cut
 	Config   string          `yaml:"config,omitempty" json:"config,omitempty"`     // for type=firewall
 	Expect   map[string]any  `yaml:"expect,omitempty" json:"expect,omitempty"`     // for type=check
 	Targets  []ProbeTarget   `yaml:"targets,omitempty" json:"targets,omitempty"`   // for type=probe
 	Commands []StepActionCmd `yaml:"commands,omitempty" json:"commands,omitempty"` // for type=sequence
+	Run      []StepRun       `yaml:"run,omitempty" json:"run,omitempty"`           // for type=check
+}
+
+// StepRun is one wire command a check presumes the student already sent in
+// this step. The workshop test suite replays the list, in order, on each
+// entry's node through the exec path, then lets state propagate before it
+// evaluates the check (the check stays the oracle; a non-zero exit is noted,
+// not a failure). Interactive Execute Step ignores Run and stays read-only.
+type StepRun struct {
+	Node    string `yaml:"node" json:"node"`
+	Command string `yaml:"command" json:"command"`
 }
 
 // ProbeTarget identifies a TCP destination and optional source override.

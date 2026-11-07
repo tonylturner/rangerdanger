@@ -43,6 +43,18 @@ class SuiteAccountingTests(unittest.TestCase):
         altered["remediation-planning"][0]["kind"] = "executed"
         self.assertNotEqual(table, altered)
 
+    def test_failure_names_each_failed_step_and_reset(self):
+        response = json.loads((FIXTURES / "valid.json").read_text())
+        scenario = response["scenarios"][0]
+        scenario["steps"][0].update(passed=False, detail="1 checks, all pass: false")
+        scenario.update(passed=False, reset_ok=False, reset_detail="relay did not close")
+        response.update(passed=2, failed=1, reset_failures=1)
+        with self.assertRaises(ValueError) as caught:
+            self.accounting.validate(response, self.accounting.expected_table(FIXTURES))
+        message = str(caught.exception)
+        self.assertIn('example step 0 "Execute a check": 1 checks, all pass: false', message)
+        self.assertIn("example reset: relay did not close", message)
+
     def test_auto_pass_true_is_not_execution(self):
         response = json.loads((FIXTURES / "valid.json").read_text())
         response["scenarios"][0]["steps"][0]["auto_pass"] = True

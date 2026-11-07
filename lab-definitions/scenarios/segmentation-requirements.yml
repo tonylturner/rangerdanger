@@ -122,7 +122,7 @@ steps:
       | OT Ops → Field | Modbus (502), DNP3 (20000), HTTP (8080) - **RTAC only** | source-pin to `10.30.30.20` (1.3 verdict 4). HTTP/8080 is the field devices' lab-only status API the RTAC polls for health (`/api/state` on each device); it would not exist on a production relay. |
 
       Detection layer (1.3 verdict 5):
-      - `modbus-dpi` and `dnp3-dpi` add protocol visibility, not prevention.
+      - **Apply Modbus ICS DPI - provide function-code visibility** and **Apply DNP3 ICS DPI - detect and log Direct Operate writes** add protocol visibility, not prevention.
       - L4 controls foreign-source reachability. They do not authorize commands within an allowed RTAC session. Keep that residual risk explicit.
       :::
   - id: resourcing-reality-check

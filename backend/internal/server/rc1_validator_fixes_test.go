@@ -24,7 +24,7 @@ func TestCaptureEvidenceRequiresSuccessfulAnalysableCapture(t *testing.T) {
 	if !strings.Contains(summary, "10.10.10.4") {
 		t.Fatalf("capture source missing from analysis: %q", summary)
 	}
-	md := usRecipe.renderValidationMarkdown("custom", "source", "hash", "path", false, "Capture analysis failed: PCAP contains no analysable packets", nil, 0, 0, 0, 0, 0, false)
+	md := usRecipe.renderValidationMarkdown(usGeneration(nil).Package, "custom", "source", "hash", "path", false, "Capture analysis failed: PCAP contains no analysable packets", nil, 0, 0, 0, 0, 0, false)
 	if !strings.Contains(md, "PCAP contains no analysable packets") {
 		t.Fatalf("report hid the capture failure: %s", md)
 	}

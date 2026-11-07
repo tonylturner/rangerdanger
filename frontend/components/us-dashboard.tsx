@@ -4,7 +4,7 @@ import { MetricsOverview } from "./metrics-overview";
 import { DashboardStatusCard, QuickLink } from "./overview-cards";
 import { useActiveFirewall, useWorkshopStatus } from "../lib/live-queries";
 import { usePackagePolicies } from "../lib/operator-queries";
-import { activePolicyWording, US_WORKSHOP_POLICY_WORDING } from "../lib/policy-wording";
+import { activePolicyWording } from "../lib/policy-wording";
 import { isRangeNotReady } from "../lib/range";
 
 // The US package's overview: RTAC, field devices, feeder metrics.
@@ -23,8 +23,8 @@ export function UsDashboard() {
   const scenarioCount = ws?.scenario_count ?? 0;
   const activeConfig = active?.active_config ?? ws?.firewall_config;
   const firewallPolicy = activeConfig
-    ? activePolicyWording(activeConfig, policies, US_WORKSHOP_POLICY_WORDING, active?.policy_source, active?.plan).label
-    : "Weak Baseline";
+    ? activePolicyWording(activeConfig, policies, active?.policy_source, active?.plan).label
+    : "Loading…";
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">

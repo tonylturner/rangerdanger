@@ -291,42 +291,48 @@
       "name": "Enterprise Zone",
       "subnet": "10.10.10.0/24",
       "zone": "wan",
-      "description": "Enterprise attacker workstation and untrusted ingress"
+      "description": "Enterprise attacker workstation and untrusted ingress",
+      "purdue": "Level 4"
     },
     {
       "id": "vendor_net",
       "name": "Vendor / Engineering Zone",
       "subnet": "10.20.20.0/24",
       "zone": "dmz",
-      "description": "Vendor access and engineering maintenance"
+      "description": "Vendor access and engineering maintenance",
+      "purdue": "Level 3.5"
     },
     {
       "id": "station_net",
       "name": "Station Zone",
       "subnet": "10.30.30.0/24",
       "zone": "lan1",
-      "description": "IEC104 RTU, OpenPLC voltage controller and station clock"
+      "description": "IEC104 RTU, OpenPLC voltage controller and station clock",
+      "purdue": "Level 1–2"
     },
     {
       "id": "field_net",
       "name": "Field Device Zone",
       "subnet": "10.40.40.0/24",
       "zone": "lan2",
-      "description": "Two breakers, two RMUs and OLTC Modbus endpoints"
+      "description": "Two breakers, two RMUs and OLTC Modbus endpoints",
+      "purdue": "Level 1"
     },
     {
       "id": "control_centre_net",
       "name": "Control Centre Zone",
       "subnet": "10.60.60.0/24",
       "zone": "lan4",
-      "description": "IEC104 control-centre client"
+      "description": "IEC104 control-centre client",
+      "purdue": "Level 3"
     },
     {
       "id": "ops_dmz_net",
       "name": "Operations DMZ",
       "subnet": "10.70.70.0/24",
       "zone": "lan5",
-      "description": "Read-only historian, fed by control-centre snapshots"
+      "description": "Read-only historian, fed by control-centre snapshots",
+      "purdue": "Level 3.5"
     }
   ],
   "nodes": [

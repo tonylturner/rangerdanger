@@ -177,6 +177,30 @@ function renderStep(authored: Scenario, stepId: string, binding: CurriculumBindi
   return { ...tree, close: () => { tree.unmount(); client.clear(); } };
 }
 
+describe("Execute Step command log", () => {
+  it.each([US_CURRICULUM, EU])("logs failed checks as amber NOT MET in $roles.implementation", async (binding) => {
+    const authored: Scenario = {
+      ...scenario,
+      steps: [{ id: "check", title: "Check breaker", description: "Read device state", action: { type: "check" } }],
+    };
+    const execute = vi.spyOn(api, "executeScenarioStep").mockResolvedValue({
+      step_index: 0, step_title: "Check breaker", action_type: "check", success: false,
+      results: [{ action: "breaker_closed", success: false, detail: "Expected false; observed true" }],
+      timestamp: "2026-11-07T00:00:00Z",
+    });
+    const tree = renderStep(authored, "check", binding);
+    try {
+      fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
+      const line = await tree.findByText(/^\[NOT MET\] breaker_closed: Expected false; observed true$/);
+      expect(execute).toHaveBeenCalledWith(authored.id, 0);
+      expect(line.classList.contains("text-amber-400")).toBe(true);
+      expect(line.textContent).not.toContain("BLOCKED");
+      expect(loadProgress(scope, authored).cmdLog).toEqual([line.textContent]);
+      expect(loadProgress(scope, authored).completedStepIds).toEqual([]);
+    } finally { tree.close(); }
+  });
+});
+
 describe("authored description → Run → node exec", () => {
   it.each([US_CURRICULUM, EU])("logs package-neutral scenario generation", async (binding) => {
     vi.spyOn(api, "startTrafficGeneration").mockResolvedValue({

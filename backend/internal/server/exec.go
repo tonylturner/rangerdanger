@@ -1,19 +1,15 @@
 package server
 
 import (
+	"context"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-)
 
-// Allowed command prefixes for the exec endpoint.
-var allowedCommands = []string{
-	"nmap", "mbpoll", "dnp3poll", "dnp3cmd", "iec104cmd", "curl", "tshark",
-	"tcpdump", "nc", "ping", "traceroute", "wget", "cat", "ls",
-	"ip", "ss", "netstat",
-}
+	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
+)
 
 type execRequest struct {
 	Command    string `json:"command"`
@@ -51,18 +47,9 @@ func (s *Server) handleWorkshopExec(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	containerName := svc.Container
-
-	timeout := req.TimeoutSec
-	if timeout <= 0 {
-		timeout = 30
-	}
 
 	start := time.Now()
-
-	// Execute via shell so pipes and args work
-	cmd := []string{"/bin/sh", "-c", req.Command}
-	stdout, stderr, exitCode, err := s.orchestrator.ExecCommand(c.Request.Context(), containerName, cmd, timeout)
+	stdout, stderr, exitCode, err := s.runShellCommand(c.Request.Context(), svc.Container, req.Command, req.TimeoutSec)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":  "exec failed",
@@ -81,12 +68,30 @@ func (s *Server) handleWorkshopExec(c *gin.Context) {
 	})
 }
 
+// isAllowedCommand defers to the labs allowlist so the exec endpoint and a
+// check step's authored run commands accept exactly the same tools.
 func isAllowedCommand(cmd string) bool {
-	trimmed := strings.TrimSpace(cmd)
-	for _, prefix := range allowedCommands {
-		if strings.HasPrefix(trimmed, prefix+" ") || trimmed == prefix {
-			return true
-		}
+	return labs.IsAllowedCommand(cmd)
+}
+
+// runShellCommand runs one command in a container through the shared exec
+// path: a /bin/sh -c invocation with the Run-button default timeout. The
+// workshop exec endpoint and the test suite's replayed wire commands both use
+// it, so there is no second exec implementation.
+func (s *Server) runShellCommand(ctx context.Context, containerName, command string, timeoutSec int) (string, string, int, error) {
+	if timeoutSec <= 0 {
+		timeoutSec = 30
 	}
-	return false
+	return s.execInContainer(ctx, containerName, []string{"/bin/sh", "-c", command}, timeoutSec)
+}
+
+// execOnNode resolves a package node to its container and runs the command
+// through runShellCommand. The test suite uses it to replay a check step's
+// authored wire commands on the node the student runs them from.
+func (s *Server) execOnNode(ctx context.Context, gen *lifecycle.Generation, nodeID, command string, timeoutSec int) (string, string, int, error) {
+	svc, err := nodeService(gen, nodeID)
+	if err != nil {
+		return "", "", 0, err
+	}
+	return s.runShellCommand(ctx, svc.Container, command, timeoutSec)
 }

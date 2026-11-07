@@ -123,7 +123,7 @@ steps:
     expected_config: weak
     node: kali-1
     description: |
-      Before you change anything, run the commands that confirmed your latent exposure in Lab 1.2 step 7 - this time with intent. Document what the weak baseline allows. This is your "before" picture; every test below should succeed now. After apply, each result follows its owning action.
+      Before you change anything, run the commands that confirmed your latent exposure in Lab 1.2 step 7 - this time with intent. Observe what the weak baseline allows. This is your "before" picture; every test below should succeed now. After apply, each result follows its owning action.
 
       **From the kali terminal** (`kali-1` on the [Network Map](/console)):
 
@@ -176,6 +176,38 @@ steps:
       DENY. Only if needed, use **Change default** → **DENY** → **Stage default**.
       Review consequences and the complete candidate diff before commit.
 
+      ### Review a proposed change
+
+      **Prepared change request CR-22** removes broad cross-zone trust, keeps
+      management access, and keeps only these operational allows:
+
+      | Allow | Source → destination | Port |
+      |---|---|---|
+      | RTAC→field web | 10.30.30.20→field devices | TCP/8080 |
+      | GPS→field time | 10.30.30.50→field devices | UDP/123 |
+
+      Compare it with the operational conduits from your Lab 1.3 design before
+      approving it. Review only: never apply an incomplete request to create an
+      outage. Keep a known-good export and agree a rollback owner and trigger
+      before any actual change.
+
+      :::decision id=change-request-gap options=RTAC_TO_FIELD_POLLING,ENTERPRISE_TO_FIELD_DNP3,GPS_TO_FIELD_TIME,NOTHING_MISSING correct=RTAC_TO_FIELD_POLLING
+      Which required conduit does CR-22 drop?
+      :::why
+      RTAC field polling (10.30.30.20→field on TCP/502 Modbus and TCP/20000 DNP3) is
+      missing, so the RTAC loses its field data and the HMI goes stale.
+      Enterprise→field DNP3 is the attack path to remove, not a requirement.
+      GPS→field time is in the request.
+      :::
+
+      :::decision id=change-request-review options=APPROVE_AS_WRITTEN,CORRECT_BEFORE_COMMIT,UNCLEAR correct=CORRECT_BEFORE_COMMIT
+      What should happen to this proposed change before commit?
+      :::why
+      Correct the missing operational allow before commit: RTAC field polling fails and the HMI loses fresh device communications.
+      Default DENY cannot replace a required allow. Execute Step checks the running
+      policy; it does not grade this review or approve the request.
+      :::
+
       :::guided
       Apply Your Plan in the next step. Use Apply Hardened only for the reference.
       :::
@@ -223,7 +255,7 @@ steps:
       The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
       On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
       For manual work, use Hardened as the judging target. With
-      `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
+      **Restrict enterprise → vendor remote access** selected, replace broad enterprise→vendor
       access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
       remain reachable. **Create rule** and **Delete** do not reload the firewall.
       Keep the Phase 2 deletes staged until all replacements are in this candidate.
@@ -287,17 +319,21 @@ steps:
     title: "Phase 4 - Enable logging and visibility"
     expected_config: hardened
     description: |
-      Inspect the log flags in the compiled rule table. `improve-logging`,
-      `modbus-dpi` and `dnp3-dpi` add visibility, not prevention. Deferring them
-      changes no TCP verdict. Do not add flags by hand and still call the result
-      an unchanged applied plan; a running-hash change clears plan provenance.
+      Inspect the log flags in the compiled rule table.
+      **Improve firewall logging and PCAP retention**,
+      **Apply Modbus ICS DPI - provide function-code visibility** and
+      **Apply DNP3 ICS DPI - detect and log Direct Operate writes** add
+      visibility, not prevention. Deferring them changes no TCP verdict. Do not
+      add flags by hand and still call the result an unchanged applied plan; a
+      running-hash change clears plan provenance.
 
-      With `restrict-vendor-to-ot` selected, `deny-vendor-to-ot` explicitly
-      denies Vendor DMZ → OT Operations on TCP 8080, 1881, 502 and 20000.
-      `improve-logging` enables its log flag, alongside the HTTPS/443 and
-      SSH/22 allow rule and the selected vendor → field deny. Hardened logs
-      these rules too. If the restriction is deferred, its Weak exposure
-      stays open; selecting logging alone does not close or log that exposure.
+      With **Restrict vendor → OT to SSH/HTTPS only** selected, `deny-vendor-to-ot`
+      explicitly denies Vendor DMZ → OT Operations on TCP 8080, 1881, 502 and 20000.
+      **Improve firewall logging and PCAP retention** enables its log flag,
+      alongside the HTTPS/443 and SSH/22 allow rule and the selected vendor →
+      field deny. Hardened logs these rules too. If the restriction is deferred,
+      its Weak exposure stays open; selecting logging alone does not close or log
+      that exposure.
 
       The L4 source pin enforces; DPI detects and logs. Explicit logged rules
       can provide tuple evidence. Default DENY is a silent backstop. A missing
@@ -356,12 +392,12 @@ steps:
 
       | Path | Owning action | Selected / deferred |
       |---|---|---|
-      | Kali→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
-      | Enterprise→OT ICS and web | `block-enterprise-to-ot` | deny / allow |
-      | Enterprise→field | `block-enterprise-to-field` | deny / allow |
-      | Vendor→OT Modbus and web | `restrict-vendor-to-ot` | deny / allow |
-      | Vendor and eng-ws→field | `block-vendor-to-field` | deny / allow |
-      | Non-RTAC OT hosts→field | `pin-rtac-to-field` | deny / allow |
+      | Kali→vendor RDP/3389 and VNC/5900 | Restrict enterprise → vendor remote access | deny / allow |
+      | Enterprise→OT ICS and web | Block enterprise → OT Operations ICS ports | deny / allow |
+      | Enterprise→field | Block enterprise → field direct access | deny / allow |
+      | Vendor→OT Modbus and web | Restrict vendor → OT to SSH/HTTPS only | deny / allow |
+      | Vendor and eng-ws→field | Block vendor → field devices entirely | deny / allow |
+      | Non-RTAC OT hosts→field | Pin field-device access to RTAC source IP | deny / allow |
 
       A deferred exposure is a prevention gap against Hardened, not a failed
       plan proof if it matches this plan. Do not change policy just to hide the gap.
@@ -429,9 +465,41 @@ steps:
       hash. Check `GET /api/firewall/active` to confirm the current plan and
       running hash before and after probing.
 
-      A partial plan is not equivalent to Hardened. List its deferred exposures
-      and preserve both plan proof and Hardened acceptance results. Named and
+      A partial plan is not equivalent to Hardened. Use structured plan coverage
+      for its deferred exposures and preserve both plan proof and Hardened acceptance results. Named and
       manual policies are judged against Hardened; they have no plan proof.
+
+      ### Save evidence status for Lab 2.4
+
+      These statuses carry forward automatically; they describe your evidence, not a
+      passing score. Keep the actual artifacts with their UTC window and running hash.
+      Update the statuses if you collect missing evidence; Lab 2.4 regenerates proof
+      against its own current policy window.
+
+      :::decision id=evidence-policy options=READY,MISSING,UNCLEAR
+      Do you have the running policy export and its identity (plus the plan record when applicable)?
+      :::why
+      READY means the export and running identity agree. MISSING needs collection; UNCLEAR needs an identity check before approval.
+      :::
+
+      :::decision id=evidence-positive options=READY,MISSING,UNCLEAR
+      Do you have positive-test and operational-continuity evidence?
+      :::why
+      READY needs authorized flows and independent operator/process observations. MISSING or UNCLEAR means connectivity alone has not established continuity.
+      :::
+
+      :::decision id=evidence-negative options=READY,MISSING,UNCLEAR
+      Do you have the negative-test results, including deferred exposures?
+      :::why
+      READY means real-source results are retained with the plan comparison. Deferred reachable paths remain prevention gaps, not skipped tests.
+      :::
+
+      :::decision id=evidence-capture options=READY,MISSING,UNCLEAR
+      Do you have PCAP evidence tied to the test window?
+      :::why
+      READY means the capture is retained and correlated with the policy and test times. MISSING or UNCLEAR needs capture review; an ingress SYN alone is not delivery proof.
+      :::
+
     action:
       type: check
       expect:

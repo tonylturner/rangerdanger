@@ -45,19 +45,65 @@ steps:
   expected_config: weak
   node: kali-1
   description: |
-    From the **Kali terminal** (10.10.10.50), issue the prescribed unauthorized SBO C_DC (type 46) breaker OPEN at IOA 3001:
+    > **Tip:** click **Show terminal** (top right) to run this from an embedded
+    > shell on the **Kali** box (`10.10.10.50`, enterprise zone), or use the
+    > **copy** button on the command block and paste into your own terminal.
+
+    From Kali, under the weak baseline, issue the prescribed unauthorized breaker
+    OPEN against the RTU (`10.30.30.20`, IEC 104 on TCP 2404). The telegram is a
+    **C_DC** (double command, IEC 104 type 46) to **IOA** (Information Object
+    Address) 3001 — the station breaker — sent in **SBO** (Select-Before-Operate)
+    mode:
 
         iec104cmd 10.30.30.20 dc 3001 open -sbo --json
 
-    This is a **manual wire command**, not a simulator action button. Observe the loss of supply in the physical feeder and fresh CC breaker feedback after the poll/solve interval. Record ACT-CON/ACT-TERM and source; a command acknowledgement alone is not physical outcome. There is no auto-reclose model.
+    `dc 3001 open` is the double-command OPEN at IOA 3001; `-sbo` sends the select
+    then the operate; `--json` prints each telegram so you can read the activation
+    confirmation (ACT-CON) and termination (ACT-TERM) the RTU returns. See
+    [IEC 104 frames, addresses and the point map](/knowledge#iec104-wire-model)
+    for the telegram structure and [Select-before-operate is sequencing, not
+    authorization](/knowledge#iec104-sbo-commands) for what SBO does and does not prove.
+
+    This is a **real wire command** — the telegram crosses the firewall to the
+    RTU. Execute Step on this step only reads the resulting device state; it does
+    not send the command for you.
+
+    Wait for the RTU's poll/solve interval, then confirm the outcome two ways:
+
+    - **Physical System** view in [/substation](/substation): the feeder section
+      past the breaker de-energizes and loses supply. There is no auto-reclose
+      model — the breaker stays open until an operator closes it.
+    - **Control Centre**: after the next General Interrogation (**GI**) or cyclic
+      report, the CC breaker-position feedback flips to OPEN. The EU range has no
+      local HMI; the Control Centre is the operator-facing view. Record the
+      ACT-CON/ACT-TERM telegrams and the command source — a command
+      acknowledgement alone is not the physical outcome.
+
+    **Why it worked:** the weak baseline allows enterprise → RTU on TCP 2404 with
+    no source pin, so Kali's telegram reaches the RTU. SBO only sequences a select
+    before the operate; it does not authenticate the sender. IEC 104 command
+    observation would log this telegram, but logging is not prevention: the L4
+    source pin enforces; DPI detects and logs.
 
     :::decision id=attack-hmi-impact options="LOSS_OF_SUPPLY,LOW_VOLTAGE_ALARM,NO_ALARM" correct=LOSS_OF_SUPPLY
     What did the feeder show?
+    :::why
+    The breaker OPEN dropped the downstream section, so the feeder lost supply.
+    It is not a low-voltage condition (voltage regulation was never the issue) and
+    not "no alarm" — the Control Centre shows the section de-energized once fresh
+    observations arrive.
     :::
 
     :::hint SBO is not authorization
     Weak allows enterprise→RTU:2404. Select/execute sequencing does not authenticate Kali. [SBO and command evidence](/knowledge#iec104-sbo-commands).
     :::
+  action:
+    type: check
+    run:
+      - node: kali-1
+        command: iec104cmd 10.30.30.20 dc 3001 open -sbo --json
+    expect:
+      breaker_closed: false
 - id: restore-the-substation
   title: Restore the substation
   expected_config: weak
@@ -74,11 +120,13 @@ steps:
       command: reset
 - id: apply-the-hardened-policy
   title: Apply the hardened policy
+  expected_config: hardened
   description: |
     Apply your hardened boundary before retesting.
 
     :::guided
-    Use Apply Hardened for the reference, or Apply Your Plan to test your funded changes.
+    Apply Your Plan to test the choices from Lab 1.4. Use Apply Hardened only for
+    the full reference.
     :::
     Apply your policy before using Execute Step. Execute Step checks the active policy without replacing it; its recorded identity must match, and an applied plan must retain matching provenance.
 
@@ -86,10 +134,11 @@ steps:
     Recommit your Lab 2.2 named-source policy. Only CC 10.60.60.20 may initiate RTU TCP/2404. Preserve six operational intents, deny new foreign sources and inspect the running rules. A plan that defers enterprise-to-station closure may still expose this attack.
     :::
 
-    `block-enterprise-to-station` owns the Kali→RTU TCP/2404 path. If selected,
-    expect denial. If deferred, the Weak exposure stays open and the breaker
-    command can still land. `iec104-dpi` adds explicit monitor rules on the allowed
-    CC conduit, not foreign-source prevention; logging changes no rule.
+    **Block enterprise → station RTU access** owns the Kali→RTU TCP/2404 path. If
+    selected, expect denial. If deferred, the Weak exposure stays open and the
+    breaker command can still land. **Monitor IEC 104 commands** adds explicit
+    monitor rules on the allowed CC conduit, not foreign-source prevention;
+    logging changes no rule.
     The L4 source pin enforces; DPI detects and logs. A would-deny match is not
     a denied command, and monitoring never satisfies a BLOCK requirement.
 
@@ -113,30 +162,48 @@ steps:
 
         iec104cmd 10.30.30.20 dc 3001 open -sbo --json
 
-    With `block-enterprise-to-station` selected, expect a connection timeout;
-    the breaker stays closed and supply remains. With it deferred, the command
+    With **Block enterprise → station RTU access** selected, expect a connection
+    timeout; the breaker stays closed and supply remains. With it deferred, the command
     still opens the breaker and removes supply. Record physical truth and fresh
     CC feedback. The deferred result can pass plan proof but leaves a Hardened
     prevention gap. An acknowledgement alone is not the physical outcome.
 
     :::decision id=retest-hmi-state options="NORMAL_OPS,LOSS_OF_SUPPLY,UNCHANGED_FROM_ATTACK"
     What did the feeder show for this applied plan?
+    :::why
+    This depends on your plan, so it is not graded. A selected
+    **Block enterprise → station RTU access** closure denies the retest: the
+    breaker stays closed and the feeder keeps supply (NORMAL_OPS). A deferred closure lets the
+    telegram land and the feeder loses supply again (LOSS_OF_SUPPLY). Read the
+    physical outcome and fresh CC feedback, not the Execute Step label.
     :::
     :::decision id=retest-defense-in-depth options="L4_SOURCE_PIN,IEC104_DPI,EITHER_LAYER" correct=L4_SOURCE_PIN
     When the foreign path is denied, which layer enforces it?
+    :::why
+    The L4 source pin enforces; DPI detects and logs. **Monitor IEC 104 commands** adds
+    monitor rules on the allowed CC conduit only; it never blocks a foreign source. So the
+    source pin — not IEC 104 inspection — is what denies the Kali telegram.
     :::
 
     Restore the breaker and supply before Validate for every plan. Preserve
     wire/audit/solve evidence first. Use the prescribed breaker restoration,
     not Reset Lab to improve a verdict. Reset Lab reapplies Weak; if recovery
     needs it, reapply the intended plan and collect a new evidence window.
-    Required CC/RTU, HMI, GI and supply checks do not depend on the selected plan.
+    Required CC→RTU link, GI and supply checks do not depend on the selected plan.
 
     :::hint Preserve both claims
     A deferred command can match plan proof while failing Hardened acceptance.
     Neither TCP reachability nor a logged event establishes command authorization
     on an allowed CC session. Restore supply and fresh observations in all cases.
     :::
+  action:
+    type: check
+    run:
+      - node: kali-1
+        command: iec104cmd 10.30.30.20 dc 3001 open -sbo --json
+    expect:
+      breaker_closed: true
+      supply_present: true
 - id: validate
   title: Validate
   expected_config: hardened

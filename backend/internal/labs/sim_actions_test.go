@@ -13,14 +13,15 @@ func TestSimulationActionVocabulary(t *testing.T) {
 		capabilities []string
 		valid        bool
 	}{
-		{"fault", StepAction{Type: "command", Device: "process", Command: "fault_s1"}, []string{CapabilityProcessTruth}, true},
-		{"clear", StepAction{Type: "command", Device: "process", Command: "clear_fault"}, []string{CapabilityProcessTruth}, true},
-		{"reset", StepAction{Type: "command", Device: "breaker", Command: "reset"}, []string{CapabilityProcessTruth}, true},
+		{"fault", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "process", Command: "fault_s1"}}}, []string{CapabilityProcessTruth}, true},
+		{"clear", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "process", Command: "clear_fault"}}}, []string{CapabilityProcessTruth}, true},
+		{"reset", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "breaker", Command: "reset"}}}, []string{CapabilityProcessTruth}, true},
 		{"sequence", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "process", Command: "clear_fault"}, {Device: "breaker", Command: "reset"}}}, []string{CapabilityProcessTruth}, true},
-		{"not a supervisory command", StepAction{Type: "command", Device: "breaker", Command: "close"}, []string{CapabilityProcessTruth}, false},
-		{"not a US device", StepAction{Type: "command", Device: "relay", Command: "inject_fault"}, []string{CapabilityProcessTruth}, false},
-		{"US has no simulation vocabulary", StepAction{Type: "command", Device: "breaker", Command: "reset"}, electricalPackage, false},
-		{"no capability", StepAction{Type: "command", Device: "breaker", Command: "reset"}, nil, false},
+		{"not a supervisory command", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "breaker", Command: "close"}}}, []string{CapabilityProcessTruth}, false},
+		{"not a US device", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "relay", Command: "inject_fault"}}}, []string{CapabilityProcessTruth}, false},
+		{"US has no simulation vocabulary", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "breaker", Command: "reset"}}}, electricalPackage, false},
+		{"no capability", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "breaker", Command: "reset"}}}, nil, false},
+		{"retired command type", StepAction{Type: "command", Commands: []StepActionCmd{{Device: "breaker", Command: "reset"}}}, []string{CapabilityProcessTruth}, false},
 		{"session cut", StepAction{Type: "session-cut", Flow: "cc-rtu"}, []string{CapabilityPolicyContaind}, true},
 		{"unknown flow", StepAction{Type: "session-cut", Flow: "missing"}, []string{CapabilityPolicyContaind}, false},
 		{"empty flow", StepAction{Type: "session-cut"}, []string{CapabilityPolicyContaind}, false},

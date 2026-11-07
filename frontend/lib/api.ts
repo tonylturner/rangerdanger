@@ -97,6 +97,8 @@ export type LivenessBinding =
 export type TopologyNetwork = {
   id: string;
   name: string;
+  purdue: string;
+  target_sl?: number;
   zone?: string;
   subnet?: string;
   cidr?: string;
@@ -126,11 +128,7 @@ export type DecisionAction = {
 };
 
 export type StepAction = {
-  type: "command" | "check" | "firewall" | "sequence" | "manual" | "decision" | "probe" | "session-cut";
-  device?: string;
-  command?: string;
-  source?: string;
-  value?: number;
+  type: "check" | "firewall" | "sequence" | "manual" | "decision" | "probe" | "session-cut";
   flow?: string;
   config?: string;
   expect?: Record<string, unknown>;
@@ -188,8 +186,10 @@ export async function listScenarios() {
 // operator_view names the operator screen the package uses; it stays a
 // string because the portal must show an error for a value it does not
 // know (lib/operator-view.ts), never fall back to another view.
-// policies are the package.yml policy names /firewall/apply accepts,
+// policies carry package.yml names and display wording /firewall/apply accepts,
 // the package's default first (lib/policy-wording.ts).
+export type PackagePolicy = { name: string; label: string; description: string };
+
 export type PackageSummary = {
   curriculum?: CurriculumBinding;
   id: string;
@@ -197,7 +197,7 @@ export type PackageSummary = {
   revision: number;
   active: boolean;
   operator_view: string;
-  policies: string[];
+  policies: PackagePolicy[];
 };
 
 export async function listPackages() {

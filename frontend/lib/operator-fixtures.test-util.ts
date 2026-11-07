@@ -26,7 +26,10 @@ export const US_PACKAGE: PackageSummary = {
   revision: 3,
   active: true,
   operator_view: "us-dnp3-substation",
-  policies: ["weak", "improved"],
+  policies: [
+    { name: "weak", label: "Weak Baseline", description: "Cross-zone attacks succeed under this policy." },
+    { name: "improved", label: "Hardened Segmentation", description: "The reference segmentation policy for this range." },
+  ],
 };
 
 export const EU_PACKAGE: PackageSummary = {
@@ -35,7 +38,10 @@ export const EU_PACKAGE: PackageSummary = {
   revision: 1,
   active: true,
   operator_view: "eu-iec104",
-  policies: ["weak", "improved"],
+  policies: [
+    { name: "weak", label: "Weak Baseline", description: "Cross-zone attacks succeed under this policy." },
+    { name: "improved", label: "Hardened Segmentation", description: "The reference segmentation policy for this range." },
+  ],
 };
 
 export const NOW = Date.parse("2026-10-09T12:00:30.000Z");

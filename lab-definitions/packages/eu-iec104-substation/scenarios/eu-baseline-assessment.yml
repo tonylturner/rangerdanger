@@ -34,9 +34,20 @@ steps:
     RTU↔PLC and RTU↔GPS share station_net, so the firewall cannot enforce those same-subnet relationships. PLC→OLTC crosses Station→Field and IS visible. Read [Zones and conduits](/knowledge#eu-zone-conduit-design).
     :::
 
-    Toggle **Purdue Model View** to relate Enterprise, Vendor/Engineering, Control Centre, Operations DMZ, Station and Field to architectural levels. IEC 62443 zones/conduits add risk-based boundaries to that architecture; a Purdue band alone is not an enforcement policy. Inspect Enterprise→Field, Vendor→Station and Station→Field crossing tooltips, distinguishing exposed policy ports from currently observed traffic.
+    ### Switch to the Purdue Model view
 
-    > **Background:** if the level numbering is new to you, open [Purdue Model](/knowledge#eu-purdue-model) in the Knowledge base. Two minutes is enough—you'll use these labels in Lab 1.3 and 2.4. Purdue describes architecture; IEC 62443 adds zones, conduits and risk-based security requirements. Read [Zones and conduits](/knowledge#eu-zone-conduit-design) for the package's boundaries.
+    In the canvas controls toggle **Purdue Model View**. The layout re-bands the same hosts into the package's teaching interpretation of Purdue architectural levels:
+
+    - **Level 4 · Enterprise Zone** - Kali probe (`10.10.10.0/24`)
+    - **Level 3.5 · Vendor / Engineering Zone** - vendor-jump / eng-ws maintenance access (`10.20.20.0/24`)
+    - **Level 3.5 · Operations DMZ** - read-only historian (`10.70.70.0/24`)
+    - **Level 3 · Control Centre Zone** - site-wide supervisory master (`10.60.60.0/24`)
+    - **Level 1–2 · Station Zone** - RTU gateway (L1–2), PLC (L1) and clock (`10.30.30.0/24`)
+    - **Level 1 · Field Device Zone** - breakers / RMUs / OLTC (`10.40.40.0/24`)
+
+    Toggle the view off and on to connect each zone to its functional role. The two L3.5 zones have different roles and remain separate boundaries. IEC 62443 zones/conduits add risk-based boundaries to that architecture; a Purdue band alone is not an enforcement policy or a numeric Security Level target. Inspect Enterprise→Field, Vendor→Station and Station→Field crossing tooltips, distinguishing exposed policy ports from currently observed traffic.
+
+    > **Background:** if the level numbering is new to you, open [Purdue Model](/knowledge#eu-purdue-model) in the Knowledge base. Lab 1.3 returns to this architectural view; Lab 2.4 validates actual paths and continuity, not Purdue level labels. Purdue describes architecture; IEC 62443 adds zones, conduits and risk-based security requirements. Read [Zones and conduits](/knowledge#eu-zone-conduit-design) for the package's boundaries.
 
     :::decision id=zones-located options=ALL_SIX,SOME_MISSING,COULDNT_FIND correct=ALL_SIX
     Did you locate all six teaching zones on the canvas?

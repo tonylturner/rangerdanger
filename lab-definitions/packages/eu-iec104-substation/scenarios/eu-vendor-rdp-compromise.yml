@@ -64,22 +64,66 @@ steps:
   expected_config: weak
   node: vendor-jump-1
   description: |
-    From the **vendor-jump-1 terminal tab**, not Kali, issue the prescribed FC6 RMU1 OPEN (HR0 value 1):
+    > **Tip:** open the **vendor-jump-1 terminal tab** (not Kali). You are now
+    > operating from the vendor DMZ position (`10.20.20.10`) that hop one gave you.
+
+    From the vendor foothold, issue the prescribed **FC6** (Modbus write single
+    register) against the RMU: write `1` to holding register **HR0**, which opens
+    RMU1:
 
         mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
 
-    Observe the section outage and device audit. The Modbus peer must be **10.20.20.10**, not Kali 10.10.10.50 or RTU 10.30.30.20. The command has been laundered through the vendor foothold. Do not infer source from the user who clicked the terminal.
+    `-t 4` selects holding registers, `-0` uses zero-based addressing, `-r 0`
+    targets HR0, and the trailing `1` is the value written (RMU1 OPEN). This is a
+    **real wire write** from the vendor source; Execute Step on this step only
+    reads the resulting device state, it does not send the write for you.
+
+    Wait for the poll/solve interval, then confirm the outcome:
+
+    - **Physical System** view in [/substation](/substation): opening RMU1 drops
+      the section it feeds, so that section loses supply. The EU range has no
+      local HMI — the Control Centre and Physical System view are the
+      operator-facing surfaces.
+    - **Device audit:** the RMU records the Modbus request with its peer. The peer
+      reads **10.20.20.10** (the vendor jump host), not Kali 10.10.10.50 or the
+      RTU 10.30.30.20. The write was laundered through the vendor foothold, so do
+      not infer the source from whoever clicked the terminal. See
+      [Misuse of trusted hosts](/knowledge#eu-trusted-host-misuse) and
+      [Southbound Modbus: RTU polling of field devices](/knowledge#eu-southbound-modbus).
+
+    **Why it worked:** the kill chain had two open links — enterprise → vendor
+    remote access, and vendor → field Modbus. A valid vendor network position is
+    not authority to operate a field device, but the weak baseline never pins the
+    field source, so the vendor-origin write lands.
 
     :::decision id=vendor-attack-hmi-impact options="SECTION_OUTAGE,FEEDER_OUTAGE,NO_ALARM" correct=SECTION_OUTAGE
     What was the operational consequence?
+    :::why
+    Opening RMU1 isolated the section it feeds, so that section lost supply — a
+    section outage. It is not a whole-feeder outage (the breaker and the rest of
+    the ring stayed supplied) and not "no alarm": the Control Centre shows the
+    section de-energized once fresh observations arrive.
     :::
     :::decision id=vendor-source-attribution options="ATTACKER_IP,VENDOR_JUMP_IP,RTU_IP" correct=VENDOR_JUMP_IP
     Which source appears in the device audit?
+    :::why
+    The RMU records the Modbus peer it received the write from. Because the write
+    left the vendor jump host, the audit shows `10.20.20.10`, not the attacker's
+    enterprise address and not the RTU. Laundering through a trusted host is why
+    the enterprise→vendor hop must be closed.
     :::
 
     :::hint Same teaching activity, real wire write
-    This is a manual command step. No out-of-band simulator attack substitutes for the packet from the vendor source.
+    This is a real wire write. No out-of-band simulator attack substitutes for the
+    packet from the vendor source; Execute Step only reads the state it left.
     :::
+  action:
+    type: check
+    run:
+      - node: vendor-jump-1
+        command: mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
+    expect:
+      rmu_normal: false
 - id: restore-service
   title: Restore service
   expected_config: weak
@@ -98,8 +142,10 @@ steps:
       command: reset
 - id: apply-hardened-policy
   title: Apply hardened policy
+  expected_config: hardened
   description: |
-    Apply Hardened or your funded policy. The reference closes **enterprise→vendor RDP/3389 and VNC/5900** and **vendor→field Modbus/502**. Either boundary breaks the chain. The engineering exception remains named eng-ws→PLC web only, not vendor field control.
+    Apply Your Plan to test the choices from Lab 1.4, or Apply Hardened for the
+    full reference. The reference closes **enterprise→vendor RDP/3389 and VNC/5900** and **vendor→field Modbus/502**. Either boundary breaks the chain. The engineering exception remains named eng-ws→PLC web only, not vendor field control.
 
     :::plan-coverage title="Your plan vs the vendor chain"
     :::
@@ -110,12 +156,12 @@ steps:
 
     | Chain link | Owning action | Selected / deferred |
     |---|---|---|
-    | Enterprise→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
-    | Vendor→field Modbus/502 | `block-vendor-to-field` | deny / allow |
-    | Vendor→RTU/PLC engineering paths | `restrict-vendor-to-station` | narrowed / Weak scope |
+    | Enterprise→vendor RDP/3389 and VNC/5900 | Restrict enterprise → vendor remote access | deny / allow |
+    | Vendor→field Modbus/502 | Block vendor → field access | deny / allow |
+    | Vendor→RTU/PLC engineering paths | Restrict vendor → station engineering access | narrowed / Weak scope |
 
-    Test the first two independently. `pin-rtu-to-field` owns station-source
-    field attempts, not the vendor hop. Detection and planning selections do
+    Test the first two independently. **Pin field access to the RTU** owns
+    station-source field attempts, not the vendor hop. Detection and planning selections do
     not change either hop. A saved plan is not active until applied.
     Apply the policy before using Execute Step. Execute Step checks the active policy without replacing it; its recorded identity must match, and an applied plan must retain matching provenance.
   action:
@@ -131,14 +177,14 @@ steps:
 
         nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4
 
-    With `restrict-enterprise-to-vendor` selected, both ports time out or show
-    filtered. Deferred means reachable. No graphical client is required.
+    With **Restrict enterprise → vendor remote access** selected, both ports time
+    out or show filtered. Deferred means reachable. No graphical client is required.
 
     From the **vendor-jump-1 terminal tab** (still available), repeat the identical field write:
 
         mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
 
-    With `block-vendor-to-field` selected, expect a timeout and unchanged RMU1.
+    With **Block vendor → field access** selected, expect a timeout and unchanged RMU1.
     Deferred means the write still opens RMU1 and removes section supply, even
     when hop one is denied. Record device audit, source tuples and results.
     Restore RMU1 closed, RMU2 open and normal supply before Validate for every
@@ -146,10 +192,24 @@ steps:
 
     :::decision id=vendor-retest-hmi-state options="NORMAL_OPS,SECTION_OUTAGE,UNCHANGED_FROM_ATTACK"
     What did the feeder show after retest?
+    :::why
+    This depends on your plan, so it is not graded. You send this retest from the
+    vendor foothold itself, so hop one (enterprise → vendor) does not affect it —
+    only **Block vendor → field access** decides the outcome. Selected, RMU1 stays
+    closed and the section keeps supply (NORMAL_OPS); deferred, the vendor write
+    still opens RMU1 and the section loses supply (SECTION_OUTAGE), even when hop
+    one is denied. Either restriction still breaks a new end-to-end intrusion.
+    Read the physical outcome and device audit, not the Execute Step label.
     :::
-    :::decision id=vendor-retest-defense-layer options="ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER"
+    :::decision id=vendor-retest-defense-layer options="ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER,NEITHER_LAYER"
     Which selected layer breaks this chain? If neither was selected, record
     that both links remain open in Notes.
+    :::why
+    Either hop closes the two-hop chain, so this is not graded on one answer.
+    **Restrict enterprise → vendor remote access** closes hop one;
+    **Block vendor → field access** closes hop two; selecting both is defense
+    in depth. NEITHER_LAYER means both links
+    stay open and the chain still works end to end.
     :::
 
     :::hint Attribution survives the story
@@ -157,6 +217,9 @@ steps:
     :::
   action:
     type: check
+    run:
+      - node: vendor-jump-1
+        command: mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
     expect:
       firewall_config: improved
       rmu_normal: true
@@ -166,7 +229,19 @@ steps:
   expected_config: hardened
   description: |
     Run Validate with the intended plan active and RMU/OLTC state restored.
-    The strict active matrix must match each hop's plan verdict; a screenshot of a rule is not enough. Keep policy identity, UTC bounds and device source attribution for Lab 2.4.
+    Completion evidence falls into the same three categories as the US bonus,
+    using the EU devices:
+
+    1. **Plan verdicts** — the strict active matrix must match each hop's plan
+       verdict: enterprise→vendor remote access and vendor→field Modbus. A
+       screenshot of a rule is not enough.
+    2. **Restored operation** — RMU1 closed / RMU2 open and the OLTC in
+       remote/auto.
+    3. **Policy identity** — the running policy matches an accepted non-weak plan.
+
+    Keep policy identity, UTC bounds and device source attribution with this
+    lab's evidence. The bonus is optional: Lab 2.4 builds its evidence package
+    from the core labs and never asks for these records.
 
     PASS checks only the current sampled plan verdicts (both hops), RMU baseline positions and OLTC remote/auto mode. It does not certify a completed interactive login/pivot or earlier successful FC6 attack, absence of all foreign operations, fresh CC visibility, feeder supply or DPI enforcement; preserve those separately. Step-level continuity checks are not all part of this bonus completion validator.
 

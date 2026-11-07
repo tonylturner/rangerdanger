@@ -100,6 +100,11 @@ class EUAdapter:
         return len(result.stdout.splitlines()) if result.returncode == 0 else 0
 
     def execute(self, gate, row, oracle, directory, timeout, positive=False, control=False):
+        if row["prompt"] == "cli":
+            # containd CLI commands have no Run button: students type them in
+            # the fw-1 terminal, and the exec endpoint refuses them. Use the
+            # shared containd CLI path, as the US range does.
+            return gate.execute(row, oracle, directory, timeout, positive, control)
         directory.mkdir(parents=True, exist_ok=True)
         phase = "control" if positive else "command"
         effective = {"intent": "read", "match": oracle["control_match"]} if positive else oracle

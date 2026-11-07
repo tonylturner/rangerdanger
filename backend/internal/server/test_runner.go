@@ -32,6 +32,11 @@ var firewallWaitBudget = 15 * time.Second
 const (
 	firewallHashPollInterval   = 200 * time.Millisecond
 	firewallCanaryPollInterval = 500 * time.Millisecond
+	// wireReplaySettle is the wait after a check step's replayed wire
+	// commands. The US RTAC polls field devices every 2 s
+	// (services/rtac-sim/main.go), so a shorter wait can read pre-attack
+	// state. It matches the ~3 s the lab text tells students to wait.
+	wireReplaySettle = 3 * time.Second
 )
 
 // ensureHardenedPrecondition applies the reference policy only when a step
@@ -301,6 +306,9 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 					sequencePause: func() {
 						sleepCtx(ctx, 300*time.Millisecond)
 					},
+					runWire: func(run []labs.StepRun) string {
+						return s.replayWireCommands(ctx, gen, run)
+					},
 				})
 				if applyErr != nil {
 					failApply(applyErr)
@@ -313,18 +321,6 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 					}
 				}
 			}
-			if step.Action != nil {
-				// After state-changing commands, wait for effects to propagate.
-				if step.Action.Type == "command" {
-					if step.Action.Command == "inject_fault" || step.Action.Command == "disable_reclose" {
-						sleepCtx(ctx, 2*time.Second)
-					}
-					if step.Action.Command == "set_tap" {
-						sleepCtx(ctx, 1*time.Second)
-					}
-				}
-			}
-
 			result.DurationMs = time.Since(stepStart).Milliseconds()
 			stepResults = append(stepResults, result)
 
@@ -337,8 +333,8 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 				autoPassed++
 			}
 
-			// Pause between steps — longer after commands to let state propagate
-			if step.Action != nil && (step.Action.Type == "command" || step.Action.Type == "sequence") {
+			// Pause between steps — longer after device commands to let state propagate
+			if step.Action != nil && step.Action.Type == "sequence" {
 				sleepCtx(ctx, 1500*time.Millisecond)
 			} else {
 				sleepCtx(ctx, 200*time.Millisecond)
@@ -399,6 +395,29 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		ResetFailures: countResetFailures(results),
 		DurationMs:    time.Since(suiteStart).Milliseconds(),
 	})
+}
+
+// replayWireCommands sends a check step's authored wire commands through the
+// same exec path as the Run button, in order, with the Run-button timeout. It
+// then waits wireReplaySettle so device and RTAC state settle before the
+// check reads them. The check remains the oracle: a non-zero
+// exit (a hardened retest times out by design) or an exec error is recorded in
+// the step detail, never a failure on its own.
+func (s *Server) replayWireCommands(ctx context.Context, gen *lifecycle.Generation, run []labs.StepRun) string {
+	parts := make([]string, 0, len(run))
+	for i, entry := range run {
+		if i > 0 {
+			sleepCtx(ctx, 300*time.Millisecond)
+		}
+		_, _, exitCode, err := s.execOnNode(ctx, gen, entry.Node, entry.Command, 30)
+		if err != nil {
+			parts = append(parts, fmt.Sprintf("%s: exec error: %v", entry.Node, err))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s [EXIT %d]", entry.Node, exitCode))
+	}
+	sleepCtx(ctx, wireReplaySettle)
+	return "ran " + strings.Join(parts, ", ")
 }
 
 // resetLabState restores all devices to defaults.

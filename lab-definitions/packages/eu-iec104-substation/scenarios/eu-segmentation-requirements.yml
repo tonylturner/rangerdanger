@@ -43,8 +43,8 @@ steps:
     Hardened Segmentation changes 8 of 10 rows, which is most rows. This compares the evaluated zone-pair outcomes, not individual rules or packet tests.
     :::
 
-    :::hint Optional: see the Security Level target for the firewall
-    With the **Purdue Model view** enabled on the Network Map, hover over the firewall. The SL-3 number is a design target, not a Security Level assessment. The badge reports selected segmentation criteria for the conduit; `MET` follows the backend-reported active Hardened reference policy, not a packet-path test. Empty, custom, partial or unknown summaries show `NOT ASSESSED`, never `MET`. The L4 source pin enforces; DPI detects and logs. Read [Security Levels](/knowledge#eu-iec62443-security-levels) for SL-1 through SL-4 and [Purdue Model](/knowledge#eu-purdue-model) for the architectural bands.
+    :::hint Optional: read the segmentation badge on the firewall
+    With the **Purdue Model view** enabled on the Network Map, hover over the firewall. This package declares no numeric Security Level targets on the map; derive target requirements through the risk-design workflow, not from Purdue bands. The badge reports selected segmentation criteria for the conduit; `MET` follows the backend-reported active Hardened reference policy, not a packet-path test. Empty, custom, partial or unknown summaries show `NOT ASSESSED`, never `MET`. The L4 source pin enforces; DPI detects and logs. Read [Security Levels](/knowledge#eu-iec62443-security-levels) for SL-1 through SL-4 and [Purdue Model](/knowledge#eu-purdue-model) for the architectural bands.
     :::
 
     ### From observation to design
