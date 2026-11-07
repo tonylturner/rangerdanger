@@ -1,6 +1,6 @@
 requirements:
   enterprise-to-field:
-    label: Enterprise/vendor → five field devices on Modbus/502
+    label: Enterprise/vendor → field on Modbus/502
     impl:
       BLOCK:
       - block-enterprise-to-field
@@ -16,7 +16,7 @@ requirements:
       BLOCK and LOG:
       - block-enterprise-to-station
   vendor-to-station:
-    label: Vendor DMZ → station (engineering access)
+    label: Vendor DMZ → station engineering access
     impl:
       BLOCK:
       - restrict-vendor-to-station

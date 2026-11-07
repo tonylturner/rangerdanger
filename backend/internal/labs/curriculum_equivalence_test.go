@@ -19,7 +19,7 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// valid/quality-flag wording (without changing protocol acceptance).
 	for id, want := range map[string]string{
 		"us-dnp3-substation":   "a80eaaebbc5e344ffb7ac3d9e683f662ed7502e4e4d2f65e41b1006a512cf745",
-		"eu-iec104-substation": "615d2a5437183c54c0d7386f473a56dbc993426c8609530c22768ab442ab5532",
+		"eu-iec104-substation": "9bd4b8e82daf2816868c711916fb1c7dfb8b3bb7bab12afedd73d743442d58fb",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))
