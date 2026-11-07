@@ -154,6 +154,11 @@ describe.each([["EU", euFixture], ["US", usFixture]] as const)("%s shipped label
             }
           } else {
             const out = renderToStaticMarkup(<svg><edgeTypes.policyEdge {...props} /></svg>);
+            if (edge.id.startsWith("conduit-gap-")) {
+              expect(edge.data.label).toBe("");
+              expect(out).not.toContain("<rect");
+              continue; // Unlabelled waypoint legs have no pill to collide.
+            }
             const rect = out.match(/<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)"/)!;
             box = { id: edge.id, x: Number(rect[1]), y: Number(rect[2]), width: Number(rect[3]), height: Number(rect[4]) };
           }

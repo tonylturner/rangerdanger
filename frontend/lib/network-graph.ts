@@ -120,94 +120,128 @@ export function buildStyledGraph(
       // bounded reference-policy criteria status below.
 
       const NODE_SPACING_X = Math.max(130, HOST_ENVELOPE.width + LABEL_GAP + sameZone.count * (sameZone.maxWidth + LABEL_GAP));
-      const BAND_WIDTH = Math.max(700, 60 + HOST_ENVELOPE.width +
-        (Math.max(...Object.values(nodesByZone).map((hosts) => hosts.length)) - 1) * NODE_SPACING_X);
       const BAND_HEIGHT = 200;
       const BAND_GAP = 30;
+      const ROW_GAP_X = 30;
       const BAND_START_X = -400;
       const NODE_START_X_OFFSET = 30;
-      const FW_X = BAND_START_X + BAND_WIDTH + 120; // firewall to the right of bands
 
       const activeLevels = activeZones.map((zone) => ({
         zone,
         network: graph.networks.find((n) => n.id === zone)!,
       }));
+      // Only adjacent equal levels share a row; never reorder package zones.
+      const rows: Array<typeof activeLevels> = [];
+      for (const level of activeLevels) {
+        const previous = rows[rows.length - 1];
+        if (previous?.[0].network.purdue === level.network.purdue) previous.push(level);
+        else rows.push([level]);
+      }
+      const minimumWidth = (zone: string) => 2 * NODE_START_X_OFFSET + HOST_ENVELOPE.width +
+        (nodesByZone[zone].length - 1) * NODE_SPACING_X;
+      // Keep single-zone geometry, but widen the canvas when a shared row
+      // needs more space. Host envelopes and their traffic lanes stay intact.
+      const BAND_WIDTH = Math.max(700, ...rows.map((row) =>
+        row.reduce((width, level) => width + minimumWidth(level.zone), 0) + (row.length - 1) * ROW_GAP_X));
+      const FW_X = BAND_START_X + BAND_WIDTH + 120;
 
       const styledNodes: Node[] = [];
+      const conduitWaypoints = new Map<string, string>();
       let curY = 0;
 
-      // Render all Purdue bands sequentially
-      for (const level of activeLevels) {
-        const { network } = level;
-        const sl = network.target_sl;
-
-        styledNodes.push({
-          id: `zone-boundary-${level.zone}`,
-          type: "zoneBoundary",
-          position: { x: BAND_START_X, y: curY },
-          data: {
-            zone: level.zone,
-            label: `${network.purdue} · ${network.name}${sl === undefined ? "" : ` · Target SL-${sl}`}`,
-            subnet: network.subnet ?? network.cidr,
-            width: BAND_WIDTH,
-            height: BAND_HEIGHT,
-            securityLevel: sl,
-          },
-          selectable: false,
-          draggable: false,
-          zIndex: 0,
-        });
-
-        // Zone anchor at the RIGHT EDGE of the band, vertically
-        // centered - conduit lines go from here to the firewall.
-        styledNodes.push({
-          id: `zone-${level.zone}`,
-          type: "zone",
-          position: {
-            x: BAND_START_X + BAND_WIDTH,
-            y: curY + BAND_HEIGHT / 2,
-          },
-          data: { label: "", zone: level.zone, subnet: undefined },
-          selectable: false,
-          draggable: false,
-          zIndex: 1,
-        });
-
-        // Host nodes inside the band
-        const zoneNodes = nodesByZone[level.zone] || [];
-        zoneNodes.forEach((n, nodeIdx) => {
-          const allInterfaceZones = n.data.interface_ips
-            ? Object.keys(n.data.interface_ips).filter((z) => zones.includes(z as typeof zones[number]))
-            : (n.data.networks || []);
-          const additionalZones = allInterfaceZones.filter((z) => z !== level.zone);
-          const nodeHealth = deriveNodeHealth(n.id, workshopOnline);
+      for (const row of rows) {
+        const spareWidth = BAND_WIDTH - (row.length - 1) * ROW_GAP_X -
+          row.reduce((width, level) => width + minimumWidth(level.zone), 0);
+        let bandX = BAND_START_X;
+        for (const level of row) {
+          const { network } = level;
+          const sl = network.target_sl;
+          const bandWidth = minimumWidth(level.zone) + spareWidth / row.length;
+          const lastInRow = level === row[row.length - 1];
 
           styledNodes.push({
-            id: n.id,
-            type: "host",
-            position: {
-              x: BAND_START_X + NODE_START_X_OFFSET + nodeIdx * NODE_SPACING_X,
-              y: curY + 50,
-            },
+            id: `zone-boundary-${level.zone}`,
+            type: "zoneBoundary",
+            position: { x: bandX, y: curY },
             data: {
-              label: n.data.label || n.id,
-              nodeType: n.type,
               zone: level.zone,
-              status: n.data.status || "running",
-              ip: n.data.ip,
-              interface_ips: n.data.interface_ips,
-              networks: n.data.networks,
-              ui_path: n.data.ui_path,
-              external_ui_url: n.data.external_ui_url,
-              multiHomedZones: additionalZones,
-              health: nodeHealth.health,
-              healthSource: nodeHealth.healthSource,
-              verticalOnly: true,
+              label: `${network.purdue} · ${network.name}${sl === undefined ? "" : ` · Target SL-${sl}`}`,
+              subnet: network.subnet ?? network.cidr,
+              width: bandWidth,
+              height: BAND_HEIGHT,
+              securityLevel: sl,
             },
-            draggable: true,
+            selectable: false,
+            draggable: false,
+            zIndex: 0,
           });
-        });
 
+          // Interior boxes exit above the row. A second invisible anchor
+          // keeps the horizontal leg in that gap until it clears every box;
+          // the existing policy edge then bends toward the firewall.
+          styledNodes.push({
+            id: `zone-${level.zone}`,
+            type: "zone",
+            position: {
+              x: bandX + bandWidth,
+              y: lastInRow ? curY + BAND_HEIGHT / 2 : curY - BAND_GAP / 2,
+            },
+            data: { label: "", zone: level.zone, subnet: undefined },
+            selectable: false,
+            draggable: false,
+            zIndex: 1,
+          });
+          if (!lastInRow && firewallNode) {
+            const waypoint = `conduit-waypoint-${level.zone}`;
+            conduitWaypoints.set(level.zone, waypoint);
+            styledNodes.push({
+              id: waypoint,
+              type: "zone",
+              position: { x: BAND_START_X + BAND_WIDTH + ROW_GAP_X, y: curY - BAND_GAP / 2 },
+              data: { label: "", zone: level.zone },
+              selectable: false,
+              draggable: false,
+              zIndex: 1,
+            });
+          }
+
+          // Host nodes inside the band
+          const zoneNodes = nodesByZone[level.zone] || [];
+          zoneNodes.forEach((n, nodeIdx) => {
+            const allInterfaceZones = n.data.interface_ips
+              ? Object.keys(n.data.interface_ips).filter((z) => zones.includes(z as typeof zones[number]))
+              : (n.data.networks || []);
+            const additionalZones = allInterfaceZones.filter((z) => z !== level.zone);
+            const nodeHealth = deriveNodeHealth(n.id, workshopOnline);
+
+            styledNodes.push({
+              id: n.id,
+              type: "host",
+              position: {
+                x: bandX + NODE_START_X_OFFSET + nodeIdx * NODE_SPACING_X,
+                y: curY + 50,
+              },
+              data: {
+                label: n.data.label || n.id,
+                nodeType: n.type,
+                zone: level.zone,
+                status: n.data.status || "running",
+                ip: n.data.ip,
+                interface_ips: n.data.interface_ips,
+                networks: n.data.networks,
+                ui_path: n.data.ui_path,
+                external_ui_url: n.data.external_ui_url,
+                multiHomedZones: additionalZones,
+                health: nodeHealth.health,
+                healthSource: nodeHealth.healthSource,
+                verticalOnly: true,
+              },
+              draggable: true,
+            });
+          });
+
+          bandX += bandWidth + ROW_GAP_X;
+        }
         curY += BAND_HEIGHT + BAND_GAP;
       }
 
@@ -274,10 +308,11 @@ export function buildStyledGraph(
         activeZones.forEach((zone) => {
           const zoneStroke = zoneColors[zone]?.border || "#64748b";
           const policyInfo = getZonePolicyInfo(zone, ruleSummaries, graph.networks);
+          const waypoint = conduitWaypoints.get(zone);
 
-          styledEdges.push({
+          const conduit: Edge = {
             id: `fw-to-${zone}`,
-            source: `zone-${zone}`,
+            source: waypoint ?? `zone-${zone}`,
             sourceHandle: "right",
             target: firewallNode.id,
             targetHandle: "left",
@@ -299,7 +334,18 @@ export function buildStyledGraph(
               pulse: false,
               zoneMeta: zoneInterfaceMeta(graph, zone),
             },
-          });
+          };
+          if (waypoint) {
+            styledEdges.push({
+              ...conduit,
+              id: `conduit-gap-${zone}`,
+              source: `zone-${zone}`,
+              target: waypoint,
+              // One label on the final leg; both legs retain interface tooltips.
+              data: { ...conduit.data, label: "" },
+            });
+          }
+          styledEdges.push(conduit);
         });
       }
 
