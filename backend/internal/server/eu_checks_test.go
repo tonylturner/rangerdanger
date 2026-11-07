@@ -220,6 +220,60 @@ func TestEUFirewallConfigCheckUsesSharedPlanJudgment(t *testing.T) {
 	}
 }
 
+func TestEUAppliedPlanMatchingWeakHashPassesWithPreventionGaps(t *testing.T) {
+	s, gen, setRunning, _ := euPolicyCheckFixture(t)
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weak, err := os.ReadFile(filepath.Join(manifest.Dir(repoRoot(), euPackageID), "firewall", "weak.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Model an applied empty plan whose compiled policy is exactly Weak. The
+	// checked-in EU curriculum currently compiles a different policy document.
+	compiled.Config = weak
+	hash, err := containd.FirewallHashFromBytes(compiled.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weakHash, err := containd.FirewallHashFromBytes(weak)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != weakHash {
+		t.Fatalf("empty EU plan hash %s differs from Weak hash %s", hash, weakHash)
+	}
+
+	gaps := []string{}
+	for _, expectation := range compiled.Expectations {
+		if expectation.PlanVerdict != expectation.HardenedVerdict {
+			gaps = append(gaps, expectation.ID)
+		}
+	}
+	if len(gaps) == 0 {
+		t.Fatal("empty EU plan has no Hardened prevention gaps")
+	}
+
+	setRunning(compiled.Config)
+	s.activeConfig, s.policySource, s.lastAppliedHash = "custom", "plan", hash
+	s.planProvenance = &planProvenance{PolicyHash: hash}
+	snapshot := compiled
+	s.appliedPlan = &snapshot
+	results := s.executeEUCheck(t.Context(), gen, map[string]any{"firewall_config": "improved"})
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("weak-equivalent applied plan failed: %+v", results)
+	}
+	if !strings.Contains(results[0].Detail, "applied plan; Hardened prevention gaps:") {
+		t.Fatalf("judgment omitted applied-plan gaps: %+v", results[0])
+	}
+	for _, gap := range gaps {
+		if !strings.Contains(results[0].Detail, gap) {
+			t.Fatalf("judgment omitted prevention gap %q: %+v", gap, results[0])
+		}
+	}
+}
+
 func TestEUFirewallPolicyPhaseExecuteDoesNotApply(t *testing.T) {
 	s, gen, setRunning, applyCalls := euPolicyCheckFixture(t)
 	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})

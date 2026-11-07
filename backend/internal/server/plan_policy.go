@@ -140,23 +140,26 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 	if want == "" || hash != want {
 		return fail(fmt.Errorf("running policy differs from recorded identity; wait for the observer or reapply"))
 	}
-	path, err := s.policyPath(gen.Package, "weak")
-	if err != nil {
-		return fail(err)
-	}
-	weak, err := readPolicyJSONWithRetry(path)
-	if err != nil {
-		return fail(err)
-	}
-	weakHash, err := containd.FirewallHashFromBytes(weak)
-	if err != nil {
-		return fail(err)
-	}
-	if hash == weakHash {
-		return fail(fmt.Errorf("weak baseline remains active"))
-	}
-	if source == "plan" && (provenance == nil || provenance.PolicyHash != hash) {
-		return fail(fmt.Errorf("applied plan identity missing or divergent"))
+	if source == "plan" {
+		if provenance == nil || provenance.PolicyHash != hash {
+			return fail(fmt.Errorf("applied plan identity missing or divergent"))
+		}
+	} else {
+		path, err := s.policyPath(gen.Package, "weak")
+		if err != nil {
+			return fail(err)
+		}
+		weak, err := readPolicyJSONWithRetry(path)
+		if err != nil {
+			return fail(err)
+		}
+		weakHash, err := containd.FirewallHashFromBytes(weak)
+		if err != nil {
+			return fail(err)
+		}
+		if hash == weakHash {
+			return fail(fmt.Errorf("weak baseline remains active"))
+		}
 	}
 	policy, err := readEvaluatedFirewall(data)
 	if err != nil {
