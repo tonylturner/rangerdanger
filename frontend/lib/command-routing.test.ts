@@ -50,6 +50,13 @@ describe("authored command routing inventory", () => {
           "eu-firewall-implementation.yml/phase-4-enable-logging-and-visibility: wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect [rtu-1 → cc-1]",
           "eu-firewall-implementation.yml/test-positive: curl -fsS --max-time 3 http://10.70.70.40:8080/api/points [rtu-1 → kali-1]",
           "eu-firewall-implementation.yml/test-positive: curl -fsS --max-time 3 http://10.30.30.30:8080/login [rtu-1 → eng-ws-1]",
+          "eu-validation-evidence.yml/generate-the-validation-report: curl -fsS --max-time 3 http://10.70.70.40:8080/api/points [rtu-1 → kali-1]",
+          "eu-validation-evidence.yml/generate-the-validation-report: curl -fsS --max-time 3 http://10.30.30.30:8080/login [rtu-1 → eng-ws-1]",
+          "eu-validation-evidence.yml/generate-the-validation-report: nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4 [rtu-1 → kali-1]",
+          "eu-validation-evidence.yml/generate-the-validation-report: nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4 [rtu-1 → kali-1]",
+          "eu-validation-evidence.yml/generate-the-validation-report: nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4 [rtu-1 → kali-1]",
+          "eu-validation-evidence.yml/generate-the-validation-report: tcpdump -i any -nn 'tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081' -G 12 -W 1 -w /data/captures/validation.pcap [rtu-1 → fw-1]",
+          "eu-validation-evidence.yml/generate-the-validation-report: tcpdump -r /data/captures/validation.pcap -nn [rtu-1 → fw-1]",
           "eu-vendor-rdp-compromise.yml/re-attempt-the-pivot: mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1 [kali-1 → vendor-jump-1]",
         ],
         "us-dnp3-substation": [
