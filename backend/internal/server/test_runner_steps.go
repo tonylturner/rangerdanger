@@ -26,15 +26,6 @@ func evaluateTestStep(index int, step labs.ScenarioStep, executors stepExecutors
 	}
 
 	switch step.Action.Type {
-	case "command":
-		r := executors.command(step.Action.Device, step.Action.Command, step.Action.Source, step.Action.Value)
-		result.Passed = r.Success
-		if !r.Success && r.Blocked {
-			result.Passed = true
-			r.Detail += " (expected — hardened policy is working)"
-		}
-		result.Detail = r.Detail
-
 	case "sequence":
 		allOK := true
 		for _, cmd := range step.Action.Commands {
