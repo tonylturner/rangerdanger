@@ -100,6 +100,19 @@ class SmokeWorkflowTests(unittest.TestCase):
         self.assertEqual(upload["if"], "always()")
         self.assertIn(commands["env"]["LAB_CMD_LOG_DIR"], upload["with"]["path"])
 
+    def test_eu_workshop_suite_runs_last_before_log_collection(self):
+        job = self.workflow["jobs"]["eu-smoke"]
+        steps = job["steps"]
+        commands = next(s for s in steps if s.get("name") == "EU reviewed lab commands smoke")
+        suite = next(s for s in steps if s.get("name") == "EU workshop test-suite")
+        collect = next(s for s in steps if s.get("name") == "Collect range logs and EU gate evidence")
+        self.assertLess(steps.index(commands), steps.index(suite))
+        self.assertEqual(steps.index(collect), steps.index(suite) + 1)
+        self.assertEqual(suite["run"], "./scripts/test-suite-smoke.sh eu-iec104-substation")
+        self.assertEqual(suite["if"], "success() || failure()")
+        self.assertEqual(suite["timeout-minutes"], 35)
+        self.assertEqual(job["timeout-minutes"], 100)
+
     def test_every_package_command_guard_runs_offline_in_ci(self):
         ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         steps = ci["jobs"]["release-tooling"]["steps"]
@@ -122,6 +135,9 @@ class SmokeWorkflowTests(unittest.TestCase):
         for gate in gates:
             if gate != "smoke-test":  # boot/API/inventory are inline in the built job
                 self.assertIn(f"./scripts/{gate}.sh", commands)
+        suite = next(s for s in steps if s.get("name") == "Workshop test-suite")
+        self.assertIn("set -euo pipefail", suite["run"])
+        self.assertIn("./scripts/test-suite-smoke.sh us-dnp3-substation", suite["run"])
         probe = next(s for s in steps if s.get("name") == "Probe API endpoints")["run"]
         self.assertIn("set -euo pipefail", probe)
         self.assertIn("jq -e . /tmp/health.json", probe)

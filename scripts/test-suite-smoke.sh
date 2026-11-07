@@ -14,6 +14,26 @@ note() { printf '\n=== %s ===\n' "$1"; }
 ok()   { printf '  ✓ %s\n' "$1"; }
 err()  { printf '  ✗ %s\n' "$1" >&2; }
 
+if [ "$#" -ne 1 ]; then
+  err "usage: $0 <package-id>"
+  exit 2
+fi
+package="$1"
+case "$package" in
+  us-dnp3-substation)
+    scenarios="lab-definitions/scenarios"
+    suite_timeout=900
+    ;;
+  eu-iec104-substation)
+    scenarios="lab-definitions/packages/eu-iec104-substation/scenarios"
+    suite_timeout=1800
+    ;;
+  *)
+    err "unsupported package: $package"
+    exit 2
+    ;;
+esac
+
 note "gate 1: backend health preflight"
 if ! curl -fsS --max-time 10 "$API/api/health" >/dev/null 2>&1; then
   err "backend $API not healthy — bring stack up first"
@@ -21,22 +41,22 @@ if ! curl -fsS --max-time 10 "$API/api/health" >/dev/null 2>&1; then
 fi
 ok "backend healthy"
 
-# These checks assert the US range. Refuse another package or a range
-# mid-switch: GET /api/range must report us-dnp3-substation ready.
+# Refuse another package or a range mid-switch: GET /api/range must
+# report the requested package ready.
 # shellcheck source=lib/range.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib/range.sh"
-if ! range_is_ready us-dnp3-substation; then
-  err "range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)"
+if ! range_is_ready "$package"; then
+  err "range is not $package ready — GET $API/api/range: $(range_status)"
   exit 1
 fi
-ok "range us-dnp3-substation ready"
+ok "range $package ready"
 
 note "gate 2: workshop test-suite (resets lab state)"
-if ! response=$(curl -fsS --max-time 900 -X POST "$API/api/workshop/test-suite"); then
+if ! response=$(curl -fsS --max-time "$suite_timeout" -X POST "$API/api/workshop/test-suite"); then
   err "workshop test-suite request failed"
   exit 1
 fi
 
 # Independently reconcile every row and all totals against the mounted YAML.
 # Manual and decision steps are reported separately, never called execution.
-python3 scripts/lib/suite-accounting.py <<<"$response"
+python3 scripts/lib/suite-accounting.py --scenarios "$scenarios" <<<"$response"
