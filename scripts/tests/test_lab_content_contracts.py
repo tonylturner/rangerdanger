@@ -15,6 +15,15 @@ ROOT = Path(__file__).resolve().parents[2]
 SCENARIOS = ROOT / "lab-definitions/scenarios"
 
 
+def _load_inventory():
+    """Load the offline command grammar, never a live smoke gate."""
+    spec = importlib.util.spec_from_file_location(
+        "lab_commands_inventory", ROOT / "scripts/lib/lab_commands_inventory.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def scenario(name):
     return yaml.safe_load((SCENARIOS / f"{name}.yml").read_text())
 
@@ -142,6 +151,59 @@ class CrossPackageContracts(unittest.TestCase):
                 with self.subTest(scenario=doc["id"], step=step["id"]):
                     self.assertFalse(sends_command(step.get("action") or {}))
         self.assertEqual(reviewed, 8)
+
+    def test_check_run_entries_are_verbatim_step_run_blocks(self):
+        # A check action may carry run: the wire commands the check presumes
+        # the student sent this step (sent by the Run button, replayed by the
+        # workshop test suite, ignored by read-only Execute Step). Every entry
+        # must be one of the step's own Run blocks, on that block's node, so
+        # the command text has exactly one source — the YAML the student runs.
+        inventory = _load_inventory()
+        attack_steps = {
+            "re-test-the-attack-under-the-hardened-policy",
+            "use-the-vendor-foothold-to-attack-field-devices",
+            "re-attempt-the-pivot",
+        }
+        packages = [
+            SCENARIOS,
+            ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios",
+        ]
+        entries = 0
+        carriers = 0
+        attack_carriers = 0
+        for directory in packages:
+            for path in sorted(directory.glob("*.yml")):
+                doc = yaml.safe_load(path.read_text())
+                for step in doc["steps"]:
+                    action = step.get("action") or {}
+                    run = action.get("run") or []
+                    if run:
+                        self.assertEqual(action.get("type"), "check",
+                                         f"{path}: run is only valid on a check action")
+                    is_attack = step["id"].startswith("attack-") or step["id"] in attack_steps
+                    if is_attack and action.get("type") == "check":
+                        attack_carriers += 1
+                        self.assertTrue(run, f"{path}: {step['id']} attack/retest check lacks run")
+                    if not run:
+                        continue
+                    carriers += 1
+                    blocks = inventory.description_commands(step.get("description") or "")
+                    for entry in run:
+                        entries += 1
+                        with self.subTest(scenario=doc["id"], step=step["id"], command=entry["command"]):
+                            sources = [src or step.get("node")
+                                       for cmd, _, src, _ in blocks if cmd == entry["command"]]
+                            self.assertTrue(
+                                sources,
+                                f"{path}: run command {entry['command']!r} is not a Run block of this step")
+                            self.assertIn(
+                                entry["node"], sources,
+                                f"{path}: run node {entry['node']!r} is not the block's inferred node")
+        # The 8 attack/retest checks in both packages all carry run, and no
+        # other step does, so the rule is neither vacuous nor over-broad.
+        self.assertEqual(attack_carriers, 8)
+        self.assertEqual(carriers, 8)
+        self.assertGreaterEqual(entries, 8)
 
     def test_lab_text_names_plan_actions_by_catalog_title(self):
         # Students pick actions by title in the planner and see firewall rule

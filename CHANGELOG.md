@@ -24,6 +24,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The workshop test suite now sends the wire command an attack or retest check expects before it reads device state, so those checks pass on their own evidence instead of failing after the suite's state reset.
 - EU gate waits retry curl transport timeouts while their wait budget remains.
 
 ## [v0.2.2] - 2026-11-05

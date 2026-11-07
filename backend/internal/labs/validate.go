@@ -13,6 +13,27 @@ var validActionTypes = map[string]struct{}{
 	"sequence": {}, "firewall": {}, "check": {}, "decision": {}, "probe": {}, "session-cut": {},
 }
 
+// allowedCommandPrefixes is the exec allowlist. It is the single source for
+// both the workshop exec endpoint and a check step's authored run commands,
+// so a replayed wire command can never ask for a tool the endpoint refuses.
+var allowedCommandPrefixes = []string{
+	"nmap", "mbpoll", "dnp3poll", "dnp3cmd", "iec104cmd", "curl", "tshark",
+	"tcpdump", "nc", "ping", "traceroute", "wget", "cat", "ls",
+	"ip", "ss", "netstat",
+}
+
+// IsAllowedCommand reports whether a command begins with an allowed tool,
+// matching the workshop exec endpoint's allowlist exactly.
+func IsAllowedCommand(cmd string) bool {
+	trimmed := strings.TrimSpace(cmd)
+	for _, prefix := range allowedCommandPrefixes {
+		if strings.HasPrefix(trimmed, prefix+" ") || trimmed == prefix {
+			return true
+		}
+	}
+	return false
+}
+
 // ValidateNetworks checks package-authored architectural labels and optional
 // security-level design targets, not network reachability or enforcement.
 func ValidateNetworks(networks []NetworkYAML) error {
@@ -287,6 +308,9 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 		add(fmt.Sprintf("%s actions need a package capability with an action vocabulary (%s)", action.Type, CapabilityProcessElectrical))
 		return
 	}
+	if len(action.Run) > 0 && action.Type != "check" {
+		add(fmt.Sprintf("run is only valid on check actions, not %q", action.Type))
+	}
 
 	switch action.Type {
 	case "sequence":
@@ -326,6 +350,17 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 			}
 			if _, ok := value.(bool); !ok {
 				add(fmt.Sprintf("check %s value must be a boolean", key))
+			}
+		}
+		for index, entry := range action.Run {
+			prefix := fmt.Sprintf("run[%d] ", index)
+			if entry.Node == "" || !nodeIDs[entry.Node] {
+				add(prefix + fmt.Sprintf("unknown node %q", entry.Node))
+			}
+			if strings.TrimSpace(entry.Command) == "" {
+				add(prefix + "command must not be empty")
+			} else if !IsAllowedCommand(entry.Command) {
+				add(prefix + fmt.Sprintf("command %q is not in the exec allowlist", entry.Command))
 			}
 		}
 	case "probe":

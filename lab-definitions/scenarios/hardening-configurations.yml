@@ -199,6 +199,11 @@ steps:
       :::
     action:
       type: check
+      run:
+        - node: kali-1
+          command: dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
+        - node: kali-1
+          command: dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
       expect:
         recloser_closed: false
         reclose_enabled: false
@@ -363,6 +368,9 @@ steps:
       needed for recovery, reapply the intended plan and collect a new window.
     action:
       type: check
+      run:
+        - node: kali-1
+          command: dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
       expect:
         recloser_closed: true
         reclose_enabled: true

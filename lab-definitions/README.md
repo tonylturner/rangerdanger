@@ -196,6 +196,41 @@ when the package declares `improved`. The runtime semantics are:
   in that action-level field. Use validators and the validation report
   for policy evidence, not the banner's name match.
 
+### Attack and retest checks: `run`
+
+Attack and retest steps are `type: check` actions: the student sends the
+real wire command with the Run button, and Execute Step only reads the
+resulting device state (it never sends a command). A `check` action may
+carry `run:` — an ordered list of the primary wire commands the check
+presumes the student sent in this step:
+
+```yaml
+    action:
+      type: check
+      run:
+        - node: kali-1
+          command: dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
+      expect:
+        recloser_closed: false
+```
+
+- `run` is valid only on `type: check`. Each entry's `node` must be a
+  package node and `command` must pass the same allowlist as the exec
+  endpoint (`backend/internal/labs` `IsAllowedCommand`). The loader hard-
+  fails otherwise.
+- The **workshop test suite** replays each entry, in order, on its node
+  through the same exec path as the Run button (30 s timeout), lets state
+  propagate, then evaluates the check. The check stays the oracle: a non-
+  zero exit (a hardened retest times out by design) is recorded in the
+  step detail, not treated as a failure. Without `run` the suite resets
+  state before the step, so an attack check would see normal state and
+  fail.
+- **Execute Step ignores `run`** and stays read-only.
+- List only the primary commands that produce the checked state; leave
+  optional-hint commands out. Every `run` entry must be verbatim a Run
+  block of the same step, on that block's node — one source for the
+  command text, guarded by `scripts/tests/test_lab_content_contracts.py`.
+
 ## Validators
 
 `GET /api/scenarios/:id/validate` runs the validator the scenario

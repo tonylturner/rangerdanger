@@ -230,6 +230,11 @@ steps:
       :::
     action:
       type: check
+      run:
+        - node: vendor-jump-1
+          command: mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
+        - node: vendor-jump-1
+          command: mbpoll -a 1 -t 0 -r 5 10.40.40.21 1
       expect:
         recloser_closed: false
         reclose_enabled: false
@@ -329,6 +334,9 @@ steps:
       A partial plan can match plan proof while retaining either prevention gap.
     action:
       type: check
+      run:
+        - node: vendor-jump-1
+          command: mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
       expect:
         firewall_config: improved
         recloser_closed: true

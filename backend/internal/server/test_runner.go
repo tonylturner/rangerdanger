@@ -301,6 +301,9 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 					sequencePause: func() {
 						sleepCtx(ctx, 300*time.Millisecond)
 					},
+					runWire: func(run []labs.StepRun) string {
+						return s.replayWireCommands(ctx, gen, run)
+					},
 				})
 				if applyErr != nil {
 					failApply(applyErr)
@@ -387,6 +390,29 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		ResetFailures: countResetFailures(results),
 		DurationMs:    time.Since(suiteStart).Milliseconds(),
 	})
+}
+
+// replayWireCommands sends a check step's authored wire commands through the
+// same exec path as the Run button, in order, with the Run-button timeout. It
+// then waits the post-sequence propagation pause so device and RTAC state
+// settle before the check reads them. The check remains the oracle: a non-zero
+// exit (a hardened retest times out by design) or an exec error is recorded in
+// the step detail, never a failure on its own.
+func (s *Server) replayWireCommands(ctx context.Context, gen *lifecycle.Generation, run []labs.StepRun) string {
+	parts := make([]string, 0, len(run))
+	for i, entry := range run {
+		if i > 0 {
+			sleepCtx(ctx, 300*time.Millisecond)
+		}
+		_, _, exitCode, err := s.execOnNode(ctx, gen, entry.Node, entry.Command, 30)
+		if err != nil {
+			parts = append(parts, fmt.Sprintf("%s: exec error: %v", entry.Node, err))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s [EXIT %d]", entry.Node, exitCode))
+	}
+	sleepCtx(ctx, 1500*time.Millisecond)
+	return "ran " + strings.Join(parts, ", ")
 }
 
 // resetLabState restores all devices to defaults.

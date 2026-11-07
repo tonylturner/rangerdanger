@@ -132,6 +132,50 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 			problem: "check expect must not be empty",
 		},
 		{
+			name: "run on a non-check action",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].Action = &StepAction{
+					Type:     "sequence",
+					Commands: []StepActionCmd{{Device: "relay", Command: "trip"}},
+					Run:      []StepRun{{Node: "relay-1", Command: "dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip"}},
+				}
+			},
+			problem: `run is only valid on check actions, not "sequence"`,
+		},
+		{
+			name: "run entry unknown node",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].Action = &StepAction{
+					Type:   "check",
+					Expect: map[string]any{"breaker_closed": false},
+					Run:    []StepRun{{Node: "ghost", Command: "dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip"}},
+				}
+			},
+			problem: `run[0] unknown node "ghost"`,
+		},
+		{
+			name: "run entry empty command",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].Action = &StepAction{
+					Type:   "check",
+					Expect: map[string]any{"breaker_closed": false},
+					Run:    []StepRun{{Node: "relay-1", Command: "  "}},
+				}
+			},
+			problem: "run[0] command must not be empty",
+		},
+		{
+			name: "run entry command off the allowlist",
+			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
+				scenario.Steps[0].Action = &StepAction{
+					Type:   "check",
+					Expect: map[string]any{"breaker_closed": false},
+					Run:    []StepRun{{Node: "relay-1", Command: "rm -rf /"}},
+				}
+			},
+			problem: `run[0] command "rm -rf /" is not in the exec allowlist`,
+		},
+		{
 			name: "empty sequence",
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
 				scenario.Steps[0].Action = &StepAction{Type: "sequence"}
@@ -341,6 +385,22 @@ func TestValidateProbe(t *testing.T) {
 	scenario.Steps[0].Action.Targets[0].From = "fw-1"
 	if err := validateElectrical(def, scenario); err != nil {
 		t.Fatalf("override-only probe rejected: %v", err)
+	}
+}
+
+func TestValidateLabAcceptsCheckRun(t *testing.T) {
+	def, scenario := validatorFixture()
+	scenario.Steps[0].Node = "kali-1"
+	def.Nodes = append(def.Nodes, NodeYAML{ID: "kali-1", IP: "10.10.10.50", Networks: []string{"ot-ops"}})
+	scenario.Steps[0].Action = &StepAction{
+		Type:   "check",
+		Expect: map[string]any{"recloser_closed": false},
+		Run: []StepRun{
+			{Node: "kali-1", Command: "dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip"},
+		},
+	}
+	if err := validateElectrical(def, scenario); err != nil {
+		t.Fatalf("ValidateLab() = %v, want a check with an allowlisted run on a known node to pass", err)
 	}
 }
 

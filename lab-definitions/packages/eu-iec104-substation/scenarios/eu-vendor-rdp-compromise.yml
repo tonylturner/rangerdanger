@@ -119,6 +119,9 @@ steps:
     :::
   action:
     type: check
+    run:
+      - node: vendor-jump-1
+        command: mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
     expect:
       rmu_normal: false
 - id: restore-service
@@ -212,6 +215,9 @@ steps:
     :::
   action:
     type: check
+    run:
+      - node: vendor-jump-1
+        command: mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
     expect:
       firewall_config: improved
       rmu_normal: true

@@ -96,6 +96,17 @@ type StepAction struct {
 	Expect   map[string]any  `yaml:"expect,omitempty" json:"expect,omitempty"`     // for type=check
 	Targets  []ProbeTarget   `yaml:"targets,omitempty" json:"targets,omitempty"`   // for type=probe
 	Commands []StepActionCmd `yaml:"commands,omitempty" json:"commands,omitempty"` // for type=sequence
+	Run      []StepRun       `yaml:"run,omitempty" json:"run,omitempty"`           // for type=check
+}
+
+// StepRun is one wire command a check presumes the student already sent in
+// this step. The workshop test suite replays the list, in order, on each
+// entry's node through the exec path, then lets state propagate before it
+// evaluates the check (the check stays the oracle; a non-zero exit is noted,
+// not a failure). Interactive Execute Step ignores Run and stays read-only.
+type StepRun struct {
+	Node    string `yaml:"node" json:"node"`
+	Command string `yaml:"command" json:"command"`
 }
 
 // ProbeTarget identifies a TCP destination and optional source override.
