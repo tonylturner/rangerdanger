@@ -148,8 +148,9 @@ steps:
     The record contains package ID, revision, label, action IDs and policy
     hash. Use `GET /api/firewall/active` to check what is running.
   action:
-    type: firewall
-    config: improved
+    type: check
+    expect:
+      firewall_config: improved
 - id: phase-4-enable-logging-and-visibility
   title: Phase 4 - Enable logging and visibility
   expected_config: hardened

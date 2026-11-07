@@ -705,6 +705,30 @@ class ActionContracts(unittest.TestCase):
                 self.assertEqual(steps[0].get("expected_config"), "hardened")
                 self.assertIn("without replacing it", steps[0]["description"])
 
+    def test_eu_policy_phases_are_non_mutating_checks(self):
+        package = ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios"
+        phases = (
+            ("eu-firewall-implementation.yml", "implement-rules"),
+            ("eu-hardening-configurations.yml", "apply-the-hardened-policy"),
+            ("eu-vendor-rdp-compromise.yml", "apply-hardened-policy"),
+        )
+        for filename, step_id in phases:
+            with self.subTest(step=step_id):
+                doc = yaml.safe_load((package / filename).read_text())
+                step = next(item for item in doc["steps"] if item["id"] == step_id)
+                self.assertEqual(
+                    step["action"],
+                    {"type": "check", "expect": {"firewall_config": "improved"}},
+                )
+                self.assertNotRegex(
+                    step["description"],
+                    r"(?i)Execute Step.{0,100}(?:applies|loads|replaces)",
+                )
+                if step_id != "implement-rules":
+                    self.assertIn("Execute Step checks the active policy without replacing it", step["description"])
+                    self.assertIn("recorded identity must match", step["description"])
+                    self.assertIn("applied plan must retain matching provenance", step["description"])
+
     def test_planning_keeps_decision_ui_and_manual_completion(self):
         doc = scenario("remediation-planning")
         step = doc["steps"][2]

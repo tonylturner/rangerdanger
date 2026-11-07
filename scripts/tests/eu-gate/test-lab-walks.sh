@@ -78,6 +78,34 @@ t_run eu_lab_step served-workshop duplicate
 t_expect_eq "$T_STATUS" 1 "duplicate authored IDs fail closed"
 t_expect_fails 1 "ambiguous steps are reported"
 
+# These policy phases explicitly apply through the same API used by the gate's
+# other named-policy setup, then Execute the served check without another apply.
+eu_api_get() {
+  CALLS="$CALLS GET:$1"
+  HTTP_STATUS=200
+  API_BODY=$(jq -nc --argjson steps "$SCENARIO_STEPS" '{steps:($steps|tojson)}')
+}
+eu_apply_named() {
+  CALLS="$CALLS APPLY:$1"
+  API_BODY='{"active_config":"improved","policy_source":"hardened-reference"}'
+}
+eu_execute_step() {
+  CALLS="$CALLS EXEC:$1:$3"
+  API_BODY='{"action_type":"check","success":true}'
+}
+for step_id in implement-rules apply-the-hardened-policy apply-hardened-policy; do
+  SCENARIO_STEPS=$(jq -nc --arg id "$step_id" '[{id:$id,action:{type:"check"}}]')
+  CALLS=""
+  t_run eu_lab_apply_then_check served-workshop "$step_id" improved
+  t_expect_eq "$T_STATUS" 0 "$step_id applies Hardened before executing"
+  t_expect_eq "$CALLS" \
+    " APPLY:improved GET:/api/scenarios/served-workshop EXEC:$step_id:served-workshop" \
+    "$step_id is a non-mutating Execute after explicit API apply"
+  t_expect_eq "$EU_POLICY_APPLY_READBACK" \
+    '{"active_config":"improved","policy_source":"hardened-reference"}' \
+    "$step_id preserves the explicit apply readback"
+done
+
 # Every validator attempt is preceded by a reset, and PASS has its own reset
 # and policy state rather than inheriting the failed weak-policy pre-state.
 CALLS=""

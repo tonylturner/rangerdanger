@@ -80,6 +80,7 @@ steps:
     :::guided
     Use Apply Hardened for the reference, or Apply Your Plan to test your funded changes.
     :::
+    Apply your policy before using Execute Step. Execute Step checks the active policy without replacing it; its recorded identity must match, and an applied plan must retain matching provenance.
 
     :::technical
     Recommit your Lab 2.2 named-source policy. Only CC 10.60.60.20 may initiate RTU TCP/2404. Preserve six operational intents, deny new foreign sources and inspect the running rules. A plan that defers enterprise-to-station closure may still expose this attack.
@@ -100,8 +101,9 @@ steps:
     CC session. Keep trusted-controller and same-subnet risks explicit.
     :::
   action:
-    type: firewall
-    config: improved
+    type: check
+    expect:
+      firewall_config: improved
 - id: re-test-the-attack-under-the-hardened-policy
   title: Re-test the attack under the hardened policy
   expected_config: hardened
