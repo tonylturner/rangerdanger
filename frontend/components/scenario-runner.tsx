@@ -549,15 +549,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 older inline "Config mismatch" notice that only fired
                 on mismatched state - the banner always renders so
                 students can always tell what's loaded. */}
-            <div className="[&>div]:static!">
-              <PolicyStatusBanner
-                activeConfig={activeConfig}
-                policySource={policySource}
-                plan={appliedPlan}
-                expectedConfig={step?.expected_config}
-                policies={packagePolicies}
-              />
-            </div>
+            <PolicyStatusBanner
+              activeConfig={activeConfig}
+              policySource={policySource}
+              plan={appliedPlan}
+              expectedConfig={step?.expected_config}
+              policies={packagePolicies}
+            />
             {/* Per-step track chip: on the firewall labs (after the
                 picker on 2.2 step 1), show which path the student is on
                 and let them switch inline without hunting for the side
