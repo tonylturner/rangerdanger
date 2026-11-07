@@ -193,11 +193,13 @@ steps:
     :::decision id=vendor-retest-hmi-state options="NORMAL_OPS,SECTION_OUTAGE,UNCHANGED_FROM_ATTACK"
     What did the feeder show after retest?
     :::why
-    This depends on your plan, so it is not graded. If a selected closure breaks
-    either hop, RMU1 stays closed and the section keeps supply (NORMAL_OPS). If
-    both owning actions are deferred, the vendor write still opens RMU1 and the
-    section loses supply (SECTION_OUTAGE). Read the physical outcome and device
-    audit, not the Execute Step label.
+    This depends on your plan, so it is not graded. You send this retest from the
+    vendor foothold itself, so hop one (enterprise → vendor) does not affect it —
+    only **Block vendor → field access** decides the outcome. Selected, RMU1 stays
+    closed and the section keeps supply (NORMAL_OPS); deferred, the vendor write
+    still opens RMU1 and the section loses supply (SECTION_OUTAGE), even when hop
+    one is denied. Either restriction still breaks a new end-to-end intrusion.
+    Read the physical outcome and device audit, not the Execute Step label.
     :::
     :::decision id=vendor-retest-defense-layer options="ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER,NEITHER_LAYER"
     Which selected layer breaks this chain? If neither was selected, record

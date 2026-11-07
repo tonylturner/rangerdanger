@@ -313,10 +313,13 @@ steps:
       :::decision id=vendor-retest-hmi-state options=NORMAL_OPS,AUTO_RECLOSE_DISABLED,DOWNSTREAM_OUTAGE,UNCHANGED_FROM_ATTACK
       What did the HMI show? Record auto-reclose and the owning action in Notes.
       :::why
-      This depends on your plan, so it is not graded. If a selected closure breaks
-      either hop, the recloser stays closed and the HMI reads NORMAL_OPS. If both
-      owning actions are deferred, the write still lands and the HMI shows
-      AUTO_RECLOSE_DISABLED. Read the device state, not the Execute Step label.
+      This depends on your plan, so it is not graded. You send this retest from
+      the vendor foothold itself, so hop one (enterprise → vendor) does not affect
+      it — only **Block vendor → field devices entirely** decides the outcome.
+      Selected, the recloser stays closed and the HMI reads NORMAL_OPS; deferred,
+      the write still lands and the HMI shows AUTO_RECLOSE_DISABLED, even when hop
+      one is denied. Either restriction still breaks a new end-to-end intrusion.
+      Read the device state, not the Execute Step label.
       :::
 
       :::decision id=vendor-retest-defense-layer options=ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER,NEITHER_LAYER
