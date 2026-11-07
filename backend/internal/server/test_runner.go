@@ -32,6 +32,11 @@ var firewallWaitBudget = 15 * time.Second
 const (
 	firewallHashPollInterval   = 200 * time.Millisecond
 	firewallCanaryPollInterval = 500 * time.Millisecond
+	// wireReplaySettle is the wait after a check step's replayed wire
+	// commands. The US RTAC polls field devices every 2 s
+	// (services/rtac-sim/main.go), so a shorter wait can read pre-attack
+	// state. It matches the ~3 s the lab text tells students to wait.
+	wireReplaySettle = 3 * time.Second
 )
 
 // ensureHardenedPrecondition applies the reference policy only when a step
@@ -394,8 +399,8 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 
 // replayWireCommands sends a check step's authored wire commands through the
 // same exec path as the Run button, in order, with the Run-button timeout. It
-// then waits the post-sequence propagation pause so device and RTAC state
-// settle before the check reads them. The check remains the oracle: a non-zero
+// then waits wireReplaySettle so device and RTAC state settle before the
+// check reads them. The check remains the oracle: a non-zero
 // exit (a hardened retest times out by design) or an exec error is recorded in
 // the step detail, never a failure on its own.
 func (s *Server) replayWireCommands(ctx context.Context, gen *lifecycle.Generation, run []labs.StepRun) string {
@@ -411,7 +416,7 @@ func (s *Server) replayWireCommands(ctx context.Context, gen *lifecycle.Generati
 		}
 		parts = append(parts, fmt.Sprintf("%s [EXIT %d]", entry.Node, exitCode))
 	}
-	sleepCtx(ctx, 1500*time.Millisecond)
+	sleepCtx(ctx, wireReplaySettle)
 	return "ran " + strings.Join(parts, ", ")
 }
 
