@@ -172,6 +172,26 @@ class SmokeWorkflowTests(unittest.TestCase):
         self.assertEqual(artifacts["if"], "always()")
         self.assertIn("build/smoke-receipts/", artifacts["with"]["path"])
 
+    def test_compiled_singletons_cover_catalog_technical_actions_and_restore(self):
+        steps = self.workflow["jobs"]["smoke"]["steps"]
+        singletons = self.plan_gate("singleton")
+        check = singletons["run"]
+        for expected in (
+                "catalog=frontend/lib/testdata/plans/us-full.json",
+                'select(.kind == "enforce" or .kind == "detect")',
+                "for action in $actions",
+                'golden="frontend/lib/testdata/plans/us-$action.json"',
+                '"build/smoke-receipts/rd01-singletons/$action"',
+                'plan_applied($golden[0])', 'plan_report($golden[0])',
+                "trap restore_weak EXIT", "trap - EXIT", '{"config":"weak"}',
+                "/api/firewall/apply-plan", "/api/firewall/validation-report",
+                "set -euo pipefail"):
+            self.assertIn(expected, check)
+        self.assertNotIn("/apply-custom", check)
+        self.assertLess(steps.index(self.plan_gate("partial")), steps.index(singletons))
+        self.assertIn("build/smoke-receipts/", next(
+            s for s in steps if s.get("name") == "Upload gate evidence")["with"]["path"])
+
     def run_plan_gate(self, selection, mutation=None, changed_golden=False,
                       restore_fail=False):
         """Execute the actual YAML shell with offline HTTP/sleep stubs."""
@@ -244,6 +264,96 @@ sleep() { :; }
             self.assertEqual(json.loads((fixture / "sent.json").read_text()), request)
             self.assertEqual((fixture / "cleanup").read_text(), "restored\n")
             return result
+
+    def run_singleton_gate(self, bad_action=None, restore_fail=False):
+        """Run the workflow's catalog-driven US singleton loop with local stubs."""
+        script = self.plan_gate("singleton")["run"]
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory)
+            plans = fixture / "plans"
+            plans.mkdir()
+            for source in (ROOT / "frontend/lib/testdata/plans").glob("us-*.json"):
+                (plans / source.name).write_bytes(source.read_bytes())
+            script = script.replace(
+                "build/smoke-receipts/rd01-singletons", shlex.quote(f"{directory}/receipts"),
+            ).replace("frontend/lib/testdata/plans", shlex.quote(str(plans)))
+            stubs = r'''
+make_report() {
+  jq '
+    .expectations as $rows
+    | all($rows[]; .planVerdict == .hardenedVerdict) as $accepted
+    | {
+      planProof:{applicable:true,pass:true,hashStable:true,skipped:0,
+        rows:[$rows[]|{id,expected:.planVerdict,observed:.planVerdict,pass:true}]},
+      acceptance:{pass:$accepted,skipped:0,
+        rows:[$rows[]|{id,expected:.hardenedVerdict,observed:.planVerdict,
+          pass:(.planVerdict==.hardenedVerdict)}],
+        preventionGaps:[$rows[]|select(.planVerdict=="allow"
+          and .hardenedVerdict=="deny")|.id]},
+      summary:{
+        authorized_total:([$rows[]|select(.category=="authorized")]|length),
+        authorized_pass:([$rows[]|select(.category=="authorized"
+          and .planVerdict==.hardenedVerdict)]|length),
+        unauthorized_total:([$rows[]|select(.category=="unauthorized")]|length),
+        unauthorized_pass:([$rows[]|select(.category=="unauthorized"
+          and .planVerdict==.hardenedVerdict)]|length),
+        skipped:0,result:(if $accepted then "PASS" else "FAIL" end)}
+    }' "$1"
+}
+curl() {
+  local url="${!#}" data="" golden action
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = --data-binary ]; then data="${2#@}"; fi
+    shift
+  done
+  case "$url" in
+    */api/firewall/apply-plan)
+      action=$(jq -er '.actionIds | if length == 1 then .[0] else error("not a singleton") end' "$data")
+      golden="$fixture/plans/us-$action.json"
+      printf '%s\n' "$golden" >"$fixture/current"
+      jq -n --slurpfile plan "$golden" \
+        '{applied:true,warnings:[],plan:$plan[0]}' \
+        | if [ "$action" = "$bad_action" ]; then jq '.warnings=["fixture warning"]'; else cat; fi
+      ;;
+    */api/firewall/validation-report)
+      make_report "$(cat "$fixture/current")"
+      ;;
+    */api/firewall/apply)
+      echo restored >"$fixture/cleanup"
+      [ "$restore_fail" -eq 0 ] || return 1
+      echo '{"warnings":[]}'
+      ;;
+    *) return 99 ;;
+  esac
+}
+sleep() { :; }
+'''
+            result = subprocess.run(
+                ["bash", "-c", f"fixture={shlex.quote(directory)}\n"
+                 f"bad_action={shlex.quote(bad_action or '')}\n"
+                 f"restore_fail={int(restore_fail)}\n" + stubs + script],
+                cwd=ROOT, capture_output=True, text=True, timeout=20)
+            full = json.loads((plans / "us-full.json").read_text())
+            actions = [a["id"] for a in full["actions"] if a["kind"] in ("enforce", "detect")]
+            self.assertEqual((fixture / "cleanup").read_text(), "restored\n")
+            self.assertTrue((fixture / "receipts/restore.json").is_file())
+            if bad_action:
+                return result
+            for action in actions:
+                case = fixture / f"receipts/{action}"
+                self.assertEqual(json.loads((case / "plan.json").read_text())["actionIds"], [action])
+                self.assertTrue((case / "apply.json").is_file())
+                self.assertTrue((case / "report.json").is_file())
+            return result
+
+    def test_compiled_singleton_step_executes_each_catalog_action_and_restores(self):
+        result = self.run_singleton_gate()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        actions = [a["id"] for a in json.loads(
+            (ROOT / "frontend/lib/testdata/plans/us-full.json").read_text())["actions"]
+            if a["kind"] in ("enforce", "detect")]
+        self.assertNotEqual(self.run_singleton_gate(bad_action=actions[0]).returncode, 0)
+        self.assertNotEqual(self.run_singleton_gate(restore_fail=True).returncode, 0)
 
     def test_plan_steps_execute_against_goldens_and_follow_changed_values(self):
         for selection in ("full", "partial"):

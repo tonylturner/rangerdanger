@@ -336,6 +336,41 @@ jobs:
           jq -e -L "$oracle" --slurpfile golden "$golden" \
             'include "plan-gate"; plan_report($golden[0])' "$receipts/report.json"
 
+      - name: Compiled singleton plan cases cover each enforce/detect catalog action
+        run: |
+          set -euo pipefail
+          API=http://localhost:8088
+          oracle=scripts/tests/fixtures
+          catalog=frontend/lib/testdata/plans/us-full.json
+          actions=$(jq -er '[.actions[] | select(.kind == "enforce" or .kind == "detect") | .id]
+            | if length > 0 then .[] else error("catalog has no technical actions") end' "$catalog")
+          restore_weak() {
+            local rc=$?
+            trap - EXIT
+            if ! curl -fsS --max-time 30 -X POST -H 'Content-Type: application/json' \
+                -d '{"config":"weak"}' "$API/api/firewall/apply" >build/smoke-receipts/rd01-singletons/restore.json; then
+              echo "singleton-plan cleanup failed" >&2
+              rc=1
+            fi
+            exit "$rc"
+          }
+          mkdir -p build/smoke-receipts/rd01-singletons
+          trap restore_weak EXIT
+          for action in $actions; do
+            golden="frontend/lib/testdata/plans/us-$action.json"
+            receipts="build/smoke-receipts/rd01-singletons/$action"
+            mkdir -p "$receipts"
+            jq -L "$oracle" 'include "plan-gate"; plan_request' "$golden" >"$receipts/plan.json"
+            curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' \
+              --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-plan" >"$receipts/apply.json"
+            jq -e -L "$oracle" --slurpfile golden "$golden" \
+              'include "plan-gate"; plan_applied($golden[0])' "$receipts/apply.json"
+            sleep 3
+            curl -fsS --max-time 90 -X POST "$API/api/firewall/validation-report" >"$receipts/report.json"
+            jq -e -L "$oracle" --slurpfile golden "$golden" \
+              'include "plan-gate"; plan_report($golden[0])' "$receipts/report.json"
+          done
+
       - name: Dump container logs on failure
         if: failure()
         run: |
