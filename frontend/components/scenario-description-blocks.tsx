@@ -39,13 +39,13 @@ import {
   writeCurriculum,
   type CurriculumScope,
 } from "../lib/curriculum-storage";
-import { useCurriculumScope } from "../lib/curriculum-scope";
+import { useActiveCurriculum, useCurriculumScope } from "../lib/curriculum-scope";
 import { useCurriculumStorageRevision } from "../lib/use-curriculum-storage-revision";
 import { useHydrated } from "../lib/use-hydrated";
 import {
   injectDynamicContent,
 } from "../lib/scenario-runner-logic";
-import type { CompiledPlan, PlanExpectation } from "../lib/api";
+import type { CompiledPlan, PlanExpectation, Scenario } from "../lib/api";
 import { ValidationReportPanel } from "./validation-report-panel";
 
 // CommandBlock renders a single command line with copy + (optional)
@@ -114,6 +114,7 @@ type DecisionBlockProps = {
   decisionId: string;
   options: string[];
   body: string;
+  explanation?: string;
   /** "<scenarioId>:<decisionId>" - initial value source if local key empty */
   defaultFrom?: string;
   /**
@@ -139,7 +140,7 @@ export function DecisionBlock(props: DecisionBlockProps) {
   return <DecisionInput key={key} {...props} scope={scope} hydrated={hydrated} />;
 }
 
-function DecisionInput({ scenarioId, decisionId, options, body, defaultFrom, correct, scope, hydrated }: DecisionBlockProps & {
+function DecisionInput({ scenarioId, decisionId, options, body, explanation = "", defaultFrom, correct, scope, hydrated }: DecisionBlockProps & {
   scope: CurriculumScope; hydrated: boolean;
 }) {
   const storageName = decisionName(scenarioId, decisionId);
@@ -227,16 +228,14 @@ function DecisionInput({ scenarioId, decisionId, options, body, defaultFrom, cor
               value === correct ? (
                 <span
                   className="rounded-sm border border-emerald-700/60 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300"
-                  title="Your finding matches what the baseline traffic actually shows."
                 >
-                  ✓ correct
+                  ✓ Correct
                 </span>
               ) : (
                 <span
                   className="rounded-sm border border-red-800/60 bg-red-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300"
-                  title={`The baseline capture shows this category as ${correct}. Re-check your analysis.`}
                 >
-                  ✗ doesn&apos;t match capture
+                  ✗ Expected {correct}
                 </span>
               )
             )}
@@ -254,6 +253,14 @@ function DecisionInput({ scenarioId, decisionId, options, body, defaultFrom, cor
               </button>
             )}
           </div>
+          {answered && explanation.trim() && (
+            <div className="mt-3 border-l-2 border-cyan-800/70 pl-3">
+              <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                Why
+              </div>
+              <MarkdownProse>{explanation.replace(/^\n+|\n+$/g, "")}</MarkdownProse>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -267,11 +274,16 @@ function DecisionInput({ scenarioId, decisionId, options, body, defaultFrom, cor
 // lab wasn't done, the panel says so and links back.
 type FindingsPanelProps = {
   sourceScenario: string;
+  sourceScenarioOrder?: string;
   title: string;
   items: FindingsPanelItem[];
 };
 
-export function FindingsPanel({ sourceScenario, title, items }: FindingsPanelProps) {
+function orderForScenario(scenarios: Scenario[] | undefined, scenarioId: string): string | undefined {
+  return scenarios?.find((scenario) => scenario.id === scenarioId)?.order;
+}
+
+export function FindingsPanel({ sourceScenario, sourceScenarioOrder, title, items }: FindingsPanelProps) {
   const scope = useCurriculumScope();
   const hydrated = useHydrated();
   const values = useMemo(() => {
@@ -315,7 +327,7 @@ export function FindingsPanel({ sourceScenario, title, items }: FindingsPanelPro
           You haven&apos;t recorded findings in <a
             href={`/exercises/${sourceScenario}`}
             className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
-          >Lab {sourceScenario}</a> yet - your design verdicts below will be made without that context.
+          >{sourceScenarioOrder ? `Lab ${sourceScenarioOrder}` : "the earlier lab"}</a> yet - your design verdicts below will be made without that context.
         </div>
       )}
     </div>
@@ -447,6 +459,7 @@ type HintBlockProps = {
   onRun: ((cmd: string, runId: string, sourceNode?: string) => void) | null;
   sourceNode?: string;
   scenarioId: string;
+  scenarios?: Scenario[];
 };
 
 // IconStamp - renders a lucide-react icon styled like the actual UI
@@ -480,7 +493,7 @@ export function IconStamp({ name, color, label }: { name: string; color: string;
   );
 }
 
-export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId, sourceNode }: HintBlockProps) {
+export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId, sourceNode, scenarios }: HintBlockProps) {
   const [open, setOpen] = useState(false);
   const segments = splitDescription(body.replace(/^\n+|\n+$/g, ""), sourceNode);
   let cmdIdx = 0;
@@ -536,6 +549,7 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
                   decisionId={seg.id}
                   options={seg.options}
                   body={seg.body}
+                  explanation={seg.explanation}
                   defaultFrom={seg.defaultFrom}
                   correct={seg.correct}
                 />
@@ -546,6 +560,7 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
                 <FindingsPanel
                   key={si}
                   sourceScenario={seg.sourceScenario}
+                  sourceScenarioOrder={orderForScenario(scenarios, seg.sourceScenario)}
                   title={seg.title}
                   items={seg.items}
                 />
@@ -573,6 +588,7 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
                   runningId={runningId}
                   onRun={onRun}
                   scenarioId={scenarioId}
+                  scenarios={scenarios}
                 />
               );
             }
@@ -614,6 +630,7 @@ export function DescriptionSegments({
   generatingTraffic: boolean;
 }) {
   const scope = useCurriculumScope();
+  const { scenarios } = useActiveCurriculum();
   const scenario = { id: scenarioId };
   const step = { title: stepTitle, description: stepDescription };
   return (
@@ -653,6 +670,7 @@ export function DescriptionSegments({
                           runningId={autoRunning}
                           onRun={runHandler}
                           scenarioId={scenario.id}
+                          scenarios={scenarios}
                         />
                       );
                     }
@@ -664,6 +682,7 @@ export function DescriptionSegments({
                           decisionId={seg.id}
                           options={seg.options}
                           body={seg.body}
+                          explanation={seg.explanation}
                           defaultFrom={seg.defaultFrom}
                           correct={seg.correct}
                         />
@@ -674,6 +693,7 @@ export function DescriptionSegments({
                         <FindingsPanel
                           key={`${scenario.id}-${currentStep}-${si}`}
                           sourceScenario={seg.sourceScenario}
+                          sourceScenarioOrder={orderForScenario(scenarios, seg.sourceScenario)}
                           title={seg.title}
                           items={seg.items}
                         />
@@ -793,14 +813,37 @@ export function DescriptionSegments({
                                   runningId={autoRunning}
                                   onRun={runHandler}
                                   scenarioId={scenario.id}
+                                  scenarios={scenarios}
                                 />
                               );
                             }
-                            // Fallback for nested decision / findings /
-                            // plan-coverage / nested trackOnly: render
-                            // body as prose so authors don't lose
-                            // content; richer nesting can be added if
-                            // a YAML actually needs it.
+                            if (sub.type === "decision") {
+                              return (
+                                <DecisionBlock
+                                  key={sj}
+                                  scenarioId={scenario.id}
+                                  decisionId={sub.id}
+                                  options={sub.options}
+                                  body={sub.body}
+                                  explanation={sub.explanation}
+                                  defaultFrom={sub.defaultFrom}
+                                  correct={sub.correct}
+                                />
+                              );
+                            }
+                            if (sub.type === "findingsPanel") {
+                              return (
+                                <FindingsPanel
+                                  key={sj}
+                                  sourceScenario={sub.sourceScenario}
+                                  sourceScenarioOrder={orderForScenario(scenarios, sub.sourceScenario)}
+                                  title={sub.title}
+                                  items={sub.items}
+                                />
+                              );
+                            }
+                            // Nested plan coverage and track-only widgets
+                            // aren't used in this block.
                             return null;
                           })}
                         </div>

@@ -22,9 +22,12 @@ CC_COUNT=0
 CONTROL_COUNT=0
 eu_lab_step() {
   EVENT_LOG="$EVENT_LOG step:$2"
-  if [ "$2" = apply-the-hardened-policy ]; then
-    API_BODY=$(cat "$TMP_DIR/seed/G22-improved-apply.json")
-  fi
+}
+eu_apply_named() {
+  EVENT_LOG="$EVENT_LOG apply:$1"
+  # shellcheck disable=SC2034 # read by the sourced eu-gates-labs.sh
+  EU_APPLY_RESPONSE=$(cat "$TMP_DIR/seed/G22-improved-apply.json")
+  API_BODY='{"active_config":"improved","policy_source":"hardened-reference"}'
 }
 eu_wait_for_field() {
   local name
@@ -87,7 +90,7 @@ t_expect_eq "$T_STATUS" 0 "retained correlated record is complete"
 t_run test -s "$EU_GATE_EVIDENCE_DIR/G22-weak.pcap"
 t_expect_eq "$T_STATUS" 0 "raw PCAP retained on success"
 case "$EVENT_LOG" in
-  *"capture weak-command:"*" consequence-field consequence-cc decode step:restore-the-substation restoration-field restoration-cc step:apply-the-hardened-policy improved-control-before step:re-test-the-attack-under-the-hardened-policy improved-command:"*" improved-control-after step:validate")
+  *"capture weak-command:"*" consequence-field consequence-cc decode step:restore-the-substation restoration-field restoration-cc apply:improved step:apply-the-hardened-policy improved-control-before step:re-test-the-attack-under-the-hardened-policy improved-command:"*" improved-control-after step:validate")
     t_ok "capture/command/consequence/decode/recovery/Improved/identical-retest order" ;;
   *) t_not_ok "unexpected event order: $EVENT_LOG" ;;
 esac

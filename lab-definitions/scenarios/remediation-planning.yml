@@ -20,133 +20,109 @@ steps:
     title: "Review the findings you captured"
     expected_config: weak
     description: |
-      Below are the findings you documented in [Lab 1.2 (Baseline Traffic Analysis)](/exercises/baseline-assessment) - both your passive capture analysis and the active probe result. Each of the actions in the next step maps to one or more of these findings. As you read the action catalog, mentally connect each one back to which finding it addresses.
+      **Time budget:** ~12 minutes (Guided path).
 
-      :::findings-panel from=baseline-assessment title="Passive capture findings (Lab 1.2 step 6)"
+      Review your structured passive findings, latent exposure and design verdicts before planning.
+
+      :::findings-panel from=baseline-assessment title="Passive findings"
       enterprise-to-field: Enterprise → Field on Modbus/DNP3
       enterprise-to-ot: Enterprise → OT Operations on ICS ports
       vendor-to-ot: Vendor DMZ → OT Operations on Modbus/HMI control
       non-rtac-to-field: Non-RTAC OT hosts → Field devices
-      unauth-modbus-writes: Unauthorized Modbus writes / DNP3 Direct Operate
+      unauth-modbus-writes: Foreign-source Modbus writes / DNP3 Direct Operate
       :::
 
-      :::findings-panel from=baseline-assessment title="Active probe result (Lab 1.2 step 7)"
-      latent-exposure-confirmed: Latent exposure confirmed beyond passive observation
+      :::hint Optional depth
+      Keep observations, active reachability and design judgments distinct when comparing findings.
+      :::
+
+      :::findings-panel from=baseline-assessment title="Latent exposure and required conduits"
+      latent-exposure-confirmed: Active probe confirmed latent exposure
+      required-cross-zone-conduits: Required cross-zone conduits
+      intra-zone-dependencies: Same-zone operational dependencies
+      continuity-with-minimal-conduits: Continuity with required conduits
+      :::
+
+      :::findings-panel from=segmentation-requirements title="Design verdicts"
+      enterprise-to-field: Enterprise → Field on Modbus/DNP3
+      enterprise-to-ot: Enterprise → OT Operations on ICS ports
+      vendor-to-ot: Vendor DMZ → OT Operations on Modbus/HMI control
+      non-rtac-to-field: Non-RTAC OT hosts → Field devices
+      unauth-modbus-writes: Foreign-source Modbus writes / DNP3 Direct Operate
       :::
 
       ### Other observations you may have made
 
-      Things a thorough reviewer would also note from Lab 1.2, even though they're not in the formal findings list:
+      A thorough review may include findings that are not in the formal list:
 
       - **No protocol-aware constraints on ICS ports.** The capture shows traffic on TCP/502 and TCP/20000, but the firewall has no visibility into Modbus or DNP3 function codes. Reads and writes look identical at L4. The *modbus-dpi* and *dnp3-dpi* actions add detection, not prevention. The L4 source pin enforces; DPI detects and logs.
-      - **Firewall visibility has a blind spot at the RTAC.** The RTAC is multi-homed across OT Ops and Field for realism, but its application traffic to field devices is forced through containd by host-level hardening. The hardening is in place - but it's a compensating control, not a network-layer enforcement, and it can drift if not periodically validated. This is the gap the *rtac-architecture-review* action closes.
+      - **Firewall visibility has a blind spot at the RTAC.** The RTAC is multi-homed across OT Ops and Field for realism, but its application traffic to field devices is forced through containd by host-level hardening. The hardening is in place, but it is a compensating control, not network-layer enforcement, and it can drift if not periodically validated. This is the gap the *rtac-architecture-review* action closes.
 
-      Whether you consider these as additional findings depends on how deep your assessment scope ran. They map to remediation actions just like the formal findings.
-
-      **Time budget:** ~12 minutes (Guided path).
-
+      These additional observations map to remediation actions just like the formal findings.
   - id: understand-the-team-budget
     title: "Understand the team budget"
-    description: >
-      You have 500 hours of total labor for this quarter's
-      segmentation work. That total is split across four
-      roles, and each role has its own default capacity cap:
+    description: |
+      You have **500 labor hours** this quarter. Default capacities are:
 
-        - OT Engineer - 120 hours
-          The person who understands substation operations and
-          must sign off on any change that could affect control
-          traffic or protection.
+      | Role | Capacity |
+      |---|---:|
+      | OT Engineer | 120h |
+      | Firewall Admin | 140h |
+      | Network Engineer | 120h |
+      | Security Analyst | 120h |
 
-        - Firewall Admin - 140 hours
-          The person who owns containd policy and applies rules.
+      - **OT Engineer** understands substation operations and signs off on changes that could affect control traffic or protection.
+      - **Firewall Admin** owns containd policy and applies rules.
+      - **Network Engineer** handles network access and zone/interface configuration.
+      - **Security Analyst** writes requirements, reviews PCAPs and validates evidence.
 
-        - Network Engineer - 120 hours
-          The person who handles VLANs, routing, and
-          zone/interface configuration.
+      Actions require one or more roles simultaneously. If a role is assigned more work than its capacity, that team is overloaded even if the total 500-hour budget still has room. An action's effort is split evenly across its required roles; for example, an 80h DNP3 DPI action shared by three roles is about 27h per role after rounding.
 
-        - Security Analyst - 120 hours
-          The person who writes requirements, runs PCAP reviews,
-          and validates evidence.
+      Lab 1.3 readiness can reduce caps, increase action effort or block actions with unmet dependencies. **Use default budget** restores the unconstrained model. Blocked saved choices stay recorded but are excluded from draft totals, coverage and Apply Your Plan; already-applied provenance is unchanged.
 
-      Actions require one or more roles simultaneously. If you
-      schedule more work than a role has hours for, that team
-      is overloaded and the work is not realistic - even if the
-      total 500-hour budget still has room.
+      Watch the role utilization bars as you select actions. A role in red is over capacity. This is a warning, not an apply limit.
 
-      Lab 1.3 readiness can reduce these caps, increase action effort and block
-      actions with unmet dependencies. Use default budget restores the unconstrained
-      model. Blocked saved choices stay recorded but are excluded from draft totals,
-      coverage and Apply Your Plan. Already-applied provenance is unchanged.
-
-      Watch the role utilization bars as you select actions
-      in the next step. A role in red is over capacity. This is a warning, not an apply limit.
-
+      :::hint Optional depth
+      Confirm role availability and change windows before treating estimates as a schedule.
+      :::
   - id: choose-your-remediation-plan
     title: "Choose your remediation plan"
     description: |
-      Select the actions you will execute this quarter. The
-      500-hour budget and each role capacity guide your tradeoff.
-      Budget overrun is a warning only. You can apply an empty, partial
-      or over-budget plan.
+      Select a defensible subset in the planner. Some actions change L4 reachability; others add detection or remain planning-only.
 
-      Cost model: each action lists a total effort in hours
-      and the roles that must collaborate on it. The effort
-      is split evenly across the required roles - an 80-hour
-      action requiring 3 roles costs ~27 hours to each of
-      those three teams.
+      The L4 source pin enforces; DPI detects and logs.
 
-      Before clicking, read each action's "why" and consider
-      which finding it addresses.
+      Planning-only actions do not change the running firewall.
 
-      When you are done, review the Remaining hours and
-      per-role utilization. If any role is red, record the
-      capacity gap and who must approve the work.
+      Partial plans are valid. An empty or planning-only plan compiles to Weak exposures. Required RTAC, HMI and NTP operations remain in every plan.
 
-      **Workshop note:**
-      - Selections save automatically. Do not use Execute Step for this decision; click Mark Complete when you have recorded the tradeoff, then record your reflection.
-      - Apply Your Plan in Lab 2.2 to test your choices. Selecting an action alone does not apply it. Selection order does not set rule order; compilation uses authored slots.
+      Before choosing, read each action's **why** and connect it to a finding.
 
-      | Kind | Actions | Effect when applied |
-      |---|---|---|
-      | Enforceable | `restrict-enterprise-to-vendor`, `block-enterprise-to-ot`, `block-enterprise-to-field`, `restrict-vendor-to-ot`, `block-vendor-to-field`, `pin-rtac-to-field` | Change L4 reachability |
-      | Detection-only | `modbus-dpi`, `dnp3-dpi`, `improve-logging` | Add visibility; change no allow/block verdict |
-      | Planning-only | `tighten-firewall-objects`, `rtac-architecture-review`, `positive-validation`, `ids-deployment`, `ot-asset-inventory`, `vendor-zta-broker` | Emit no firewall change |
+      Selection alone does not apply changes: test your saved choices with Apply Your Plan in Lab 2.2.
+      After selecting actions, review Remaining hours and role utilization. Selections save automatically; click **Mark Complete** to continue to the reflection.
 
-      An empty or planning-only plan is valid and compiles to Weak exposures.
-      Required RTAC, HMI and NTP operations remain in every plan.
+      :::hint Optional depth
+      Confirm the site test owner and operational window before scheduling policy changes.
+      :::
     action:
       type: decision
 
   - id: reflect-what-are-you-accepting
     title: "Reflect - what are you accepting?"
     description: |
-      Below is your plan, mapped against the Lab 1.3 design verdicts
-      and the Lab 1.2 findings they address. Use it to anchor the
-      reflection that follows - every gap or partial in the panel is
-      something you'll see again later in the workshop.
-
-      :::plan-coverage title="Your plan vs the Lab 1.3 design verdicts"
+      :::plan-coverage title="Coverage of your design"
       :::
 
-      Use your Exercise Notes to answer three questions briefly.
-      These answers become part of your plan of record and travel
-      with you into the remaining exercises.
+      For discussion:
 
-      **Question 1** - What did you choose NOT to fix this quarter,
-      and why? (Cost? Dependency on another change? Political risk?
-      Low severity?) Anchor this in the GAP and PARTIAL rows from
-      the panel above.
+      1. Which findings do the funded actions address, and what stays open?
+      2. What did you defer, why, and who accepts the residual risk?
+      3. Which role or readiness constraint binds, and what test shows the work is done?
 
-      **Question 2** - What residual risk remains in the substation
-      after your plan is executed? Which of your Lab 1.2 findings
-      (passive observations + active probe results) are still at
-      least partially open?
+      Your action selections and design verdicts carry forward as structured inputs. Applying a plan and validating the running policy happen in later labs.
 
-      **Question 3** - Which role is your biggest constraint? Which
-      team would you need to grow first to execute a more aggressive
-      plan next quarter?
+      Labs 2.3 and 2.4 judge the applied plan against its expected results, with Hardened as the comparison. A saved selection is not running-state evidence; test after applying it.
 
-      The selections you made in the previous step are saved to your
-      exercise state. Labs 2.3 and 2.4 judge the applied plan against
-      its expected results, with Hardened as the comparison. A saved selection
-      is not running-state evidence. Test after applying it.
+      :::hint Optional depth
+      Coverage reports what a plan targets; it is not evidence that live validation has passed.
+      :::

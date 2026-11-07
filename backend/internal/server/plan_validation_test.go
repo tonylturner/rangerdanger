@@ -89,7 +89,7 @@ func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 				}
 			}
 		}
-		if check := s.usPolicyJudgment(context.Background(), gen); check.Status != "pass" {
+		if check := s.policyJudgment(context.Background(), gen); check.Status != "pass" {
 			t.Fatal(check)
 		}
 	}
@@ -99,13 +99,13 @@ func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 	data, _ = os.ReadFile(filepath.Join(s.cfg.LabDefinitionsPath, gen.Package.Policies["weak"]))
 	s.lastAppliedHash, _ = containd.FirewallHashFromBytes(data)
 	s.policySource = "weak"
-	if check := s.usPolicyJudgment(context.Background(), gen); check.Status != "fail" {
+	if check := s.policyJudgment(context.Background(), gen); check.Status != "fail" {
 		t.Fatal(check)
 	}
 	data, _ = os.ReadFile(filepath.Join(s.cfg.LabDefinitionsPath, gen.Package.Policies["improved"]))
 	s.lastAppliedHash, _ = containd.FirewallHashFromBytes(data)
 	s.policySource = "manual-custom"
-	if check := s.usPolicyJudgment(context.Background(), gen); check.Status != "pass" || !strings.Contains(check.Detail, "not an applied plan") {
+	if check := s.policyJudgment(context.Background(), gen); check.Status != "pass" || !strings.Contains(check.Detail, "not an applied plan") {
 		t.Fatal(check)
 	}
 }

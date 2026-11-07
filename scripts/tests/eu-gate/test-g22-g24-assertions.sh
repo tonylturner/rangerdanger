@@ -24,6 +24,12 @@ G22_JOURNAL=""
 G22_JOURNAL_CALLS=0
 G22_CLOCK=0
 eu_lab_step() { EVENTS="$EVENTS step:$2"; }
+eu_apply_named() {
+  EVENTS="$EVENTS apply:$1"
+  # shellcheck disable=SC2034 # read by the sourced eu-gates-labs.sh
+  EU_APPLY_RESPONSE='{"containd":{"applyId":"a1","protection":"protecting"}}'
+  API_BODY='{"active_config":"improved","policy_source":"hardened-reference"}'
+}
 eu_lab_exec() { API_BODY='{"exit_code":0,"stdout":"","stderr":""}'; }
 # Capture and evidence have dedicated real-decoder/reducer tests. These stubs
 # isolate the original G22/G24 assertion tests and must never reach Docker.
@@ -350,6 +356,7 @@ G24_RETEST_AUDIT='{"entries":[
 G24_RMU1_POSITION=closed
 G24_RMU2_POSITION=open
 eu_lab_step() { :; }
+eu_apply_named() { API_BODY='{"active_config":"improved","policy_source":"hardened-reference"}'; }
 eu_lab_nmap_vendor() { :; }
 eu_wait_for_field() { :; }
 eu_lab_exec() {

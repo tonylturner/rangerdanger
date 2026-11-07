@@ -68,6 +68,14 @@ eu_lab_step() {
   esac
 }
 
+# Apply through the same API as the student's Apply Hardened control, then
+# Execute the authored check without letting it mutate the policy.
+eu_lab_apply_then_check() {
+  local scenario="$1" step_id="$2" policy="$3"
+  eu_apply_named "$policy" || return
+  eu_lab_step "$scenario" "$step_id"
+}
+
 eu_lab_wait_traffic_quiescent() {
   local label="$1" attempt
   for ((attempt = 0; attempt < 35; attempt++)); do
@@ -275,7 +283,7 @@ eu_lab_implementation_walk() {
   eu_lab_step "$scenario" verify-access-to-containd || return
   eu_lab_step "$scenario" phase-1-verify-current-access-under-the-weak-baseline || return
   eu_lab_step "$scenario" phase-2-remove-broad-trust-and-establish-default-deny || return
-  eu_lab_step "$scenario" implement-rules || return
+  eu_lab_apply_then_check "$scenario" implement-rules improved || return
   eu_lab_step "$scenario" phase-4-enable-logging-and-visibility || return
   eu_lab_reconnect_cc || return
   eu_lab_step "$scenario" test-positive || return
@@ -379,8 +387,8 @@ eu_lab_g22_walk() {
   eu_lab_g22_event restoration-field "$WAIT_BODY" || return
   eu_lab_g22_wait_cc "$restore_start" closed || return
   eu_lab_g22_event restoration-cc "$WAIT_BODY" || return
-  eu_lab_step "$scenario" apply-the-hardened-policy || return
-  eu_lab_g22_event improved-apply "$API_BODY" || return
+  eu_lab_apply_then_check "$scenario" apply-the-hardened-policy improved || return
+  eu_lab_g22_event improved-apply "$EU_APPLY_RESPONSE" || return
   eu_lab_reconnect_cc || return
   eu_lab_g22_event improved-control-before "$WAIT_BODY" || return
   eu_lab_step "$scenario" re-test-the-attack-under-the-hardened-policy || return
@@ -495,7 +503,7 @@ eu_lab_vendor_walk() {
   eu_lab_step "$scenario" restore-service || return
   eu_wait_for_field '.devices["rmu-1"].position == "closed" and .devices["rmu-2"].position == "open"
     and .process.truth_stale == false' 15 "student vendor lab device restore" || return
-  eu_lab_step "$scenario" apply-hardened-policy || return
+  eu_lab_apply_then_check "$scenario" apply-hardened-policy improved || return
   eu_lab_nmap_vendor filtered || return
   eu_management rmu-1 GET '/api/audit?after=0' || return
   before_seq=$(printf '%s' "$API_BODY" | jq -er '.latest_seq | numbers') || {

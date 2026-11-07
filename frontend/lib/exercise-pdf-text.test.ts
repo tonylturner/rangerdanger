@@ -27,6 +27,15 @@ describe("splitDescription", () => {
     expect(JSON.stringify(segments)).not.toMatch(/secret-answer|correct=|:::/);
   });
 
+  it("does not print decision explanations in the student workbook", () => {
+    const segments = splitDescription(
+      ":::decision id=keyed correct=BLOCK\nQuestion?\n:::why\nReference answer: BLOCK.\n:::",
+    );
+    expect(JSON.stringify(segments)).toContain("Question?");
+    expect(JSON.stringify(segments)).toContain("Choices:");
+    expect(JSON.stringify(segments)).not.toContain("Reference answer");
+  });
+
   it("keeps prose around a titled hint fence in order", () => {
     const segments = splitDescription(
       "Intro prose.\n:::hint Check the result\nUse this output.\n:::\nClosing prose.",

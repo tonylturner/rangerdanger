@@ -120,9 +120,9 @@ func (s *Server) commandVerdict(ctx context.Context, gen *lifecycle.Generation, 
 	return labs.Evaluate(policy.Rules, policy.DefaultAction, route.Tuple), nil
 }
 
-// usPolicyJudgment replaces label-only claims with evaluation of the running
+// policyJudgment replaces label-only claims with evaluation of the running
 // firewall over the same authored proof universe used by the report.
-func (s *Server) usPolicyJudgment(ctx context.Context, gen *lifecycle.Generation) ValidationCheck {
+func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) ValidationCheck {
 	const name = "Running policy matches judging target"
 	fail := func(err error) ValidationCheck { return checkFail(name, err.Error()) }
 	data, err := gen.Containd().GetConfigDocument(ctx)
@@ -140,7 +140,11 @@ func (s *Server) usPolicyJudgment(ctx context.Context, gen *lifecycle.Generation
 	if want == "" || hash != want {
 		return fail(fmt.Errorf("running policy differs from recorded identity; wait for the observer or reapply"))
 	}
-	if source != "plan" {
+	if source == "plan" {
+		if provenance == nil || provenance.PolicyHash != hash {
+			return fail(fmt.Errorf("applied plan identity missing or divergent"))
+		}
+	} else {
 		path, err := s.policyPath(gen.Package, "weak")
 		if err != nil {
 			return fail(err)
@@ -156,8 +160,6 @@ func (s *Server) usPolicyJudgment(ctx context.Context, gen *lifecycle.Generation
 		if hash == weakHash {
 			return fail(fmt.Errorf("weak baseline remains active"))
 		}
-	} else if provenance == nil || provenance.PolicyHash != hash {
-		return fail(fmt.Errorf("applied plan identity missing or divergent"))
 	}
 	policy, err := readEvaluatedFirewall(data)
 	if err != nil {

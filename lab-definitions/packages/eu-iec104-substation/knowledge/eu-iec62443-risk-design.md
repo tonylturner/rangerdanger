@@ -26,6 +26,6 @@ Also assess availability costs. Removing PLC-to-OLTC Modbus reduces connectivity
 
 ### Requirements and approval
 
-ZCR 6 documents requirements, assumptions and constraints. Produce a communications matrix, command inventory, measurable positive and negative tests, rollback criteria and a residual-risk register. State plainly that this range has no command-aware IEC 104 firewall rule and no demonstrated IEC 62351 deployment.
+ZCR 6 documents requirements, assumptions and constraints. Produce a communications matrix, command inventory, measurable positive and negative tests, rollback criteria and a residual-risk register. State plainly that this range has no command-aware IEC 104 enforcement (its IEC 104 command rules are monitor-only) and no demonstrated IEC 62351 deployment.
 
 ZCR 7 is asset-owner approval. A successful lab validator is technical evidence, not owner acceptance of production risk. The handover should identify who accepts the remaining trusted-controller and same-subnet risks, and when the assessment must be revisited. Use the [change plan](#eu-change-resource-plan) to turn that discussion into an executable, reviewable work package.

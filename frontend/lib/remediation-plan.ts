@@ -15,6 +15,15 @@ export function saveRemediationPlan(scope: CurriculumScope, plan: RemediationPla
   writeCurriculum(scope, REMEDIATION_PLAN, JSON.stringify(plan));
 }
 
+export function saveEmptyRemediationPlanIfMissing(scope: CurriculumScope, exerciseId: string): void {
+  if (loadSavedRemediationPlan(scope)) return;
+  saveRemediationPlan(scope, {
+    exerciseId,
+    selectedActionIds: [],
+    savedAt: new Date().toISOString(),
+  });
+}
+
 export function loadSavedRemediationPlan(scope: CurriculumScope): RemediationPlan | null {
   if (!scope.curriculum) return null;
   const raw = readCurriculum(scope, REMEDIATION_PLAN);

@@ -296,6 +296,10 @@ eu_apply_named() {
     return 1
   fi
   response="$API_BODY"
+  # The apply response carries the containd readiness receipt; G22 evidence
+  # consumes it, so keep it after the active-policy readback replaces API_BODY.
+  # shellcheck disable=SC2034 # read by eu-gates-labs.sh
+  EU_APPLY_RESPONSE="$response"
   if [ "$HTTP_STATUS" != "200" ]; then
     fail "apply named $name returned HTTP $HTTP_STATUS: $response"
     return 1
