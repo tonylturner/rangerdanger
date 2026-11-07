@@ -46,6 +46,7 @@ def validate(response, table):
     if len(set(ids)) != len(ids) or set(ids) != set(table):
         raise ValueError(f"scenario inventory mismatch: expected {list(table)}, got {ids}")
     total = passed = failed = auto = reset_failures = 0
+    problems = []
     lines = ["scenario | executed | manual | decision (manual/decision are NOT verified)"]
     for scenario in scenarios:
         sid = scenario["scenario_id"]
@@ -70,9 +71,13 @@ def validate(response, table):
             passed += int(result["passed"])
             failed += int(not result["passed"])
             scenario_passed = scenario_passed and result["passed"]
+            if not result["passed"]:
+                problems.append(f'{sid} step {idx} "{expected["title"]}": {result.get("detail", "")}')
         if type(scenario.get("reset_ok")) is not bool:
             raise ValueError(f"{sid}: invalid reset_ok")
         reset_failures += int(not scenario["reset_ok"])
+        if not scenario["reset_ok"]:
+            problems.append(f'{sid} reset: {scenario.get("reset_detail", "")}')
         expected_passed = scenario_passed and scenario["reset_ok"]
         if type(scenario.get("passed")) is not bool or scenario["passed"] != expected_passed:
             raise ValueError(f"{sid}: inconsistent scenario verdict")
@@ -82,7 +87,8 @@ def validate(response, table):
         if type(response.get(field)) is not int or response[field] != actual:
             raise ValueError(f"{field}: reported {response.get(field)}, counted {actual}")
     if failed or reset_failures:
-        raise ValueError(f"failed steps={failed}; reset failures={reset_failures}")
+        raise ValueError(f"failed steps={failed}; reset failures={reset_failures}\n"
+                         + "\n".join(f"  {problem}" for problem in problems))
     lines.append(f"passed={passed}/{total}; auto-passed={auto} (not execution coverage)")
     return "\n".join(lines)
 
