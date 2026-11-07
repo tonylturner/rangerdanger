@@ -14,6 +14,8 @@ eu_station_shape() {
 eu_plan_case() {
   local selection="$1" request
   local golden="$ROOT/frontend/lib/testdata/plans/eu-$selection.json"
+  local applied="$TMP_DIR/G28-$selection-apply.json"
+  local report="$TMP_DIR/G28-$selection-report.json"
   local oracle="$ROOT/scripts/tests/fixtures"
   request=$(jq -ce -L "$oracle" 'include "plan-gate"; plan_request' "$golden") || return 1
   printf '%s\n' "$request" >"$TMP_DIR/G28-$selection-request.json" || return 1
@@ -21,18 +23,20 @@ eu_plan_case() {
   state_touched=1
   eu_api_post /api/firewall/apply-plan "$request" 60 || return 1
   [ "$HTTP_STATUS" = 200 ] || return 1
-  printf '%s' "$API_BODY" | jq -e -L "$oracle" --slurpfile golden "$golden" \
-    'include "plan-gate"; plan_applied($golden[0])' || return 1
+  printf '%s\n' "$API_BODY" >"$applied" || return 1
+  jq -e -L "$oracle" --slurpfile golden "$golden" \
+    'include "plan-gate"; plan_applied($golden[0])' "$applied" || return 1
   eu_require_backend_protection "$API_BODY" || return 1
   eu_api_post /api/firewall/validation-report '{}' 90 || return 1
   [ "$HTTP_STATUS" = 200 ] || return 1
-  printf '%s' "$API_BODY" | jq -e -L "$oracle" --slurpfile golden "$golden" \
-    'include "plan-gate"; plan_report($golden[0])' || return 1
+  printf '%s\n' "$API_BODY" >"$report" || return 1
+  jq -e -L "$oracle" --slurpfile golden "$golden" \
+    'include "plan-gate"; plan_report($golden[0])' "$report" || return 1
   pass "G28 $selection plan: faithful proof, golden hardened acceptance and exact prevention gaps; no skipped tuples"
 }
 
 eu_gate_G28() {
-  local selection result=0
+  local selection actions result=0
   for selection in full partial; do
     if ! eu_plan_case "$selection"; then
       fail "G28 $selection plan apply/report did not match its golden: HTTP ${HTTP_STATUS:-none} ${API_BODY:-}"
@@ -40,8 +44,23 @@ eu_gate_G28() {
       break
     fi
   done
+  if [ "$result" -eq 0 ]; then
+    actions=$(jq -er '[.actions[] | select(.kind == "enforce" or .kind == "detect") | .id]
+      | if length > 0 then .[] else error("catalog has no technical actions") end' \
+      "$ROOT/frontend/lib/testdata/plans/eu-full.json") || result=1
+    if [ "$result" -eq 0 ]; then
+      for selection in $actions; do
+        if ! eu_plan_case "$selection"; then
+          fail "G28 $selection singleton plan apply/report did not match its golden: HTTP ${HTTP_STATUS:-none} ${API_BODY:-}"
+          result=1
+          break
+        fi
+      done
+    fi
+  fi
   # Named apply also asserts the plan provenance has cleared, even on failure.
   eu_apply_named weak || result=1
+  eu_save_g28_evidence || result=1
   return "$result"
 }
 

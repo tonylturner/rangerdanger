@@ -58,6 +58,29 @@ eu_save_evidence() {
   printf 'Gate evidence kept in %s\n' "$dir" >&2
 }
 
+# G28 request, apply and report documents are retained on passing runs too.
+eu_save_g28_evidence() {
+  local dir="${EU_GATE_EVIDENCE_DIR:-$ROOT/build/deploy-test/eu-evidence/$(date -u +%Y%m%dT%H%M%SZ)}/G28"
+  local file count=0
+  mkdir -p "$dir" || {
+    fail "could not create retained G28 evidence directory $dir"
+    return 1
+  }
+  for file in "$TMP_DIR"/G28-*; do
+    [ -f "$file" ] || continue
+    cp "$file" "$dir/" || {
+      fail "could not retain G28 evidence $file in $dir"
+      return 1
+    }
+    count=$((count + 1))
+  done
+  if [ "$count" -eq 0 ]; then
+    fail "G28 produced no request/apply/report evidence to retain"
+    return 1
+  fi
+  printf 'G28 evidence kept in %s (%d files)\n' "$dir" "$count" >&2
+}
+
 # shellcheck disable=SC2329
 eu_cleanup() {
   local exit_status="$1" weak_reset=0
