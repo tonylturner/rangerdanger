@@ -145,56 +145,30 @@ class SmokeWorkflowTests(unittest.TestCase):
         self.assertIn('--existing-stack) EXISTING_STACK=1', source)
         self.assertIn("EXISTING_STACK=0", source)
 
-    def plan_gate(self, selection):
-        return next(s for s in self.workflow["jobs"]["smoke"]["steps"]
-                    if s.get("name", "").startswith(f"Compiled {selection} plan"))
-
-    def test_compiled_plans_are_golden_backed_hard_gates(self):
+    def test_compiled_plans_use_one_local_and_ci_entrypoint(self):
         steps = self.workflow["jobs"]["smoke"]["steps"]
+        gates = [s for s in steps if "compiled-plan" in s.get("name", "")]
+        self.assertEqual(len(gates), 1)
+        self.assertEqual(gates[0]["run"], "./scripts/us-plan-smoke.sh")
+        commands = "\n".join(s.get("run", "") for s in steps)
+        self.assertNotIn("/api/firewall/apply-plan", commands)
         self.assertFalse([s for s in steps if s.get("continue-on-error")])
-        for selection in ("full", "partial"):
-            check = self.plan_gate(selection)["run"]
-            for expected in (f"golden=frontend/lib/testdata/plans/us-{selection}.json",
-                             "oracle=scripts/tests/fixtures", 'include "plan-gate"',
-                             'plan_request', 'plan_applied($golden[0])',
-                             'plan_report($golden[0])', '--slurpfile golden "$golden"',
-                             '--data-binary @"$receipts/plan.json"',
-                             "/api/firewall/apply-plan", "/api/firewall/validation-report",
-                             "trap restore_weak EXIT", "trap - EXIT", '{"config":"weak"}',
-                             "set -euo pipefail"):
-                self.assertIn(expected, check)
-            self.assertNotIn("/apply-custom", check)
-            self.assertNotIn("rd01-full-plan.json", check)
-        self.assertLess(next(i for i, s in enumerate(steps) if s.get("name") == "Workshop test-suite"),
-                        steps.index(self.plan_gate("full")))
-        self.assertLess(steps.index(self.plan_gate("full")), steps.index(self.plan_gate("partial")))
+        self.assertLess(next(i for i, s in enumerate(steps)
+                             if s.get("name") == "Workshop test-suite"), steps.index(gates[0]))
         artifacts = next(s for s in steps if s.get("name") == "Upload gate evidence")
         self.assertEqual(artifacts["if"], "always()")
         self.assertIn("build/smoke-receipts/", artifacts["with"]["path"])
 
-    def test_compiled_singletons_cover_catalog_technical_actions_and_restore(self):
-        steps = self.workflow["jobs"]["smoke"]["steps"]
-        singletons = self.plan_gate("singleton")
-        check = singletons["run"]
-        for expected in (
-                "catalog=frontend/lib/testdata/plans/us-full.json",
-                'select(.kind == "enforce" or .kind == "detect")',
-                "for action in $actions",
-                'golden="frontend/lib/testdata/plans/us-$action.json"',
-                '"build/smoke-receipts/rd01-singletons/$action"',
-                'plan_applied($golden[0])', 'plan_report($golden[0])',
-                "trap restore_weak EXIT", "trap - EXIT", '{"config":"weak"}',
-                "/api/firewall/apply-plan", "/api/firewall/validation-report",
-                "set -euo pipefail"):
-            self.assertIn(expected, check)
-        self.assertNotIn("/apply-custom", check)
-        self.assertLess(steps.index(self.plan_gate("partial")), steps.index(singletons))
-        self.assertIn("build/smoke-receipts/", next(
-            s for s in steps if s.get("name") == "Upload gate evidence")["with"]["path"])
+    def plan_script(self, directory):
+        source = (ROOT / "scripts/us-plan-smoke.sh").read_text()
+        source = "\n".join(
+            f"SCRIPT_DIR={shlex.quote(str(ROOT / 'scripts'))}"
+            if line.startswith("SCRIPT_DIR=") else line for line in source.splitlines())
+        return source.replace("base=build/smoke-receipts", f"base={shlex.quote(directory)}/receipts")
 
     def run_plan_gate(self, selection, mutation=None, changed_golden=False,
-                      restore_fail=False):
-        """Execute the actual YAML shell with offline HTTP/sleep stubs."""
+                      restore_fail=False, restore_degraded=False):
+        """Execute the script's case runner and cleanup with offline HTTP stubs."""
         golden = json.loads((ROOT / f"frontend/lib/testdata/plans/us-{selection}.json").read_text())
         if changed_golden:
             golden["revision"] += 1
@@ -214,7 +188,8 @@ class SmokeWorkflowTests(unittest.TestCase):
         accepted = all(r["planVerdict"] == r["hardenedVerdict"] for r in rows)
         request = {k: golden[k] for k in ("packageId", "revision")}
         request["actionIds"] = [a["id"] for a in golden["actions"] if a["chosen"]]
-        apply = {"applied": True, "warnings": [], "plan": json.loads(json.dumps(golden))}
+        apply = {"applied": True, "warnings": [], "plan": json.loads(json.dumps(golden)),
+                 "containd": {"applyId": "fixture", "protection": "protecting"}}
         report = {
             "planProof": {"applicable": True, "pass": True, "hashStable": True, "skipped": 0,
                           "rows": [{"id": r["id"], "expected": r["planVerdict"],
@@ -236,11 +211,8 @@ class SmokeWorkflowTests(unittest.TestCase):
             fixture = Path(directory)
             for name, data in (("golden", golden), ("apply", apply), ("report", report)):
                 (fixture / f"{name}.json").write_text(json.dumps(data))
-            script = self.plan_gate(selection)["run"]
-            receipt_line = next(line for line in script.splitlines() if line.startswith("receipts="))
-            script = script.replace(receipt_line, f"receipts={shlex.quote(directory)}/receipts")
-            script = script.replace(f"frontend/lib/testdata/plans/us-{selection}.json",
-                                    shlex.quote(str(fixture / "golden.json")))
+            script = self.plan_script(directory).split('\nrun_case "$catalog"', 1)[0]
+            script += f'\nrun_case {shlex.quote(str(fixture / "golden.json"))} "$base/case"\n'
             stubs = r'''
 curl() {
   local url="${!#}"
@@ -251,32 +223,36 @@ curl() {
   case "$url" in
     */apply-plan) cat "$fixture/apply.json" ;;
     */validation-report) cat "$fixture/report.json" ;;
-    */apply) echo restored >>"$fixture/cleanup"; return "$restore_fail" ;;
+    */apply)
+      echo restored >>"$fixture/cleanup"
+      printf '{"containd":{"applyId":"fixture","protection":"%s"}}\n' "$restore_protection"
+      return "$restore_fail" ;;
+    */api/range)
+      echo '{"package":"us-dnp3-substation","phase":"ready","containd":{"applyId":"fixture","protection":"protecting"}}' ;;
     *) return 99 ;;
   esac
 }
-sleep() { :; }
 '''
             result = subprocess.run(
                 ["bash", "-c", f"fixture={shlex.quote(directory)}\n"
-                 f"restore_fail={int(restore_fail)}\n" + stubs + script],
+                 f"restore_fail={int(restore_fail)}\n"
+                 f"restore_protection={'degraded' if restore_degraded else 'protecting'}\n"
+                 + stubs + script],
                 cwd=ROOT, capture_output=True, text=True, timeout=10)
             self.assertEqual(json.loads((fixture / "sent.json").read_text()), request)
             self.assertEqual((fixture / "cleanup").read_text(), "restored\n")
             return result
 
     def run_singleton_gate(self, bad_action=None, restore_fail=False):
-        """Run the workflow's catalog-driven US singleton loop with local stubs."""
-        script = self.plan_gate("singleton")["run"]
+        """Run the complete catalog-driven US script with local HTTP stubs."""
         with tempfile.TemporaryDirectory() as directory:
             fixture = Path(directory)
             plans = fixture / "plans"
             plans.mkdir()
             for source in (ROOT / "frontend/lib/testdata/plans").glob("us-*.json"):
                 (plans / source.name).write_bytes(source.read_bytes())
-            script = script.replace(
-                "build/smoke-receipts/rd01-singletons", shlex.quote(f"{directory}/receipts"),
-            ).replace("frontend/lib/testdata/plans", shlex.quote(str(plans)))
+            script = self.plan_script(directory).replace(
+                "frontend/lib/testdata/plans", shlex.quote(str(plans)))
             stubs = r'''
 make_report() {
   jq '
@@ -308,11 +284,16 @@ curl() {
   done
   case "$url" in
     */api/firewall/apply-plan)
-      action=$(jq -er '.actionIds | if length == 1 then .[0] else error("not a singleton") end' "$data")
+      case "$data" in
+        */rd01/plan.json) action=full ;;
+        */rd01-partial/plan.json) action=partial ;;
+        *) action=$(jq -er '.actionIds | if length == 1 then .[0] else error("not a singleton") end' "$data") ;;
+      esac
       golden="$fixture/plans/us-$action.json"
+      echo "$action" >>"$fixture/cases"
       printf '%s\n' "$golden" >"$fixture/current"
       jq -n --slurpfile plan "$golden" \
-        '{applied:true,warnings:[],plan:$plan[0]}' \
+        '{applied:true,warnings:[],plan:$plan[0],containd:{applyId:"fixture",protection:"protecting"}}' \
         | if [ "$action" = "$bad_action" ]; then jq '.warnings=["fixture warning"]'; else cat; fi
       ;;
     */api/firewall/validation-report)
@@ -321,12 +302,13 @@ curl() {
     */api/firewall/apply)
       echo restored >"$fixture/cleanup"
       [ "$restore_fail" -eq 0 ] || return 1
-      echo '{"warnings":[]}'
+      echo '{"warnings":[],"containd":{"applyId":"fixture","protection":"protecting"}}'
       ;;
+    */api/range)
+      echo '{"package":"us-dnp3-substation","phase":"ready","containd":{"applyId":"fixture","protection":"protecting"}}' ;;
     *) return 99 ;;
   esac
 }
-sleep() { :; }
 '''
             result = subprocess.run(
                 ["bash", "-c", f"fixture={shlex.quote(directory)}\n"
@@ -336,11 +318,13 @@ sleep() { :; }
             full = json.loads((plans / "us-full.json").read_text())
             actions = [a["id"] for a in full["actions"] if a["kind"] in ("enforce", "detect")]
             self.assertEqual((fixture / "cleanup").read_text(), "restored\n")
-            self.assertTrue((fixture / "receipts/restore.json").is_file())
+            self.assertTrue((fixture / "receipts/rd01-singletons/restore.json").is_file())
             if bad_action:
                 return result
+            self.assertEqual((fixture / "cases").read_text().splitlines(),
+                             ["full", "partial"] + actions)
             for action in actions:
-                case = fixture / f"receipts/{action}"
+                case = fixture / f"receipts/rd01-singletons/{action}"
                 self.assertEqual(json.loads((case / "plan.json").read_text())["actionIds"], [action])
                 self.assertTrue((case / "apply.json").is_file())
                 self.assertTrue((case / "report.json").is_file())
@@ -362,12 +346,15 @@ sleep() { :; }
                     result = self.run_plan_gate(selection, changed_golden=changed)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertNotEqual(self.run_plan_gate(selection, restore_fail=True).returncode, 0)
+            self.assertNotEqual(self.run_plan_gate(selection, restore_degraded=True).returncode, 0)
 
     def test_plan_steps_fail_closed_and_restore_weak(self):
         mutations = [
             lambda a, r: a.update(warnings=["fixture warning"]),
             lambda a, r: a.pop("warnings"),
             lambda a, r: a["plan"].update(label="wrong"),
+            lambda a, r: a.pop("containd"),
+            lambda a, r: a["containd"].update(protection="degraded"),
             lambda a, r: r["planProof"].update(applicable=False),
             lambda a, r: r["planProof"].update({"pass": False}),
             lambda a, r: r["planProof"].update(hashStable=False),
