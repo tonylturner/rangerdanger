@@ -127,10 +127,6 @@ export type DecisionAction = {
 
 export type StepAction = {
   type: "check" | "firewall" | "sequence" | "manual" | "decision" | "probe" | "session-cut";
-  device?: string;
-  command?: string;
-  source?: string;
-  value?: number;
   flow?: string;
   config?: string;
   expect?: Record<string, unknown>;
