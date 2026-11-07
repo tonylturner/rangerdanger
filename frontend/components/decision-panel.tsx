@@ -303,7 +303,12 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                   {hasBlocked && isSelected && <div className="mt-1 text-[11px] text-red-300">Saved selection excluded from totals and coverage. Click to remove.</div>}
                   <div className="mt-1 text-[11px] leading-relaxed text-slate-400 whitespace-pre-line">
                     {a.why}
-                    {" — planned until applied in your plan"}
+                    {" — "}
+                    {isSelected
+                      ? "selected for your plan"
+                      : hasBlocked
+                        ? "not currently selectable for your plan"
+                        : "available to select for your plan"}
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {a.roles.map((role) => (

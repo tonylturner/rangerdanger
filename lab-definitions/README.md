@@ -27,6 +27,8 @@ deployment metadata lives in the adjacent `manifest.json` and Compose
 files. The US workshop is `packages/us-dnp3-substation/package.yml`,
 which points at the files in this directory where they have always lived:
 
+Package YAML supplies activity content to the shared frontend implementation ([authoring rules](../docs/lab-authoring.md#shared-activity-implementation)).
+
 ```yaml
 schema: 1
 id: us-dnp3-substation            # slug; must match the directory name

@@ -40,6 +40,8 @@ const HINT_CLOSE_RE = /^:::$/;
 
 // :::decision id=enterprise-to-field [options=BLOCK,RESTRICT,ALLOW,LOG]
 // Question prose (markdown allowed)
+// :::why
+// Answer explanation (markdown, optional)
 // :::
 // Renders an inline question + dropdown. The student's answer is
 // persisted to localStorage (key derived from scenario id + decision
@@ -131,6 +133,7 @@ export type Segment =
       id: string;
       options: string[];
       body: string;
+      explanation: string;
       defaultFrom: string;
       correct: string;
     }
@@ -378,6 +381,9 @@ export function splitDescription(text: string, inheritedSource?: string): Segmen
         i++;
       }
       if (i < lines.length) i++;
+      const whyIndex = body.findIndex((line) => line.trim() === ":::why");
+      const question = whyIndex < 0 ? body : body.slice(0, whyIndex);
+      const explanation = whyIndex < 0 ? "" : body.slice(whyIndex + 1).join("\n");
       // Skip silently if id is missing — author error. Better to
       // render the question as prose than to swallow it.
       if (id) {
@@ -385,12 +391,13 @@ export function splitDescription(text: string, inheritedSource?: string): Segmen
           type: "decision",
           id,
           options,
-          body: body.join("\n"),
+          body: question.join("\n"),
+          explanation,
           defaultFrom,
           correct,
         });
       } else {
-        prose.push(...body);
+        prose.push(...(whyIndex < 0 ? body : [...question, ":::why", ...body.slice(whyIndex + 1)]));
       }
       continue;
     }

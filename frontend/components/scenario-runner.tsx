@@ -26,6 +26,7 @@ import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X } f
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
+import { saveEmptyRemediationPlanIfMissing } from "../lib/remediation-plan";
 import { useFirewallTrack } from "../lib/use-firewall-track";
 import { useCompiledPlan } from "../lib/use-compiled-plan";
 import { ValidationReportPanel } from "./validation-report-panel";
@@ -331,6 +332,12 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
   const markStepDone = (idx: number) => {
     const stepId = scenario.steps[idx]?.id;
+    if (
+      scenario.id === scope.curriculum?.roles.planning &&
+      scenario.steps[idx]?.action?.type === "decision"
+    ) {
+      saveEmptyRemediationPlanIfMissing(scope, scenario.id);
+    }
     if (stepId !== undefined) {
       setCompletedStepIds((prev) => new Set([...prev, stepId]));
       setSkippedStepIds((prev) => new Set([...prev].filter((id) => id !== stepId)));
@@ -542,13 +549,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 older inline "Config mismatch" notice that only fired
                 on mismatched state - the banner always renders so
                 students can always tell what's loaded. */}
-            <PolicyStatusBanner
-              activeConfig={activeConfig}
-              policySource={policySource}
-              plan={appliedPlan}
-              expectedConfig={step?.expected_config}
-              policies={packagePolicies}
-            />
+            <div className="[&>div]:static!">
+              <PolicyStatusBanner
+                activeConfig={activeConfig}
+                policySource={policySource}
+                plan={appliedPlan}
+                expectedConfig={step?.expected_config}
+                policies={packagePolicies}
+              />
+            </div>
             {/* Per-step track chip: on the firewall labs (after the
                 picker on 2.2 step 1), show which path the student is on
                 and let them switch inline without hunting for the side

@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test-util";
+import { loadSavedRemediationPlan, saveRemediationPlan } from "../lib/remediation-plan";
 import { EU_PLANS } from "../lib/plan-fixtures.test-util";
 import * as api from "../lib/api";
 import { ScenarioRunner } from "./scenario-runner";
@@ -19,7 +20,10 @@ const { scope, compiled } = vi.hoisted(() => ({
   compiled: { data: undefined as CompiledPlan | undefined },
 }));
 vi.mock("../lib/use-compiled-plan", () => ({ useCompiledPlan: () => compiled }));
-vi.mock("../lib/curriculum-scope", () => ({ useCurriculumScope: () => scope }));
+vi.mock("../lib/curriculum-scope", () => ({
+  useCurriculumScope: () => scope,
+  useActiveCurriculum: () => ({ scenarios: [] }),
+}));
 vi.mock("../lib/use-firewall-track", () => ({ useFirewallTrack: () => ({ track: "guided", setTrack: vi.fn() }) }));
 vi.mock("../lib/operator-queries", () => ({
   useOperatorView: () => ({ status: "loading" }), usePackagePolicies: () => undefined,
@@ -50,6 +54,7 @@ const scenario: Scenario = {
     { id: "third", title: "Third instruction", description: "Run this", action: { type: "probe" } },
   ],
 };
+const EU = fixtureCurriculum("lab-definitions/packages/eu-iec104-substation");
 
 const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
 afterEach(() => {
@@ -98,8 +103,63 @@ describe("Reset Progress", () => {
   );
 });
 
+describe("empty remediation plan completion", () => {
+  it.each([
+    ["US", US_CURRICULUM, "us-dnp3-substation"],
+    ["EU", EU, "eu-iec104-substation"],
+  ] as const)("records an empty %s plan when its decision step is completed", (_, binding, packageId) => {
+    scope.packageId = packageId;
+    scope.revision = 1;
+    scope.curriculum = binding;
+    Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
+    const planningScenario: Scenario = {
+      ...scenario,
+      id: binding.roles.planning,
+      steps: [{ ...scenario.steps[0], action: { type: "decision" } }],
+    };
+    const client = new QueryClient();
+    const tree = render(<QueryClientProvider client={client}><ScenarioRunner scenario={planningScenario} onExit={() => {}} /></QueryClientProvider>);
+    try {
+      expect(loadSavedRemediationPlan(scope)).toBeNull();
+      fireEvent.click(tree.getByRole("button", { name: "Mark Complete" }));
+      expect(loadSavedRemediationPlan(scope)).toEqual({
+        exerciseId: planningScenario.id,
+        selectedActionIds: [],
+        savedAt: expect.any(String),
+      });
+    } finally {
+      client.clear();
+    }
+  });
+
+  it("does not replace a saved plan when the decision step is completed", () => {
+    scope.packageId = "us-dnp3-substation";
+    scope.revision = 1;
+    scope.curriculum = US_CURRICULUM;
+    Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
+    const plan = {
+      exerciseId: US_CURRICULUM.roles.planning,
+      selectedActionIds: ["existing-action"],
+      savedAt: "existing timestamp",
+    };
+    saveRemediationPlan(scope, plan);
+    const planningScenario: Scenario = {
+      ...scenario,
+      id: US_CURRICULUM.roles.planning,
+      steps: [{ ...scenario.steps[0], action: { type: "decision" } }],
+    };
+    const client = new QueryClient();
+    const tree = render(<QueryClientProvider client={client}><ScenarioRunner scenario={planningScenario} onExit={() => {}} /></QueryClientProvider>);
+    try {
+      fireEvent.click(tree.getByRole("button", { name: "Mark Complete" }));
+      expect(loadSavedRemediationPlan(scope)).toEqual(plan);
+    } finally {
+      client.clear();
+    }
+  });
+});
+
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
-const EU = fixtureCurriculum("lab-definitions/packages/eu-iec104-substation");
 function authoredScenario(name: string, eu = true): Scenario {
   const directory = eu ? "lab-definitions/packages/eu-iec104-substation/scenarios" : "lab-definitions/scenarios";
   return load(readFileSync(resolve(__dirname, "../..", directory, `${name}.yml`), "utf8")) as Scenario;

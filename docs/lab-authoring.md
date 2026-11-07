@@ -25,6 +25,12 @@ Backend loads them at startup - restart `backend` after changes. Any
 error in any package (an unknown field, a bad step, an unknown
 validator) stops the backend from starting, so check the backend log.
 
+## Shared activity implementation
+
+One activity type has one shared frontend implementation; packages supply
+content only. Extend the shared activity implementation rather than adding a
+package-specific component, picker, conditional, or second rendering path.
+
 ## Package-owned decision catalog
 
 Inline decision prompts belong in a step's description as
@@ -281,10 +287,23 @@ choice persists to `localStorage` so refreshes don't lose it AND
 so later labs can read it.
 
 ```yaml
-:::decision id=enterprise-to-field options=BLOCK,RESTRICT,ALLOW correct=BLOCK
+:::decision id=enterprise-to-field options="BLOCK,BLOCK and LOG,RESTRICT,ALLOW"
 **Enterprise → Field** on Modbus 502 / DNP3 20000 - what's your design verdict?
+:::why
+Reference design: **BLOCK and LOG**. This prevents unauthorized writes and records the attempt.
 :::
 ```
+
+An optional line whose trimmed text is exactly `:::why` separates the
+question from its Markdown explanation. Put the question before the marker
+and its explanation after it; use at most one marker per decision. Every
+package uses the same feedback: while unanswered, no feedback is shown;
+after any answer, show `✓ Correct` or `✗ Expected <correct>` when `correct=`
+is set, then show the explanation under **Why** if present. Without
+`correct=`, show no grade chip but still show the explanation. Clearing an
+answer hides both the chip and explanation. Use explanations for the
+reference design and its rationale on judgment questions, or the
+consequences of each choice on readiness questions.
 
 Attributes:
 
@@ -293,9 +312,10 @@ Attributes:
 | `id` | yes | Unique within the scenario. Forms the storage name `decision:<scenario-id>:<id>` (see [Browser storage model](#browser-storage-model)). |
 | `options` | no | Comma-separated list of dropdown choices. Default: `BLOCK,BLOCK and LOG,RESTRICT,ALLOW`. Quote values that contain spaces (e.g. `options="BLOCK,BLOCK and LOG,RESTRICT,ALLOW"`). |
 | `default-from` | no | `<source-scenario-id>:<source-decision-id>`. On first render with no local value, copies the upstream value so a downstream lab can pre-fill from an earlier one. The student can still adjust. |
-| `correct` | no | The "right" answer. When set, the dropdown renders a green ✓ chip when the student's pick matches, red ✗ otherwise. Use this **only on observation / factual prompts** (e.g. "what did you see in the capture?"), not on judgment-call design decisions. |
+| `correct` | no | The expected answer. When set, answered questions show `✓ Correct` or `✗ Expected <correct>`. Use this **only on observation / factual prompts** (e.g. "what did you see in the capture?"), not on judgment-call design decisions. |
 
-Body is markdown - short prose, the dropdown renders below.
+Question and explanation bodies are Markdown. The dropdown renders below
+the question; an answered decision's explanation follows under **Why**.
 
 The dropdown is dark-themed and uses `colorScheme: dark` so the OS
 picker matches the lab UI on supporting browsers.
@@ -425,9 +445,7 @@ intent and display reasons. The picker retains excluded selections for removal
 or later restoration. Applied-plan IDs, hashes and proof expectations remain
 historical facts and are never filtered by current readiness.
 
-If you wire a different kind of action picker, see
-[`frontend/components/decision-panel.tsx`](../frontend/components/decision-panel.tsx)
-for the integration pattern.
+Extend the shared activity implementation; do not create a package-specific picker.
 
 ## Browser storage model
 
