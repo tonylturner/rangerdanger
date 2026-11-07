@@ -45,8 +45,8 @@ t_expect_out "G24 eu-vendor-rdp-compromise validator" "--list includes the vendo
 t_expect_out "G25 eu-validation-evidence validator" "--list includes the validation evidence walk"
 t_expect_out "G26 eu-segmentation-requirements" "--list includes the requirements planning slot"
 t_expect_out "G27 eu-remediation-planning" "--list includes the remediation planning slot"
-t_expect_out "G28 Full and partial compiled plans" "--list includes the golden-backed plan proof gate"
-t_expect_out "G29 Improved monitor-only shadow evidence" "--list includes the shadow-evidence gate"
+t_expect_out "G28 Full, partial and each catalog enforce/detect singleton compiled plan" "--list includes the golden-backed plan proof gate"
+t_expect_out "G29 Improved and IEC104 singleton-plan monitor evidence" "--list includes the shadow-evidence gate"
 t_run source_definitions --dry-run
 t_expect_eq "$T_STATUS" 0 "--dry-run exits successfully without preflight"
 t_expect_eq "$T_OUT" "$PLAN" "--dry-run and --list are identical"
