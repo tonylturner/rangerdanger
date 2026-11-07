@@ -239,7 +239,7 @@ steps:
       The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
       On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
       For manual work, use Hardened as the judging target. With
-      `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
+      **Restrict enterprise → vendor remote access** selected, replace broad enterprise→vendor
       access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
       remain reachable. **Create rule** and **Delete** do not reload the firewall.
       Keep the Phase 2 deletes staged until all replacements are in this candidate.
@@ -303,17 +303,21 @@ steps:
     title: "Phase 4 - Enable logging and visibility"
     expected_config: hardened
     description: |
-      Inspect the log flags in the compiled rule table. `improve-logging`,
-      `modbus-dpi` and `dnp3-dpi` add visibility, not prevention. Deferring them
-      changes no TCP verdict. Do not add flags by hand and still call the result
-      an unchanged applied plan; a running-hash change clears plan provenance.
+      Inspect the log flags in the compiled rule table.
+      **Improve firewall logging and PCAP retention**,
+      **Apply Modbus ICS DPI - provide function-code visibility** and
+      **Apply DNP3 ICS DPI - detect and log Direct Operate writes** add
+      visibility, not prevention. Deferring them changes no TCP verdict. Do not
+      add flags by hand and still call the result an unchanged applied plan; a
+      running-hash change clears plan provenance.
 
-      With `restrict-vendor-to-ot` selected, `deny-vendor-to-ot` explicitly
-      denies Vendor DMZ → OT Operations on TCP 8080, 1881, 502 and 20000.
-      `improve-logging` enables its log flag, alongside the HTTPS/443 and
-      SSH/22 allow rule and the selected vendor → field deny. Hardened logs
-      these rules too. If the restriction is deferred, its Weak exposure
-      stays open; selecting logging alone does not close or log that exposure.
+      With **Restrict vendor → OT to SSH/HTTPS only** selected, `deny-vendor-to-ot`
+      explicitly denies Vendor DMZ → OT Operations on TCP 8080, 1881, 502 and 20000.
+      **Improve firewall logging and PCAP retention** enables its log flag,
+      alongside the HTTPS/443 and SSH/22 allow rule and the selected vendor →
+      field deny. Hardened logs these rules too. If the restriction is deferred,
+      its Weak exposure stays open; selecting logging alone does not close or log
+      that exposure.
 
       The L4 source pin enforces; DPI detects and logs. Explicit logged rules
       can provide tuple evidence. Default DENY is a silent backstop. A missing

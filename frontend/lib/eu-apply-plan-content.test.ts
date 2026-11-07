@@ -62,12 +62,16 @@ describe("EU Apply Your Plan content", () => {
   it("names each pivot owner and keeps restoration common", () => {
     const vendor = scenario(scenarios, `${prefix}vendor-rdp-compromise`);
     const text = vendor.steps.map((s) => s.description).join("\n");
-    expect(text).toContain("restrict-enterprise-to-vendor");
-    expect(text).toContain("block-vendor-to-field");
+    const title = (id: string) => binding.catalog.find((a) => a.id === id)!.title;
+    for (const owner of ["restrict-enterprise-to-vendor", "block-vendor-to-field"]) {
+      expect(text).toContain(title(owner));
+      expect(text).not.toContain(`\`${owner}\``);
+    }
     expect(text).toContain("Restore");
     const hardening = scenario(scenarios, `${prefix}hardening-configurations`);
     const retest = hardening.steps.find((s) => s.id === "re-test-the-attack-under-the-hardened-policy")!.description;
-    expect(retest).toContain("block-enterprise-to-station");
+    expect(retest).toContain(title("block-enterprise-to-station"));
+    expect(retest).not.toContain("`block-enterprise-to-station`");
     expect(retest).toContain("still");
     expect(retest).toContain("Restore");
     expect(retest).not.toMatch(/evade DPI|not enforced until Phase 4|Planned Phase 4/);

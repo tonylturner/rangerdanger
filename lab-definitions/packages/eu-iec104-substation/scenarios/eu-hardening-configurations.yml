@@ -131,10 +131,11 @@ steps:
     Recommit your Lab 2.2 named-source policy. Only CC 10.60.60.20 may initiate RTU TCP/2404. Preserve six operational intents, deny new foreign sources and inspect the running rules. A plan that defers enterprise-to-station closure may still expose this attack.
     :::
 
-    `block-enterprise-to-station` owns the Kali→RTU TCP/2404 path. If selected,
-    expect denial. If deferred, the Weak exposure stays open and the breaker
-    command can still land. `iec104-dpi` adds explicit monitor rules on the allowed
-    CC conduit, not foreign-source prevention; logging changes no rule.
+    **Block enterprise → station RTU access** owns the Kali→RTU TCP/2404 path. If
+    selected, expect denial. If deferred, the Weak exposure stays open and the
+    breaker command can still land. **Monitor IEC 104 commands** adds explicit
+    monitor rules on the allowed CC conduit, not foreign-source prevention;
+    logging changes no rule.
     The L4 source pin enforces; DPI detects and logs. A would-deny match is not
     a denied command, and monitoring never satisfies a BLOCK requirement.
 
@@ -158,8 +159,8 @@ steps:
 
         iec104cmd 10.30.30.20 dc 3001 open -sbo --json
 
-    With `block-enterprise-to-station` selected, expect a connection timeout;
-    the breaker stays closed and supply remains. With it deferred, the command
+    With **Block enterprise → station RTU access** selected, expect a connection
+    timeout; the breaker stays closed and supply remains. With it deferred, the command
     still opens the breaker and removes supply. Record physical truth and fresh
     CC feedback. The deferred result can pass plan proof but leaves a Hardened
     prevention gap. An acknowledgement alone is not the physical outcome.
@@ -168,16 +169,16 @@ steps:
     What did the feeder show for this applied plan?
     :::why
     This depends on your plan, so it is not graded. A selected
-    `block-enterprise-to-station` closure denies the retest: the breaker stays
-    closed and the feeder keeps supply (NORMAL_OPS). A deferred closure lets the
+    **Block enterprise → station RTU access** closure denies the retest: the
+    breaker stays closed and the feeder keeps supply (NORMAL_OPS). A deferred closure lets the
     telegram land and the feeder loses supply again (LOSS_OF_SUPPLY). Read the
     physical outcome and fresh CC feedback, not the Execute Step label.
     :::
     :::decision id=retest-defense-in-depth options="L4_SOURCE_PIN,IEC104_DPI,EITHER_LAYER" correct=L4_SOURCE_PIN
     When the foreign path is denied, which layer enforces it?
     :::why
-    The L4 source pin enforces; DPI detects and logs. `iec104-dpi` adds monitor
-    rules on the allowed CC conduit only; it never blocks a foreign source. So the
+    The L4 source pin enforces; DPI detects and logs. **Monitor IEC 104 commands** adds
+    monitor rules on the allowed CC conduit only; it never blocks a foreign source. So the
     source pin — not IEC 104 inspection — is what denies the Kali telegram.
     :::
 

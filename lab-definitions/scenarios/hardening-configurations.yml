@@ -264,12 +264,15 @@ steps:
       Execute Step checks the active policy without replacing it. Verify the running hash and selected action IDs.
 
       The primary Kali→field DNP3 and optional Modbus attempts belong to
-      `block-enterprise-to-field`. If selected, expect a timeout. If deferred,
-      the Weak path stays open and the same command can still change the device.
-      `pin-rtac-to-field` owns non-RTAC OT→field attempts, not Kali's enterprise path.
+      **Block enterprise → field direct access**. If selected, expect a timeout. If
+      deferred, the Weak path stays open and the same command can still change
+      the device. **Pin field-device access to RTAC source IP** owns non-RTAC OT→field
+      attempts, not Kali's enterprise path.
 
-      The L4 source pin enforces; DPI detects and logs. Neither `dnp3-dpi` nor
-      `modbus-dpi` changes these verdicts. Required RTAC and HMI flows remain.
+      The L4 source pin enforces; DPI detects and logs. Neither
+      **Apply DNP3 ICS DPI - detect and log Direct Operate writes** nor
+      **Apply Modbus ICS DPI - provide function-code visibility** changes these verdicts.
+      Required RTAC and HMI flows remain.
 
       :::plan-coverage title="Your plan vs the primary attempt"
       :::
@@ -290,8 +293,8 @@ steps:
 
           dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
 
-      With `block-enterprise-to-field` selected, expect a connection timeout and
-      exit code `2`, with auto-reclose still enabled. A failed or timed-out
+      With **Block enterprise → field direct access** selected, expect a connection
+      timeout and exit code `2`, with auto-reclose still enabled. A failed or timed-out
       control now reports `[EXIT 2]` in the Run command log, rather than `[OK]`.
       With it deferred, the command still lands:
       auto-reclose becomes disabled. This command alone does not trip the recloser.
@@ -319,10 +322,11 @@ steps:
       :::decision id=retest-defense-in-depth options=L4_SOURCE_PIN,DNP3_DPI,EITHER_LAYER correct=L4_SOURCE_PIN
       When the enterprise path is denied, which layer enforces that denial?
       :::why
-      The L4 source pin enforces; DPI detects and logs. `dnp3-dpi` and
-      `modbus-dpi` only add visibility on allowed sessions, so the source pin —
-      not a per-protocol signature — is what denies an unauthorized enterprise
-      source. A detection selection alone would log the write but still let it
+      The L4 source pin enforces; DPI detects and logs.
+      **Apply DNP3 ICS DPI - detect and log Direct Operate writes** and
+      **Apply Modbus ICS DPI - provide function-code visibility** only add visibility on
+      allowed sessions, so the source pin — not a per-protocol signature — is
+      what denies an unauthorized enterprise source. A detection selection alone would log the write but still let it
       land.
       :::
 

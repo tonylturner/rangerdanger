@@ -17,7 +17,7 @@ phases:
     The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
     On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
     For manual work, use Hardened as the judging target. With
-    `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
+    **Restrict enterprise → vendor remote access** selected, replace broad enterprise→vendor
     access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
     remain reachable. **Create rule** and **Delete** do not reload the firewall.
     Run `commit` in the configuration CLI or **Commit** on the **Configuration** page.

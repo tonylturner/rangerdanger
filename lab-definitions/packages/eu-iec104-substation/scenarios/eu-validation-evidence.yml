@@ -54,7 +54,7 @@ steps:
     instructor PCAP walk are optional depth and take extra time.
 
     :::hint Running, not candidate
-    In containd inspect running configuration and its identity. Six operational conduits must remain. Hardened includes three separate explicit-monitor IEC 104 rules; a plan includes them only when `iec104-dpi` is selected. Verify running rules, not candidate-only entries. No command enforcement is claimed.
+    In containd inspect running configuration and its identity. Six operational conduits must remain. Hardened includes three separate explicit-monitor IEC 104 rules; a plan includes them only when **Monitor IEC 104 commands** is selected. Verify running rules, not candidate-only entries. No command enforcement is claimed.
     :::
   action:
     type: check

@@ -88,8 +88,8 @@ steps:
           sshpass -p rangerdanger ssh -o StrictHostKeyChecking=no rangerdanger@10.20.20.10
 
       SSH tests the vendor network position, not the RDP/VNC closure.
-      The Hardened reference and `restrict-enterprise-to-vendor` keep TCP/22
-      available. Do not use an SSH session as proof that RDP/VNC is open.
+      The Hardened reference and **Restrict enterprise → vendor remote access**
+      keep TCP/22 available. Do not use an SSH session as proof that RDP/VNC is open.
       :::
 
   - id: use-the-vendor-foothold-to-attack-field-devices
@@ -266,13 +266,13 @@ steps:
 
       | Chain link | Owning action | Selected / deferred |
       |---|---|---|
-      | Enterprise→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
-      | Vendor→field Modbus/502 and DNP3/20000 | `block-vendor-to-field` | deny / allow |
-      | Vendor→OT Modbus and HMI web | `restrict-vendor-to-ot` | deny / allow |
+      | Enterprise→vendor RDP/3389 and VNC/5900 | Restrict enterprise → vendor remote access | deny / allow |
+      | Vendor→field Modbus/502 and DNP3/20000 | Block vendor → field devices entirely | deny / allow |
+      | Vendor→OT Modbus and HMI web | Restrict vendor → OT to SSH/HTTPS only | deny / allow |
 
       Either of the first two closures breaks this two-hop chain. Test each
-      independently. `pin-rtac-to-field` owns OT-source attempts, not the vendor
-      hop. A ZTNA broker selection is planning-only; it deploys no login control.
+      independently. **Pin field-device access to RTAC source IP** owns OT-source
+      attempts, not the vendor hop. A ZTNA broker selection is planning-only; it deploys no login control.
       The L4 source pin enforces; DPI detects and logs.
 
       :::plan-coverage title="Your plan vs the vendor chain"
@@ -291,19 +291,19 @@ steps:
 
           nmap -Pn -p 3389,5900 10.20.20.10
 
-      `restrict-enterprise-to-vendor` selected means both ports time out or show
-      filtered. Deferred means reachable. A refused connection counts as reached,
+      **Restrict enterprise → vendor remote access** selected means both ports
+      time out or show filtered. Deferred means reachable. A refused connection counts as reached,
       not denied. Record the result, not an assumed successful login.
 
       Retest hop two independently from the vendor-jump terminal:
 
           mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
 
-      `block-vendor-to-field` selected means timeout. Deferred means the write
-      still disables auto-reclose. The app terminal represents an existing vendor
+      **Block vendor → field devices entirely** selected means timeout. Deferred
+      means the write still disables auto-reclose. The app terminal represents an existing vendor
       foothold even when hop one is denied; it does not prove a new login.
-      Read `[3]` from the RTAC terminal, not vendor-jump: `restrict-vendor-to-ot`
-      can deny the vendor Modbus read. Record the HMI auto-reclose badge too.
+      Read `[3]` from the RTAC terminal, not vendor-jump:
+      **Restrict vendor → OT to SSH/HTTPS only** can deny the vendor Modbus read. Record the HMI auto-reclose badge too.
 
       :::decision id=vendor-retest-hmi-state options=NORMAL_OPS,AUTO_RECLOSE_DISABLED,DOWNSTREAM_OUTAGE,UNCHANGED_FROM_ATTACK
       What did the HMI show? Record auto-reclose and the owning action in Notes.
@@ -319,8 +319,9 @@ steps:
       that both links remain open in Notes.
       :::why
       Either hop closes the two-hop chain, so this is not graded on one answer.
-      `restrict-enterprise-to-vendor` closes hop one; `block-vendor-to-field`
-      closes hop two; selecting both is defense in depth. NEITHER_LAYER means both
+      **Restrict enterprise → vendor remote access** closes hop one;
+      **Block vendor → field devices entirely** closes hop two; selecting both is
+      defense in depth. NEITHER_LAYER means both
       links stay open and the chain still works end to end.
       :::
 

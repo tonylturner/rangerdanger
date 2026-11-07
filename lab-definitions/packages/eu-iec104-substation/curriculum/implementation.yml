@@ -23,12 +23,12 @@ phases:
     :::
 
     :::hint No semantic enforcement claim
-    Keep the six L4 allows and four diagnostic denies unchanged. Hardened adds `observe-cc-breaker-command`, `observe-cc-oltc-step` and `observe-cc-oltc-raise-only` as separate IEC 104 rules, each explicitly `mode: monitor`; Apply Your Plan adds them only when `iec104-dpi` is selected. Never overlay a monitor predicate on an operational allow. Monitor ALLOW does not admit traffic and monitor DENY does not deny it. The L4 source pin enforces; DPI detects and logs. Monitoring never satisfies a BLOCK requirement; Modbus DPI remains planning-only.
+    Keep the six L4 allows and four diagnostic denies unchanged. Hardened adds `observe-cc-breaker-command`, `observe-cc-oltc-step` and `observe-cc-oltc-raise-only` as separate IEC 104 rules, each explicitly `mode: monitor`; Apply Your Plan adds them only when **Monitor IEC 104 commands** is selected. Never overlay a monitor predicate on an operational allow. Monitor ALLOW does not admit traffic and monitor DENY does not deny it. The L4 source pin enforces; DPI detects and logs. Monitoring never satisfies a BLOCK requirement; Modbus DPI remains planning-only.
     :::
 
     Required operational allows and logged diagnostic denies remain in every plan.
     Selected enforceable actions close their cross-zone exposures; deferred
-    actions keep their Weak access. Selecting Monitor IEC 104 commands adds
+    actions keep their Weak access. Selecting **Monitor IEC 104 commands** adds
     observation evidence, not prevention. Operational continuity cannot be deferred.
     An empty or planning-only plan is valid and keeps those exposures open.
     Export the compiled config and the companion **Export plan record**.
@@ -55,7 +55,7 @@ phases:
 
     :::hint Optional depth: shadow counters and approved breaker operations
 
-    For Hardened, or a plan selecting `iec104-dpi`, inspect the embedded containd **Firewall/ICS tables** and running configuration. Confirm DPI and the IEC 104 decoder are healthy, NFQUEUE is **101**, and all three separate rules are applied with `protocol: iec104`, explicit `mode: monitor`, `direction: request`, CA **1**, and CC **10.60.60.20** → RTU **10.30.30.20 TCP/2404** (lan4→lan1):
+    For Hardened, or a plan selecting **Monitor IEC 104 commands**, inspect the embedded containd **Firewall/ICS tables** and running configuration. Confirm DPI and the IEC 104 decoder are healthy, NFQUEUE is **101**, and all three separate rules are applied with `protocol: iec104`, explicit `mode: monitor`, `direction: request`, CA **1**, and CC **10.60.60.20** → RTU **10.30.30.20 TCP/2404** (lan4→lan1):
     Expand **Inspect rule** for Conditions, ICS Filter and full Shadow matches. On ICS, inspect **Active inspection**, **Why?** and **Inspection details**; **Technical details** retains queue/interface values.
 
     | Rule ID | Configured action | Selectors |
@@ -64,7 +64,7 @@ phases:
     | `observe-cc-oltc-step` | ALLOW (monitor) | Type 47, IOA 3301, COT 6, states [1,2], QU [0], negative false, test false |
     | `observe-cc-oltc-raise-only` | ALLOW (monitor) | Same OLTC selectors, but states [2] |
 
-    **Reconnect CC first** with the Phase 4 procedure: inspection starts only at a fresh SYN, not halfway through the old session. Wait for connect GI, then record a shadow-counter baseline from the embedded tables: `available: true`, all three rule IDs, `snapshotVersion`, `since`, `unit` and each rule's `shadowMatches`, `wouldAllow`, `wouldDeny`. Counters reset on every successful apply and are lost on engine restart. `available:false` is never zero; a missing applied rule is not zero either. If the snapshot or since changes, discard the comparison and establish a new baseline after reconnect/GI. A plan deferring `iec104-dpi` has no such rules: record observation work as deferred, not as zero matches or prevention.
+    **Reconnect CC first** with the Phase 4 procedure: inspection starts only at a fresh SYN, not halfway through the old session. Wait for connect GI, then record a shadow-counter baseline from the embedded tables: `available: true`, all three rule IDs, `snapshotVersion`, `since`, `unit` and each rule's `shadowMatches`, `wouldAllow`, `wouldDeny`. Counters reset on every successful apply and are lost on engine restart. `available:false` is never zero; a missing applied rule is not zero either. If the snapshot or since changes, discard the comparison and establish a new baseline after reconnect/GI. A plan deferring **Monitor IEC 104 commands** has no such rules: record observation work as deferred, not as zero matches or prevention.
 
     Correlate a prescribed, approved CC breaker operation with `observe-cc-breaker-command` `wouldDeny` increasing by **≥1**, `ics.decision` (`mode: monitor`, `decision: would_drop`, `reason: rule`, matching `ruleId` and UTC window), fresh feedback and the actual field result. Restore normal breaker/supply state before continuing. The monitor DENY does not stop CB1 operating; it is a rule-local hypothetical decision, not a denied command or a whole-policy prediction. See [monitor evidence](/knowledge#eu-ics-dpi).
 
@@ -80,7 +80,7 @@ phases:
     4. Return to **auto**: `oltc-1-mode` → `auto`. Wait for the configured 30 s sustained demand, then the 2 s motion for each correction; IOA 2403 reports configured delay, not its countdown. Automatic control now issues PLC-originated Modbus requests toward the operating band, not necessarily the exact starting tap under the daily profile. Confirm that PLC request, its motion completion and the solved revision, and that the historian ingests the advancing tap.
 
     :::hint Optional depth: compare OLTC monitor matches
-    With `iec104-dpi` applied, compare OLTC shadow evidence while manual: record counters, request `oltc-1-step` → `lower`, and wait for completed feedback. `observe-cc-oltc-step` must gain **≥1** match; `observe-cc-oltc-raise-only` must gain **0**. Then request one `raise` to restore that tap and wait: **both** rules must gain **≥1** match. Keep snapshotVersion/since unchanged and correlate rule/mode/time events with the field feedback. A successful fully decoded SBO action normally produces **2 matches** per matching rule (select + execute, both COT 6), but this is **not guaranteed**; early refusal can end the sequence. Count matching decoded messages, not successful operations. Never require exactly two or interpret missing/unavailable evidence as a non-match. If monitoring is deferred, still perform the lower/raise and check field feedback, but record shadow evidence as deferred.
+    With **Monitor IEC 104 commands** applied, compare OLTC shadow evidence while manual: record counters, request `oltc-1-step` → `lower`, and wait for completed feedback. `observe-cc-oltc-step` must gain **≥1** match; `observe-cc-oltc-raise-only` must gain **0**. Then request one `raise` to restore that tap and wait: **both** rules must gain **≥1** match. Keep snapshotVersion/since unchanged and correlate rule/mode/time events with the field feedback. A successful fully decoded SBO action normally produces **2 matches** per matching rule (select + execute, both COT 6), but this is **not guaranteed**; early refusal can end the sequence. Count matching decoded messages, not successful operations. Never require exactly two or interpret missing/unavailable evidence as a non-match. If monitoring is deferred, still perform the lower/raise and check field feedback, but record shadow evidence as deferred.
     :::
 
     From the **Kali terminal**, read the historian:

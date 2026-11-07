@@ -153,12 +153,12 @@ steps:
 
     | Chain link | Owning action | Selected / deferred |
     |---|---|---|
-    | Enterprise→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
-    | Vendor→field Modbus/502 | `block-vendor-to-field` | deny / allow |
-    | Vendor→RTU/PLC engineering paths | `restrict-vendor-to-station` | narrowed / Weak scope |
+    | Enterprise→vendor RDP/3389 and VNC/5900 | Restrict enterprise → vendor remote access | deny / allow |
+    | Vendor→field Modbus/502 | Block vendor → field access | deny / allow |
+    | Vendor→RTU/PLC engineering paths | Restrict vendor → station engineering access | narrowed / Weak scope |
 
-    Test the first two independently. `pin-rtu-to-field` owns station-source
-    field attempts, not the vendor hop. Detection and planning selections do
+    Test the first two independently. **Pin field access to the RTU** owns
+    station-source field attempts, not the vendor hop. Detection and planning selections do
     not change either hop. A saved plan is not active until applied.
     Apply the policy before using Execute Step. Execute Step checks the active policy without replacing it; its recorded identity must match, and an applied plan must retain matching provenance.
   action:
@@ -174,14 +174,14 @@ steps:
 
         nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4
 
-    With `restrict-enterprise-to-vendor` selected, both ports time out or show
-    filtered. Deferred means reachable. No graphical client is required.
+    With **Restrict enterprise → vendor remote access** selected, both ports time
+    out or show filtered. Deferred means reachable. No graphical client is required.
 
     From the **vendor-jump-1 terminal tab** (still available), repeat the identical field write:
 
         mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
 
-    With `block-vendor-to-field` selected, expect a timeout and unchanged RMU1.
+    With **Block vendor → field access** selected, expect a timeout and unchanged RMU1.
     Deferred means the write still opens RMU1 and removes section supply, even
     when hop one is denied. Record device audit, source tuples and results.
     Restore RMU1 closed, RMU2 open and normal supply before Validate for every
@@ -201,8 +201,9 @@ steps:
     that both links remain open in Notes.
     :::why
     Either hop closes the two-hop chain, so this is not graded on one answer.
-    `restrict-enterprise-to-vendor` closes hop one; `block-vendor-to-field` closes
-    hop two; selecting both is defense in depth. NEITHER_LAYER means both links
+    **Restrict enterprise → vendor remote access** closes hop one;
+    **Block vendor → field access** closes hop two; selecting both is defense
+    in depth. NEITHER_LAYER means both links
     stay open and the chain still works end to end.
     :::
 

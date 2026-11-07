@@ -272,8 +272,8 @@ steps:
 
       ### Other observations from Lab 2.2 / 2.3
 
-      - **Firewall visibility blind spot at the RTAC.** The RTAC is multi-homed (it polls field devices over DNP3/Modbus) but its application traffic is routed through containd by preinstalled host-level hardening. The `rtac-architecture-review` action plans a review; it installs no control. Worth noting as a compensating control on your evidence package, not a network-layer enforcement. The RTAC is the *only* host with a leg in field_net - every other OT host is single-homed on ot_ops_net.
-      - **No protocol-aware constraints by default.** L4 port filtering does not distinguish reads from writes. The `modbus-dpi` and `dnp3-dpi` actions add visibility only. The L4 source pin enforces; DPI detects and logs.
+      - **Firewall visibility blind spot at the RTAC.** The RTAC is multi-homed (it polls field devices over DNP3/Modbus) but its application traffic is routed through containd by preinstalled host-level hardening. The **Validate and document RTAC hardening** action plans a review; it installs no control. Worth noting as a compensating control on your evidence package, not a network-layer enforcement. The RTAC is the *only* host with a leg in field_net - every other OT host is single-homed on ot_ops_net.
+      - **No protocol-aware constraints by default.** L4 port filtering does not distinguish reads from writes. The **Apply Modbus ICS DPI - provide function-code visibility** and **Apply DNP3 ICS DPI - detect and log Direct Operate writes** actions add visibility only. The L4 source pin enforces; DPI detects and logs.
 
       ### Review the structured plan coverage
 

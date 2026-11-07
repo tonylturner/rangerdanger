@@ -221,11 +221,11 @@ class ErrataContracts(unittest.TestCase):
                 7: ("13 unauthorized TCP rows", "Connection refused means", "prevention gap", "running hash"),
                 8: ("does not support shell redirection", "CLI JSON-file edit/import exercise is deferred", "action IDs", "policy hash")},
             "hardening-configurations": {
-                3: ("Apply Your Plan", "without replacing it", "block-enterprise-to-field"),
+                3: ("Apply Your Plan", "without replacing it", "**Block enterprise → field direct access**"),
                 4: ("With it deferred, the command still lands", "Detection selections do not close it", "device evidence"),
                 5: ("re-test timestamps", "do not clear history", "Restoration is common to every plan")},
             "vendor-rdp-compromise": {
-                4: ("Apply Your Plan", "without replacing it", "restrict-enterprise-to-vendor"),
+                4: ("Apply Your Plan", "without replacing it", "| Restrict enterprise → vendor remote access |"),
                 5: ("Deferred means reachable", "Restore auto-reclose", "A refused connection counts as reached")},
             "validation-evidence": {
                 0: ("Do not replace a partial plan", "A saved browser plan is not an applied plan"),
@@ -259,8 +259,10 @@ class ErrataContracts(unittest.TestCase):
                        "These two management ports stay allowed for every plan"):
             self.assertIn(phrase, report)
         apply = " ".join(scenario("hardening-configurations")["steps"][3]["description"].split())
-        self.assertIn("`pin-rtac-to-field` owns non-RTAC OT→field attempts, not Kali's enterprise path", apply)
-        self.assertIn("Neither `dnp3-dpi` nor `modbus-dpi` changes these verdicts", apply)
+        self.assertIn("**Pin field-device access to RTAC source IP** owns non-RTAC OT→field attempts, "
+                      "not Kali's enterprise path", apply)
+        self.assertIn("Neither **Apply DNP3 ICS DPI - detect and log Direct Operate writes** nor "
+                      "**Apply Modbus ICS DPI - provide function-code visibility** changes these verdicts", apply)
 
     def test_export_recipes_print_and_copy_without_fictitious_files(self):
         for name in ("firewall-implementation", "validation-evidence"):
@@ -528,7 +530,7 @@ class EnforcementContracts(unittest.TestCase):
     def test_retest_states_both_outcomes_and_common_restore(self):
         steps = scenario("hardening-configurations")["steps"]
         text = self.flat(steps[4]["description"])
-        for phrase in ("`block-enterprise-to-field` selected", "connection timeout",
+        for phrase in ("**Block enterprise → field direct access** selected", "connection timeout",
                        "auto-reclose still enabled", "With it deferred", "auto-reclose becomes disabled",
                        "This command alone does not trip the recloser", "`[2]` is recloser closed",
                        "`[3]` is auto-reclose enabled", "source, time and policy hash",
@@ -676,6 +678,34 @@ class BaselineContracts(unittest.TestCase):
                 with self.subTest(scenario=doc["id"], step=step["id"]):
                     self.assertFalse(sends_command(step.get("action") or {}))
         self.assertEqual(reviewed, 8)
+
+    def test_section_two_text_names_plan_actions_by_catalog_title(self):
+        # Students pick actions by title in the planner and see firewall rule
+        # IDs in containd; a raw plan-action ID in lab prose names neither.
+        # Knowledge articles document the pipeline and keep the IDs.
+        section_two = ("firewall-implementation", "hardening-configurations",
+                       "validation-evidence", "vendor-rdp-compromise")
+        for package, prefix, directory in (
+            ("us-dnp3-substation", "", SCENARIOS),
+            ("eu-iec104-substation", "eu-",
+             ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios"),
+        ):
+            base = ROOT / "lab-definitions/packages" / package
+            curriculum = read_curriculum(base)
+            catalog = {action["id"]: action["title"] for action in curriculum["catalog"]}
+            self.assertTrue(catalog)
+            texts = {f"{prefix}{name}": (directory / f"{prefix}{name}.yml").read_text()
+                     for name in section_two}
+            texts["curriculum/implementation.yml"] = (base / "curriculum/implementation.yml").read_text()
+            cited = set()
+            for name, text in texts.items():
+                with self.subTest(package=package, path=name):
+                    for action_id, title in catalog.items():
+                        self.assertNotIn(f"`{action_id}`", text)
+                        if title in text:
+                            cited.add(action_id)
+            # The titles are in use, so the rule is not vacuous.
+            self.assertGreaterEqual(len(cited), 5, sorted(cited))
 
     def test_evidence_status_carries_from_implementation_to_validation(self):
         for directory, prefix in (
@@ -905,7 +935,7 @@ class AdvancedTrackContracts(unittest.TestCase):
         text = scenario("firewall-implementation")["steps"][4]["description"]
         technical = text.split(":::technical\n", 1)[1].split("\n:::\n", 1)[0]
         flat = " ".join(technical.split())
-        for phrase in ("`restrict-enterprise-to-vendor` selected", "TCP 22, 80 and 443",
+        for phrase in ("**Restrict enterprise → vendor remote access** selected", "TCP 22, 80 and 443",
                        "With it deferred, RDP/3389 and VNC/5900 remain reachable",
                        "**Create rule** and **Delete** do not reload the firewall",
                        "both ports must be `filtered`", "fix the rule and commit again",
