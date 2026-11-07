@@ -40,7 +40,6 @@ var usRecipe = &packageRecipe{
 	compare:           usCompare,
 	staticRules:       usStaticRules,
 	workshopName:      "Distribution Substation Segmentation",
-	policyLabels:      map[string]string{"weak": "weak baseline", "improved": "hardened (RTAC-only field access)"},
 	validationCapture: captureSpec{nodes: []string{"relay-1", "recloser-1", "regulator-1", "capbank-1"}, network: "field_net"},
 	// Scenario-driven traffic only; see runTrafficGeneration.
 	traffic: []trafficTarget{

@@ -8,10 +8,16 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
 func TestReportCapturePathsMatchPackageComposeMounts(t *testing.T) {
 	for id, recipe := range map[string]*packageRecipe{usPackageID: usRecipe, euPackageID: euRecipe} {
+		pkg, err := labs.ReadDefinition(filepath.Join(repoRoot(), "lab-definitions"), filepath.Join(repoRoot(), "lab-definitions", "packages", id, "package.yml"))
+		if err != nil {
+			t.Fatal(err)
+		}
 		for _, mode := range []string{"source", "release"} {
 			t.Run(id+"/"+mode, func(t *testing.T) {
 				data, err := os.ReadFile(filepath.Join(repoRoot(), "lab-definitions", "packages", id, "compose."+mode+".yml"))
@@ -43,7 +49,7 @@ func TestReportCapturePathsMatchPackageComposeMounts(t *testing.T) {
 							recipe.report.hostCaptureDir, volume, want)
 					}
 					pcap := path.Join(want, "validation-test.pcap")
-					md := recipe.renderValidationMarkdown("improved", "improved", "hash", pcap, true, "capture",
+					md := recipe.renderValidationMarkdown(pkg, "improved", "improved", "hash", pcap, true, "capture",
 						nil, 0, 0, 0, 0, 0, false)
 					if !strings.Contains(md, "| **PCAP evidence** | `"+pcap+"` |") {
 						t.Errorf("report does not publish compose-derived PCAP path %q", pcap)

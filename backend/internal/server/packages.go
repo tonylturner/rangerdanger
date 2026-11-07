@@ -56,6 +56,18 @@ func packagePolicies(pkg labs.Package) []policySummary {
 	return policies
 }
 
+// policyLabel names the generation's policy in step results and evidence reports.
+// Custom and unrecognized configurations are not package-declared policies.
+func policyLabel(pkg labs.Package, name string) string {
+	if name == "custom" {
+		return "your custom policy"
+	}
+	if wording, ok := pkg.PolicyWording[name]; ok {
+		return wording.Label
+	}
+	return name
+}
+
 // setCatalog replaces the loaded package catalog after a successful seed.
 func (s *Server) setCatalog(catalog *labs.Catalog) {
 	s.catalogMu.Lock()

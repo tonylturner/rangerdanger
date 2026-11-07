@@ -14,6 +14,25 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
+func TestFirewallStepFailureUsesPackageLabel(t *testing.T) {
+	fw, _ := fakeContaind(t, http.StatusInternalServerError, http.StatusOK)
+	for _, id := range []string{usPackageID, euPackageID} {
+		t.Run(id, func(t *testing.T) {
+			gen := usGeneration(containd.NewClient(fw.URL))
+			if id == euPackageID {
+				gen = euGeneration(t, containd.NewClient(fw.URL), nil)
+			}
+			s := rangeServer(gen, "weak")
+			label := gen.Package.PolicyWording["improved"].Label
+			got := s.executeFirewallAction(t.Context(), gen, "improved")
+			if got.Success || got.Action != "Apply firewall: "+label ||
+				!strings.Contains(got.Detail, "failed to apply config to containd") {
+				t.Fatalf("failed firewall step lost package label or upstream error: %+v", got)
+			}
+		})
+	}
+}
+
 func TestStepActionRTACResponse(t *testing.T) {
 	_, firewall := newUpstreamStub(t, map[string]stubResponse{
 		"GET /api/v1/config": {http.StatusOK, `{"firewall":{"defaultAction":"ALLOW","rules":[]}}`},
