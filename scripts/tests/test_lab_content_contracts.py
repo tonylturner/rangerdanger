@@ -143,23 +143,22 @@ class CrossPackageContracts(unittest.TestCase):
                     self.assertFalse(sends_command(step.get("action") or {}))
         self.assertEqual(reviewed, 8)
 
-    def test_section_two_text_names_plan_actions_by_catalog_title(self):
+    def test_lab_text_names_plan_actions_by_catalog_title(self):
         # Students pick actions by title in the planner and see firewall rule
         # IDs in containd; a raw plan-action ID in lab prose names neither.
         # Knowledge articles document the pipeline and keep the IDs.
-        section_two = ("firewall-implementation", "hardening-configurations",
-                       "validation-evidence", "vendor-rdp-compromise")
-        for package, prefix, directory in (
-            ("us-dnp3-substation", "", SCENARIOS),
-            ("eu-iec104-substation", "eu-",
+        for package, directory in (
+            ("us-dnp3-substation", SCENARIOS),
+            ("eu-iec104-substation",
              ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios"),
         ):
             base = ROOT / "lab-definitions/packages" / package
             curriculum = read_curriculum(base)
             catalog = {action["id"]: action["title"] for action in curriculum["catalog"]}
             self.assertTrue(catalog)
-            texts = {f"{prefix}{name}": (directory / f"{prefix}{name}.yml").read_text()
-                     for name in section_two}
+            scenarios = sorted(directory.glob("*.yml"))
+            self.assertEqual(len(scenarios), 7, scenarios)
+            texts = {path.name: path.read_text() for path in scenarios}
             texts["curriculum/implementation.yml"] = (base / "curriculum/implementation.yml").read_text()
             cited = set()
             for name, text in texts.items():

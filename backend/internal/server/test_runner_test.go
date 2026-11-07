@@ -38,24 +38,11 @@ func TestEvaluateTestStep(t *testing.T) {
 			wantDetail: "unknown action type: firewll",
 		},
 		{
-			name:           "successful command passes",
-			action:         &labs.StepAction{Type: "command", Device: "relay", Command: "close"},
+			name:           "sequence with every command succeeding passes",
+			action:         &labs.StepAction{Type: "sequence", Commands: []labs.StepActionCmd{{Device: "relay", Command: "close"}}},
 			commandResults: []StepActionResult{{Success: true, Detail: "command executed"}},
 			wantPassed:     true,
-			wantDetail:     "command executed",
-		},
-		{
-			name:           "expected containd block passes",
-			action:         &labs.StepAction{Type: "command", Device: "relay", Command: "close"},
-			commandResults: []StepActionResult{{Blocked: true, Detail: "BLOCKED by containd — source denied"}},
-			wantPassed:     true,
-			wantDetail:     "BLOCKED by containd — source denied (expected — hardened policy is working)",
-		},
-		{
-			name:           "failed command fails",
-			action:         &labs.StepAction{Type: "command", Device: "relay", Command: "close"},
-			commandResults: []StepActionResult{{Detail: "connection refused"}},
-			wantDetail:     "connection refused",
+			wantDetail:     "1 commands",
 		},
 		{
 			name:   "sequence with one failure fails",
@@ -221,22 +208,6 @@ func TestAggregateResetProblems(t *testing.T) {
 				t.Errorf("failed reset has no phase prefix: %q", resetDetail)
 			}
 		})
-	}
-}
-
-func TestExpectedBlocksAreStructured(t *testing.T) {
-	for _, tc := range []struct {
-		result StepActionResult
-		passed bool
-	}{
-		{StepActionResult{Blocked: true, Detail: "policy refusal with new wording"}, true},
-		{StepActionResult{Detail: "BLOCKED by containd — diagnostic only"}, false},
-		{StepActionResult{Detail: "missing executable"}, false},
-	} {
-		got := evaluateTestStep(0, labs.ScenarioStep{Action: &labs.StepAction{Type: "command"}}, stepExecutors{command: func(string, string, string, *float64) StepActionResult { return tc.result }})
-		if got.Passed != tc.passed {
-			t.Fatalf("result=%+v got=%+v", tc.result, got)
-		}
 	}
 }
 

@@ -313,18 +313,6 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 					}
 				}
 			}
-			if step.Action != nil {
-				// After state-changing commands, wait for effects to propagate.
-				if step.Action.Type == "command" {
-					if step.Action.Command == "inject_fault" || step.Action.Command == "disable_reclose" {
-						sleepCtx(ctx, 2*time.Second)
-					}
-					if step.Action.Command == "set_tap" {
-						sleepCtx(ctx, 1*time.Second)
-					}
-				}
-			}
-
 			result.DurationMs = time.Since(stepStart).Milliseconds()
 			stepResults = append(stepResults, result)
 
@@ -337,8 +325,8 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 				autoPassed++
 			}
 
-			// Pause between steps — longer after commands to let state propagate
-			if step.Action != nil && (step.Action.Type == "command" || step.Action.Type == "sequence") {
+			// Pause between steps — longer after device commands to let state propagate
+			if step.Action != nil && step.Action.Type == "sequence" {
 				sleepCtx(ctx, 1500*time.Millisecond)
 			} else {
 				sleepCtx(ctx, 200*time.Millisecond)

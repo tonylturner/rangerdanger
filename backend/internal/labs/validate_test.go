@@ -57,7 +57,7 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 		{
 			name: "retired command action type",
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
-				scenario.Steps[0].Action = &StepAction{Type: "command", Device: "relay", Command: "trip"}
+				scenario.Steps[0].Action = &StepAction{Type: "command", Commands: []StepActionCmd{{Device: "relay", Command: "trip"}}}
 			},
 			problem: `unsupported action type "command"`,
 		},

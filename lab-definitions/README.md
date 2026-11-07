@@ -112,8 +112,8 @@ The EU package serves these seven scenario files:
   `us-dnp3-substation`). Scenario routes answer for the active package
   only. `GET /api/packages` lists packages and marks the active one.
 - Known capabilities: `process.electrical` (substation state and the
-  device-command / check vocabulary for `command`, `sequence` and
-  `check` actions), `policy.containd` (validators read the active
+  device-command / check vocabulary for `sequence` and `check`
+  actions), `policy.containd` (validators read the active
   firewall policy), `audit.device-control` (validators read the device
   audit log), `capture.firewall` (validators look for firewall
   captures).

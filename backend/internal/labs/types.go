@@ -71,10 +71,6 @@ type ScenarioStep struct {
 // StepAction defines an executable action for a scenario step.
 type StepAction struct {
 	Type     string          `yaml:"type" json:"type"`                             // "check", "firewall", "sequence", "decision", "probe", "session-cut"
-	Device   string          `yaml:"device,omitempty" json:"device,omitempty"`     // for type=command
-	Command  string          `yaml:"command,omitempty" json:"command,omitempty"`   // for type=command
-	Source   string          `yaml:"source,omitempty" json:"source,omitempty"`     // for type=command
-	Value    *float64        `yaml:"value,omitempty" json:"value,omitempty"`       // for type=command (e.g. set_tap)
 	Flow     string          `yaml:"flow,omitempty" json:"flow,omitempty"`         // for type=session-cut
 	Config   string          `yaml:"config,omitempty" json:"config,omitempty"`     // for type=firewall
 	Expect   map[string]any  `yaml:"expect,omitempty" json:"expect,omitempty"`     // for type=check

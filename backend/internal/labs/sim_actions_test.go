@@ -21,7 +21,7 @@ func TestSimulationActionVocabulary(t *testing.T) {
 		{"not a US device", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "relay", Command: "inject_fault"}}}, []string{CapabilityProcessTruth}, false},
 		{"US has no simulation vocabulary", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "breaker", Command: "reset"}}}, electricalPackage, false},
 		{"no capability", StepAction{Type: "sequence", Commands: []StepActionCmd{{Device: "breaker", Command: "reset"}}}, nil, false},
-		{"retired command type", StepAction{Type: "command", Device: "breaker", Command: "reset"}, []string{CapabilityProcessTruth}, false},
+		{"retired command type", StepAction{Type: "command", Commands: []StepActionCmd{{Device: "breaker", Command: "reset"}}}, []string{CapabilityProcessTruth}, false},
 		{"session cut", StepAction{Type: "session-cut", Flow: "cc-rtu"}, []string{CapabilityPolicyContaind}, true},
 		{"unknown flow", StepAction{Type: "session-cut", Flow: "missing"}, []string{CapabilityPolicyContaind}, false},
 		{"empty flow", StepAction{Type: "session-cut"}, []string{CapabilityPolicyContaind}, false},
