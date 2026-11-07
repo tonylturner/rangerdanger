@@ -299,7 +299,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
       // Log results
       for (const r of result.results) {
-        const label = r.success ? "SUCCEEDED" : "BLOCKED";
+        const label = r.success ? "SUCCEEDED" : "NOT MET";
         const msg = `[${label}] ${r.action}: ${r.impact || r.detail}`;
         setCmdLog((prev) => [msg, ...prev].slice(0, 20));
       }
