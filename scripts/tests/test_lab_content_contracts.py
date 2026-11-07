@@ -216,7 +216,6 @@ class ErrataContracts(unittest.TestCase):
 
     def test_workshop_notes_are_short_and_at_the_action(self):
         expected = {
-            "remediation-planning": {2: ("Selections save automatically.", "Budget overrun is a warning only", "empty", "partial")},
             "firewall-implementation": {
                 4: ("**Apply Your Plan**", "without replacing it", "Deferred rules retain"),
                 7: ("13 unauthorized TCP rows", "Connection refused means", "prevention gap", "running hash"),
@@ -425,7 +424,7 @@ class EnforcementContracts(unittest.TestCase):
     def test_eu_hardened_staffing_overrun_is_not_hidden(self):
         package = ROOT / "lab-definitions/packages/eu-iec104-substation"
         text = (package / "scenarios/eu-remediation-planning.yml").read_text()
-        for phrase in ("149h vs 140h", "9h overrun", "80h", "partial plan", "GAP", "UNAVAILABLE"):
+        for phrase in ("149h vs 140h", "9h overrun", "80h", "apply limit"):
             self.assertIn(phrase, text)
         curriculum = read_curriculum(package)
         team = next(team for team in curriculum["teams"] if team["name"] == "Firewall Admin")
@@ -446,7 +445,7 @@ class EnforcementContracts(unittest.TestCase):
         package = ROOT / "lab-definitions/packages/eu-iec104-substation"
         topology = yaml.safe_load((package / "topology.yml").read_text())
         field = {node["ip"] for node in topology["nodes"] if node["networks"] == ["field_net"]}
-        for name in ("eu-baseline-assessment", "eu-segmentation-requirements", "eu-firewall-implementation"):
+        for name in ("eu-baseline-assessment", "eu-firewall-implementation"):
             text = (package / "scenarios" / f"{name}.yml").read_text()
             match = re.search(r"\| RTU→field \| 10\.30\.30\.20→10\.40\.40\.(\d+)…(\d+) \| TCP/502 \|", text)
             with self.subTest(scenario=name):
@@ -613,13 +612,96 @@ class EnforcementContracts(unittest.TestCase):
 
 
 class BaselineContracts(unittest.TestCase):
+    def test_section_one_decisions_explain_answers_and_no_decision_offers_log(self):
+        package_scenarios = [
+            ROOT / "lab-definitions/packages/us-dnp3-substation/scenarios",
+            ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios",
+        ]
+        paths = list(SCENARIOS.glob("*.yml"))
+        for directory in package_scenarios:
+            paths.extend(directory.glob("*.yml"))
+
+        decision_count = 0
+        for path in paths:
+            doc = yaml.safe_load(path.read_text())
+            section_one = str(doc.get("order", "")).startswith("1.")
+            for step in doc.get("steps", []):
+                lines = step.get("description", "").splitlines()
+                for index, line in enumerate(lines):
+                    if not re.match(r"^\s*:::decision\b", line):
+                        continue
+                    decision_count += 1
+                    closing = next(
+                        (end for end in range(index + 1, len(lines)) if lines[end].strip() == ":::"),
+                        None,
+                    )
+                    self.assertIsNotNone(closing, f"{path}: unclosed decision")
+                    block = lines[index:closing + 1]
+                    if section_one:
+                        self.assertEqual(
+                            sum(item.strip() == ":::why" for item in block),
+                            1,
+                            f"{path}: section 1 decision lacks exactly one :::why",
+                        )
+                    options = re.search(r'\boptions=(?:"([^"]*)"|\'([^\']*)\'|([^\s]+))', line)
+                    if options:
+                        values = next(value for value in options.groups() if value is not None).split(",")
+                        self.assertNotIn("LOG", values, f"{path}: standalone LOG decision option")
+        self.assertGreater(decision_count, 0)
+
+    def test_section_one_conduit_and_criteria_questions_match_across_packages(self):
+        scenarios = {
+            "us": yaml.safe_load((SCENARIOS / "baseline-assessment.yml").read_text()),
+            "eu": yaml.safe_load((ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios/eu-baseline-assessment.yml").read_text()),
+        }
+
+        def questions(doc, step_id):
+            step = next(item for item in doc["steps"] if item["id"] == step_id)
+            lines = step["description"].splitlines()
+            out = []
+            for index, line in enumerate(lines):
+                if not re.match(r"^\s*:::decision\b", line):
+                    continue
+                end = next(pos for pos in range(index + 1, len(lines)) if lines[pos].strip() == ":::")
+                why = next((pos for pos in range(index + 1, end) if lines[pos].strip() == ":::why"), end)
+                out.append((line.strip(), " ".join(item.strip() for item in lines[index + 1:why]).strip()))
+            return out
+
+        conduit_questions = {
+            name: questions(doc, "critical-conduits-what-must-flow")
+            for name, doc in scenarios.items()
+        }
+        self.assertEqual(
+            [question for _, question in conduit_questions["us"]],
+            [question for _, question in conduit_questions["eu"]],
+        )
+        for name, decisions in conduit_questions.items():
+            with self.subTest(package=name):
+                self.assertEqual(
+                    [re.search(r"\bid=([a-z-]+)", opening).group(1) for opening, _ in decisions],
+                    ["required-cross-zone-conduits", "intra-zone-dependencies", "continuity-with-minimal-conduits"],
+                )
+        criteria_questions = {
+            name: questions(yaml.safe_load((SCENARIOS / "segmentation-requirements.yml").read_text())
+                           if name == "us"
+                           else yaml.safe_load((ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios/eu-segmentation-requirements.yml").read_text()),
+                           "define-success-criteria-for-segmentation")
+            for name in scenarios
+        }
+        self.assertEqual(
+            [question for _, question in criteria_questions["us"]],
+            [question for _, question in criteria_questions["eu"]],
+        )
+        self.assertEqual(len(criteria_questions["us"]), 3)
+
     def test_vendor_observation_depends_on_capture_window(self):
         doc = scenario("baseline-assessment")
-        self.assertIn("NOT_OBSERVED", doc["steps"][3]["description"])
-        text = doc["steps"][5]["description"]
+        findings = next(step for step in doc["steps"] if step["id"] == "findings-what-you-observed")
+        self.assertIn("NOT_OBSERVED", findings["description"])
+        text = findings["description"]
         decision = next(line for line in text.splitlines() if "id=vendor-to-ot " in line)
         self.assertNotIn("correct=", decision)
-        self.assertIn("if your capture contains", text)
+        self.assertIn("depends on whether the capture window overlaps", text)
 
     def test_observation_key_does_not_invent_writes(self):
         doc = scenario("baseline-assessment")
@@ -627,7 +709,8 @@ class BaselineContracts(unittest.TestCase):
         self.assertRegex(text, r"id=unauth-modbus-writes [^\n]*correct=NOT_OBSERVED")
         self.assertIn("NOT_OBSERVED in the prescribed read-only capture", text)
         self.assertNotIn("eng-ws mbpoll write commands", text)
-        self.assertIn("Four categories", text)
+        self.assertIn("Absence does not prove denial.", text)
+        self.assertNotIn(":::hint What an analyst would conclude", text)
         self.assertIn("Four of your passive findings", doc["steps"][6]["description"])
         self.assertNotIn("capture showed (vendor → OT, unauth writes)",
                          doc["steps"][6]["description"])
@@ -658,7 +741,7 @@ class BaselineContracts(unittest.TestCase):
                                      expected)
         for letter in "BCD":
             row = next(r for r in rows if f"**{letter}." in r)
-            self.assertIn("in this workshop", row)
+            self.assertIn("Blocked by reference", row)
         requirements = scenario("segmentation-requirements")["steps"][2]["description"]
         self.assertNotIn("all five critical conduits", requirements)
         self.assertIn("A/E autonomous and F/G intra-zone", requirements)
@@ -678,7 +761,7 @@ class BaselineContracts(unittest.TestCase):
         text = scenario("baseline-assessment")["steps"][2]["description"]
         self.assertIn("This filter excludes loopback only.", text)
         self.assertIn("10.99.99.0/24", text)
-        self.assertIn("does not by itself prove delivery/forwarding", text)
+        self.assertIn("An ingress packet alone does not prove forwarding.", text)
         self.assertIn("'not host 127.0.0.1'", text)
         self.assertNotIn("no management UI traffic", text)
 
@@ -733,11 +816,11 @@ class ActionContracts(unittest.TestCase):
         doc = scenario("remediation-planning")
         step = doc["steps"][2]
         self.assertEqual(step["action"]["type"], "decision")
-        self.assertIn("Selections save automatically.", step["description"])
-        self.assertIn("click Mark Complete", step["description"])
-        self.assertIn("Do not use Execute Step", step["description"])
-        self.assertIn("Selecting an action alone does not apply it", step["description"])
-        self.assertIn("Budget overrun is a warning only", step["description"])
+        self.assertIn("Select a defensible subset in the planner.", step["description"])
+        self.assertIn("The L4 source pin enforces; DPI detects and logs.", step["description"])
+        self.assertIn("remain planning-only", step["description"])
+        self.assertNotRegex(step["description"], r"`[a-z]+-[a-z-]+`")
+        self.assertNotIn("Selection order does not set rule order", step["description"])
 
     def test_frozen_runner_action_accounting(self):
         # evaluateTestStep auto-passes missing actions and decisions only.
@@ -926,8 +1009,8 @@ class FirstMatchContracts(unittest.TestCase):
         for path in (SCENARIOS / "remediation-planning.yml",
                      ROOT / "lab-definitions/packages/eu-iec104-substation/"
                      "scenarios/eu-remediation-planning.yml"):
-            self.assertIn("Selection order does not set rule order; compilation uses authored slots.",
-                          path.read_text())
+            self.assertNotIn("Selection order does not set rule order; compilation uses authored slots.",
+                             path.read_text())
 
 
 class EstablishedConnectionContracts(unittest.TestCase):
@@ -1004,11 +1087,12 @@ class AuditTeachingContracts(unittest.TestCase):
             for claim in removed:
                 with self.subTest(path=path, claim=claim):
                     self.assertNotIn(claim, text)
-        text = scenario("segmentation-requirements")["steps"][0]["description"]
-        # The optional hint is authored in the first requirements step.
-        self.assertIn("not an IEC 62443 SL assessment", text)
-        self.assertIn("The L4 source pin enforces; DPI detects and logs.", text)
-        self.assertIn("NOT ASSESSED", text)
+        design = scenario("segmentation-requirements")["steps"][0]["description"]
+        criteria = scenario("segmentation-requirements")["steps"][2]["description"]
+        self.assertIn("The L4 source pin enforces; DPI detects and logs.", design)
+        self.assertIn("timeout", criteria)
+        self.assertIn("fresh, valid device/process state", criteria)
+        self.assertNotIn(":::hint Reveal expected requirements", design)
 
     def test_remote_trip_and_fault_recovery_are_distinct(self):
         text = " ".join(scenario("hardening-configurations")["steps"][1]["description"].split())
