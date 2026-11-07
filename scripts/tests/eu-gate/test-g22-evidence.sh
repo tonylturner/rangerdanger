@@ -90,7 +90,7 @@ t_expect_eq "$T_STATUS" 0 "retained correlated record is complete"
 t_run test -s "$EU_GATE_EVIDENCE_DIR/G22-weak.pcap"
 t_expect_eq "$T_STATUS" 0 "raw PCAP retained on success"
 case "$EVENT_LOG" in
-  *"capture weak-command:"*" consequence-field consequence-cc decode step:restore-the-substation restoration-field restoration-cc apply:improved step:apply-the-hardened-policy improved-control-before step:re-test-the-attack-under-the-hardened-policy improved-command:"*" improved-control-after step:validate")
+  *"capture weak-command:"*" consequence-field consequence-cc step:attack-iec104-breaker-open decode step:restore-the-substation restoration-field restoration-cc apply:improved step:apply-the-hardened-policy improved-control-before step:re-test-the-attack-under-the-hardened-policy improved-command:"*" improved-control-after step:validate")
     t_ok "capture/command/consequence/decode/recovery/Improved/identical-retest order" ;;
   *) t_not_ok "unexpected event order: $EVENT_LOG" ;;
 esac

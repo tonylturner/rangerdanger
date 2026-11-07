@@ -480,10 +480,16 @@ func TestEUWorkshopStepParity(t *testing.T) {
 						t.Errorf("%s lost %s split", after.ID, fence)
 					}
 				}
+				// D1: attack and retest steps run real wire commands in both
+				// packages. Execute Step reads the device state the attack
+				// targets with a non-mutating check; it never sends a command.
+				// Neither package may carry a command/sequence action here.
 				manualWire := id == "hardening-configurations" && (i == 1 || i == 4) || id == "vendor-rdp-compromise" && i == 2
 				if manualWire {
-					if after.Action != nil {
-						t.Errorf("%s wire operation is not manual", after.ID)
+					for _, action := range []*labs.StepAction{before.Action, after.Action} {
+						if action != nil && (action.Type == "command" || action.Type == "sequence") {
+							t.Errorf("%s attack step must not send a command/sequence action", after.ID)
+						}
 					}
 					continue
 				}

@@ -153,6 +153,12 @@ steps:
 
       :::decision id=attack-hmi-impact options=DOWNSTREAM_OUTAGE,LOW_VOLTAGE_ALARM,FEEDER_OUTAGE,NO_ALARM correct=DOWNSTREAM_OUTAGE
       **What alarm did the Feeder One-Line tab show after this attack?**
+      :::why
+      Tripping the recloser and disabling auto-reclose de-energized everything
+      downstream of the recloser while the substation breaker stayed closed, so
+      the One-Line showed the downstream-outage alarm — not a low-voltage alarm
+      (voltage was fine, the loads were simply dark) and not a whole-feeder outage
+      (the substation bus stayed energized).
       :::
 
       :::hint Optional: try the same attack via Modbus
@@ -192,14 +198,10 @@ steps:
       the re-test step covers that one.
       :::
     action:
-      type: sequence
-      commands:
-        - device: recloser
-          command: disable_reclose
-          source: "10.10.10.50"
-        - device: recloser
-          command: open
-          source: "10.10.10.50"
+      type: check
+      expect:
+        recloser_closed: false
+        reclose_enabled: false
 
   - id: restore-the-substation
     title: "Restore the substation"
@@ -306,10 +308,22 @@ steps:
 
       :::decision id=retest-hmi-state options=NORMAL_OPS,AUTO_RECLOSE_DISABLED,DOWNSTREAM_OUTAGE,UNCHANGED_FROM_ATTACK
       What did the HMI show for this plan? Record auto-reclose separately in Notes.
+      :::why
+      This depends on your plan, so it is not graded. A selected
+      enterprise-to-field closure denies the retest: the HMI stays in NORMAL_OPS
+      with auto-reclose enabled. A deferred closure lets the command land and the
+      HMI shows AUTO_RECLOSE_DISABLED. Read the device state after the poll/solve
+      interval — not the Execute Step label — to decide which you saw.
       :::
 
       :::decision id=retest-defense-in-depth options=L4_SOURCE_PIN,DNP3_DPI,EITHER_LAYER correct=L4_SOURCE_PIN
       When the enterprise path is denied, which layer enforces that denial?
+      :::why
+      The L4 source pin enforces; DPI detects and logs. `dnp3-dpi` and
+      `modbus-dpi` only add visibility on allowed sessions, so the source pin —
+      not a per-protocol signature — is what denies an unauthorized enterprise
+      source. A detection selection alone would log the write but still let it
+      land.
       :::
 
       :::hint Optional Modbus re-test
@@ -344,10 +358,10 @@ steps:
       Do not Reset Lab to improve the evidence: it reapplies Weak. If reset is
       needed for recovery, reapply the intended plan and collect a new window.
     action:
-      type: command
-      device: recloser
-      command: disable_reclose
-      source: "10.10.10.50"
+      type: check
+      expect:
+        recloser_closed: true
+        reclose_enabled: true
 
   - id: validate
     title: "Validate"
