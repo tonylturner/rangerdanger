@@ -6,6 +6,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Labs 1.2–1.4 and 2.2–2.4 and the vendor bonus lab use the same activity design in the US and EU ranges.
+  Every dropdown explains its answer. Factual questions are graded; judgment questions show the reference answer.
+- Lab 2.2 has a shared change-request review in both ranges. Its evidence answers carry forward into Lab 2.4.
+- Attack and retest steps use real wire commands in both ranges. Execute Step reads the device state and never sends a command.
+- Policy labels and descriptions come from each package and are the same on every portal surface, in step results and in validation reports.
+- Lab text names plan actions by their planner titles.
+- EU Execute Step on policy phases checks the student's policy and never applies one.
+
+### Removed
+
+- The `command` scenario action type. `sequence` carries device commands.
+
 ### Fixed
 
 - EU gate waits retry curl transport timeouts while their wait budget remains.
