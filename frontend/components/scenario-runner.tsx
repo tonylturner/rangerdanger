@@ -26,7 +26,7 @@ import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X } f
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
-import { saveEmptyRemediationPlanIfMissing } from "../lib/remediation-plan";
+import { loadRemediationPlan, saveEmptyRemediationPlanIfMissing } from "../lib/remediation-plan";
 import { useFirewallTrack } from "../lib/use-firewall-track";
 import { useCompiledPlan } from "../lib/use-compiled-plan";
 import { ApplyPlanButton } from "./apply-plan-button";
@@ -275,11 +275,16 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     }
   };
 
+  const changeRequest = () => {
+    const plan = hasPolicyActions ? loadRemediationPlan(scope) : null;
+    return plan ? { packageId: scope.packageId, revision: scope.revision, actionIds: plan.selectedActionIds } : undefined;
+  };
+
   const handleValidate = async () => {
     setValidating(true);
     setValidationError(false);
     try {
-      const result = await validateScenario(scenario.id);
+      const result = await validateScenario(scenario.id, changeRequest());
       saveValidation(scope, result);
       setValidation(result);
     } catch {
@@ -293,7 +298,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     setExecuting(true);
     setStepResult(null);
     try {
-      const result = await executeScenarioStep(scenario.id, idx);
+      const result = await executeScenarioStep(scenario.id, idx, changeRequest());
       setStepResult(result);
 
       // Log results

@@ -233,7 +233,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 	rng.POST("/traffic/stop", s.handleTrafficStop)
 	rng.GET("/traffic/status", s.handleTrafficStatus)
 
-	rng.GET("/scenarios/:id/validate", s.handleValidateScenario)
+	rng.POST("/scenarios/:id/validate", s.handleValidateScenario)
 	rng.POST("/scenarios/:id/steps/:stepIdx/execute", s.handleExecuteStep)
 
 	// Containd proxy - enables same-origin access to containd UI

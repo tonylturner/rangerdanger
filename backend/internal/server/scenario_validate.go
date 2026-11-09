@@ -53,24 +53,28 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 		return
 	}
 
+	ctx, ok := gradingContext(c)
+	if !ok {
+		return
+	}
 	var input validatorInput
 	var auditErr error
 	if validator.needs(labs.CapabilityProcessElectrical) {
-		input.state, err = s.fetchRTACState(c.Request.Context(), rangeOf(c))
+		input.state, err = s.fetchRTACState(ctx, rangeOf(c))
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cannot reach RTAC: " + err.Error()})
 			return
 		}
 	}
 	if validator.needs(labs.CapabilityAuditDeviceControl) {
-		input.audit, auditErr = s.fetchRTACAudit(c.Request.Context(), rangeOf(c))
+		input.audit, auditErr = s.fetchRTACAudit(ctx, rangeOf(c))
 	}
 	s.activeConfigMu.RLock()
 	input.activeConfig = s.activeConfig
 	s.activeConfigMu.RUnlock()
 	input.gen = rangeOf(c)
 
-	checks := validator.run(c.Request.Context(), s, input)
+	checks := validator.run(ctx, s, input)
 	checks = withAuditFetchError(checks, auditErr)
 
 	// Determine overall outcome
@@ -687,7 +691,7 @@ func init() {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind, labs.CapabilityAuditDeviceControl},
 		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
 			checks := validateHardeningConfigurations(in.state)
-			return append(checks, s.policyJudgment(ctx, in.gen), s.usAuditJudgment(in.gen, in.audit))
+			return append(checks, s.policyJudgment(ctx, in.gen), s.usAuditJudgment(ctx, in.gen, in.audit))
 		},
 	})
 	registerScenarioValidator("us-vendor-rdp-compromise", scenarioValidator{

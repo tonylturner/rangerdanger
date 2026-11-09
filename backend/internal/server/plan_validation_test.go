@@ -72,7 +72,7 @@ func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 	data, _ = os.ReadFile(filepath.Join(s.cfg.LabDefinitionsPath, gen.Package.Policies["improved"]))
 	s.lastAppliedHash, _ = containd.FirewallHashFromBytes(data)
 	s.policySource = "manual-custom"
-	if check := s.policyJudgment(context.Background(), gen); check.Status != "pass" || !strings.Contains(check.Detail, "not an applied plan") {
+	if check := s.policyJudgment(context.Background(), gen); check.Status != "pass" || !strings.Contains(check.Detail, "full reference (no change request saved)") {
 		t.Fatal(check)
 	}
 }
@@ -86,7 +86,7 @@ func TestEUPartialPlanValidators(t *testing.T) {
 		}
 		for _, slot := range euWorkshopSlots[1:] {
 			ev := passingEUWorkshop(t, slot)
-			ev.isPlan = true
+			ev.target = "applied plan"
 			ev.foreignBreakerAllowed = true
 			for _, e := range compiled.Expectations {
 				if e.From == "kali-1" && e.To == "rtu-1" && e.Port == 2404 {
@@ -258,8 +258,8 @@ func TestUSAuditAgainstPlanRatherThanForeignSourceLabel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.appliedPlan, s.policySource = &compiled, "plan"
-	if check := s.usAuditJudgment(gen, entries); check.Status != "pass" || !strings.Contains(check.Detail, "deferred exposures") {
+	s.appliedPlan, s.policySource, s.planProvenance = &compiled, "plan", &planProvenance{}
+	if check := s.usAuditJudgment(t.Context(), gen, entries); check.Status != "pass" || !strings.Contains(check.Detail, "deferred exposures") {
 		t.Fatal(check)
 	}
 	compiled, err = labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
@@ -267,11 +267,11 @@ func TestUSAuditAgainstPlanRatherThanForeignSourceLabel(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.appliedPlan = &compiled
-	if check := s.usAuditJudgment(gen, entries); check.Status != "warn" {
+	if check := s.usAuditJudgment(t.Context(), gen, entries); check.Status != "warn" {
 		t.Fatal(check)
 	}
 	s.policySource = "manual-custom"
-	if check := s.usAuditJudgment(gen, entries); check.Status != "warn" {
+	if check := s.usAuditJudgment(t.Context(), gen, entries); check.Status != "warn" {
 		t.Fatal(check)
 	}
 }

@@ -125,15 +125,15 @@ walk_bad() {
   CALLS="$CALLS walk-failed:$1"
   return 1
 }
-eu_api_get() {
-  CALLS="$CALLS GET:$1"
+eu_api_post() {
+  CALLS="$CALLS POST:$1"
   HTTP_STATUS=200
   API_BODY='{"outcome":"FAIL"}'
 }
 t_run eu_lab_gate eu-vendor-rdp-compromise walk_bad improved prepare_ok
 t_expect_eq "$T_STATUS" 1 "incomplete student walk fails"
 t_expect_eq "$CALLS" \
-  " reset policy:weak validate:FAIL:eu-vendor-rdp-compromise walk-failed:eu-vendor-rdp-compromise GET:/api/scenarios/eu-vendor-rdp-compromise/validate policy:weak reset" \
+  " reset policy:weak validate:FAIL:eu-vendor-rdp-compromise walk-failed:eu-vendor-rdp-compromise POST:/api/scenarios/eu-vendor-rdp-compromise/validate policy:weak reset" \
   "failed walk keeps evidence and restores weak policy and reset without claiming PASS"
 
 # The validation-evidence scenario starts hardened; its student check/continuity
@@ -209,8 +209,9 @@ t_expect_out "vendor FC6 RMU1 OPEN is attributed to vendor-jump 10.20.20.10" \
 # shellcheck source-path=SCRIPTDIR source=../../lib/eu-policy.sh
 . "$T_REPO/scripts/lib/eu-policy.sh"
 VALIDATION='{"outcome":"PASS","checks":[{"status":"pass"},{"status":"fail"}]}'
-eu_api_get() {
-  CALLS="$CALLS GET:$1"
+eu_api_post() {
+  CALLS="$CALLS POST:$1"
+  HTTP_STATUS="${VALIDATION_STATUS:-200}"
   API_BODY="$VALIDATION"
   printf '%s\n' "$1"
 }
@@ -223,7 +224,11 @@ VALIDATION='{"outcome":"PASS","checks":[{"status":"pass"}]}'
 t_run eu_validate_scenario PASS eu-validation-evidence
 t_expect_fails 0 "every check passing is accepted for the named scenario"
 t_expect_out "/api/scenarios/eu-validation-evidence/validate" \
-  "validator GET targets the explicitly named served scenario"
+  "validator POST targets the explicitly named served scenario"
+VALIDATION_STATUS=500
+t_run eu_validate_scenario PASS eu-validation-evidence
+t_expect_fails 1 "non-200 cannot pass with a valid PASS body"
+VALIDATION_STATUS=200
 t_run eu_validate_scenario PASS
 t_expect_fails 1 "validator rejects an omitted scenario"
 

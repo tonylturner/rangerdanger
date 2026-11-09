@@ -11,6 +11,7 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test-util";
 import { loadSavedRemediationPlan, saveRemediationPlan } from "../lib/remediation-plan";
+import { decisionName, writeCurriculum } from "../lib/curriculum-storage";
 import { EU_PLANS } from "../lib/plan-fixtures.test-util";
 import * as api from "../lib/api";
 import { ScenarioRunner } from "./scenario-runner";
@@ -192,12 +193,65 @@ describe("Execute Step command log", () => {
     try {
       fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
       const line = await tree.findByText(/^\[NOT MET\] breaker_closed: Expected false; observed true$/);
-      expect(execute).toHaveBeenCalledWith(authored.id, 0);
+      expect(execute).toHaveBeenCalledWith(authored.id, 0, undefined);
       expect(line.classList.contains("text-amber-400")).toBe(true);
       expect(line.textContent).not.toContain("BLOCKED");
       expect(loadProgress(scope, authored).cmdLog).toEqual([line.textContent]);
       expect(loadProgress(scope, authored).completedStepIds).toEqual([]);
     } finally { tree.close(); }
+  });
+});
+
+describe("interactive grading change requests", () => {
+  it.each([US_CURRICULUM, EU])("sends effective saved intent on Execute and Validate in $roles.implementation", async (binding) => {
+    const authored: Scenario = {
+      ...scenario, id: binding.roles.implementation, validator: "policy",
+      steps: [{ id: "policy", title: "Policy", description: "Read policy", action: { type: "check" } }],
+    };
+    const execute = vi.spyOn(api, "executeScenarioStep").mockResolvedValue({
+      step_index: 0, step_title: "Policy", action_type: "check", success: false,
+      results: [], timestamp: "now",
+    });
+    const validate = vi.spyOn(api, "validateScenario").mockResolvedValue({
+      scenario_id: authored.id, outcome: "FAIL", checks: [], timestamp: "now",
+    });
+    const tree = renderStep(authored, "policy", binding);
+    try {
+      const clickBoth = async () => {
+        const calls = execute.mock.calls.length + 1;
+        fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
+        await waitFor(() => expect(execute).toHaveBeenCalledTimes(calls));
+        fireEvent.click(tree.getByRole("button", { name: "Validate Exercise" }));
+        await waitFor(() => expect(validate).toHaveBeenCalledTimes(calls));
+      };
+      const expectRequest = (actionIds?: string[]) => {
+        const request = actionIds ? { packageId: scope.packageId, revision: scope.revision, actionIds } : undefined;
+        expect(execute).toHaveBeenLastCalledWith(authored.id, 0, request);
+        expect(validate).toHaveBeenLastCalledWith(authored.id, request);
+      };
+      // No saved selection is different from an explicitly empty request.
+      await clickBoth();
+      expectRequest();
+      saveRemediationPlan(scope, { exerciseId: binding.roles.planning, selectedActionIds: [], savedAt: "now" });
+      await clickBoth();
+      expectRequest([]);
+      saveRemediationPlan(scope, {
+        exerciseId: binding.roles.planning,
+        selectedActionIds: ["block-enterprise-to-field", "block-vendor-to-field"],
+        savedAt: "now",
+      });
+      writeCurriculum(scope, decisionName(binding.roles.requirements, "vendor-change-window"), "NOT_DISCUSSED");
+      await clickBoth();
+      expectRequest(["block-enterprise-to-field"]);
+      expect(loadSavedRemediationPlan(scope)?.selectedActionIds).toEqual(["block-enterprise-to-field", "block-vendor-to-field"]);
+      // Browser storage is namespaced; old revisions never become a request.
+      scope.revision++;
+      await clickBoth();
+      expectRequest();
+    } finally {
+      scope.revision = 1;
+      tree.close();
+    }
   });
 });
 

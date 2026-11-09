@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,11 +40,7 @@ type planResponse struct {
 }
 
 func (s *Server) compilePlanRequest(c *gin.Context, failureStatus int) (*planResponse, bool) {
-	var req struct {
-		PackageID string   `json:"packageId"`
-		Revision  int      `json:"revision"`
-		ActionIDs []string `json:"actionIds"`
-	}
+	var req planSelection
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()
@@ -55,21 +53,13 @@ func (s *Server) compilePlanRequest(c *gin.Context, failureStatus int) (*planRes
 		return nil, false
 	}
 	pkg := rangeOf(c).Package
-	if req.PackageID != pkg.ID || req.Revision != pkg.Revision {
-		c.JSON(http.StatusConflict, gin.H{"error": "plan package or revision differs from the active range"})
+	if err := validatePlanRequest(pkg, req); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, errPlanScope) {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return nil, false
-	}
-	known := map[string]bool{}
-	if pkg.Curriculum != nil {
-		for _, action := range pkg.Curriculum.Catalog {
-			known[action.ID] = true
-		}
-	}
-	for _, id := range req.ActionIDs {
-		if !known[id] {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "unknown plan action " + id})
-			return nil, false
-		}
 	}
 	compiled, err := labs.CompilePlan(pkg, pkg.Curriculum, req.ActionIDs)
 	if err != nil {
@@ -170,22 +160,8 @@ func (s *Server) handleFirewallApplyPlan(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"applied": true, "warnings": warnings, "plan": plan, "containd": applied.Receipt})
 }
 
-// judgingExpectations uses the applied snapshot only while its provenance holds.
-// Named and manual policies are judged against Hardened, never guessed from labels.
+// judgingExpectations is the automation entry point: no student request.
 func (s *Server) judgingExpectations(gen *lifecycle.Generation) ([]labs.PlanExpectation, error) {
-	s.activeConfigMu.RLock()
-	if s.policySource == "plan" && s.planProvenance != nil && s.appliedPlan != nil {
-		expectations := s.appliedPlan.Expectations
-		s.activeConfigMu.RUnlock()
-		return expectations, nil
-	}
-	s.activeConfigMu.RUnlock()
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
-	if err != nil {
-		return nil, err
-	}
-	for i := range compiled.Expectations {
-		compiled.Expectations[i].PlanVerdict = compiled.Expectations[i].HardenedVerdict
-	}
-	return compiled.Expectations, nil
+	target, err := s.judgingTarget(context.Background(), gen)
+	return target.plan.Expectations, err
 }

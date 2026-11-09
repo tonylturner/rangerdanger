@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { ApiError, compilePlan, applyPlan, getActiveFirewallConfig, getSubstationNetworkEvents, sendFieldAction, stopTrafficGeneration, type NetworkEventsResponse } from "./api";
+import { ApiError, compilePlan, applyPlan, executeScenarioStep, validateScenario, getActiveFirewallConfig, getSubstationNetworkEvents, sendFieldAction, stopTrafficGeneration, type NetworkEventsResponse } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -64,3 +64,15 @@ it("reads active plan provenance without relabelling custom", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
   await expect(getActiveFirewallConfig()).resolves.toEqual(answer);
 });
+
+it.each([undefined, planRequest, { ...planRequest, actionIds: ["pin-rtac-to-field"] }])(
+  "POSTs interactive grading with optional scoped IDs: %j", async (changeRequest) => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response("{}")));
+    vi.stubGlobal("fetch", fetch);
+    await executeScenarioStep("lab/id", 2, changeRequest);
+    await validateScenario("lab/id", changeRequest);
+    const options = expect.objectContaining({ method: "POST", body: JSON.stringify({ changeRequest }) });
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/scenarios/lab%2Fid/steps/2/execute", options);
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/scenarios/lab%2Fid/validate", options);
+  },
+);

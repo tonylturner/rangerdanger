@@ -475,8 +475,10 @@ export type ValidationResult = {
   timestamp: string;
 };
 
-export async function validateScenario(scenarioId: string) {
-  return request<ValidationResult>(`/scenarios/${encodeURIComponent(scenarioId)}/validate`);
+export async function validateScenario(scenarioId: string, changeRequest?: PlanRequest) {
+  return request<ValidationResult>(`/scenarios/${encodeURIComponent(scenarioId)}/validate`, {
+    method: "POST", body: JSON.stringify({ changeRequest }),
+  });
 }
 
 // config is one of the active package's policy names.
@@ -540,9 +542,9 @@ export type StepExecutionResult = {
   timestamp: string;
 };
 
-export async function executeScenarioStep(scenarioId: string, stepIdx: number) {
+export async function executeScenarioStep(scenarioId: string, stepIdx: number, changeRequest?: PlanRequest) {
   return request<StepExecutionResult>(`/scenarios/${encodeURIComponent(scenarioId)}/steps/${stepIdx}/execute`, {
-    method: "POST",
+    method: "POST", body: JSON.stringify({ changeRequest }),
   });
 }
 

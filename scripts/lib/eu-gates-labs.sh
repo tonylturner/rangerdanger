@@ -122,7 +122,7 @@ eu_lab_gate() {
       result=1
     fi
   fi
-  if [ "$result" -ne 0 ] && eu_api_get "/api/scenarios/$scenario/validate" 30; then
+  if [ "$result" -ne 0 ] && eu_api_post "/api/scenarios/$scenario/validate" '{}' 30; then
     printf 'STOPPED %s validator: %s\n' "$scenario" "$API_BODY"
   fi
   eu_apply_named weak || result=1

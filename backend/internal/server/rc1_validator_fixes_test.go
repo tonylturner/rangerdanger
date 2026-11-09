@@ -9,7 +9,7 @@ import (
 func TestUSAuditJudgmentAllowsEmptyAuditButFailsOnFetchError(t *testing.T) {
 	s := &Server{}
 	gen := usGeneration(nil)
-	check := s.usAuditJudgment(gen, []map[string]any{})
+	check := s.usAuditJudgment(t.Context(), gen, []map[string]any{})
 	if check.Status != "pass" || !strings.Contains(check.Detail, "0 permitted commands observed") {
 		t.Fatalf("empty successful audit should pass with zero commands observed: %+v", check)
 	}

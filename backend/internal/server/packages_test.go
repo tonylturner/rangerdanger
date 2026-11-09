@@ -159,10 +159,10 @@ func TestScenarioRoutesServeActivePackageOnly(t *testing.T) {
 	}
 	for _, request := range []struct{ method, path string }{
 		{http.MethodGet, "/api/scenarios/other-lab"},
-		{http.MethodGet, "/api/scenarios/other-lab/validate"},
+		{http.MethodPost, "/api/scenarios/other-lab/validate"},
 		{http.MethodPost, "/api/scenarios/other-lab/steps/0/execute"},
-		{http.MethodGet, "/api/scenarios/missing/validate"},
-		{http.MethodGet, "/api/scenarios/active-unvalidated/validate"},
+		{http.MethodPost, "/api/scenarios/missing/validate"},
+		{http.MethodPost, "/api/scenarios/active-unvalidated/validate"},
 		// The write routes are gone.
 		{http.MethodPost, "/api/scenarios"},
 		{http.MethodPost, "/api/labs/templates"},

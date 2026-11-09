@@ -74,6 +74,7 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 	t.Helper()
 	conduit := passingConduits(t)
 	ev := euWorkshopEvidence{
+		target:        "full reference (no change request saved)",
 		stationPoints: conduit.stationPoints,
 		start:         conduit.rangeStart, now: conduit.collectedAt, policyAt: at("12:00:30"), operationEnd: at("12:05:00"), hardeningSince: at("12:00:30"), policy: "custom", capture: true,
 		cc: conduit.state, journal: conduit.journal, conduits: conduit,

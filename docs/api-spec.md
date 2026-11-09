@@ -4,7 +4,7 @@ Base URL: `/api` (when accessed through the nginx proxy at `http://localhost:808
 
 All endpoints return JSON unless otherwise noted. Most request and response bodies use `snake_case` field names. Exceptions include `GET /pcap/list`, which returns `sizeBytes` and `createdAt`, and PCAP downloads, which return binary data.
 
-**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*`, `/workshop/*`, `/operator/*`, `/field/*`, `/historian/*` and `/containd/*`; `POST /plan/compile`, `GET /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
+**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*`, `/workshop/*`, `/operator/*`, `/field/*`, `/historian/*` and `/containd/*`; `POST /plan/compile`, `POST /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
 
 **Identities.** Range-bound routes take every container, address and endpoint of the range from the serving package's manifest: nodes (`:nodeId`, probe sources) resolve by topology node, the firewall and RTAC by role and named endpoint. A node the manifest does not know answers `404`. Named firewall policies are package data (`package.yml` `policies`), not recipe code. `POST /firewall/apply` resolves the requested policy from that data and does not require a workshop recipe. `GET /firewall/compare` requires a recipe comparison definition (policy names and zone pairs), then loads the named policies from package data. Compare, workshop reset, test suite, probe matrix and traffic generation answer `404 {"error":"not supported by this package"}` when the package has no recipe or its recipe does not define that operation.
 
@@ -140,7 +140,23 @@ The API applies the supplied index to that same active-package scenario
 | `GET` | `/scenarios` | List the active package's exercises |
 | `GET` | `/scenarios/:id` | Get exercise detail with steps |
 | `POST` | `/scenarios/:id/steps/:stepIdx/execute` | Execute the action at zero-based `stepIdx` in the served scenario's ordered `steps` array. The route takes an array index, not a step ID; callers that start from an authored ID must resolve its current index from `GET /scenarios/:id`. The response includes `step_index`, `step_title`, `action_type`, `success`, `results` and `timestamp` (see [`scenario_execute.go`](../backend/internal/server/scenario_execute.go#L20-L38)). |
-| `GET` | `/scenarios/:id/validate` | Run all validators for the exercise. Returns `{"scenario_id", "outcome", "checks": [...], "timestamp"}` |
+| `POST` | `/scenarios/:id/validate` | Run all validators for the exercise. Returns `{"scenario_id", "outcome", "checks": [...], "timestamp"}` |
+
+### Interactive policy grading
+
+Execute Step and Validate Exercise accept an optional JSON body
+`{"changeRequest":{"packageId":"us-dnp3-substation","revision":3,"actionIds":["pin-rtac-to-field"]}}`.
+Use the active package/revision and the effective saved Lab 1.4 action IDs (an empty
+selection is valid). The server compiles these IDs; it never accepts caller verdicts
+or tuples. Invalid package, revision or action IDs return 400, even with an applied
+plan. No body or `{}` means no request. The request is not stored.
+
+An applied plan always remains the judging target. Otherwise a supplied request
+is the target; without one, the full Hardened reference is used. Policy judgment
+details identify the target, on failure as well as success. Non-plan policies
+identical to Weak still fail. Validate is POST-only; there is no GET alias. The
+automation-only probe matrix accepts no body and continues using the applied
+plan or full reference, never the browser's saved selection.
 
 ### Validation response
 

@@ -124,7 +124,11 @@ func (s *Server) commandVerdict(ctx context.Context, gen *lifecycle.Generation, 
 // firewall over the same authored proof universe used by diagnostics.
 func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) ValidationCheck {
 	const name = "Running policy matches judging target"
-	fail := func(err error) ValidationCheck { return checkFail(name, err.Error()) }
+	target, targetErr := s.judgingTarget(ctx, gen)
+	fail := func(err error) ValidationCheck { return checkFail(name, target.detail+": "+err.Error()) }
+	if targetErr != nil {
+		return fail(targetErr)
+	}
 	data, err := gen.Containd().GetConfigDocument(ctx)
 	if err != nil {
 		return fail(err)
@@ -165,12 +169,8 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 	if err != nil {
 		return fail(err)
 	}
-	expectations, err := s.judgingExpectations(gen)
-	if err != nil {
-		return fail(err)
-	}
 	gaps := []string{}
-	for _, expectation := range expectations {
+	for _, expectation := range target.plan.Expectations {
 		route, err := labs.ResolvePlanTuple(gen.Package, labs.PlanProof{From: expectation.From, To: expectation.To, Network: expectation.Network, Port: expectation.Port})
 		if err != nil {
 			return fail(err)
@@ -196,36 +196,26 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 	if !stable {
 		return fail(fmt.Errorf("policy boundary changed during evaluation"))
 	}
-	target := "Hardened (not an applied plan)"
-	if source == "plan" {
-		target = "applied plan; Hardened prevention gaps: " + strings.Join(gaps, ", ")
+	detail := target.detail
+	if source == "plan" || len(gaps) > 0 {
+		detail += "; Hardened prevention gaps: " + strings.Join(gaps, ", ")
 	}
-	return checkPass(name, "running L4 rules match "+target+". The L4 source pin enforces; DPI detects and logs. TCP dataplane evidence requires separate wire observations")
+	return checkPass(name, "running L4 rules match "+detail+". The L4 source pin enforces; DPI detects and logs. TCP dataplane evidence requires separate wire observations")
 }
 
 // usAuditJudgment calls a command unauthorized only if its judging target
 // denies the tuple. A deferred exposure is a visible consequence, not a proof
 // failure. This is an advisory retained audit, not an absence certificate.
-func (s *Server) usAuditJudgment(gen *lifecycle.Generation, entries []map[string]any) ValidationCheck {
+func (s *Server) usAuditJudgment(ctx context.Context, gen *lifecycle.Generation, entries []map[string]any) ValidationCheck {
 	const name = "Audit: commands against judging target"
-	s.activeConfigMu.RLock()
-	plan := s.appliedPlan
-	isPlan := s.policySource == "plan" && plan != nil
-	s.activeConfigMu.RUnlock()
-	if !isPlan {
-		ids := []string{}
-		for _, action := range gen.Package.Curriculum.Catalog {
-			ids = append(ids, action.ID)
-		}
-		compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, ids)
-		if err != nil {
-			return checkFail(name, err.Error())
-		}
-		plan = &compiled
-	}
-	policy, err := readEvaluatedFirewall(plan.Config)
+	target, err := s.judgingTarget(ctx, gen)
+	fail := func(detail string) ValidationCheck { return checkFail(name, target.detail+": "+detail) }
 	if err != nil {
-		return checkFail(name, err.Error())
+		return fail(err.Error())
+	}
+	policy, err := readEvaluatedFirewall(target.plan.Config)
+	if err != nil {
+		return fail(err.Error())
 	}
 	denied, exposed := 0, 0
 	for _, entry := range entries {
@@ -238,7 +228,7 @@ func (s *Server) usAuditJudgment(gen *lifecycle.Generation, entries []map[string
 		device, _ := entry["target"].(string)
 		route, err := commandRoute(gen, device, command, source)
 		if err != nil {
-			return checkFail(name, "cannot classify retained command: "+err.Error())
+			return fail("cannot classify retained command: " + err.Error())
 		}
 		verdict := labs.VerdictAllow
 		if !route.Bridged {
@@ -251,7 +241,7 @@ func (s *Server) usAuditJudgment(gen *lifecycle.Generation, entries []map[string
 		}
 	}
 	if denied > 0 {
-		return ValidationCheck{Name: name, Status: "warn", Detail: fmt.Sprintf("%d retained command(s) contradict the judging target; historical entries do not establish the current policy's effect", denied)}
+		return ValidationCheck{Name: name, Status: "warn", Detail: target.detail + ": " + fmt.Sprintf("%d retained command(s) contradict the judging target; historical entries do not establish the current policy's effect", denied)}
 	}
-	return checkPass(name, fmt.Sprintf("no retained commands contradict the judging target; %d permitted commands observed (including deferred exposures). Hardened remains the comparison", exposed))
+	return checkPass(name, target.detail+": "+fmt.Sprintf("no retained commands contradict the judging target; %d permitted commands observed (including deferred exposures). Hardened remains the comparison", exposed))
 }

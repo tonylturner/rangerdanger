@@ -552,7 +552,7 @@ eu_validate_scenario() {
     return 1
   fi
   # Lab 2 performs several real endpoint reads during collection.
-  if ! eu_api_get "/api/scenarios/$scenario/validate" 30; then
+  if ! eu_api_post "/api/scenarios/$scenario/validate" '{}' 30 || [ "$HTTP_STATUS" != "200" ]; then
     fail "scenario validator returned no parseable HTTP 200 response"
     return 1
   fi
