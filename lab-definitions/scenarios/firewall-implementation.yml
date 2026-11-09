@@ -65,13 +65,12 @@ steps:
     title: "Verify access to containd"
     expected_config: weak
     description: |
-      Confirm you can reach the containd NGFW through either of its
-      management interfaces. **Use whichever you prefer in this lab -
-      both the Web UI and the CLI expose the same policy.**
+      Confirm access before editing. The web UI and CLI expose the same policy.
+      Use the portal management path; keep reserved management unchanged.
 
       **Option 1: Web UI**
 
-      Open [http://localhost:9080](http://localhost:9080). If you're
+      Open the portal’s [containd link](/containd/). If you're
       prompted to log in, use the default workshop credentials -
       **username `containd`, password `containd`** (the login page lists
       them too). The dashboard then shows zone interface status for all
@@ -161,13 +160,17 @@ steps:
     title: "Phase 2 - Remove broad trust and establish default-deny"
     expected_config: weak
     description: |
-      Review broad Weak allows before applying the plan in Phase 3.
-      A selected enforceable action closes its exposure. A deferred action keeps
-      that Weak path open. Default DENY is the backstop, not proof that a deferred
-      path closed. Preserve management and required operational allows.
-      Inspect the final **Default** row: both reference policies already use
-      DENY. Only if needed, use **Change default** → **DENY** → **Stage default**.
-      Review consequences and the complete candidate diff before commit.
+      Before editing, use `export config` in the fw-1 configuration CLI and save
+      the redacted running JSON with its identity and UTC time. Agree the rollback
+      owner, abort triggers and maintenance window from your Lab 1.4 request.
+      Check operator health and confirm the reserved management path works.
+
+      Stage only the broad allows your request replaces. Keep deferred access and
+      required operational conduits. Inspect the final **Default** row: both
+      reference policies already use DENY. Only if needed, use **Change default**
+      → **DENY** → **Stage default**. Do not commit yet. Add the operational
+      replacements in Phase 3 to this same shared candidate before reviewing the
+      full diff and committing once. Do not create an outage to demonstrate a gap.
 
       ### Review a proposed change
 
@@ -197,21 +200,22 @@ steps:
       What should happen to this proposed change before commit?
       :::why
       Correct the missing operational allow before commit: RTAC field polling fails and the HMI loses fresh device communications.
-      Default DENY cannot replace a required allow. Execute Step checks the running
-      policy; it does not grade this review or approve the request.
+      Default DENY cannot replace a required allow. A system cross-check does not
+      approve a written change request.
       :::
 
       :::hint Optional catch-up — for less technical students or teams behind schedule
       This replaces typing rules. It does not replace your own observations, operator check or sign-off.
-      Apply Your Plan in the next step. Use Apply Hardened only for the reference.
+      Use **Apply Your Plan** only if you want the saved selection entered for you.
+      With an empty selection, it loads Weak, not the full reference. Use
+      **Apply Hardened** for the full reference instead. Read back what was loaded.
+      You can also save **Export compiled config** and **Export plan record** as
+      reference material. Neither is an export of a hand-written running policy.
       :::
 
-      Export a known-good rollback before edits. Preserve the compiled rule order.
-      Deletion preserves survivor order; do not insert a deny above required operational exceptions.
-      Manual policies are judged against Hardened, not saved browser selections.
-      For the Hardened manual target, remove the five broad Weak allows in
-      containd. Do not run these deletes to implement a partial plan: its deferred
-      allows must stay. Keep management and required operational rules intact.
+      For the full reference only, remove the five broad Weak allows below.
+      For a partial request, remove only the relevant allows and preserve its
+      approved deferred access. Never place a deny above required exceptions.
       Stage these deletes only; do not commit until Phase 3 has staged their
       operational replacements. From the fw-1 CLI:
 
@@ -230,52 +234,57 @@ steps:
     title: "Phase 3 - Create minimal required rules"
     expected_config: hardened
     description: |
-      Review the compiled rules for this plan. Required rules stay in every plan.
-      Selected enforceable actions narrow their paths. Deferred rules retain the
-      same Weak exposures. Detection-only actions change no TCP verdict.
-      The L4 source pin enforces; DPI detects and logs.
+      Implement your approved Lab 1.4 change request, not a policy label.
+      The saved selection sets the expected results below. If no eligible action
+      is selected, there is no change request and the full Hardened reference is
+      the target. A planning-only selection keeps the corresponding Weak exposures.
+      If you used a catch-up apply, the results follow the policy you applied.
+      Keep deferred exposures open only where the request accepts that risk.
+      Required operations and reserved management access must remain available.
 
-      :::hint Optional catch-up — for less technical students or teams behind schedule
-      This replaces typing rules. It does not replace your own observations, operator check or sign-off.
-      Click **Apply Your Plan**, or **Apply Hardened** for the reference.
-      An empty or planning-only plan is valid. It leaves Weak exposures open.
-      Inspect the running rules, not just the policy banner. Execute Step checks
-      the active policy without replacing it.
-      :::
+      Stage the Phase 2 deletes and all replacements in the same shared candidate.
+      Use the approved source, destination, service and action for each rule.
+      The first matching enforcing terminal rule decides; monitor rules never decide.
+      Rule IDs do not set priority. Review configured order and shadow warnings before commit.
+      Keep RTAC field exceptions before `deny-ot-to-field-direct`.
 
-      For a plan, use the compiled rule order without adding broad allows.
-      The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
-      On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
-      For manual work, use Hardened as the judging target. With
-      **Restrict enterprise → vendor remote access** selected, replace broad enterprise→vendor
-      access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
-      remain reachable. **Create rule** and **Delete** do not reload the firewall.
-      Keep the Phase 2 deletes staged until all replacements are in this candidate.
-      Before the single commit, verify the Hardened operational rules:
+      Before the single commit, verify the required operational rules:
       `rtac-to-field-modbus`, `rtac-to-field-dnp3` and `rtac-to-field-http`
-      allow source `10.30.30.20/32` on TCP 502, 20000 and 8080 respectively,
-      before `deny-ot-to-field-direct`. Preserve `ot-intrazone-ops` for HMI
-      operations, `gps-to-field-ntp` for `10.30.30.50/32` UDP/123, and the
-      reserved management access. Review the full candidate, not just the deletes.
+      allow source `10.30.30.20/32` on TCP 502, 20000 and 8080 respectively.
+      Preserve `ot-intrazone-ops` for HMI operations, `gps-to-field-ntp` for
+      `10.30.30.50/32` UDP/123, and reserved management access.
+
+      With **Restrict enterprise → vendor remote access** selected, replace broad
+      enterprise→vendor access with TCP 22, 80 and 443. With it deferred, RDP/3389
+      and VNC/5900 remain reachable. Deferred rules retain the approved Weak access;
+      do not remove them just to make a reference test pass.
+
+      **Create rule** and **Delete** only stage edits. On **Configuration**, open
+      **Review changes** and inspect all entity summaries. **Advanced** shows the
+      exact JSON diff. Review the full candidate, including surviving rules and
+      first-match order, against your request with a second reviewer.
       From the fw-1 configuration CLI, commit replacements and removals together:
 
           show diff
           commit
 
-      Or use **Commit** on the **Configuration** page after the same review.
-      Verify that reference closure from Kali:
+      Or use **Commit** on **Configuration** after the same review. Make ONE commit
+      for this rule change. Read back with `show running-config` and record its
+      identity and UTC time before testing. Confirm the operational exceptions and
+      removal of the approved broad allows in the running rules, not just the candidate.
+      From Kali, test the enterprise-to-field boundary:
 
           mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20
 
-      This manual reference test should time out. For a compiled plan, the
-      enterprise-to-field verdict instead follows its owning action.
-      After commit, run `nmap -Pn -p 3389,5900 10.20.20.10` from Kali.
-      For the manual Hardened target, both ports must be `filtered`; if not,
-      fix the rule and commit again. A plan uses its compiled verdict instead.
+      Expect timeout if that closure is selected; expect a response if deferred.
+      From Kali, also use `nmap -Pn -p 3389,5900 10.20.20.10` to test remote access.
+      Expect `filtered` for the selected restriction, not for an approved deferral.
+      Check required operations next. If a rollback trigger occurs, stop testing.
+      Re-stage the previous rules from your pre-change export, review the complete
+      diff, commit and read back. Retest operations before resuming the change.
+      The export is a record to work from, not an import or restore command.
 
-      Keep the RTAC source `10.30.30.20/32` on its required field rules:
-      TCP/502, TCP/20000 and TCP/8080. Preserve GPS `10.30.30.50/32` NTP/123
-      and HMI operations. These operational paths cannot be deferred.
+      The L4 source pin enforces; DPI detects and logs.
 
       :::hint Policy evidence at the containd CLI
       In the configuration CLI, `export config` prints redacted running JSON; it does not create a file:
@@ -298,9 +307,15 @@ steps:
           }
       :::
 
-      Export the compiled config and the companion **Export plan record**.
-      The record contains the package ID, revision, label, action IDs and
-      policy hash. Use `GET /api/firewall/active` to check what is running.
+
+      :::hint Optional catch-up — for less technical students or teams behind schedule
+      This replaces typing rules. It does not replace your own observations, operator check or sign-off.
+      Use **Apply Your Plan** only if you want the saved selection entered for you.
+      With an empty selection, it loads Weak, not the full reference. Use
+      **Apply Hardened** for the full reference instead. Read back what was loaded.
+      You can also save **Export compiled config** and **Export plan record** as
+      reference material. Neither is an export of a hand-written running policy.
+      :::
     action:
       type: check
       expect:
@@ -310,13 +325,18 @@ steps:
     title: "Phase 4 - Enable logging and visibility"
     expected_config: hardened
     description: |
-      Inspect the log flags in the compiled rule table.
+      Keep this logging change separate from the Phase 3 rule change. Stage only
+      approved visibility edits, review the full diff with `show diff`, then use
+      `commit` (or **Commit** on **Configuration**). Read back the running rules
+      and record the new identity and UTC time. Retest operations after this commit.
+      If visibility work is deferred, record that decision and leave the rules unchanged.
+
+      Inspect logging against the approved request and reference rule table.
       **Improve firewall logging and PCAP retention**,
       **Apply Modbus ICS DPI - provide function-code visibility** and
       **Apply DNP3 ICS DPI - detect and log Direct Operate writes** add
-      visibility, not prevention. Deferring them changes no TCP verdict. Do not
-      add flags by hand and still call the result an unchanged applied plan; a
-      running-hash change clears plan provenance.
+      visibility, not prevention. Deferring them changes no TCP verdict. Record any additional logging change and its reason; do not silently expand
+      the approved scope.
 
       With **Restrict vendor → OT to SSH/HTTPS only** selected, `deny-vendor-to-ot`
       explicitly denies Vendor DMZ → OT Operations on TCP 8080, 1881, 502 and 20000.
@@ -335,15 +355,15 @@ steps:
           show audit
 
       Recent `config.commit` entries establish the policy change, not per-flow
-      verdicts. Compare real TCP results and device/HMI state with the active
-      plan. Retain timestamps and capture. The Network Map event strip can add
+      verdicts. Compare real TCP results and device/HMI state with your change request. Retain timestamps and capture. The Network Map event strip can add
       rule or protocol context; a detection alone is not proof of prevention.
   - id: phase-5-validate-allowed-traffic
     title: "Phase 5 - Validate allowed traffic"
     expected_config: hardened
     node: rtac-1
     description: |
-      Verify operations for every plan. From the RTAC terminal, run:
+      Check required operations after the commit. Record each source, destination,
+      service, UTC time, expected result and observation in Notes. From the RTAC terminal, run:
 
           mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
           dnp3poll -a 1 -t 3s 10.40.40.20:20000
@@ -353,11 +373,10 @@ steps:
           curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
 
       Open the HMI. Confirm no alarms, closed breaker and recloser, auto-reclose
-      on and energized loads. Check GPS NTP separately; the proof matrix is TCP.
-      All eight authorized TCP rows must remain reachable for every plan.
-      Bridged rows do not cross the firewall and do not prove a firewall rule.
-      Lab 2.4 separates plan proof from Hardened acceptance: 8/8 authorized and
-      13/13 unauthorized denied, 0 skipped, stable hash, capture and healthy HMI.
+      on and energized loads. Check GPS NTP separately; TCP tests do not test NTP.
+      Have the operator confirm fresh device communications and supplied loads.
+      A bridged same-zone connection does not prove a routed firewall rule.
+      Stop and follow the agreed rollback if required operations fail.
 
       From an OT Ops terminal, check the intra-zone HMI service:
 
@@ -376,10 +395,10 @@ steps:
     expected_config: hardened
     node: kali-1
     description: |
-      Test the expected outcomes for the applied plan, not its label.
-      Run all 13 unauthorized TCP rows from their named sources in Lab 2.4.
+      Test the prohibited paths in your change request from their named sources.
+      Record source, destination, service, expected result, observation and UTC time.
       A deny verdict requires a connection timeout. Connection refused means
-      reached (allow). Tool or container errors are skipped evidence and fail proof.
+      reached (allow). A missing tool or container error is missing evidence, never a pass.
 
       | Path | Owning action | Selected / deferred |
       |---|---|---|
@@ -390,10 +409,12 @@ steps:
       | Vendor and eng-ws→field | Block vendor → field devices entirely | deny / allow |
       | Non-RTAC OT hosts→field | Pin field-device access to RTAC source IP | deny / allow |
 
-      A deferred exposure is a prevention gap against Hardened, not a failed
-      plan proof if it matches this plan. Do not change policy just to hide the gap.
-      Preserve timestamps and the running hash. `show audit` lists `config.commit` evidence,
-      not a per-flow verdict. Keep capture and HMI evidence with both results.
+      A deferred exposure remains a prevention gap, even when the policy matches
+      your request. Name its risk owner; do not change policy just to hide the gap.
+      Preserve timestamps and the running identity. `show audit` lists `config.commit`
+      evidence, not a per-flow verdict. A timeout alone does not identify the cause;
+      retain packet evidence and operator observations for review in Lab 2.4.
+      TCP reachability does not establish command filtering.
 
       :::hint Run the sampled protocol checks from their real sources
       From Kali, test the enterprise-to-field action:
@@ -410,9 +431,9 @@ steps:
           dnp3poll -a 1 -t 3s 10.40.40.20:20000
           mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
 
-      Selected means timeout; deferred means reachable. These sampled commands
-      do not replace the full report matrix. Execute Step checks the running
-      policy. Preserve the observation and the report verdict.
+      Selected means timeout; deferred means reachable. These samples do not
+      replace your test plan. Write the actual results, including unexpected ones,
+      in Notes for Lab 2.4. An optional system cross-check is not your test record.
       :::
     action:
       type: probe
@@ -427,48 +448,33 @@ steps:
     title: "Export your policy"
     expected_config: hardened
     description: |
-      You have applied a plan or the Hardened reference.
-      Export it so you have a record of what is running - most
-      change boards want the policy as a versioned artifact, not
-      just "rules live in the firewall."
+      Save the running configuration, not just the candidate or compiled reference.
+      On **Configuration** → **Overview**, use **Download redacted** for a shareable
+      copy; **Download full** contains secrets. Full export requires explicit
+      administrator intent.
 
-      This step matters regardless of which path you chose at the
-      top of the lab. If you applied the canned hardened reference,
-      exporting gives you the starting point for your own future
-      edits. If you authored the policy in containd, the export is the artifact you hand
-      to change management.
-
-      **Web UI:** go to **Configuration** → **Overview** and click
-      **Download full** to save the running config as JSON (**Download
-      redacted** strips secrets if you're sharing it).
-
-      **CLI:** the `fw-1` terminal opens in the configuration CLI; run:
+      In the fw-1 configuration CLI, run:
 
           export config
 
-      **Workshop note:**
-      - Copy that redacted running JSON to your evidence document; the appliance CLI does not support shell redirection. Full export requires explicit administrator intent. Validate the saved copy on your workstation with `python3 -m json.tool`.
-      - The CLI JSON-file edit/import exercise is deferred. Author/review in **Configuration** at http://localhost:9080; do not edit a file the CLI never created.
-      - Browser export is optional; the copied CLI JSON is your evidence.
+      Copy that redacted running JSON to your evidence document. The appliance CLI
+      does not support shell redirection and does not create a file. Browser export
+      is optional; the copied CLI JSON is your evidence. Keep the pre-change export
+      separately for rollback. To roll back, re-stage its previous rules, review the
+      full diff, commit, read back and retest operations. The CLI export is a record, not a restore file.
 
-      Use **Export plan record** as the companion to **Export compiled config**.
-      The record contains package ID, revision, label, action IDs and policy
-      hash. Check `GET /api/firewall/active` to confirm the current plan and
-      running hash before and after probing.
-
-      A partial plan is not equivalent to Hardened. Use structured plan coverage
-      for its deferred exposures and preserve both plan proof and Hardened acceptance results. Named and
-      manual policies are judged against Hardened; they have no plan proof.
+      In Notes, record the change ID, running identity, UTC commit and test times,
+      positive and negative results, operator observations, deviations and any
+      restoration. Carry these records into Lab 2.4 for acceptance review and sign-off.
+      A configuration export alone is not evidence that the tests passed.
 
       ### Save evidence status for Lab 2.4
 
-      These statuses carry forward automatically; they describe your evidence, not a
-      passing score. Keep the actual artifacts with their UTC window and running hash.
-      Update the statuses if you collect missing evidence; Lab 2.4 regenerates proof
-      against its own current policy window.
+      These statuses describe what you have saved, not a passing score. Keep the
+      actual artifacts. Mark missing evidence honestly and collect it before sign-off.
 
       :::decision id=evidence-policy options=READY,MISSING,UNCLEAR
-      Do you have the running policy export and its identity (plus the plan record when applicable)?
+      Do you have the running policy export and its identity?
       :::why
       READY means the export and running identity agree. MISSING needs collection; UNCLEAR needs an identity check before approval.
       :::
@@ -482,7 +488,7 @@ steps:
       :::decision id=evidence-negative options=READY,MISSING,UNCLEAR
       Do you have the negative-test results, including deferred exposures?
       :::why
-      READY means real-source results are retained with the plan comparison. Deferred reachable paths remain prevention gaps, not skipped tests.
+      READY means real-source results are retained with their expected results. Deferred reachable paths remain prevention gaps, not skipped tests.
       :::
 
       :::decision id=evidence-capture options=READY,MISSING,UNCLEAR
@@ -490,7 +496,6 @@ steps:
       :::why
       READY means the capture is retained and correlated with the policy and test times. MISSING or UNCLEAR needs capture review; an ingress SYN alone is not delivery proof.
       :::
-
     action:
       type: check
       expect:

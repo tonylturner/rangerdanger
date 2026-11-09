@@ -108,7 +108,7 @@ describe("EU curriculum example — shared machinery, EU facts", () => {
     const plan = EU_PLANS[0];
     expect(injectDynamicContent("original", "implement-rules", plan, EU)).toContain("/exercises/eu-remediation-planning");
     expect(injectDynamicContent("original", "Phase 3", plan, EU)).toBe("original");
-    expect(injectDynamicContent("original", "test-positive", plan, EU)).toContain("Plan verdict");
+    expect(injectDynamicContent("original", "test-positive", plan, EU)).toContain("Expected result");
     expect(getExerciseNodes(EU.roles.hardening, undefined, EU)).toEqual(["kali-1"]);
     expect(inferNodeFromDescription("from the RTU", EU)).toBe("rtu-1");
     expect(inferNodeFromDescription("RTAC 10.30.30.20")).toBeNull();

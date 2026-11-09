@@ -314,7 +314,10 @@ class ActionContracts(unittest.TestCase):
                 self.assertEqual(steps[0]["action"],
                                  {"type": "check", "expect": {"firewall_config": "improved"}})
                 self.assertEqual(steps[0].get("expected_config"), "hardened")
-                self.assertIn("without replacing it", steps[0]["description"])
+                if name == "firewall-implementation":
+                    self.assertIn("Implement your approved Lab 1.4 change request", steps[0]["description"])
+                else:
+                    self.assertIn("without replacing it", steps[0]["description"])
 
     def test_eu_policy_phases_are_non_mutating_checks(self):
         package = ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios"

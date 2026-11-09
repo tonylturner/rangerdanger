@@ -40,7 +40,7 @@ class EnforcementContracts(unittest.TestCase):
         steps = {step["id"]: step["description"] for step in doc["steps"]}
         for key, step_id in (("rules", "implement-rules"), ("positive", "test-positive")):
             with self.subTest(phase=key):
-                authored = curriculum["phases"][key].split("\n\n### Compiled")[0]
+                authored = curriculum["phases"][key].split("\n\n### " + ("Rule reference" if key == "rules" else "Expected results"))[0]
                 self.assertEqual(authored.strip(), steps[step_id].strip())
         positive = steps["test-positive"]
         for phrase in ("observe-cc-breaker-command", "observe-cc-oltc-step",
@@ -239,6 +239,44 @@ class EnforcementContracts(unittest.TestCase):
 
 
 class RuleAuthoringContracts(unittest.TestCase):
+    def test_hand_change_request_work_survives_dynamic_replacement_in_both_packages(self):
+        for package, scenario_path in (
+            ("us-dnp3-substation", SCENARIOS / "firewall-implementation.yml"),
+            ("eu-iec104-substation", ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios/eu-firewall-implementation.yml"),
+        ):
+            package_dir = ROOT / "lab-definitions/packages" / package
+            curriculum = read_curriculum(package_dir)
+            binding = yaml.safe_load((package_dir / "package.yml").read_text())["curriculum"]
+            doc = yaml.safe_load(scenario_path.read_text())
+            steps = {step["id"]: step["description"] for step in doc["steps"]}
+            for step_id, phase in binding["dynamicSteps"].items():
+                with self.subTest(package=package, phase=phase):
+                    divider = "Rule reference" if phase == "rules" else "Expected results"
+                    authored = curriculum["phases"][phase].split("\n\n### " + divider)[0]
+                    self.assertEqual(authored.strip(), steps[step_id].strip())
+                    self.assertNotRegex(authored, r"(?i)plan proof|report matrix|manual.*targets Hardened")
+                    if phase == "rules":
+                        flat = " ".join(authored.split())
+                        for phrase in ("approved Lab 1.4 change request", "full Hardened reference",
+                                       "same shared candidate", "Before the single commit",
+                                       "diff", "show running-config", "pre-change export",
+                                       "previous rules", "read back"):
+                            self.assertIn(phrase, flat)
+                        hint = re.search(r":::hint Optional catch-up — for less technical students or teams behind schedule\n(.*?)\n:::", authored, re.S)
+                        self.assertIsNotNone(hint)
+                        self.assertIn("Apply Your Plan", hint[1])
+                        self.assertNotIn("Apply Your Plan", authored.replace(hint[0], ""))
+            logging = steps["phase-4-enable-logging-and-visibility"]
+            for phrase in ("separate from the Phase 3 rule change", "show diff", "`commit`", "Read back", "Retest operations"):
+                self.assertIn(phrase, logging)
+            if package.startswith("eu-"):
+                positive = steps["test-positive"]
+                self.assertIn("Operator-authorized operational demonstration", positive)
+                self.assertIn("not\nacceptance reads", positive)
+                demonstration = "\n".join(test["text"] for test in curriculum["tests"])
+                self.assertIn("obtain operator approval", demonstration)
+                self.assertIn("not an acceptance read", demonstration)
+
     def test_custom_policy_authoring_checks_remote_access_after_commit(self):
         weak = json.loads((ROOT / "lab-definitions/firewall/substation-weak.json").read_text())
         rule = next(r for r in weak["firewall"]["rules"] if r["id"] == "enterprise-to-vendor")
@@ -249,9 +287,9 @@ class RuleAuthoringContracts(unittest.TestCase):
         flat = " ".join(text.split())
         for phrase in ("**Restrict enterprise → vendor remote access** selected", "TCP 22, 80 and 443",
                        "With it deferred, RDP/3389 and VNC/5900 remain reachable",
-                       "**Create rule** and **Delete** do not reload the firewall",
-                       "both ports must be `filtered`", "fix the rule and commit again",
-                       "A plan uses its compiled verdict instead"):
+                       "**Create rule** and **Delete** only stage edits",
+                       "Expect `filtered` for the selected restriction",
+                       "not for an approved deferral", "saved selection sets the expected results"):
             self.assertIn(phrase, flat)
         commit = flat.index("commit replacements and removals together")
         self.assertLess(flat.index("TCP 22, 80 and 443"), commit)

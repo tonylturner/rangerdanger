@@ -21,9 +21,11 @@ afterEach(() => {
   else Reflect.deleteProperty(window, "localStorage");
 });
 
-function View({ scope, applied }: { scope: CurriculumScope; applied?: PlanProvenance }) {
-  const query = useCompiledPlan(scope, true, applied, !!applied);
-  return <div>{query.error?.message ?? query.data?.policyHash ?? "loading"}</div>;
+function View({ scope, applied, target }: { scope: CurriculumScope; applied?: PlanProvenance; target?: "request" }) {
+  const query = useCompiledPlan(scope, true, applied, target ?? (applied ? "applied" : "draft"));
+  return <div>{query.error?.message ?? query.data?.policyHash ?? "loading"}
+    {target && query.data?.expectations.map((row) => <span key={row.id}>{row.id}:{row.planVerdict}</span>)}
+  </div>;
 }
 const scope: CurriculumScope = { packageId: US_PLANS[0].packageId, revision: US_PLANS[0].revision, curriculum: US_CURRICULUM };
 async function mount(applied?: PlanProvenance, expectedText = applied?.policyHash ?? US_PLANS[0].policyHash) {
@@ -34,6 +36,39 @@ async function mount(applied?: PlanProvenance, expectedText = applied?.policyHas
 }
 
 describe("compiled plan reads", () => {
+  for (const [packageDir, plans] of [
+    ["us-dnp3-substation", US_PLANS],
+    ["eu-iec104-substation", EU_PLANS],
+  ] as const) {
+    it(`follows the saved request, or full reference when absent/empty/excluded, for ${packageDir}`, async () => {
+      const curriculum = fixtureCurriculum(`lab-definitions/packages/${packageDir}`);
+      const requestScope = { packageId: plans[0].packageId, revision: plans[0].revision, curriculum };
+      const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(plans[0]))));
+      vi.stubGlobal("fetch", fetch);
+      client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
+      panel = render(<QueryClientProvider client={client}><View scope={requestScope} target="request" /></QueryClientProvider>);
+      const expectReference = async (call: number) => {
+        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(call));
+        expect(JSON.parse(fetch.mock.calls[call - 1][1].body).actionIds).toEqual(curriculum.catalog.map((a) => a.id));
+        // Full-reference negatives must not inherit Weak's allowed exposures.
+        await waitFor(() => {
+          for (const row of plans[0].expectations) expect(panel.container.textContent).toContain(`${row.id}:${row.hardenedVerdict}`);
+        });
+      };
+      await expectReference(1);
+      act(() => saveRemediationPlan(requestScope, { exerciseId: curriculum.roles.planning, selectedActionIds: [], savedAt: "now" }));
+      expect(fetch).toHaveBeenCalledTimes(1); // Absent and empty have the same target.
+      act(() => saveRemediationPlan(requestScope, { exerciseId: curriculum.roles.planning, selectedActionIds: ["block-enterprise-to-field"], savedAt: "now" }));
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(fetch.mock.calls[1][1].body).actionIds).toEqual(["block-enterprise-to-field"]);
+      await waitFor(() => {
+        for (const row of plans[0].expectations) expect(panel.container.textContent).toContain(`${row.id}:${row.planVerdict}`);
+      });
+      act(() => writeCurriculum(requestScope, decisionName(curriculum.roles.requirements, "risk-acceptance-authority"), "DISPUTED"));
+      await expectReference(3);
+    });
+  }
   it("compiles an empty plan without requiring a saved nonempty selection", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(US_PLANS[0])));
     vi.stubGlobal("fetch", fetch);

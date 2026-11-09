@@ -112,8 +112,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // Every activity opting into policy actions loads the saved package plan.
   // Dynamic step text is narrower: only the binding's dynamicSteps are rewritten.
   const appliedPlan = policySource === "plan" ? activeFirewall?.plan : undefined;
-  const appliedOnly = scenario.id !== binding?.roles.implementation;
-  const compiled = useCompiledPlan(scope, hasPolicyActions, appliedPlan, appliedOnly);
+  const appliedOnly = scenario.id !== binding?.roles.implementation || !!appliedPlan;
+  const compiled = useCompiledPlan(scope, hasPolicyActions, appliedPlan, appliedOnly ? "applied" : "request");
   // A failed refresh must never leave an obsolete export or apply button enabled.
   const dynamicPlan = hasPolicyActions && !compiled.isError && (!appliedOnly || appliedPlan) ? compiled.data ?? null : null;
   const draft = useCompiledPlan(scope, hasPolicyActions);

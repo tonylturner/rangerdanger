@@ -31,7 +31,7 @@ class FirstMatchContracts(unittest.TestCase):
                               ("eu-iec104-substation", ROOT / "lab-definitions/packages/"
                                "eu-iec104-substation/scenarios/eu-firewall-implementation.yml")):
             base = ROOT / "lab-definitions/packages" / package
-            texts = [path.read_text(), (base / "curriculum/implementation.yml").read_text()]
+            texts = [" ".join(p.read_text().split()) for p in (path, base / "curriculum/implementation.yml")]
             for text in texts:
                 self.assertIn("first matching enforcing terminal rule decides", text)
                 self.assertIn("monitor rules never decide", text)

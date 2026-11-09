@@ -85,7 +85,10 @@ steps:
     UNCHANGED needs before/after operational evidence alongside the tests. DEGRADED means investigate impact; UNCLEAR means collect a comparable baseline. A timeout alone does not establish that operations were unaffected.
     :::
 
-    :::hint Advanced: run the positive tests by hand
+    :::hint Optional catch-up — for less technical students or teams behind schedule
+    This replaces composing test commands. It does not replace your own observations, operator check or sign-off.
+
+    ### Prepared positive test commands
     Open a node on the [Network Map](/console), then **Show terminal**.
     Use the six-conduit inventory from Lab 2.2; every plan preserves these flows.
     In the **Control Centre**, reconnect after the commit and require a completed
@@ -114,7 +117,10 @@ steps:
     See [acceptance and handover](/knowledge#eu-acceptance-handover).
     :::
 
-    :::hint Advanced: run the negative tests by hand
+    :::hint Optional catch-up — for less technical students or teams behind schedule
+    This replaces composing test commands. It does not replace your own observations, operator check or sign-off.
+
+    ### Prepared negative test commands
     Check these source/path
     groups, not just the first failed connection:
 

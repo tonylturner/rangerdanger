@@ -28,8 +28,8 @@ describe("US Apply Your Plan content", () => {
           expect(text).toContain("**Export plan record**");
           for (const row of plan.rules) expect(text).toContain(row.rule.id);
         } else {
-          expect(text).toContain("Plan verdict");
-          expect(text).toContain("Hardened verdict");
+          expect(text).toContain("Expected result");
+          expect(text).toContain("Hardened reference");
           for (const row of plan.expectations.filter((r) => r.category === (phase === "positive" ? "authorized" : "unauthorized"))) {
             expect(text).toContain(`${row.id}:`);
           }

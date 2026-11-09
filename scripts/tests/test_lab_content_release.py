@@ -133,9 +133,9 @@ class ErrataContracts(unittest.TestCase):
     def test_workshop_notes_are_short_and_at_the_action(self):
         expected = {
             "firewall-implementation": {
-                4: ("**Apply Your Plan**", "without replacing it", "Deferred rules retain"),
-                7: ("13 unauthorized TCP rows", "Connection refused means", "prevention gap", "running hash"),
-                8: ("does not support shell redirection", "CLI JSON-file edit/import exercise is deferred", "action IDs", "policy hash")},
+                4: ("**Apply Your Plan**", "replacements and removals together", "Deferred rules retain"),
+                7: ("named sources", "Connection refused means", "prevention gap", "running identity"),
+                8: ("does not support shell redirection", "pre-change export", "change ID", "running identity")},
             "hardening-configurations": {
                 3: ("Apply Your Plan", "without replacing it", "**Block enterprise → field direct access**"),
                 4: ("With it deferred, the command still lands", "Detection selections do not close it", "device evidence"),
@@ -187,7 +187,7 @@ class ErrataContracts(unittest.TestCase):
                           " ".join(text.split()))
         text = " ".join(scenario("firewall-implementation")["steps"][8]["description"].split())
         self.assertIn("does not support shell redirection", text)
-        self.assertIn("CLI JSON-file edit/import exercise is deferred", text)
+        self.assertIn("re-stage its previous rules, review the full diff, commit, read back and retest operations", text)
         self.assertIn("Browser export is optional; the copied CLI JSON is your evidence.", text)
 
     def test_rejection_and_historical_audit_details_are_in_rendered_steps(self):

@@ -13,6 +13,7 @@ import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test
 import { loadSavedRemediationPlan, saveRemediationPlan } from "../lib/remediation-plan";
 import { decisionName, writeCurriculum } from "../lib/curriculum-storage";
 import { EU_PLANS } from "../lib/plan-fixtures.test-util";
+import { useCompiledPlan } from "../lib/use-compiled-plan";
 import * as api from "../lib/api";
 import { ScenarioRunner } from "./scenario-runner";
 
@@ -20,7 +21,7 @@ const { scope, compiled } = vi.hoisted(() => ({
   scope: { packageId: "us-dnp3-substation", revision: 1, curriculum: undefined as CurriculumBinding | undefined },
   compiled: { data: undefined as CompiledPlan | undefined },
 }));
-vi.mock("../lib/use-compiled-plan", () => ({ useCompiledPlan: () => compiled }));
+vi.mock("../lib/use-compiled-plan", () => ({ useCompiledPlan: vi.fn(() => compiled) }));
 vi.mock("../lib/curriculum-scope", () => ({
   useCurriculumScope: () => scope,
   useActiveCurriculum: () => ({ scenarios: [] }),
@@ -60,6 +61,7 @@ const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
 afterEach(() => {
   scope.curriculum = undefined;
   compiled.data = undefined;
+  vi.mocked(useCompiledPlan).mockClear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   if (originalStorage) Object.defineProperty(window, "localStorage", originalStorage);
@@ -216,6 +218,7 @@ describe("interactive grading change requests", () => {
     });
     const tree = renderStep(authored, "policy", binding);
     try {
+      expect(useCompiledPlan).toHaveBeenCalledWith(scope, true, undefined, "request");
       const clickBoth = async () => {
         const calls = execute.mock.calls.length + 1;
         fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
@@ -351,10 +354,10 @@ describe("authored description → Run → node exec", () => {
   it("uses US multi-source markers inside a real hint, including a wrapped header", async () => {
     const exec = vi.spyOn(api, "execOnNode").mockResolvedValue({ exit_code: 0, stdout: "ok", stderr: "", duration_ms: 1 });
     const authored = authoredScenario("validation-evidence", false);
-    const step = authored.steps.find((s) => s.description.includes("Advanced: run the positive tests by hand"))!;
+    const step = authored.steps.find((s) => s.description.includes("### Prepared positive test commands"))!;
     const tree = renderStep(authored, step.id, US_CURRICULUM);
     try {
-      fireEvent.click(tree.getByRole("button", { name: /Advanced: run the positive tests by hand/ }));
+      fireEvent.click(tree.getAllByRole("button", { name: /Optional catch-up — for less technical students or teams behind schedule/ })[0]);
       for (const [cmd, node] of [["mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20", "rtac-1"], ["curl -ks https://10.30.30.20/ -o /dev/null -w '%{http_code}\\n'", "vendor-jump-1"]]) {
         const block = tree.getByText(cmd).parentElement!;
         fireEvent.click(Array.from(block.querySelectorAll("button")).find((b) => b.textContent === "Run")!);

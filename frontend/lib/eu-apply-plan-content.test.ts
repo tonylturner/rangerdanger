@@ -28,8 +28,8 @@ describe("EU Apply Your Plan content", () => {
         // Only the generated section differs. Operational work is never hidden.
         expect(text).toContain(step.description.trim());
         expect(text).not.toMatch(/\{\{(?:ruleTable|tests|noPlan)\}\}/);
-        expect(text).toContain(phase === "rules" ? "Origin" : "Plan verdict");
-        if (phase !== "rules") expect(text).toContain("Hardened verdict");
+        expect(text).toContain(phase === "rules" ? "Origin" : "Expected result");
+        if (phase !== "rules") expect(text).toContain("Hardened reference");
       }
     }
   });

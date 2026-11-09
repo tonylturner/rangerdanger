@@ -61,7 +61,7 @@ export function renderPlanTests(plan: CompiledPlan, binding: CurriculumBinding, 
   const category = phase === "positive" ? "authorized" : "unauthorized";
   const rows = plan.expectations.filter((r) => r.category === category && (!r.labs?.length || r.labs.includes(role)));
   return [
-    "| Tuple | Plan verdict | Hardened verdict | Owners | Route | Note |",
+    "| Tuple | Expected result | Hardened reference | Owners | Route | Note |",
     "|---|---|---|---|---|---|",
     ...rows.map((r) => `| ${[tupleLabel(r), r.planVerdict, r.hardenedVerdict, r.owners.map((id) => actionName(id, binding)).join(", ") || "invariant", r.bridged ? "bridged" : "firewall", r.note].map(cell).join(" | ")} |`),
   ].join("\n");

@@ -18,10 +18,11 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// lockout telemetry in the EU acceptance inventory, and the EU portal's
 	// valid/quality-flag wording (without changing protocol acceptance), and
 	// catalog titles instead of action IDs in implementation prose, and the
-	// single-path rule-authoring / optional catch-up directive cutover.
+	// single-path rule-authoring / optional catch-up directive cutover, and
+	// hand-authored change-request implementation with single-commit cutover.
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "1bdd38e1676d02f01772916db640ae909bdd452b193079f4936bcee7318048e0",
-		"eu-iec104-substation": "5df02fbe9c841181aa99f76486931e53ffd7d27dc8d8eac7c655d3032b0a2684",
+		"us-dnp3-substation":   "9a29248dc353efe2fee02efc2f55eeca22b48ceea6aedcdf770efba095712594",
+		"eu-iec104-substation": "e04c121adf586f46ee1e7d4bde7571c611edc50e1e479856f56f8447b80e4cda",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))
