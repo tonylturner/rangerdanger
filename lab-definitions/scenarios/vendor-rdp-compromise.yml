@@ -263,11 +263,15 @@ steps:
           source: "operator"
 
   - id: apply-hardened-policy
-    title: "Apply hardened policy"
+    title: "Review and commit the two boundaries"
     expected_config: hardened
     description: |
-      Apply Your Plan, or Apply Hardened for the full reference. Execute Step
-      checks the active policy without replacing it. Verify its action IDs and running hash.
+      Reuse the reviewed Lab 2.2 policy and the Lab 1.4 change request. Inspect
+      both boundaries in containd. If either differs from the approved scope,
+      export the running rules, stage the removals and replacements together,
+      review the full diff and first-match order, commit once and read back.
+      Record the running identity and commit time. Preserve management access.
+      The optional current-system check reads the policy without replacing it.
 
       | Chain link | Owning action | Selected / deferred |
       |---|---|---|
@@ -275,12 +279,17 @@ steps:
       | Vendor→field Modbus/502 and DNP3/20000 | Block vendor → field devices entirely | deny / allow |
       | Vendor→OT Modbus and HMI web | Restrict vendor → OT to SSH/HTTPS only | deny / allow |
 
-      Either of the first two closures breaks this two-hop chain. Test each
-      independently. **Pin field-device access to RTAC source IP** owns OT-source
-      attempts, not the vendor hop. A ZTNA broker selection is planning-only; it deploys no login control.
+      Either of the first two closures breaks a new two-hop chain. Test them
+      independently; a blocked first hop does not test the second boundary.
+      **Pin field-device access to RTAC source IP** owns OT-source attempts,
+      not the vendor hop. Keep required RTAC and HMI flows.
+      A ZTNA broker selection is planning-only; it deploys no login control.
       The L4 source pin enforces; DPI detects and logs.
 
-      :::plan-coverage title="Your plan vs the vendor chain"
+      :::hint Optional catch-up — for less technical students or teams behind schedule
+      This replaces typing rules. It does not replace your own observations, operator check or sign-off.
+      Apply Your Plan for the approved Lab 1.4 scope. Apply Hardened only for
+      the full reference. Read back the running rules before retesting.
       :::
     action:
       type: check
@@ -334,7 +343,7 @@ steps:
       :::
 
       Restore auto-reclose and normal feeder state before Validate for every plan.
-      A partial plan can match plan proof while retaining either prevention gap.
+      Record any deferred boundary as a remaining exposure with a risk owner.
     action:
       type: check
       run:
@@ -346,24 +355,38 @@ steps:
         reclose_enabled: true
 
   - id: validate
-    title: "Validate"
+    title: "Sign the two-boundary test and restoration record"
     expected_config: hardened
     description: |
-      Keep the applied plan active. Completion evidence falls into three
-      categories, the same ones the EU bonus uses with its own devices:
+      Keep the reviewed policy active. Write a two-boundary test record in Notes.
+      Use the actual source, tuple, UTC time and observed result for each hop.
+      Record the expected result from your approved change request before comparing.
 
-      1. **Plan verdicts** — record each chain link's result under your plan:
-         enterprise→vendor RDP/VNC and vendor→field Modbus/DNP3. A green banner
-         does not prove either link was denied; keep the actual TCP and device
-         results.
-      2. **Restored operation** — auto-reclose enabled, recloser and breaker
-         closed, and loads energized for every plan.
-      3. **Policy identity** — the running policy matches an accepted non-weak
-         plan. Named or manual policies use Hardened expectations.
+      | Boundary | Source / destination / port | Expected | Observed TCP / device result | UTC / evidence file |
+      |---|---|---|---|---|
+      | Enterprise → vendor RDP/VNC | | | | |
+      | Vendor → field | | | | |
 
-      This completion check validates the recloser recovery and the evaluated
-      policy. It does not certify a successful interactive RDP/VNC login, nor that
-      every foreign path is closed — retain that evidence separately.
+      A refused connection counts as reached, not denied. A timeout needs capture
+      and baseline evidence to explain its cause. Keep the vendor source attribution;
+      the existing vendor terminal is not evidence of a successful new login.
+
+      Confirm auto-reclose enabled, recloser and breaker closed, fault/lockout
+      cleared, regulator auto and loads energized.
+      Record the restored values, UTC time and running policy identity. Name any
+      open boundary, exception and risk owner. Sign the record as tester and
+      operator; ask the change owner to accept or reject the remaining risk.
+
+      The optional current-system cross-check samples current policy and recovery
+      state. It does not sign this record, prove an earlier login/pivot or certify
+      all restoration actions. Keep those observations separately. This bonus is
+      optional; Lab 2.4 does not require its records.
+
+      :::hint Residual risk
+      Neither boundary proves vendor identity security. Record MFA, just-in-time
+      approval and session recording as organizational follow-up, not controls
+      deployed by this exercise.
+      :::
     action:
       type: check
       expect:
