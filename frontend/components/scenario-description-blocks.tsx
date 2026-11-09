@@ -45,8 +45,7 @@ import { useHydrated } from "../lib/use-hydrated";
 import {
   injectDynamicContent,
 } from "../lib/scenario-runner-logic";
-import type { CompiledPlan, PlanExpectation, Scenario } from "../lib/api";
-import { ValidationReportPanel } from "./validation-report-panel";
+import type { CompiledPlan, Scenario } from "../lib/api";
 
 // CommandBlock renders a single command line with copy + (optional)
 // run buttons. Used in the main step body and inside HintBlock so
@@ -572,7 +571,7 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
             // trackPicker / trackOnly inside a :::hint isn't a
             // pattern any lab uses today; skip silently rather than
             // render a broken sub-tree.
-            if (seg.type === "trackPicker" || seg.type === "trackOnly" || seg.type === "generateTrafficButton" || seg.type === "validationReport" || seg.type === "icon") {
+            if (seg.type === "trackPicker" || seg.type === "trackOnly" || seg.type === "generateTrafficButton" || seg.type === "icon") {
               return null;
             }
             if (seg.type === "hint") {
@@ -607,7 +606,6 @@ export function DescriptionSegments({
   stepId,
   stepDescription,
   dynamicPlan,
-  expectations,
   exerciseNodes,
   firewallTrack,
   autoRunning,
@@ -621,7 +619,6 @@ export function DescriptionSegments({
   stepId: string;
   stepDescription: string;
   dynamicPlan: CompiledPlan | null;
-  expectations?: PlanExpectation[];
   exerciseNodes: string[];
   firewallTrack: "guided" | "technical" | null;
   autoRunning: string | null;
@@ -727,16 +724,6 @@ export function DescriptionSegments({
                           >
                             {generatingTraffic ? "Generating Traffic…" : "Generate Traffic (45s)"}
                           </button>
-                        </div>
-                      );
-                    }
-                    if (seg.type === "validationReport") {
-                      return (
-                        <div
-                          key={`${scenario.id}-${currentStep}-${si}`}
-                          className="my-3"
-                        >
-                          <ValidationReportPanel expectations={expectations} />
                         </div>
                       );
                     }

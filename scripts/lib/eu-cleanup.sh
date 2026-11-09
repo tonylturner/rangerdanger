@@ -58,7 +58,7 @@ eu_save_evidence() {
   printf 'Gate evidence kept in %s\n' "$dir" >&2
 }
 
-# G28 request, apply and report documents are retained on passing runs too.
+# G28 request, apply and matrix documents are retained on passing runs too.
 eu_save_g28_evidence() {
   local dir="${EU_GATE_EVIDENCE_DIR:-$ROOT/build/deploy-test/eu-evidence/$(date -u +%Y%m%dT%H%M%SZ)}/G28"
   local file count=0
@@ -75,7 +75,7 @@ eu_save_g28_evidence() {
     count=$((count + 1))
   done
   if [ "$count" -eq 0 ]; then
-    fail "G28 produced no request/apply/report evidence to retain"
+    fail "G28 produced no request/apply/matrix evidence to retain"
     return 1
   fi
   printf 'G28 evidence kept in %s (%d files)\n' "$dir" "$count" >&2

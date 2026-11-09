@@ -309,6 +309,23 @@ describe("authored description → Run → node exec", () => {
   });
 });
 
+describe("manual evidence surfaces", () => {
+  it.each([false, true])("has no one-click evidence controls on hardening or validation (EU=%s)", (eu) => {
+    const binding = eu ? EU : US_CURRICULUM;
+    for (const role of ["hardening", "validation"] as const) {
+      const authored = authoredScenario(binding.roles[role], eu);
+      for (const step of authored.steps) {
+        const tree = renderStep(authored, step.id, binding);
+        try {
+          expect(tree.queryByRole("button", { name: /Generate Validation Report/i })).toBeNull();
+          expect(tree.queryByRole("link", { name: /Download markdown/i })).toBeNull();
+          expect(tree.container.textContent).not.toContain(":::validation-report");
+        } finally { tree.close(); }
+      }
+    }
+  });
+});
+
 describe("validation is separate from self-attested progress", () => {
   it.each(["us-dnp3-substation", "eu-iec104-substation"])("PASS preserves untouched steps in %s", async (packageId) => {
     scope.packageId = packageId;

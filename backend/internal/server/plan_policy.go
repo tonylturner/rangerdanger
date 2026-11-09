@@ -121,7 +121,7 @@ func (s *Server) commandVerdict(ctx context.Context, gen *lifecycle.Generation, 
 }
 
 // policyJudgment replaces label-only claims with evaluation of the running
-// firewall over the same authored proof universe used by the report.
+// firewall over the same authored proof universe used by diagnostics.
 func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) ValidationCheck {
 	const name = "Running policy matches judging target"
 	fail := func(err error) ValidationCheck { return checkFail(name, err.Error()) }
@@ -200,7 +200,7 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 	if source == "plan" {
 		target = "applied plan; Hardened prevention gaps: " + strings.Join(gaps, ", ")
 	}
-	return checkPass(name, "running L4 rules match "+target+". The L4 source pin enforces; DPI detects and logs. TCP dataplane evidence requires the validation report")
+	return checkPass(name, "running L4 rules match "+target+". The L4 source pin enforces; DPI detects and logs. TCP dataplane evidence requires separate wire observations")
 }
 
 func planDenyFilter(rows []conduitDeny, plan *labs.CompiledPlan, pkg labs.Package) ([]conduitDeny, error) {

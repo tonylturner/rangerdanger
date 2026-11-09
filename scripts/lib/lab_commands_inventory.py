@@ -16,7 +16,7 @@ MARKER_RE = re.compile(GRAMMAR["marker"], re.I)
 FENCE_RE = re.compile(
     r"^:::(?:hint(?:\s+.+)?|guided|technical|decision\s+.+|"
     r"(?:findings-panel|plan-coverage|track-picker|generate-traffic-button|"
-    r"validation-report|icon)(?:\s+.+)?)$")
+    r"icon)(?:\s+.+)?)$")
 
 
 def packages(root=ROOT):

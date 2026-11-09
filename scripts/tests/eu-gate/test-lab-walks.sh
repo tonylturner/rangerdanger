@@ -136,7 +136,7 @@ t_expect_eq "$CALLS" \
   " reset policy:weak validate:FAIL:eu-vendor-rdp-compromise walk-failed:eu-vendor-rdp-compromise GET:/api/scenarios/eu-vendor-rdp-compromise/validate policy:weak reset" \
   "failed walk keeps evidence and restores weak policy and reset without claiming PASS"
 
-# The validation-evidence scenario starts hardened; its student check/report
+# The validation-evidence scenario starts hardened; its student check/continuity
 # walk must not run under the weak FAIL pre-state.
 CALLS=""
 eu_apply_named() { CALLS="$CALLS policy:$1"; }
@@ -144,13 +144,13 @@ eu_lab_step() { CALLS="$CALLS step:$2"; }
 eu_api_post() {
   CALLS="$CALLS POST:$1"
   HTTP_STATUS=200
-  API_BODY='{"summary":{"result":"PASS","skipped":0}}'
+  return 99 # this continuity walk must not invoke an automation matrix
 }
 t_run eu_lab_validation_walk eu-validation-evidence
 t_expect_eq "$T_STATUS" 0 "validation evidence walk establishes its hardened pre-state"
 t_expect_eq "$CALLS" \
-  " policy:improved step:confirm-hardened-config-is-active step:generate-the-validation-report POST:/api/firewall/validation-report step:reflection-what-did-your-plan-close" \
-  "hardened policy is active before the served checks and report"
+  " policy:improved step:confirm-hardened-config-is-active step:generate-the-validation-report step:reflection-what-did-your-plan-close" \
+  "hardened policy is active before the served checks and continuity"
 
 # Package curriculum binding supplies the action catalog; scenario prompts
 # remain authored decisions, rather than duplicating catalog definitions.

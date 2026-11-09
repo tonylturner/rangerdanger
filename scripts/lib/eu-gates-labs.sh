@@ -544,20 +544,11 @@ eu_lab_validation_walk() {
   eu_apply_named improved || return
   eu_lab_step "$scenario" confirm-hardened-config-is-active || return
   eu_lab_step "$scenario" generate-the-validation-report || return
-  eu_api_post /api/firewall/validation-report '{}' || return
-  if [ "$HTTP_STATUS" != 200 ] || ! printf '%s' "$API_BODY" | jq -e \
-    '.summary.result == "PASS" and .summary.skipped == 0' >/dev/null; then
-    fail "student validation report did not prove the full matrix: HTTP $HTTP_STATUS $API_BODY"
-    return 1
-  fi
-  pass "student validation report is PASS with no skipped probes"
   eu_lab_step "$scenario" reflection-what-did-your-plan-close
 }
 
 eu_lab_validation_prepare() {
-  eu_lab_wait_good_cc || return
-  eu_api_post /api/firewall/validation-report '{}' || return
-  [ "$HTTP_STATUS" = 200 ] && printf '%s' "$API_BODY" | jq -e '.summary.result == "PASS" and .summary.skipped == 0' >/dev/null
+  eu_lab_wait_good_cc
 }
 
 eu_lab_visibility_failed() {

@@ -32,8 +32,6 @@ func euWorkshopValidator(slot string) scenarioValidator {
 
 type euWorkshopEvidence struct {
 	stationPoints                                      []labs.IEC104Point
-	policyHash                                         string
-	report                                             *retainedValidationReport
 	start, now, policyAt, hardeningSince, operationEnd time.Time
 	policy                                             string
 	isPlan                                             bool
@@ -65,7 +63,6 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	s.activeConfigMu.RLock()
 	ev.policy, ev.policyAt, ev.hardeningSince = s.activeConfig, s.policyChangedAt, s.policyEvidenceSince
 	wantHash := s.lastAppliedHash
-	ev.policyHash, ev.report = wantHash, s.lastValidationReport
 	ev.isPlan = s.policySource == "plan" && s.planProvenance != nil && s.appliedPlan != nil
 	planIdentityOK := !ev.isPlan || s.planProvenance.PolicyHash == wantHash
 	s.activeConfigMu.RUnlock()
@@ -271,7 +268,7 @@ func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
 		}
 		checks = append(checks, euWorkshopDeviceCheck(ev, "oltc-1", "OLTC restored", func(d *euWorkshopDevice) bool { ok, err := euOLTCAuto(d); return err == nil && ok }))
 	case "eu-validation-evidence":
-		checks = append(checks, euWorkshopReport(ev), link(), euWorkshopDevicesFresh(ev), euWorkshopSupply(ev))
+		checks = append(checks, link(), euWorkshopDevicesFresh(ev), euWorkshopSupply(ev))
 	default:
 		checks = append(checks, checkFail("Known workshop slot", "unknown validator key "+slot))
 	}

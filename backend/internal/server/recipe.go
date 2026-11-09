@@ -3,10 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
-	"net"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 
@@ -41,10 +39,6 @@ type packageRecipe struct {
 	// captureFilter is the tcpdump filter of /api/pcap/start; empty
 	// captures everything.
 	captureFilter string
-	// validationCapture names the devices the validation report's PCAP
-	// watches, and the network they sit on.
-	validationCapture captureSpec
-	report            reportSpec
 	// traffic is the traffic generator's flows; nil when it has none.
 	traffic []trafficTarget
 	// testSuite marks a package whose scenarios /workshop/test-suite runs.
@@ -72,11 +66,6 @@ type canaryProbe struct {
 	toNode, network       string
 	port                  int
 	allowUnder, denyUnder string
-}
-
-type captureSpec struct {
-	nodes   []string
-	network string
 }
 
 // trafficTarget runs command, with %s replaced by toNode's address on
@@ -141,15 +130,6 @@ func defaultPolicy(gen *lifecycle.Generation) (string, error) {
 	return name, nil
 }
 
-// resolveValidation reads the package's single proof universe against Hardened.
-func (r *packageRecipe) resolveValidation(gen *lifecycle.Generation) ([]validationProbe, error) {
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
-	if err != nil {
-		return nil, err
-	}
-	return resolveProof(gen, compiled.Expectations, "", false)
-}
-
 // resolveProof uses authored lab roles rather than a second Go tuple filter.
 func resolveProof(gen *lifecycle.Generation, expectations []labs.PlanExpectation, slot string, againstPlan bool) ([]validationProbe, error) {
 	probes := []validationProbe{}
@@ -195,38 +175,9 @@ func resolveProof(gen *lifecycle.Generation, expectations []labs.PlanExpectation
 		}
 		note := fmt.Sprintf("%s (topology source %s on %s)", expectation.Note, route.Tuple.SrcIP, route.SourceNetwork)
 		probes = append(probes, validationProbe{Src: from.Container, SrcLabel: label, Dst: dst, Port: strconv.Itoa(expectation.Port), Expected: string(expected), Note: note, Category: expectation.Category,
-			ID: expectation.ID, PlanExpected: string(expectation.PlanVerdict), HardenedExpected: string(expectation.HardenedVerdict)})
+			ID: expectation.ID})
 	}
 	return probes, nil
-}
-
-// resolveCapture returns the capture's device addresses and the first three
-// octets of their /24 network, which the PCAP summary leaves out.
-func (r *packageRecipe) resolveCapture(gen *lifecycle.Generation) ([]string, []string, error) {
-	var hosts []string
-	for _, node := range r.validationCapture.nodes {
-		ip, err := nodeIP(gen, node, r.validationCapture.network)
-		if err != nil {
-			return nil, nil, err
-		}
-		hosts = append(hosts, ip)
-	}
-	for _, network := range gen.Manifest.Networks {
-		if network.Key != r.validationCapture.network {
-			continue
-		}
-		_, subnet, err := net.ParseCIDR(network.Subnet)
-		if err != nil || subnet.IP.To4() == nil || maskOnes(subnet) != 24 {
-			return nil, nil, fmt.Errorf("capture network %s subnet %s is not an IPv4 /24", network.Key, network.Subnet)
-		}
-		return hosts, strings.Split(subnet.IP.To4().String(), ".")[:3], nil
-	}
-	return nil, nil, fmt.Errorf("package %s has no network %s", gen.Package.ID, r.validationCapture.network)
-}
-
-func maskOnes(subnet *net.IPNet) int {
-	ones, _ := subnet.Mask.Size()
-	return ones
 }
 
 // resolvedTraffic is a trafficTarget against the generation's containers.

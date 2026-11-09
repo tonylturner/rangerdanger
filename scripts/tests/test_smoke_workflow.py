@@ -199,33 +199,20 @@ class SmokeWorkflowTests(unittest.TestCase):
             extra["id"] += "-extra"
             golden["expectations"].append(extra)
         rows = golden["expectations"]
-        gaps = [r["id"] for r in rows
-                if r["planVerdict"] == "allow" and r["hardenedVerdict"] == "deny"]
-        accepted = all(r["planVerdict"] == r["hardenedVerdict"] for r in rows)
         request = {k: golden[k] for k in ("packageId", "revision")}
         request["actionIds"] = [a["id"] for a in golden["actions"] if a["chosen"]]
         apply = {"applied": True, "warnings": [], "plan": json.loads(json.dumps(golden)),
                  "containd": {"applyId": "fixture", "protection": "protecting"}}
-        report = {
-            "planProof": {"applicable": True, "pass": True, "hashStable": True, "skipped": 0,
-                          "rows": [{"id": r["id"], "expected": r["planVerdict"],
-                                    "observed": r["planVerdict"], "pass": True} for r in rows]},
-            "acceptance": {"pass": accepted, "skipped": 0, "preventionGaps": gaps,
-                           "rows": [{"id": r["id"], "expected": r["hardenedVerdict"],
-                                     "observed": r["planVerdict"],
-                                     "pass": r["planVerdict"] == r["hardenedVerdict"]}
-                                    for r in rows]},
-            "summary": {"skipped": 0, "result": "PASS" if accepted else "FAIL"}}
-        for category in ("authorized", "unauthorized"):
-            subset = [r for r in rows if r["category"] == category]
-            report["summary"][category + "_total"] = len(subset)
-            report["summary"][category + "_pass"] = sum(
-                r["planVerdict"] == r["hardenedVerdict"] for r in subset)
+        matrix = {
+            "policyHash": golden["policyHash"], "policySource": "plan", "policyStable": True,
+            "policyChangedAt": "2026-11-09T10:00:00Z", "startedAt": "2026-11-09T10:01:00Z",
+            "finishedAt": "2026-11-09T10:01:20Z",
+            "rows": [{"id": r["id"], "observed": r["planVerdict"], "error": ""} for r in rows]}
         if mutation:
-            mutation(apply, report)
+            mutation(apply, matrix)
         with tempfile.TemporaryDirectory() as directory:
             fixture = Path(directory)
-            for name, data in (("golden", golden), ("apply", apply), ("report", report)):
+            for name, data in (("golden", golden), ("apply", apply), ("matrix", matrix)):
                 (fixture / f"{name}.json").write_text(json.dumps(data))
             script = self.plan_script(directory).split('\nrun_case "$catalog"', 1)[0]
             script += f'\nrun_case {shlex.quote(str(fixture / "golden.json"))} "$base/case"\n'
@@ -238,7 +225,7 @@ curl() {
   done
   case "$url" in
     */apply-plan) cat "$fixture/apply.json" ;;
-    */validation-report) cat "$fixture/report.json" ;;
+    */probe-matrix) cat "$fixture/matrix.json" ;;
     */apply)
       echo restored >>"$fixture/cleanup"
       printf '{"containd":{"applyId":"fixture","protection":"%s"}}\n' "$restore_protection"
@@ -270,27 +257,11 @@ curl() {
             script = self.plan_script(directory).replace(
                 "frontend/lib/testdata/plans", shlex.quote(str(plans)))
             stubs = r'''
-make_report() {
+make_matrix() {
   jq '
-    .expectations as $rows
-    | all($rows[]; .planVerdict == .hardenedVerdict) as $accepted
-    | {
-      planProof:{applicable:true,pass:true,hashStable:true,skipped:0,
-        rows:[$rows[]|{id,expected:.planVerdict,observed:.planVerdict,pass:true}]},
-      acceptance:{pass:$accepted,skipped:0,
-        rows:[$rows[]|{id,expected:.hardenedVerdict,observed:.planVerdict,
-          pass:(.planVerdict==.hardenedVerdict)}],
-        preventionGaps:[$rows[]|select(.planVerdict=="allow"
-          and .hardenedVerdict=="deny")|.id]},
-      summary:{
-        authorized_total:([$rows[]|select(.category=="authorized")]|length),
-        authorized_pass:([$rows[]|select(.category=="authorized"
-          and .planVerdict==.hardenedVerdict)]|length),
-        unauthorized_total:([$rows[]|select(.category=="unauthorized")]|length),
-        unauthorized_pass:([$rows[]|select(.category=="unauthorized"
-          and .planVerdict==.hardenedVerdict)]|length),
-        skipped:0,result:(if $accepted then "PASS" else "FAIL" end)}
-    }' "$1"
+    {policyHash, policySource:"plan", policyStable:true,
+      policyChangedAt:"2026-11-09T10:00:00Z", startedAt:"2026-11-09T10:01:00Z", finishedAt:"2026-11-09T10:01:20Z",
+      rows:[.expectations[] | {id, observed:.planVerdict, error:""}]}' "$1"
 }
 curl() {
   local url="${!#}" data="" golden action
@@ -312,8 +283,8 @@ curl() {
         '{applied:true,warnings:[],plan:$plan[0],containd:{applyId:"fixture",protection:"protecting"}}' \
         | if [ "$action" = "$bad_action" ]; then jq '.warnings=["fixture warning"]'; else cat; fi
       ;;
-    */api/firewall/validation-report)
-      make_report "$(cat "$fixture/current")"
+    */api/workshop/probe-matrix)
+      make_matrix "$(cat "$fixture/current")"
       ;;
     */api/firewall/apply)
       echo restored >"$fixture/cleanup"
@@ -343,7 +314,7 @@ curl() {
                 case = fixture / f"receipts/rd01-singletons/{action}"
                 self.assertEqual(json.loads((case / "plan.json").read_text())["actionIds"], [action])
                 self.assertTrue((case / "apply.json").is_file())
-                self.assertTrue((case / "report.json").is_file())
+                self.assertTrue((case / "matrix.json").is_file())
             return result
 
     def test_compiled_singleton_step_executes_each_catalog_action_and_restores(self):
@@ -364,6 +335,28 @@ curl() {
             self.assertNotEqual(self.run_plan_gate(selection, restore_fail=True).returncode, 0)
             self.assertNotEqual(self.run_plan_gate(selection, restore_degraded=True).returncode, 0)
 
+    def test_matrix_reference_keeps_partial_prevention_gaps(self):
+        for package in ("us", "eu"):
+            for selection in ("full", "partial"):
+                golden = json.loads((ROOT / f"frontend/lib/testdata/plans/{package}-{selection}.json").read_text())
+                measured = {"rows": [{"id": row["id"], "observed": row["planVerdict"], "error": ""}
+                                     for row in golden["expectations"]]}
+                query = 'include "plan-gate"; matrix_reference($golden[0])'
+                result = subprocess.run(["jq", "-L", str(ROOT / "scripts/tests/fixtures"),
+                                         "--slurpfile", "golden", str(ROOT / f"frontend/lib/testdata/plans/{package}-{selection}.json"),
+                                         query], input=json.dumps(measured), text=True, capture_output=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                reference = json.loads(result.stdout)
+                self.assertEqual(reference["acceptancePass"], selection == "full")
+                gaps = [row["id"] for row in golden["expectations"]
+                        if row["planVerdict"] == "allow" and row["hardenedVerdict"] == "deny"]
+                self.assertEqual(reference["preventionGaps"], gaps)
+                self.assertEqual(bool(gaps), selection == "partial")
+                self.assertEqual(reference["summary"]["result"], "PASS" if selection == "full" else "FAIL")
+                self.assertEqual(reference["summary"]["unauthorized_pass"],
+                                 sum(row["category"] == "unauthorized" and row["planVerdict"] == row["hardenedVerdict"]
+                                     for row in golden["expectations"]))
+
     def test_plan_steps_fail_closed_and_restore_weak(self):
         mutations = [
             lambda a, r: a.update(warnings=["fixture warning"]),
@@ -371,23 +364,30 @@ curl() {
             lambda a, r: a["plan"].update(label="wrong"),
             lambda a, r: a.pop("containd"),
             lambda a, r: a["containd"].update(protection="degraded"),
-            lambda a, r: r["planProof"].update(applicable=False),
-            lambda a, r: r["planProof"].update({"pass": False}),
-            lambda a, r: r["planProof"].update(hashStable=False),
-            lambda a, r: r["planProof"].update(skipped=1),
-            lambda a, r: r["planProof"].update(rows=[]),
-            lambda a, r: r["acceptance"].update(skipped=1),
-            lambda a, r: r["acceptance"].update(rows=[]),
-            lambda a, r: r["acceptance"].update({"pass": not r["acceptance"]["pass"]}),
-            lambda a, r: r["acceptance"]["preventionGaps"].append("unexpected"),
-            lambda a, r: r["summary"].update(unauthorized_total=0),
+            lambda a, r: r.update(policySource="manual-custom"),
+            lambda a, r: r.update(policyHash=""),
+            lambda a, r: r.update(policyStable=False),
+            lambda a, r: r["rows"][0].update(observed="untested"),
+            lambda a, r: r.update(rows=[]),
+            lambda a, r: r["rows"][0].update(error="exec failed"),
+            lambda a, r: r["rows"].reverse(),
+            lambda a, r: r["rows"][0].update(observed="invalid"),
+            lambda a, r: r["rows"].append(r["rows"][0]),
+            lambda a, r: r["rows"][0].update(id="unknown"),
+            lambda a, r: r["rows"][0].update(id=r["rows"][1]["id"]),
+            lambda a, r: r["rows"][0].update(observed="deny" if r["rows"][0]["observed"] == "allow" else "allow"),
+            lambda a, r: r.update(policyHash=("1" if r["policyHash"][0] == "0" else "0") + r["policyHash"][1:]),
+            lambda a, r: a["plan"].update(policyHash=a["plan"]["policyHash"] + "-different"),
+            lambda a, r: r.pop("policyChangedAt"),
+            lambda a, r: r.pop("startedAt"),
+            lambda a, r: r.pop("finishedAt"),
         ]
         for selection in ("full", "partial"):
             for index, mutation in enumerate(mutations):
                 with self.subTest(selection=selection, mutation=index):
                     self.assertNotEqual(self.run_plan_gate(selection, mutation).returncode, 0)
         result = self.run_plan_gate(
-            "partial", lambda a, r: r["acceptance"]["preventionGaps"].pop())
+            "partial", lambda a, r: r["rows"].pop())
         self.assertNotEqual(result.returncode, 0)
 
     def test_possibly_empty_arrays_expand_safely_on_macos_bash(self):

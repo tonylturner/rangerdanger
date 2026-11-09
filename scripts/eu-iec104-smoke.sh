@@ -166,7 +166,7 @@ EU IEC104 gate plan (no Docker or backend access):
   G22 eu-hardening-configurations validator: IEC104 wire attack, restore, harden and retest
   G23 Embedded containd bundle/session, weak/improved management INPUT isolation, loopback-only engine, backend apply/reset/events/flows
   G24 eu-vendor-rdp-compromise validator: enterprise-to-vendor and vendor-to-field walk
-  G25 eu-validation-evidence validator: hardened report and continuity walk
+  G25 eu-validation-evidence validator: hardened policy and continuity walk
   G26 eu-segmentation-requirements served decisions and package-bound catalog
   G27 eu-remediation-planning served decision step and package-bound catalog
   G28 Full, partial and each catalog enforce/detect singleton compiled plan: faithful proof, hardened acceptance and golden prevention gaps; retain evidence and restore weak without provenance

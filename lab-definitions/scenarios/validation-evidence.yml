@@ -1,7 +1,7 @@
 id: validation-evidence
 order: "2.4"
 name: "Testing & Validation"
-summary: "Generate a change-board validation report (authorized/unauthorized tests + PCAP) against the policy you have active, then reflect on residual risk."
+summary: "Review authorized/unauthorized tests and PCAP evidence against the policy you have active, then reflect on residual risk."
 estimated_minutes: 7
 validator: us-validation-evidence
 description: >
@@ -9,10 +9,7 @@ description: >
   stress-testing it in Lab 2.3, this exercise builds the formal
   evidence package: positive tests confirming authorized flows still
   work, tests comparing unauthorized flows with the applied plan and Hardened, and
-  PCAP evidence from the firewall. You generate it in one click against
-  the policy you have active - then read it like a reviewer would. This
-  is the validation step required before any segmentation change goes to
-  production.
+  PCAP evidence from the firewall. This is the validation step required before any segmentation change goes to production.
 nodes:
   - kali-1
   - vendor-jump-1
@@ -43,7 +40,7 @@ steps:
 
       Confirm the intended applied plan in the policy banner. Keep its exported plan
       record with package revision, action IDs and policy hash. Do not replace a partial plan with
-      Hardened just to make the report green. Apply Hardened only when you intend
+      Hardened just to obtain a green result. Apply Hardened only when you intend
       to test the reference. A saved browser plan is not an applied plan.
 
       :::findings-panel from=firewall-implementation title="Your evidence status (Lab 2.2)"
@@ -54,10 +51,10 @@ steps:
       :::
 
       These are your earlier evidence statuses, not current proof. Resolve missing or
-      unclear items and regenerate the report for this policy commit.
+      unclear items and collect fresh evidence for this policy commit.
 
       Named and manual policies use Hardened expectations. Their plan proof is
-      not applicable. Check the running policy before generating the report.
+      not applicable. Check the running policy before testing.
 
       :::hint Optional: cross-check the running policy in containd
       Confirm the running policy from
@@ -78,47 +75,28 @@ steps:
       deferred Weak allows for actions you did not select.
       :::
 
-      **Time budget:** ~7 minutes (Guided path - one-click report plus reflection. The by-hand Advanced verification hints are optional).
+      **Time budget:** ~7 minutes (The by-hand Advanced verification hints are optional).
     action:
       type: check
       expect:
         firewall_config: improved
 
   - id: generate-the-validation-report
-    title: "Generate the validation report"
+    title: "Review validation evidence"
     expected_config: hardened
     description: |
-      Generate the full **21-row TCP matrix** against the active policy.
-      The report has two independent results:
-
-      - **Plan proof** checks observed allow/deny results against this applied plan.
-        It requires 0 skipped and the recorded plan hash before and after probing.
-      - **Hardened acceptance** requires authorized **8/8** and unauthorized denied
-        **13/13**, 0 skipped, a stable running hash and capture evidence. Confirm a
-        healthy HMI separately. Acceptance does not prove command-level filtering.
-
-      A partial plan can pass plan proof and fail Hardened acceptance. Read the
-      prevention gaps by row ID. Deferred controls keep their Weak exposures open;
-      that expected consequence is not a reason to hide a row or change the target.
-      A named or manual policy has no applicable plan proof; use Hardened acceptance.
-
-      :::validation-report
-      :::
-
-      Completion uses the backend-retained result for the judging target, full running firewall hash and probe UTC window from this range and latest policy commit. The running policy is read before and after probing; a change or unreadable hash fails the report. Reapplying even the same policy invalidates the previous commit window: generate again. The backend retains the latest generated report until range/backend restart. Use **Download markdown** to save the report, and copy the PCAP at the report's path (relative to the install root) out of the captures folder before any reset or shutdown; reset deletes captures. A local screenshot or old browser report cannot substitute for the retained proof.
-
       Only a connection timeout counts as deny. Connection refused means reached
-      (allow). Tool or container errors are skipped evidence, never a pass.
-      The matrix tests TCP connectivity, not DNP3 function-code rejection.
+      (allow). Tool or container errors are untested evidence, never a pass.
+      These tests check TCP connectivity, not DNP3 function-code rejection.
       The L4 source pin enforces; DPI detects and logs.
 
-      Keep the report, UTC window, policy hash and PCAP with the plan's package
-      revision and action IDs. Inspect sources against Plan and Hardened results;
+      Keep the UTC window, policy hash and PCAP with the plan's package
+      revision and action IDs. Inspect sources against intended outcomes;
       a captured ingress SYN alone does not prove that traffic reached a device.
 
       At the HMI, require no alarms, closed breaker/recloser, auto-reclose on and
       energized loads. Restoration and operational checks apply to every plan.
-      Validate Exercise does not replace report evidence.
+      Validate Exercise does not replace your test evidence.
 
       :::decision id=pos-test-ops-intact options=NORMAL_OPS,DEGRADED,ALARMS_PRESENT
       Are operations healthy after validation?
@@ -127,14 +105,13 @@ steps:
       :::
 
       :::decision id=neg-test-no-impact options=UNCHANGED,DEGRADED,UNCLEAR
-      Did operations remain unchanged? Compare this result with the validation report and structured plan coverage.
+      Did operations remain unchanged? Compare this result with your evidence and structured plan coverage.
       :::why
-      UNCHANGED needs before/after operational evidence alongside the report. DEGRADED means investigate impact; UNCLEAR means collect a comparable baseline. A timeout alone does not establish that operations were unaffected.
+      UNCHANGED needs before/after operational evidence alongside the tests. DEGRADED means investigate impact; UNCLEAR means collect a comparable baseline. A timeout alone does not establish that operations were unaffected.
       :::
 
       :::hint Advanced: run the positive tests by hand
-      The report automates this, but the manual method is what you'd do on a
-      real appliance. From the **RTAC** terminal, confirm authorized flows:
+      From the **RTAC** terminal, confirm authorized flows:
 
           mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
           dnp3poll -a 1 -t 3s 10.40.40.20:20000
@@ -191,8 +168,7 @@ steps:
       :::
 
       :::hint Advanced: capture PCAP by hand
-      The report captures this automatically; the manual form, from the
-      `fw-1` terminal, captures on `lan2`, the firewall's field-zone
+      From the `fw-1` terminal, capture on `lan2`, the firewall's field-zone
       interface:
 
       In the configuration CLI, type `exit` before these Linux commands.
@@ -212,6 +188,8 @@ steps:
       Under Hardened, the only Modbus/DNP3 source reaching field should be
       `10.30.30.20` (the RTAC). For a partial plan, compare additional
       sources with deferred exposures; preserve the prevention gaps.
+      Copy the PCAP out of the captures folder before any reset or shutdown;
+      reset deletes captures.
       :::
 
       :::hint Advanced: assemble the evidence package by hand
@@ -280,15 +258,15 @@ steps:
       :::plan-coverage title="Coverage of your committed Lab 1.3 design"
       :::
 
-      The panel above is computed live from your Lab 1.4 selections. Each requirement is marked **fully addressed**, **partial**, **deferred** (gap), or **n/a** (you marked the verdict as ALLOW or didn't commit one). Use the panel and report together; the design verdicts and funded/deferred actions already carry forward as structured inputs.
+      The panel above is computed live from your Lab 1.4 selections. Each requirement is marked **fully addressed**, **partial**, **deferred** (gap), or **n/a** (you marked the verdict as ALLOW or didn't commit one). Use the panel and your evidence together; the design verdicts and funded/deferred actions already carry forward as structured inputs.
 
       ### Now reflect
 
       In your Exercise Notes, discuss the validation evidence:
 
       1. Which positive or negative test result most changed your confidence in the running policy?
-      2. What does the report prove, and what remains outside its scope?
+      2. What does your evidence prove, and what remains outside its scope?
       3. What evidence, operational owner or retest is needed before this change could be approved?
       4. What additional architecture or monitoring control would reduce a visibility blind spot?
 
-      These discussion notes add context to the report; they do not replace its evidence or repeat the structured plan inputs.
+      These discussion notes add context to your evidence; they do not replace its evidence or repeat the structured plan inputs.

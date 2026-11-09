@@ -53,9 +53,6 @@ describe("EU Apply Your Plan content", () => {
     const text = validation.steps.map((s) => s.description).join("\n");
     expect(plans[0].expectations.filter((r) => r.category === "authorized")).toHaveLength(auth);
     expect(plans[0].expectations.filter((r) => r.category === "unauthorized")).toHaveLength(unauth);
-    for (const expected of ["Plan proof", "Hardened acceptance", `${auth}/${auth}`, `${unauth}/${unauth}`, "0 skipped", "hash", "capture"]) {
-      expect(text).toContain(expected);
-    }
     expect(text).not.toMatch(/11\/11|12\/12|nineteen probes|not \*\*Apply Your Plan/);
   });
 

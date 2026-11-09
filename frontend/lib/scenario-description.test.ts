@@ -597,3 +597,8 @@ describe("exec allowlist presentation", () => {
     expect(splitDescription(`    ${tool} example`)).toEqual([{ type: "cmd", value: `${tool} example`, copyOnly: true }]);
   });
 });
+
+it("does not recognize the retired report directive as an interactive segment", () => {
+  const text = ":::validation-report\n:::";
+  expect(splitDescription(text)).toEqual([{ type: "prose", value: text }]);
+});

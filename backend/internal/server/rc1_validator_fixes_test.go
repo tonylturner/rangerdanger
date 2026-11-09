@@ -6,30 +6,6 @@ import (
 	"testing"
 )
 
-func TestCaptureEvidenceRequiresSuccessfulAnalysableCapture(t *testing.T) {
-	if err := captureCommandError(124, ""); err != nil {
-		t.Fatalf("normal timeout completion should be accepted: %v", err)
-	}
-	if err := captureCommandError(1, "tcpdump: invalid capture file"); err == nil || !strings.Contains(err.Error(), "invalid capture file") {
-		t.Fatalf("capture failure should surface its command output, got %v", err)
-	}
-
-	if _, err := summarizePcapOutput("", []string{"10", "40", "40"}); err == nil {
-		t.Fatal("empty capture analysis must fail")
-	}
-	summary, err := summarizePcapOutput("12:00:00.1 eth0 Out IP 10.10.10.4.54321 > 10.40.40.2.502: Flags [S]\n", []string{"10", "40", "40"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(summary, "10.10.10.4") {
-		t.Fatalf("capture source missing from analysis: %q", summary)
-	}
-	md := usRecipe.renderValidationMarkdown(usGeneration(nil).Package, "custom", "source", "hash", "path", false, "Capture analysis failed: PCAP contains no analysable packets", nil, 0, 0, 0, 0, 0, false)
-	if !strings.Contains(md, "PCAP contains no analysable packets") {
-		t.Fatalf("report hid the capture failure: %s", md)
-	}
-}
-
 func TestUSAuditJudgmentAllowsEmptyAuditButFailsOnFetchError(t *testing.T) {
 	s := &Server{}
 	gen := usGeneration(nil)

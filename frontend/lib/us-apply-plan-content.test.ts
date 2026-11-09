@@ -49,9 +49,6 @@ describe("US Apply Your Plan content", () => {
     expect(partial.expectations.filter((r) => r.planVerdict !== r.hardenedVerdict).map((r) => r.id))
       .toEqual(Array.from({ length: 11 }, (_, i) => `U${i + 1}`));
     const text = scenario("validation-evidence").steps.map((s) => s.description).join("\n");
-    for (const required of ["Plan proof", "Hardened acceptance", "8/8", "13/13", "0 skipped", "hash", "capture", "healthy HMI"]) {
-      expect(text).toContain(required);
-    }
     expect(text).not.toMatch(/11\/11|12\/12|nineteen probes/);
   });
 

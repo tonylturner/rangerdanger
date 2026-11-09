@@ -452,7 +452,7 @@ func TestEUWorkshopStepParity(t *testing.T) {
 			if usDecisions != euDecisions {
 				t.Errorf("decision activity count changed: US %d EU %d", usDecisions, euDecisions)
 			}
-			for _, directive := range []string{":::generate-traffic-button", ":::track-picker", ":::validation-report"} {
+			for _, directive := range []string{":::generate-traffic-button", ":::track-picker"} {
 				before, after := 0, 0
 				for _, step := range us.Steps {
 					before += strings.Count(step.Description, directive)

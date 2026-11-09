@@ -118,8 +118,6 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 	}
 
 	ev.cc.Link.Since = at("12:00:59")
-	ev.policyHash = "full-running-hash"
-	ev.report = &retainedValidationReport{Hash: ev.policyHash, Markdown: "retained report", RangeStart: ev.start, PolicyAt: ev.policyAt, StartedAt: at("12:02:00"), FinishedAt: at("12:03:00"), Acceptance: acceptanceResult{Pass: true}}
 	return ev
 }
 
@@ -477,24 +475,17 @@ func TestEUPostCommitVisibility(t *testing.T) {
 	}
 }
 
-func TestEURetainedReportAcceptance(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		mutate func(*euWorkshopEvidence)
-	}{
-		{"missing", func(ev *euWorkshopEvidence) { ev.report = nil }},
-		{"failed", func(ev *euWorkshopEvidence) { ev.report.Acceptance.Pass = false }},
-		{"hash mismatch", func(ev *euWorkshopEvidence) { ev.report.Hash = "other" }},
-		{"reapplied same hash", func(ev *euWorkshopEvidence) { ev.policyAt = at("12:03:30") }},
-		{"old range", func(ev *euWorkshopEvidence) { ev.report.RangeStart = ev.start.Add(-time.Hour) }},
-		{"before commit", func(ev *euWorkshopEvidence) { ev.report.StartedAt = ev.start }},
-		{"future", func(ev *euWorkshopEvidence) { ev.report.FinishedAt = ev.now.Add(time.Second) }},
-		{"inverted window", func(ev *euWorkshopEvidence) { ev.report.FinishedAt = ev.report.StartedAt.Add(-time.Second) }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ev := passingEUWorkshop(t, euWorkshopSlots[4])
-			tc.mutate(&ev)
-			assertEUChecks(t, euWorkshopSlots[4], ev, false)
-		})
+func TestEUValidationNeedsCurrentSystemEvidenceOnly(t *testing.T) {
+	slot := "eu-validation-evidence"
+	ev := passingEUWorkshop(t, slot)
+	checks := evaluateEUWorkshop(slot, ev)
+	if len(checks) != 4 {
+		t.Fatalf("unexpected prerequisites: %+v", checks)
 	}
+	assertEUChecks(t, slot, ev, true)
+	ev.ccErr = errors.New("CC unavailable")
+	assertEUChecks(t, slot, ev, false)
+	ev = passingEUWorkshop(t, slot)
+	ev.processErr = errors.New("supply unavailable")
+	assertEUChecks(t, slot, ev, false)
 }

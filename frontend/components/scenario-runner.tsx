@@ -29,7 +29,6 @@ import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { saveEmptyRemediationPlanIfMissing } from "../lib/remediation-plan";
 import { useFirewallTrack } from "../lib/use-firewall-track";
 import { useCompiledPlan } from "../lib/use-compiled-plan";
-import { ValidationReportPanel } from "./validation-report-panel";
 import { ApplyPlanButton } from "./apply-plan-button";
 import { CompiledPlanSummary } from "./compiled-plan-summary";
 import {
@@ -603,7 +602,6 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 stepId={step.id}
                 stepDescription={step.description}
                 dynamicPlan={dynamicPlan}
-                expectations={draftPlan?.expectations}
                 exerciseNodes={exerciseNodes}
                 firewallTrack={firewallTrack}
                 autoRunning={autoRunning}
@@ -612,8 +610,6 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 generatingTraffic={generatingTraffic}
               />
             )}
-
-            {scenario.id === binding?.roles.hardening && <ValidationReportPanel expectations={draftPlan?.expectations} />}
 
             {/* Quick action buttons for traffic/capture steps */}
             {step?.description && (step.description.includes("traffic/generate") || step.description.includes("representative traffic")) && (

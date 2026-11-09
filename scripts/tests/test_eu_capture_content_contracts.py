@@ -29,15 +29,6 @@ class EUCaptureContracts(unittest.TestCase):
                 self.assertNotIn("<checkout>", text)
                 self.assertNotIn("no demonstrated download control", text)
 
-    def test_report_explains_markdown_download_and_host_pcap_preservation(self):
-        doc = yaml.safe_load((PACKAGE / "scenarios/eu-validation-evidence.yml").read_text())
-        text = next(s["description"] for s in doc["steps"]
-                    if s["id"] == "generate-the-validation-report")
-        self.assertIn("Use **Download markdown** to save the report", text)
-        self.assertIn("copy the PCAP at the report's path (relative to the install root)", text)
-        self.assertIn("out of the captures folder before any reset or shutdown; reset deletes captures", text)
-        self.assertNotIn("export the markdown/PCAP", text)
-
     def test_baseline_rotation_uses_float_timer_not_reconnect_timer(self):
         doc = yaml.safe_load((PACKAGE / "scenarios/eu-baseline-assessment.yml").read_text())
         text = next(s["description"] for s in doc["steps"]

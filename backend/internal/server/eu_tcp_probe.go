@@ -60,11 +60,10 @@ case "$rc" in
   *) exit "$rc" ;;
 esac`
 
-// strictTCPProbe is shared by the EU report and validators. Only a successful
+// strictTCPProbe is shared by automation diagnostics and validators. Only a successful
 // connect, explicit refusal, or the probe's own connect timeout is measurable.
 // Exec errors, signals, bad arguments and missing tools remain untested.
 func (s *Server) strictTCPProbe(ctx context.Context, cli *client.Client, p validationProbe) validationRow {
-	start := time.Now()
 	row := validationRow{validationProbe: p, Actual: "skipped"}
 	port, err := strconv.Atoi(p.Port)
 	if net.ParseIP(p.Dst) == nil || err != nil || port < 1 || port > 65535 || p.Src == "" {
@@ -78,7 +77,6 @@ func (s *Server) strictTCPProbe(ctx context.Context, cli *client.Client, p valid
 	if probeCtx.Err() != nil {
 		row.Actual, row.ProbeError = "skipped", probeCtx.Err().Error()
 	}
-	row.DurationMs = int(time.Since(start).Milliseconds())
 	row.Pass = row.Actual == p.Expected
 	return row
 }
@@ -104,7 +102,7 @@ func classifyStrictTCP(stdout, stderr string, rc int, err error) (string, string
 
 // Cancellation closes the hijacked stream: a wedged container cannot hold a
 // worker indefinitely in StdCopy. The API calls also share the same deadline.
-// Keep this strict executor separate from the legacy US report executor.
+// Reset execution is separate from this cancellation-safe probe executor.
 func strictProbeExec(ctx context.Context, cli *client.Client, source string, cmd []string) (string, string, int, error) {
 	if cli == nil {
 		return "", "", -1, fmt.Errorf("docker client not available")

@@ -99,10 +99,8 @@ HEADER_EXCEPTIONS = {
         'After applying your plan or the Hardened reference in Lab 2.2 and stress-testing it '
         'in Lab 2.3, this exercise builds the formal evidence package: positive tests '
         'confirming authorized flows still work, tests comparing unauthorized flows with the '
-        'applied plan and Hardened, and PCAP evidence from the firewall. You generate it in '
-        'one click against the policy you have active - then read it like a reviewer would. '
-        'This is the validation step required before any segmentation change goes to '
-        'production.\n'
+        'applied plan and Hardened, and PCAP evidence from the firewall. This is the validation '
+        'step required before any segmentation change goes to production.\n'
     ),
     "vendor-rdp-compromise": (
         'Optional companion to Lab 2.3. Phished vendor credentials let an attacker RDP/VNC '
@@ -159,7 +157,7 @@ class ErrataContracts(unittest.TestCase):
                 5: ("Deferred means reachable", "Restore auto-reclose", "A refused connection counts as reached")},
             "validation-evidence": {
                 0: ("Do not replace a partial plan", "A saved browser plan is not an applied plan"),
-                1: ("authorized **8/8**", "**13/13**", "0 skipped", "Validate Exercise does not replace report evidence")},
+                1: ("Validate Exercise does not replace your test evidence",)},
         }
         for name, locations in expected.items():
             for index, phrases in locations.items():
@@ -182,10 +180,7 @@ class ErrataContracts(unittest.TestCase):
                        "Detection selections do not close it", "This command alone does not trip the recloser"):
             self.assertIn(phrase, hardening)
         report = " ".join(scenario("validation-evidence")["steps"][1]["description"].split())
-        for phrase in ("21-row TCP matrix", "not DNP3 function-code rejection", "Plan proof",
-                       "Hardened acceptance", "Validate Exercise does not replace report evidence",
-                       "recorded plan hash before and after probing", "partial plan can pass plan proof",
-                       "Keep the report, UTC window, policy hash and PCAP", "healthy HMI separately",
+        for phrase in ("not DNP3 function-code rejection",
                        "These two management ports stay allowed for every plan"):
             self.assertIn(phrase, report)
         apply = " ".join(scenario("hardening-configurations")["steps"][3]["description"].split())
@@ -236,7 +231,6 @@ class ErrataContracts(unittest.TestCase):
                 self.assertNotRegex(path.read_text(), grading)
         text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
         self.assertIn("**Not covered by automated tests:**", text)
-        self.assertIn("Trust the report, not the banner.", text)
         self.assertIn("Browser export/download is optional; the copied CLI JSON is your evidence.",
                       text)
 

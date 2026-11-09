@@ -8,10 +8,6 @@ Include CC cache identity, journal bounds and device generations/revisions where
 
 The [change-resource plan](#eu-change-resource-plan) should already define the expected outcome and rollback criteria. Handover records what actually happened against that plan.
 
-### Keep both report results
-
-The EU report has 37 TCP tuples. **Plan proof** checks this applied plan, zero skipped and a stable recorded plan hash. **Hardened acceptance** requires 10/10 authorized and 27/27 unauthorized denied, zero skipped, capture and stable hash. Confirm a healthy HMI and fresh CC observations separately. A partial plan can pass plan proof and retain prevention gaps; list them by tuple ID and owning action. Do not erase deferred allow results or treat them as skipped.
-
 Save **Export plan record** alongside **Export compiled config**. The record contains package ID, revision, label, action IDs and policy hash. Check `GET /api/firewall/active` to confirm what is running. Named and manual policies have no applicable plan proof and are judged against Hardened. The L4 source pin enforces; DPI detects and logs. Applied IEC 104 monitor observations are separate from TCP proof; Modbus DPI remains planning-only. Monitoring never satisfies a BLOCK requirement.
 
 ### Retain applied shadow evidence separately
@@ -62,4 +58,4 @@ Lab 2.2 requires a fresh post-commit CC session, current-connection GI, every in
 
 Lab 2.3 requires that same fresh CC visibility, restored breaker/fresh supply, active probes against the plan, and bounded absence of foreign breaker operations only when the plan denies the Kali→RTU path. A deferred path instead retains the visible command consequence; restore breaker and supply before completion. PASS does not certify that the earlier attack/restoration was performed, command-aware filtering or regulatory compliance. The bonus certifies its sampled plan verdicts and restored RMU/OLTC state, not attack completion, supply or fresh CC observations.
 
-Lab 2.4 additionally requires a backend-retained passing result for the judging target for this range, full running firewall hash and latest commit window. Hash reads bracket the probe run. Recommit/reapply or range/backend restart requires a new report; export it for durable handover. Current CC integrity, all field revisions delivered and fresh supply remain separate completion checks.
+Current CC integrity, all field revisions delivered and fresh supply remain separate completion checks.

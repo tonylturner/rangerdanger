@@ -16,39 +16,6 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
-func TestPartialPlanProofVersusAcceptance(t *testing.T) {
-	gen := usGeneration(nil)
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	matrix, err := resolveProof(gen, compiled.Expectations, "", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows := []validationRow{}
-	for _, probe := range matrix {
-		rows = append(rows, validationRow{validationProbe: probe, Actual: probe.PlanExpected, Pass: true})
-	}
-	proof, acceptance := judgeValidation(rows, true, "hash", true, true)
-	if !proof.Pass || acceptance.Pass || len(acceptance.PreventionGaps) == 0 || len(proof.Rows) != 21 {
-		t.Fatalf("proof %+v acceptance %+v", proof, acceptance)
-	}
-	proof, acceptance = judgeValidation(rows, false, "hash", true, true)
-	if proof.Applicable || proof.Pass || len(proof.Rows) != 0 || acceptance.Pass {
-		t.Fatal("manual policy received plan proof")
-	}
-	proof, _ = judgeValidation(rows, true, "hash", false, true)
-	if proof.Pass {
-		t.Fatal("unstable plan passed")
-	}
-	rows[0].Actual = "skipped"
-	proof, acceptance = judgeValidation(rows, true, "hash", true, true)
-	if proof.Pass || acceptance.Pass || proof.Skipped != 1 || acceptance.Skipped != 1 {
-		t.Fatal("untested row passed")
-	}
-}
-
 func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 	gen := usGeneration(nil)
 	var data []byte
@@ -134,8 +101,6 @@ func TestEUPartialPlanValidators(t *testing.T) {
 			for _, probe := range matrix {
 				ev.negative = append(ev.negative, validationRow{validationProbe: probe, Actual: probe.Expected, Pass: true})
 			}
-			ev.report.PlanProof = proofResult{Applicable: true, Pass: true, HashStable: true, PolicyHash: ev.policyHash}
-			ev.report.Acceptance.Pass = false // independent Hardened acceptance can fail
 			assertEUChecks(t, slot, ev, true)
 			if len(ev.negative) > 0 {
 				ev.negative[0].Actual = "skipped"
@@ -301,18 +266,11 @@ func TestUSRegisteredValidatorsJudgeRulesNotLabels(t *testing.T) {
 		s.policySource, s.lastAppliedHash, s.activeConfig = tc.source, hash, "custom"
 		s.policyChangedAt = time.Now().Add(-time.Minute).UTC()
 		s.planProvenance = &planProvenance{PolicyHash: hash}
-		s.lastValidationReport = &retainedValidationReport{Hash: hash, Markdown: "fixture", RangeStart: gen.StartedAt, PolicyAt: s.policyChangedAt, StartedAt: s.policyChangedAt.Add(time.Second), FinishedAt: s.policyChangedAt.Add(2 * time.Second), Acceptance: acceptanceResult{Pass: tc.source != "plan"}, PlanProof: proofResult{Applicable: tc.source == "plan", Pass: true, HashStable: true, PolicyHash: hash}}
 		for _, slot := range []string{"us-firewall-implementation", "us-hardening-configurations", "us-vendor-rdp-compromise", "us-validation-evidence"} {
 			checks := scenarioValidators[slot].run(t.Context(), s, validatorInput{state: substationState(healthyOpts()), gen: gen, activeConfig: "custom"})
 			target := findCheckMatching(t, checks, "Running policy matches")
 			if (target.Status == "pass") != tc.want {
 				t.Fatalf("%s/%s: %+v", tc.name, slot, checks)
-			}
-			if slot == "us-validation-evidence" && tc.want {
-				retained := findCheckMatching(t, checks, "Retained PASS")
-				if retained.Status != "pass" {
-					t.Fatalf("%s: %+v", tc.name, retained)
-				}
 			}
 		}
 	}

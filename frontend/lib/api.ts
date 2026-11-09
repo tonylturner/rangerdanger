@@ -524,37 +524,6 @@ export async function applyPlan(body: PlanRequest) {
     method: "POST", body: JSON.stringify(body),
   });
 }
-export type ProofRow = { id: string; expected: "allow" | "deny"; observed: "allow" | "deny" | "skipped"; pass: boolean };
-
-export type ValidationReport = {
-  planProof: { applicable: boolean; pass: boolean; policyHash: string; hashStable: boolean; skipped: number; rows: ProofRow[] };
-  acceptance: { pass: boolean; skipped: number; rows: ProofRow[]; preventionGaps: string[] };
-  markdown: string;
-  summary: {
-    authorized_pass: number;
-    authorized_total: number;
-    unauthorized_pass: number;
-    unauthorized_total: number;
-    result: string;
-  };
-  active_config: string;
-  policy_source: string;
-  pcap_path: string;
-  policy_hash: string;
-  window_start: string;
-  window_end: string;
-  policy_stable: boolean;
-};
-
-// runValidationReport runs the positive/negative segmentation test matrix
-// against the CURRENTLY ACTIVE policy and returns a markdown report +
-// summary. Backs Lab 2.4's "Generate Validation Report" button.
-export async function runValidationReport(): Promise<ValidationReport> {
-  return request<ValidationReport>("/firewall/validation-report", {
-    method: "POST",
-  });
-}
-
 export type StepActionResult = {
   action: string;
   success: boolean;

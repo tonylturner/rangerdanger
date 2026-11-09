@@ -32,8 +32,6 @@ Lab 2.3 judges an applied plan against its expected results, with Hardened as th
 
 Coverage panels compare saved selections with design requirements. They do not probe the running firewall. Prevention mappings use enforceable actions only; required logged denies need no logging selection. The LOG-only foreign-source requirement has no selectable live implementation; the CC observation rules do not cover it. Commands on an allowed CC session and same-subnet paths remain residual risks.
 
-Lab 2.4 has two results across 37 TCP tuples. Plan proof checks this plan with zero skipped and a stable recorded plan hash. Hardened acceptance requires 10/10 authorized and 27/27 unauthorized denied, zero skipped, capture and stable hash. Confirm a healthy HMI separately. A partial plan can pass plan proof and show prevention gaps against Hardened. Manual and named policies have no applicable plan proof and use Hardened expectations. See [evidence lifecycle](#eu-evidence-lifecycle) and [acceptance handover](#eu-acceptance-handover).
-
 ### Persistence and reset boundaries
 
 Curriculum state is stored in the student's browser under `rd:<package-id>:<revision>:<name>`. Use the active package revision rather than a copied version number. A decision is keyed by scenario and decision ID; the remediation plan is stored separately from each lab's completed steps, notes and command log. A later package revision uses a different storage scope, so old answers are not silently treated as answers to the new curriculum.

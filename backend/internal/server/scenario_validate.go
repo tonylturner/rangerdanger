@@ -702,7 +702,7 @@ func init() {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
 		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
 			checks := validateValidationEvidence(in.state)
-			return append(checks, s.policyJudgment(ctx, in.gen), s.usRetainedReport(in.gen))
+			return append(checks, s.policyJudgment(ctx, in.gen))
 		},
 	})
 
