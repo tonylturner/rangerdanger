@@ -203,48 +203,6 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 	return checkPass(name, "running L4 rules match "+target+". The L4 source pin enforces; DPI detects and logs. TCP dataplane evidence requires separate wire observations")
 }
 
-func planDenyFilter(rows []conduitDeny, plan *labs.CompiledPlan, pkg labs.Package) ([]conduitDeny, error) {
-	if plan == nil {
-		return rows, nil
-	}
-	policy, err := readEvaluatedFirewall(plan.Config)
-	if err != nil {
-		return nil, err
-	}
-	filtered := []conduitDeny{}
-	zone := func(ip string) (string, error) {
-		address, err := netip.ParseAddr(ip)
-		if err != nil {
-			return "", err
-		}
-		for _, network := range pkg.Template.Networks {
-			subnet := network.Subnet
-			if subnet == "" {
-				subnet = network.CIDR
-			}
-			prefix, err := netip.ParsePrefix(subnet)
-			if err == nil && prefix.Contains(address) {
-				return network.Zone, nil
-			}
-		}
-		return "", fmt.Errorf("no teaching zone for %s", ip)
-	}
-	for _, row := range rows {
-		src, err := zone(row.source)
-		if err != nil {
-			return nil, err
-		}
-		dst, err := zone(row.dest)
-		if err != nil {
-			return nil, err
-		}
-		if labs.Evaluate(policy.Rules, policy.DefaultAction, labs.PlanTuple{SrcZone: src, DstZone: dst, SrcIP: row.source, DstIP: row.dest, Protocol: "tcp", Port: row.port}) == labs.VerdictDeny {
-			filtered = append(filtered, row)
-		}
-	}
-	return filtered, nil
-}
-
 // usAuditJudgment calls a command unauthorized only if its judging target
 // denies the tuple. A deferred exposure is a visible consequence, not a proof
 // failure. This is an advisory retained audit, not an absence certificate.

@@ -111,32 +111,6 @@ func TestEUPartialPlanValidators(t *testing.T) {
 	}
 }
 
-func TestPlanConduitDeniesFollowSelectedRules(t *testing.T) {
-	gen := euGeneration(t, nil, nil)
-	rows, err := conduitDenyMatrix(gen, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct {
-		ids   []string
-		fewer bool
-	}{{nil, true}, {[]string{"block-enterprise-to-field"}, true}} {
-		compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, tc.ids)
-		if err != nil {
-			t.Fatal(err)
-		}
-		filtered, err := planDenyFilter(rows, &compiled, gen.Package)
-		if err != nil || len(filtered) >= len(rows) {
-			t.Fatalf("not filtered: %d/%d %v", len(filtered), len(rows), err)
-		}
-		for _, row := range filtered {
-			if row.source == "10.10.10.50" && row.port == 2404 {
-				t.Fatal("deferred station closure still requires a DENY event")
-			}
-		}
-	}
-}
-
 func TestEUPlanHandlers(t *testing.T) {
 	running := []byte(`{"interfaces":[{"name":"lan3","device":"eth8"}]}`)
 	fake := containdtest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
