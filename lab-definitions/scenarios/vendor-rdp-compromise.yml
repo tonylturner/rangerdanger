@@ -25,7 +25,7 @@ steps:
     expected_config: weak
     node: kali-1
     description: |
-      **Time budget:** ~12 minutes (Guided path). This is an optional
+      **Time budget:** ~12 minutes. This is an optional
       bonus lab.
 
       Under the weak baseline, the enterprise zone can reach the

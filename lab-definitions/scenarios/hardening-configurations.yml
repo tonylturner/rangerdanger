@@ -66,7 +66,7 @@ steps:
       re-read.
       :::
 
-      **Time budget:** ~12 minutes (Guided path - the primary DNP3 attack and re-test. The optional Modbus cases are extra).
+      **Time budget:** ~12 minutes (the primary DNP3 attack and re-test. The optional Modbus cases are extra).
     action:
       type: check
       expect:
@@ -256,15 +256,14 @@ steps:
     title: "Apply the hardened policy"
     expected_config: hardened
     description: |
-      :::guided
+      :::hint Optional catch-up — for less technical students or teams behind schedule
+      This replaces typing rules. It does not replace your own observations, operator check or sign-off.
       Apply Your Plan to test the choices from Lab 1.4. Use Apply Hardened only
       for the full reference.
       :::
 
-      :::technical
       A manual policy uses Hardened expectations. Commit the named-source
       reference rules, then inspect the running configuration.
-      :::
 
       Execute Step checks the active policy without replacing it. Verify the running hash and selected action IDs.
 

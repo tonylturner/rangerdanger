@@ -14,8 +14,8 @@ CLI_RE = re.compile(GRAMMAR["cli"])
 COPY_RE = re.compile(GRAMMAR["copy"])
 MARKER_RE = re.compile(GRAMMAR["marker"], re.I)
 FENCE_RE = re.compile(
-    r"^:::(?:hint(?:\s+.+)?|guided|technical|decision\s+.+|"
-    r"(?:findings-panel|plan-coverage|track-picker|generate-traffic-button|"
+    r"^:::(?:hint(?:\s+.+)?|decision\s+.+|"
+    r"(?:findings-panel|notes-panel|plan-coverage|generate-traffic-button|"
     r"icon)(?:\s+.+)?)$")
 
 
@@ -66,7 +66,7 @@ def marker(text):
 def description_commands(text, inherited=""):
     """Mirror splitDescription fences; one shared vocabulary/source grammar.
 
-    Return command, line, source, UI class. Hints/tracks recurse with their
+    Return command, line, source, UI class. Hints recurse with their
     inherited source; ignored structured bodies must not create phantom Runs.
     """
     lines = text.split("\n")
@@ -81,7 +81,7 @@ def description_commands(text, inherited=""):
             i += 1
             while i < len(lines) and lines[i].strip() != ":::":
                 i += 1
-            if re.match(r"^:::(?:hint(?:\s|$)|guided$|technical$)", opening):
+            if re.match(r"^:::hint(?:\s|$)", opening):
                 for cmd, line, src, kind in description_commands(
                         "\n".join(lines[start:i]), source):
                     result.append((cmd, start + line, src, kind))

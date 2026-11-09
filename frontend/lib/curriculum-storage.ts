@@ -1,5 +1,5 @@
 // Browser storage for curriculum state: lab decisions, exercise
-// progress, the remediation plan and the firewall track.
+// progress and the remediation plan.
 //
 // Every key is `rd:<package>:<revision>:<name>`. Scoping by package
 // keeps two curricula from reading each other's answers; scoping by
@@ -47,9 +47,6 @@ export function exerciseName(scenarioId: string): string {
 
 // The Lab 1.4 remediation plan, read again by the later firewall labs.
 export const REMEDIATION_PLAN = "remediation-plan";
-
-// The Guided / Advanced firewall track chosen in Lab 2.2.
-export const FIREWALL_TRACK = "firewall-track";
 
 function browserStorage(): Storage | null {
   if (typeof window === "undefined") return null;

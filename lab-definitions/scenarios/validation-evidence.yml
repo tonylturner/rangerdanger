@@ -28,6 +28,12 @@ steps:
     title: "Confirm hardened config is active"
     expected_config: hardened
     description: |
+      :::notes-panel from=remediation-planning title="Your change request (Lab 1.4)"
+      :::
+
+      :::notes-panel from=firewall-implementation title="Your implementation record (Lab 2.2)"
+      :::
+
       You're now validating the work you did across Labs 1.2 → 2.3. Below is the design + plan you committed; this validation pass tests whether the firewall enforces what you specified.
 
       :::findings-panel from=segmentation-requirements title="Your design verdicts (Lab 1.3)"

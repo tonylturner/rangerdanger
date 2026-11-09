@@ -25,7 +25,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { PlanReadinessExclusions } from "./plan-readiness-exclusions";
 import { DecisionPanel } from "./decision-panel";
 import { MarkdownProse } from "./markdown-prose";
-import { TrackPicker } from "./track-picker";
+import { NotesPanel } from "./notes-panel";
+import { CATCH_UP_TITLE } from "../lib/catch-up";
 import {
   splitDescription,
   type Segment,
@@ -494,12 +495,14 @@ export function IconStamp({ name, color, label }: { name: string; color: string;
 
 export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId, sourceNode, scenarios }: HintBlockProps) {
   const [open, setOpen] = useState(false);
+  const catchUp = title === CATCH_UP_TITLE;
   const segments = splitDescription(body.replace(/^\n+|\n+$/g, ""), sourceNode);
   let cmdIdx = 0;
   return (
-    <div className="rounded-lg border border-amber-900/60 bg-amber-950/20">
+    <div className={`rounded-lg border ${catchUp ? "border-sky-800/60 bg-sky-950/20" : "border-amber-900/60 bg-amber-950/20"}`}>
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
         className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-amber-950/40 transition-colors"
       >
         {open ? (
@@ -508,7 +511,7 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
           <ChevronRight className="h-3.5 w-3.5 text-amber-500 shrink-0" />
         )}
         <Lightbulb className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-        <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+        <span className={`text-[11px] font-bold ${catchUp ? "text-sky-300" : "uppercase tracking-wider text-amber-400"}`}>
           {title}
         </span>
         {!open && (
@@ -568,11 +571,9 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
             if (seg.type === "planCoverage") {
               return <PlanCoveragePanel key={si} title={seg.title} />;
             }
-            // trackPicker / trackOnly inside a :::hint isn't a
-            // pattern any lab uses today; skip silently rather than
-            // render a broken sub-tree.
-            if (seg.type === "trackPicker" || seg.type === "trackOnly" || seg.type === "generateTrafficButton" || seg.type === "icon") {
-              return null;
+            if (seg.type === "generateTrafficButton" || seg.type === "icon") return null;
+            if (seg.type === "notesPanel") {
+              return <NotesPanel key={si} {...seg} sourceScenarioOrder={orderForScenario(scenarios, seg.sourceScenario)} />;
             }
             if (seg.type === "hint") {
               // Nested hints aren't expected, but render them flat
@@ -607,7 +608,6 @@ export function DescriptionSegments({
   stepDescription,
   dynamicPlan,
   exerciseNodes,
-  firewallTrack,
   autoRunning,
   handleAutoRun,
   handleGenerateTraffic,
@@ -620,7 +620,6 @@ export function DescriptionSegments({
   stepDescription: string;
   dynamicPlan: CompiledPlan | null;
   exerciseNodes: string[];
-  firewallTrack: "guided" | "technical" | null;
   autoRunning: string | null;
   handleAutoRun: (cmd: string, runId: string, stepDesc: string, sourceNode?: string) => Promise<void>;
   handleGenerateTraffic: (durationSec?: number) => Promise<void>;
@@ -696,18 +695,14 @@ export function DescriptionSegments({
                         />
                       );
                     }
+                    if (seg.type === "notesPanel") {
+                      return <NotesPanel key={`${scenario.id}-${currentStep}-${si}`} {...seg} sourceScenarioOrder={orderForScenario(scenarios, seg.sourceScenario)} />;
+                    }
                     if (seg.type === "planCoverage") {
                       return (
                         <PlanCoveragePanel
                           key={`${scenario.id}-${currentStep}-${si}`}
                           title={seg.title}
-                        />
-                      );
-                    }
-                    if (seg.type === "trackPicker") {
-                      return (
-                        <TrackPicker
-                          key={`${scenario.id}-${currentStep}-${si}`}
                         />
                       );
                     }
@@ -734,105 +729,6 @@ export function DescriptionSegments({
                           className="my-2"
                         >
                           <IconStamp name={seg.name} color={seg.color} label={seg.label} />
-                        </div>
-                      );
-                    }
-                    if (seg.type === "trackOnly") {
-                      // Show track-only blocks when no track is yet
-                      // picked (so the student sees both perspectives
-                      // before deciding) OR when the current track
-                      // matches the block's track.
-                      if (firewallTrack !== null && firewallTrack !== seg.track) {
-                        return null;
-                      }
-                      // Recursively split + render the body so nested
-                      // commands / hints / decisions inside a track
-                      // block still work.
-                      const inner = splitDescription(seg.body, seg.sourceNode);
-                      return (
-                        <div
-                          key={`${scenario.id}-${currentStep}-${si}`}
-                          className={`rounded-md border-l-2 pl-3 ${
-                            seg.track === "guided"
-                              ? "border-emerald-700/60"
-                              : "border-sky-700/60"
-                          } stack-y-2`}
-                        >
-                          <div
-                            className={`text-[10px] font-bold uppercase tracking-wider ${
-                              seg.track === "guided"
-                                ? "text-emerald-400"
-                                : "text-sky-400"
-                            }`}
-                          >
-                            {seg.track === "guided" ? "Guided track" : "Advanced track"}
-                          </div>
-                          {inner.map((sub, sj) => {
-                            if (sub.type === "prose") {
-                              const t = sub.value.replace(/^\n+|\n+$/g, "");
-                              if (!t) return null;
-                              return <MarkdownProse key={sj}>{t}</MarkdownProse>;
-                            }
-                            if (sub.type === "cmd") {
-                              const ci = bodyCmdIdx++;
-                              return (
-                                <CommandBlock
-                                  key={sj}
-                                  cmd={sub.value}
-                                  runId={`body-${ci}`}
-                                  runningId={autoRunning}
-                                  onRun={runHandler}
-                                  sourceNode={sub.sourceNode}
-                                  cli={sub.cli}
-                                  copyOnly={sub.copyOnly}
-                                />
-                              );
-                            }
-                            if (sub.type === "hint") {
-                              const hi = hintIdx++;
-                              return (
-                                <HintBlock
-                                  key={sj}
-                                  title={sub.title}
-                                  body={sub.value}
-                                  sourceNode={sub.sourceNode}
-                                  runIdPrefix={`hint-t-${hi}`}
-                                  runningId={autoRunning}
-                                  onRun={runHandler}
-                                  scenarioId={scenario.id}
-                                  scenarios={scenarios}
-                                />
-                              );
-                            }
-                            if (sub.type === "decision") {
-                              return (
-                                <DecisionBlock
-                                  key={sj}
-                                  scenarioId={scenario.id}
-                                  decisionId={sub.id}
-                                  options={sub.options}
-                                  body={sub.body}
-                                  explanation={sub.explanation}
-                                  defaultFrom={sub.defaultFrom}
-                                  correct={sub.correct}
-                                />
-                              );
-                            }
-                            if (sub.type === "findingsPanel") {
-                              return (
-                                <FindingsPanel
-                                  key={sj}
-                                  sourceScenario={sub.sourceScenario}
-                                  sourceScenarioOrder={orderForScenario(scenarios, sub.sourceScenario)}
-                                  title={sub.title}
-                                  items={sub.items}
-                                />
-                              );
-                            }
-                            // Nested plan coverage and track-only widgets
-                            // aren't used in this block.
-                            return null;
-                          })}
                         </div>
                       );
                     }

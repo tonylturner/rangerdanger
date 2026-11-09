@@ -25,7 +25,6 @@ vi.mock("../lib/curriculum-scope", () => ({
   useCurriculumScope: () => scope,
   useActiveCurriculum: () => ({ scenarios: [] }),
 }));
-vi.mock("../lib/use-firewall-track", () => ({ useFirewallTrack: () => ({ track: "guided", setTrack: vi.fn() }) }));
 vi.mock("../lib/operator-queries", () => ({
   useOperatorView: () => ({ status: "loading" }), usePackagePolicies: () => undefined,
 }));
@@ -221,7 +220,7 @@ describe("interactive grading change requests", () => {
         const calls = execute.mock.calls.length + 1;
         fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
         await waitFor(() => expect(execute).toHaveBeenCalledTimes(calls));
-        fireEvent.click(tree.getByRole("button", { name: "Validate Exercise" }));
+        fireEvent.click(tree.getByRole("button", { name: "Cross-check the current system" }));
         await waitFor(() => expect(validate).toHaveBeenCalledTimes(calls));
       };
       const expectRequest = (actionIds?: string[]) => {
@@ -229,12 +228,12 @@ describe("interactive grading change requests", () => {
         expect(execute).toHaveBeenLastCalledWith(authored.id, 0, request);
         expect(validate).toHaveBeenLastCalledWith(authored.id, request);
       };
-      // No saved selection is different from an explicitly empty request.
+      // Empty effective intent is no request: never grade manual work against Weak.
       await clickBoth();
       expectRequest();
       saveRemediationPlan(scope, { exerciseId: binding.roles.planning, selectedActionIds: [], savedAt: "now" });
       await clickBoth();
-      expectRequest([]);
+      expectRequest();
       saveRemediationPlan(scope, {
         exerciseId: binding.roles.planning,
         selectedActionIds: ["block-enterprise-to-field", "block-vendor-to-field"],
@@ -244,6 +243,9 @@ describe("interactive grading change requests", () => {
       await clickBoth();
       expectRequest(["block-enterprise-to-field"]);
       expect(loadSavedRemediationPlan(scope)?.selectedActionIds).toEqual(["block-enterprise-to-field", "block-vendor-to-field"]);
+      saveRemediationPlan(scope, { exerciseId: binding.roles.planning, selectedActionIds: ["block-vendor-to-field"], savedAt: "now" });
+      await clickBoth();
+      expectRequest(); // The only saved choice is readiness-blocked.
       // Browser storage is namespaced; old revisions never become a request.
       scope.revision++;
       await clickBoth();
@@ -332,9 +334,9 @@ describe("authored description → Run → node exec", () => {
     } finally { tree.close(); }
   });
 
-  it("passes inherited and overridden sources through track commands and hints", async () => {
+  it("passes inherited and overridden sources through commands and catch-up hints", async () => {
     const exec = vi.spyOn(api, "execOnNode").mockResolvedValue({ exit_code: 0, stdout: "ok", stderr: "", duration_ms: 1 });
-    const authored = { ...scenario, nodes: ["kali-1"], steps: [{ id: "nested", title: "Nested", node: "rtu-1", description: "From the cc-1 terminal:\n:::guided\n    wget inherited\n:::\n:::hint More\nFrom eng-ws:\n    curl override\n:::" }] };
+    const authored = { ...scenario, nodes: ["kali-1"], steps: [{ id: "nested", title: "Nested", node: "rtu-1", description: "From the cc-1 terminal:\n    wget inherited\n:::hint More\nFrom eng-ws:\n    curl override\n:::" }] };
     const tree = renderStep(authored, "nested", EU);
     try {
       fireEvent.click(tree.getByRole("button", { name: "Run" }));
@@ -392,7 +394,7 @@ describe("validation is separate from self-attested progress", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const tree = render(<QueryClientProvider client={client}><ScenarioRunner scenario={{ ...scenario, validator: "state" }} onExit={() => {}} /></QueryClientProvider>);
     try {
-      fireEvent.click(tree.getByRole("button", { name: "Validate Exercise" }));
+      fireEvent.click(tree.getByRole("button", { name: "Cross-check the current system" }));
       await waitFor(() => expect(tree.container.textContent).toContain("PASS"));
       expect(tree.container.textContent).toContain("Bounded check passed");
       expect(loadProgress(scope, scenario).completedStepIds).toEqual(["first"]);

@@ -69,6 +69,21 @@ class ExtractTests(unittest.TestCase):
         self.assertTrue(any(r["command"].startswith("export config") for r in rows))
         self.assertTrue(any(r["prompt"] == "cli" for r in rows))
 
+    def test_catch_up_hint_preserves_command_sources(self):
+        from scripts.lib.lab_commands_inventory import description_commands
+        commands = description_commands(
+            "From Kali:\n"
+            ":::hint Optional catch-up — for less technical students or teams behind schedule\n"
+            "This replaces composing commands, not observations, operator check or sign-off.\n"
+            "    nmap -Pn -p 502 10.40.40.20\n"
+            "From vendor-jump:\n    dnp3poll -a 1 -t 3s 10.40.40.20:20000\n"
+            ":::\n    curl inherited")
+        self.assertEqual([(row[0], row[2], row[3]) for row in commands], [
+            ("nmap -Pn -p 502 10.40.40.20", "kali-1", "exec"),
+            ("dnp3poll -a 1 -t 3s 10.40.40.20:20000", "vendor-jump-1", "exec"),
+            ("curl inherited", "kali-1", "exec"),
+        ])
+
     def test_cli_and_continuations(self):
         commands = extract.extract_step_commands(
             "    show audit\n    exit # leave CLI\n"

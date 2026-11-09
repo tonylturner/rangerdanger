@@ -224,7 +224,7 @@
       {
         "id": "how-containd-enforces-policy",
         "title": "How containd Enforces Policy (Kernel-Level View)",
-        "sha256": "3908c4f885a33bb76aa0168bf8c8a653bebd59182bb15c2cbd055d46f031971b"
+        "sha256": "9c5fd6ec6df203d1c82ce45aa5bc679c81568b5154ae87e463640fc42d7b9464"
       }
     ],
     "id": "internals"

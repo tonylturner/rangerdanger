@@ -5,14 +5,14 @@ phases:
     same Weak exposures. Detection-only actions change no TCP verdict.
     The L4 source pin enforces; DPI detects and logs.
 
-    :::guided
+    :::hint Optional catch-up — for less technical students or teams behind schedule
+    This replaces typing rules. It does not replace your own observations, operator check or sign-off.
     Click **Apply Your Plan**, or **Apply Hardened** for the reference.
     An empty or planning-only plan is valid. It leaves Weak exposures open.
     Inspect the running rules, not just the policy banner. Execute Step checks
     the active policy without replacing it.
     :::
 
-    :::technical
     For a plan, use the compiled rule order without adding broad allows.
     The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
     On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
@@ -24,7 +24,6 @@ phases:
     After commit, run `nmap -Pn -p 3389,5900 10.20.20.10` from Kali.
     For the manual Hardened target, both ports must be `filtered`; if not,
     fix the rule and commit again. A plan uses its compiled verdict instead.
-    :::
 
     Keep the RTAC source `10.30.30.20/32` on its required field rules:
     TCP/502, TCP/20000 and TCP/8080. Preserve GPS `10.30.30.50/32` NTP/123

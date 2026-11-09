@@ -14,7 +14,6 @@ function commands(text: string, inherited?: string): Extract<Segment, { type: "c
   return splitDescription(text, inherited).flatMap((seg) => {
     if (seg.type === "cmd") return seg.cli || (seg.copyOnly && seg.sourceNode !== "host") ? [] : [seg];
     if (seg.type === "hint") return commands(seg.value, seg.sourceNode);
-    if (seg.type === "trackOnly") return commands(seg.body, seg.sourceNode);
     return [];
   });
 }

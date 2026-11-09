@@ -238,7 +238,7 @@ class EnforcementContracts(unittest.TestCase):
         self.assertIn("(RD-24)", errata)
 
 
-class AdvancedTrackContracts(unittest.TestCase):
+class RuleAuthoringContracts(unittest.TestCase):
     def test_custom_policy_authoring_checks_remote_access_after_commit(self):
         weak = json.loads((ROOT / "lab-definitions/firewall/substation-weak.json").read_text())
         rule = next(r for r in weak["firewall"]["rules"] if r["id"] == "enterprise-to-vendor")
@@ -246,8 +246,7 @@ class AdvancedTrackContracts(unittest.TestCase):
         for port in (3389, 5900):
             self.assertEqual(reference_action("10.10.10.50", "10.20.20.10", "tcp", port), "DENY")
         text = scenario("firewall-implementation")["steps"][4]["description"]
-        technical = text.split(":::technical\n", 1)[1].split("\n:::\n", 1)[0]
-        flat = " ".join(technical.split())
+        flat = " ".join(text.split())
         for phrase in ("**Restrict enterprise → vendor remote access** selected", "TCP 22, 80 and 443",
                        "With it deferred, RDP/3389 and VNC/5900 remain reachable",
                        "**Create rule** and **Delete** do not reload the firewall",

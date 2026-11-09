@@ -458,7 +458,6 @@ the active package's `id` and curriculum `revision` from
 exercise:<scenario-id>                   JSON {completedStepIds, notes, cmdLog}
 decision:<scenario-id>:<decision-id>     decision dropdown selection
 remediation-plan                         JSON {exerciseId, selectedActionIds, savedAt}
-firewall-track                           guided | technical
 ```
 
 Progress records step `id`s, never array positions, so reordering

@@ -70,14 +70,7 @@ RELEASE_HEADERS = {
 
 # Reviewed applied-plan headers replace reference-only promises. Keep exact snapshots.
 HEADER_EXCEPTIONS = {
-    "firewall-implementation": (
-        'You have identified the required flows, designed your requirements, and planned '
-        'which remediations to execute. Now you implement. You will replace the permissive '
-        'weak baseline on the containd NGFW with a least-privilege policy - applying it with '
-        'one click on the Guided track, or authoring the rules yourself on the Advanced '
-        'track. The applied plan defines which unauthorized cross-zone paths close or remain '
-        'open, while critical substation operations continue without interruption.\n'
-    ),
+    "firewall-implementation": 'You have identified the required flows, designed your requirements, and planned which remediations to execute. Now you implement. You will replace the permissive weak baseline on the containd NGFW with a least-privilege policy - authoring and committing rules in containd. Implement your approved Lab 1.4 change request. Preserve required operations and test the named sources.\n',
     "hardening-configurations": (
         'Stress-test the policy you built in Lab 2.2 against the canonical '
         'distribution-substation attack: a DNP3 Direct Operate (FC05) injection from Kali '

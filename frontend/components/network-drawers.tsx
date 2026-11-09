@@ -18,6 +18,7 @@ import {
 } from "../lib/network-console-data";
 import { zoneColors } from "../lib/zone-colors";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { CatchUp } from "./catch-up";
 import { SegmentationView } from "./segmentation-view";
 import { TrafficMatrixView } from "./traffic-matrix-view";
 import {
@@ -148,48 +149,47 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-slate-700 bg-slate-900/95 py-1 shadow-2xl backdrop-blur-sm">
-            <div className="px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
-              Select Policy
-            </div>
-            {policies.map((p) => {
-              const isActive = p.id === activeConfig;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => handleApply(p.id)}
-                  disabled={isActive || applying}
-                  className={`flex w-full items-start gap-2 px-3 py-2 text-left transition-colors ${
-                    isActive
-                      ? "bg-slate-800/60"
-                      : "hover:bg-slate-800/40"
-                  } disabled:cursor-default`}
-                >
-                  <span
-                    className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
+          <div className="absolute right-0 top-full z-50 mt-1 w-80 max-w-[90vw] rounded-lg border border-slate-700 bg-slate-900/95 py-1 shadow-2xl backdrop-blur-sm">
+            <CatchUp>
+              {policies.map((p) => {
+                const isActive = p.id === activeConfig;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => handleApply(p.id)}
+                    disabled={isActive || applying}
+                    className={`flex w-full items-start gap-2 px-3 py-2 text-left transition-colors ${
                       isActive
-                        ? isHardened(p.id) ? "bg-green-400" : "bg-red-400"
-                        : "bg-slate-600"
-                    }`}
-                  />
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-semibold text-slate-200">
-                      {p.label}
-                      {isActive && (
-                        <span className="ml-1.5 text-[9px] font-bold uppercase text-slate-500">
-                          active
-                        </span>
+                        ? "bg-slate-800/60"
+                        : "hover:bg-slate-800/40"
+                    } disabled:cursor-default`}
+                  >
+                    <span
+                      className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
+                        isActive
+                          ? isHardened(p.id) ? "bg-green-400" : "bg-red-400"
+                          : "bg-slate-600"
+                      }`}
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold text-slate-200">
+                        {p.label}
+                        {isActive && (
+                          <span className="ml-1.5 text-[9px] font-bold uppercase text-slate-500">
+                            active
+                          </span>
+                        )}
+                      </div>
+                      {p.description && (
+                        <div className="text-[10px] leading-snug text-slate-500">
+                          {p.description}
+                        </div>
                       )}
                     </div>
-                    {p.description && (
-                      <div className="text-[10px] leading-snug text-slate-500">
-                        {p.description}
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })}
+            </CatchUp>
           </div>
         </>
       )}

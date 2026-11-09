@@ -24,7 +24,7 @@ steps:
   title: Review the findings you captured
   expected_config: weak
   description: |
-    **Time budget:** ~18 minutes (Guided path).
+    **Time budget:** ~18 minutes.
 
     Review your structured passive findings, latent exposure and design verdicts before planning.
 

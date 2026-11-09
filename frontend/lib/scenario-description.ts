@@ -69,25 +69,8 @@ const FINDINGS_PANEL_OPEN_RE = /^:::findings-panel(?:\s+(.+))?$/;
 // student manually recall and re-list it.
 const PLAN_COVERAGE_OPEN_RE = /^:::plan-coverage(?:\s+(.+))?$/;
 
-// :::track-picker
-// :::
-// Renders the Guided / Technical fork picker for the firewall labs.
-// Body ignored. Writes the choice to localStorage via
-// useFirewallTrack so later steps and labs can read it.
-const TRACK_PICKER_OPEN_RE = /^:::track-picker(?:\s+(.+))?$/;
-
-// :::guided
-//   prose only shown on the guided track
-// :::
-// :::technical
-//   prose only shown on the technical track
-// :::
-// These fence content that varies between firewall-track choices.
-// When the track is null (not yet picked), both blocks render so
-// students see both perspectives. The parser captures the body and
-// the renderer in scenario-runner.tsx filters at render time.
-const GUIDED_OPEN_RE = /^:::guided$/;
-const TECHNICAL_OPEN_RE = /^:::technical$/;
+// Read saved exercise Notes without copying them into a new storage record.
+const NOTES_PANEL_OPEN_RE = /^:::notes-panel(?:\s+(.+))?$/;
 
 // :::generate-traffic-button
 // :::
@@ -140,9 +123,7 @@ export type Segment =
       type: "planCoverage";
       title: string;
     }
-  | {
-      type: "trackPicker";
-    }
+  | { type: "notesPanel"; sourceScenario: string; title: string }
   | {
       type: "generateTrafficButton";
     }
@@ -151,15 +132,6 @@ export type Segment =
       name: string;
       color: string;
       label: string;
-    }
-  | {
-      type: "trackOnly";
-      sourceNode?: string;
-      track: "guided" | "technical";
-      // Body is parsed recursively into segments by the renderer so
-      // nested commands / hints / decisions still work inside a
-      // track-conditional block.
-      body: string;
     };
 
 // Parse `id=foo options=A,B,C default-from=lab:dec correct=X` style
@@ -281,15 +253,14 @@ export function splitDescription(text: string, inheritedSource?: string): Segmen
       result.push({ type: "planCoverage", title });
       continue;
     }
-    if (TRACK_PICKER_OPEN_RE.test(trimmed)) {
+    const notesOpen = NOTES_PANEL_OPEN_RE.exec(trimmed);
+    if (notesOpen) {
       flushProse();
-      // Eat through closing :::, body ignored.
+      const { sourceScenario, title } = parseFindingsAttrs(notesOpen[1] ?? "");
       i++;
-      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
-        i++;
-      }
+      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) i++;
       if (i < lines.length) i++;
-      result.push({ type: "trackPicker" });
+      if (sourceScenario) result.push({ type: "notesPanel", sourceScenario, title });
       continue;
     }
     if (GENERATE_TRAFFIC_BTN_RE.test(trimmed)) {
@@ -314,19 +285,6 @@ export function splitDescription(text: string, inheritedSource?: string): Segmen
       }
       if (i < lines.length) i++;
       result.push({ type: "icon", name, color, label });
-      continue;
-    }
-    if (GUIDED_OPEN_RE.test(trimmed) || TECHNICAL_OPEN_RE.test(trimmed)) {
-      flushProse();
-      const track = GUIDED_OPEN_RE.test(trimmed) ? "guided" : "technical";
-      const body: string[] = [];
-      i++;
-      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
-        body.push(lines[i]);
-        i++;
-      }
-      if (i < lines.length) i++;
-      result.push({ type: "trackOnly", track, body: body.join("\n"), ...source() });
       continue;
     }
     const findingsOpen = FINDINGS_PANEL_OPEN_RE.exec(trimmed);

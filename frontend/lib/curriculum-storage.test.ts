@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  FIREWALL_TRACK,
   REMEDIATION_PLAN,
   curriculumKey,
   decisionName,
@@ -21,7 +20,6 @@ describe("curriculumKey", () => {
     expect(curriculumKey(US, exerciseName("baseline-assessment")))
       .toBe("rd:us-dnp3-substation:1:exercise:baseline-assessment");
     expect(curriculumKey(US, REMEDIATION_PLAN)).toBe("rd:us-dnp3-substation:1:remediation-plan");
-    expect(curriculumKey(US, FIREWALL_TRACK)).toBe("rd:us-dnp3-substation:1:firewall-track");
   });
 
   it("keeps decision ids verbatim so the YAML contract test catches typos", () => {
@@ -41,11 +39,10 @@ describe("curriculum storage", () => {
   });
 
   it("round-trips a value under the scoped key", () => {
-    writeCurriculum(US, FIREWALL_TRACK, "technical");
-    expect(storage.getItem("rd:us-dnp3-substation:1:firewall-track")).toBe("technical");
-    expect(readCurriculum(US, FIREWALL_TRACK)).toBe("technical");
-    removeCurriculum(US, FIREWALL_TRACK);
-    expect(readCurriculum(US, FIREWALL_TRACK)).toBeNull();
+    writeCurriculum(US, exerciseName("test"), "saved");
+    expect(readCurriculum(US, exerciseName("test"))).toBe("saved");
+    removeCurriculum(US, exerciseName("test"));
+    expect(readCurriculum(US, exerciseName("test"))).toBeNull();
   });
 
   it("isolates packages and curriculum revisions", () => {
@@ -57,10 +54,9 @@ describe("curriculum storage", () => {
   it("ignores keys written before scoping", () => {
     storage.setItem("decision:segmentation-requirements:enterprise-to-field", "BLOCK");
     storage.setItem("rd-remediation-plan", "{}");
-    storage.setItem("rangerdanger.firewall-track", "technical");
     expect(readCurriculum(US, decisionName("segmentation-requirements", "enterprise-to-field"))).toBeNull();
     expect(readCurriculum(US, REMEDIATION_PLAN)).toBeNull();
-    expect(readCurriculum(US, FIREWALL_TRACK)).toBeNull();
+    expect(readCurriculum(US, exerciseName("test"))).toBeNull();
   });
 
   it("degrades to no persistence when the browser blocks storage", () => {
@@ -70,13 +66,13 @@ describe("curriculum storage", () => {
       },
     };
     vi.stubGlobal("window", blocked);
-    expect(() => writeCurriculum(US, FIREWALL_TRACK, "guided")).not.toThrow();
-    expect(readCurriculum(US, FIREWALL_TRACK)).toBeNull();
+    expect(() => writeCurriculum(US, exerciseName("test"), "saved")).not.toThrow();
+    expect(readCurriculum(US, exerciseName("test"))).toBeNull();
   });
 
   it("reads nothing during server rendering", () => {
     vi.unstubAllGlobals();
-    expect(readCurriculum(US, FIREWALL_TRACK)).toBeNull();
+    expect(readCurriculum(US, exerciseName("test"))).toBeNull();
   });
 });
 

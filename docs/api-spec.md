@@ -144,10 +144,10 @@ The API applies the supplied index to that same active-package scenario
 
 ### Interactive policy grading
 
-Execute Step and Validate Exercise accept an optional JSON body
+Execute Step and Cross-check the current system accept an optional JSON body
 `{"changeRequest":{"packageId":"us-dnp3-substation","revision":3,"actionIds":["pin-rtac-to-field"]}}`.
-Use the active package/revision and the effective saved Lab 1.4 action IDs (an empty
-selection is valid). The server compiles these IDs; it never accepts caller verdicts
+Use the active package/revision and the effective saved Lab 1.4 action IDs (the frontend omits the request when the effective
+selection is empty, so manual work targets the full reference). The server compiles these IDs; it never accepts caller verdicts
 or tuples. Invalid package, revision or action IDs return 400, even with an applied
 plan. No body or `{}` means no request. The request is not stored.
 

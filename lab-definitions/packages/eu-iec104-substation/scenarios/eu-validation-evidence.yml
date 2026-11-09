@@ -25,6 +25,12 @@ steps:
   title: Confirm hardened config is active
   expected_config: hardened
   description: |
+    :::notes-panel from=eu-remediation-planning title="Your change request (Lab 1.4)"
+    :::
+
+    :::notes-panel from=eu-firewall-implementation title="Your implementation record (Lab 2.2)"
+    :::
+
     Confirm the intended applied plan, package revision, action IDs and running hash.
     Do not replace a partial plan with Hardened just to obtain a green result.
     Named and manual policies use Hardened expectations; their plan proof is not applicable. You are validating an existing change, not authoring a new one.
@@ -47,7 +53,7 @@ steps:
     These are your earlier evidence statuses, not current proof. Resolve missing or
     unclear items and collect fresh evidence for this policy commit.
 
-    **Time budget:** ~7 minutes for the Guided core path: continuity
+    **Time budget:** ~7 minutes for the core path: continuity
     review and reflection. Advanced manual tests, shadow comparisons and the
     instructor PCAP walk are optional depth and take extra time.
 

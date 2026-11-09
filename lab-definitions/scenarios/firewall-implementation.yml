@@ -9,11 +9,8 @@ description: >
   requirements, and planned which remediations to execute.
   Now you implement. You will replace the permissive weak
   baseline on the containd NGFW with a least-privilege policy -
-  applying it with one click on the Guided track, or authoring
-  the rules yourself on the Advanced track. The applied plan defines which
-  unauthorized cross-zone paths close or remain open,
-  while critical substation operations continue without
-  interruption.
+  authoring and committing rules in containd. Implement your approved Lab 1.4
+  change request. Preserve required operations and test the named sources.
 nodes:
   - fw-1
   - kali-1
@@ -30,6 +27,9 @@ steps:
     title: "Exercise overview"
     expected_config: weak
     description: |
+      :::notes-panel from=remediation-planning title="Your change request (Lab 1.4)"
+      :::
+
       In the Baseline Traffic Analysis, Segmentation Requirements, and Remediation Planning exercises you captured baseline traffic, designed zone-pair requirements, and selected which remediations to execute under labor budget. This exercise is where those design decisions become real firewall policy.
 
       Your prior work is summarised below - your design verdicts and findings drive the rule set you'll build in Stage 3.
@@ -55,18 +55,11 @@ steps:
 
       ### How you'll work
 
-      This lab runs **Guided by default**: you apply the policy with the
-      **Apply Your Plan** button below the step and
-      walk containd's UI and CLI to see exactly what landed - no rule syntax
-      and no commit step. Prefer to author and commit the rules yourself?
-      Switch to the **Advanced** track - recommended only if you're
-      comfortable with firewall policy syntax. The policy banner at the top
-      of every step shows what's currently running.
+      Author, review and commit your rules in containd. Read back the running
+      policy and test it from the named sources. Optional catch-up controls
+      replace rule entry, not observations, operator checks or sign-off.
 
-      :::track-picker
-      :::
-
-      **Time budget:** ~22 minutes on the Guided path (longer if you author rules yourself on Advanced). The containd firewall supports both a web UI and a CLI - use whichever you prefer.
+      **Time budget:** ~22 minutes. Use the containd web UI or CLI.
 
   - id: verify-access-to-containd
     title: "Verify access to containd"
@@ -208,11 +201,11 @@ steps:
       policy; it does not grade this review or approve the request.
       :::
 
-      :::guided
+      :::hint Optional catch-up — for less technical students or teams behind schedule
+      This replaces typing rules. It does not replace your own observations, operator check or sign-off.
       Apply Your Plan in the next step. Use Apply Hardened only for the reference.
       :::
 
-      :::technical
       Export a known-good rollback before edits. Preserve the compiled rule order.
       Deletion preserves survivor order; do not insert a deny above required operational exceptions.
       Manual policies are judged against Hardened, not saved browser selections.
@@ -233,7 +226,6 @@ steps:
       you build the candidate. In particular, deleting `ot-to-field-broad`
       without its RTAC replacements would interrupt field polling and the HMI.
       Continue directly to Phase 3 with this same shared candidate.
-      :::
   - id: phase-3-create-minimal-required-rules
     title: "Phase 3 - Create minimal required rules"
     expected_config: hardened
@@ -243,14 +235,14 @@ steps:
       same Weak exposures. Detection-only actions change no TCP verdict.
       The L4 source pin enforces; DPI detects and logs.
 
-      :::guided
+      :::hint Optional catch-up — for less technical students or teams behind schedule
+      This replaces typing rules. It does not replace your own observations, operator check or sign-off.
       Click **Apply Your Plan**, or **Apply Hardened** for the reference.
       An empty or planning-only plan is valid. It leaves Weak exposures open.
       Inspect the running rules, not just the policy banner. Execute Step checks
       the active policy without replacing it.
       :::
 
-      :::technical
       For a plan, use the compiled rule order without adding broad allows.
       The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
       On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
@@ -280,7 +272,6 @@ steps:
       After commit, run `nmap -Pn -p 3389,5900 10.20.20.10` from Kali.
       For the manual Hardened target, both ports must be `filtered`; if not,
       fix the rule and commit again. A plan uses its compiled verdict instead.
-      :::
 
       Keep the RTAC source `10.30.30.20/32` on its required field rules:
       TCP/502, TCP/20000 and TCP/8080. Preserve GPS `10.30.30.50/32` NTP/123

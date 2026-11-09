@@ -13,14 +13,13 @@ phases:
     | Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |
     | Engineering→PLC web | 10.20.20.20→10.30.30.30 | TCP/8080 |
 
-    :::guided
+    :::hint Optional catch-up — for less technical students or teams behind schedule
+    This replaces typing rules. It does not replace your own observations, operator check or sign-off.
     Apply Your Plan to exercise funded controls, or Apply Hardened to load the reference. Inspect residual gaps. Review the generated table, not just a green banner.
     :::
 
-    :::technical
     Author these six intents with source and destination pins in containd. Keep historian read 8080 separate from CC ingest 8081. Engineering PLC web is 10.20.20.20 only. Do not grant the vendor zone field control or enterprise access to RTU. The first matching enforcing terminal rule decides; monitor rules never decide. Put the CC allow before `deny-unauthorized-iec104`, RTU and PLC Modbus allows before `deny-unauthorized-modbus`, CC ingest before `deny-unauthorized-historian-ingest`, and engineering web before `deny-unauthorized-plc-web`. If recreating the CC allow, insert or move it before its deny. Review configured order and shadow warnings before commit, then inspect running order. Commit, then read back running configuration.
     On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
-    :::
 
     :::hint No semantic enforcement claim
     Keep the six L4 allows and four diagnostic denies unchanged. Hardened adds `observe-cc-breaker-command`, `observe-cc-oltc-step` and `observe-cc-oltc-raise-only` as separate IEC 104 rules, each explicitly `mode: monitor`; Apply Your Plan adds them only when **Monitor IEC 104 commands** is selected. Never overlay a monitor predicate on an operational allow. Monitor ALLOW does not admit traffic and monitor DENY does not deny it. The L4 source pin enforces; DPI detects and logs. Monitoring never satisfies a BLOCK requirement; Modbus DPI remains planning-only.

@@ -27,7 +27,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { loadRemediationPlan, saveEmptyRemediationPlanIfMissing } from "../lib/remediation-plan";
-import { useFirewallTrack } from "../lib/use-firewall-track";
+import { CatchUp } from "./catch-up";
 import { useCompiledPlan } from "../lib/use-compiled-plan";
 import { ApplyPlanButton } from "./apply-plan-button";
 import { CompiledPlanSummary } from "./compiled-plan-summary";
@@ -92,10 +92,6 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const feederWaiting = !state && isRangeNotReady(stateQuery.error);
   const activeFirewall = useActiveFirewall(3000).data;
   const activeConfig = activeFirewall?.active_config ?? null;
-  // Firewall-track choice (guided | technical | null). Read here so
-  // both the description renderer (for trackOnly segments) and the
-  // side panel (for chip + button de-emphasis) share one source.
-  const { track: firewallTrack, setTrack: setFirewallTrack } = useFirewallTrack();
   // policySource tracks how the active policy got applied - needed by
   // PolicyStatusBanner to distinguish "Your custom policy (Lab 1.4
   // plan)" from "(your containd commit)". Survives page reloads
@@ -277,7 +273,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
   const changeRequest = () => {
     const plan = hasPolicyActions ? loadRemediationPlan(scope) : null;
-    return plan ? { packageId: scope.packageId, revision: scope.revision, actionIds: plan.selectedActionIds } : undefined;
+    return plan?.selectedActionIds.length ? { packageId: scope.packageId, revision: scope.revision, actionIds: plan.selectedActionIds } : undefined;
   };
 
   const handleValidate = async () => {
@@ -521,28 +517,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     {executing ? "Executing..." : "Execute Step"}
                   </button>
                 )}
-                {!stepDone && (() => {
-                  // No force-pick: Lab 2.2 defaults to the Guided track
-                  // (see useFirewallTrack), so step 1 advances freely.
-                  // Students switch to Advanced from the picker / side
-                  // panel anytime; the choice persists to curriculum storage
-                  // so later firewall labs inherit it.
-                  const trackGate = false;
-                  return (
-                    <button
-                      onClick={() => markStepDone(currentStep)}
-                      disabled={trackGate}
-                      title={trackGate ? "Pick a track above to continue." : undefined}
-                      className={
-                        trackGate
-                          ? "cursor-not-allowed rounded-sm border border-slate-700 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
-                          : "rounded-sm border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/50"
-                      }
-                    >
-                      Mark Complete
-                    </button>
-                  );
-                })()}
+                {!stepDone && (
+                  <button onClick={() => markStepDone(currentStep)} className="rounded-sm border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/50">
+                    Mark Complete
+                  </button>
+                )}
               </div>
             </div>
             {/* PolicyStatusBanner: sticky-at-top per-step indicator of
@@ -560,37 +539,6 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               expectedConfig={step?.expected_config}
               policies={packagePolicies}
             />
-            {/* Per-step track chip: on the firewall labs (after the
-                picker on 2.2 step 1), show which path the student is on
-                and let them switch inline without hunting for the side
-                panel. */}
-            {hasPolicyActions &&
-              !(scenario.id === binding?.roles.implementation && currentStep === 0) && (
-              <div className="mb-3 flex items-center gap-2 text-[10px]">
-                <span className="font-medium uppercase tracking-wider text-slate-500">
-                  Track
-                </span>
-                <span
-                  className={`rounded px-2 py-0.5 font-bold uppercase tracking-wider ${
-                    firewallTrack === "technical"
-                      ? "bg-sky-950/60 text-sky-300"
-                      : "bg-emerald-950/60 text-emerald-300"
-                  }`}
-                >
-                  {firewallTrack === "technical" ? "Advanced" : "Guided"}
-                </span>
-                <button
-                  onClick={() =>
-                    setFirewallTrack(
-                      firewallTrack === "technical" ? "guided" : "technical",
-                    )
-                  }
-                  className="text-slate-500 underline transition-colors hover:text-slate-300"
-                >
-                  switch to {firewallTrack === "technical" ? "Guided" : "Advanced"}
-                </button>
-              </div>
-            )}
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
             {scenario.id === binding?.roles.implementation && dynamicPlan &&
               step && binding?.dynamicSteps[step.id] === "rules" && (
@@ -608,7 +556,6 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 stepDescription={step.description}
                 dynamicPlan={dynamicPlan}
                 exerciseNodes={exerciseNodes}
-                firewallTrack={firewallTrack}
                 autoRunning={autoRunning}
                 handleAutoRun={handleAutoRun}
                 handleGenerateTraffic={handleGenerateTraffic}
@@ -704,51 +651,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   hidden in the planning labs (1.2 / 1.3 / 1.4) since
                   their steps don't actually drive policy state. */}
               {hasPolicyActions && (
-                <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="text-[9px] font-medium uppercase tracking-wider text-slate-500">
-                      containd NGFW - policy actions
-                    </div>
-                    {firewallTrack && (
-                      <div className="flex items-center gap-1.5 text-[9px]">
-                        <span
-                          className={`rounded px-1.5 py-0.5 font-bold uppercase tracking-wider ${
-                            firewallTrack === "guided"
-                              ? "bg-emerald-950/60 text-emerald-300"
-                              : "bg-sky-950/60 text-sky-300"
-                          }`}
-                        >
-                          {firewallTrack === "technical" ? "Advanced" : "Guided"}
-                        </span>
-                        <button
-                          onClick={() =>
-                            setFirewallTrack(
-                              firewallTrack === "guided" ? "technical" : "guided",
-                            )
-                          }
-                          className="text-slate-500 underline hover:text-slate-300"
-                        >
-                          switch
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {firewallTrack === "technical" && (
-                    <div className="mb-2 text-[10px] italic text-slate-500">
-                      Advanced track - commit your policy in containd directly.
-                      Buttons below are a guided fallback.
-                    </div>
-                  )}
+                <CatchUp>
                   <div className="flex flex-wrap gap-2">
                     {/* Apply Hardened: load the canned reference. */}
                     {activeConfig !== "improved" && (
                       <button
                         onClick={async () => { await applyFirewallConfig("improved"); void refreshLive(); }}
-                        className={
-                          firewallTrack === "technical"
-                            ? "rounded-sm border border-emerald-900/40 bg-emerald-950/20 px-1.5 py-0.5 text-[9px] text-emerald-400/70 hover:bg-emerald-900/40"
-                            : "rounded-sm border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50"
-                        }
+                        className="rounded-sm border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50"
                       >
                         Apply Hardened
                       </button>
@@ -762,17 +671,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     {activeConfig !== "weak" && activeConfig && (
                       <button
                         onClick={async () => { await applyFirewallConfig("weak"); void refreshLive(); }}
-                        className={
-                          firewallTrack === "technical"
-                            ? "rounded-sm border border-rose-900/40 bg-rose-950/20 px-1.5 py-0.5 text-[9px] text-rose-400/70 hover:bg-rose-900/40"
-                            : "rounded-sm border border-rose-800 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-900/50"
-                        }
+                        className="rounded-sm border border-rose-800 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-900/50"
                       >
                         Reset to Weak
                       </button>
                     )}
                   </div>
-                </div>
+                </CatchUp>
               )}
 
               {/* Operational status: the US feeder from the RTAC, or the
@@ -835,13 +740,14 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               state (see showsValidateButton). Hidden on planning/analysis
               labs where the validator can only report "lab is healthy". */}
           {showValidate && (
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="w-full text-xs text-slate-400">Checks the running system against your change request (or the full reference if none). It does not grade your written test plan or test record.</p>
             <button
               onClick={handleValidate}
               disabled={validating}
               className="rounded-sm border border-sky-700 bg-sky-950/40 px-4 py-2 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-900/50 disabled:opacity-50"
             >
-              {validating ? "Validating..." : "Validate Exercise"}
+              {validating ? "Validating..." : "Cross-check the current system"}
             </button>
             {validation && (
               <span className={`text-sm font-bold ${
