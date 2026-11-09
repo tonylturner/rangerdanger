@@ -49,6 +49,7 @@ describe("authored command routing inventory", () => {
           "eu-firewall-implementation.yml/phase-4-enable-logging-and-visibility: wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect [rtu-1 → cc-1]",
           "eu-firewall-implementation.yml/test-positive: curl -fsS --max-time 3 http://10.70.70.40:8080/api/points [rtu-1 → kali-1]",
           "eu-firewall-implementation.yml/test-positive: curl -fsS --max-time 3 http://10.30.30.30:8080/login [rtu-1 → eng-ws-1]",
+          "eu-hardening-configurations.yml/validate: wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect [rtu-1 → cc-1]",
           "eu-validation-evidence.yml/generate-the-validation-report: curl -fsS --max-time 3 http://10.70.70.40:8080/api/points [rtu-1 → kali-1]",
           "eu-validation-evidence.yml/generate-the-validation-report: curl -fsS --max-time 3 http://10.30.30.30:8080/login [rtu-1 → eng-ws-1]",
           "eu-validation-evidence.yml/generate-the-validation-report: nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4 [rtu-1 → kali-1]",

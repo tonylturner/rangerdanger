@@ -338,7 +338,10 @@ class ActionContracts(unittest.TestCase):
                     step["description"],
                     r"(?i)Execute Step.{0,100}(?:applies|loads|replaces)",
                 )
-                if step_id != "implement-rules":
+                if step_id == "apply-the-hardened-policy":
+                    for phrase in ("without replacing it", "running identity", "full diff", "read back"):
+                        self.assertIn(phrase, step["description"])
+                elif step_id != "implement-rules":
                     self.assertIn("Execute Step checks the active policy without replacing it", step["description"])
                     self.assertIn("recorded identity must match", step["description"])
                     self.assertIn("applied plan must retain matching provenance", step["description"])

@@ -119,35 +119,34 @@ steps:
     - device: breaker
       command: reset
 - id: apply-the-hardened-policy
-  title: Apply the hardened policy
+  title: "Confirm the reviewed boundary before retesting"
   expected_config: hardened
   description: |
-    Apply your hardened boundary before retesting.
+    Use the reviewed rules from Lab 2.2. Compare the running policy with your
+    Lab 1.4 change request. If it differs, export the running rules first.
+    Stage the approved removals and replacements together in containd. Review
+    the full diff and first-match order, commit once, then read back the rules.
+    Keep the management path and required operating conduits. Record the
+    commit time and running identity. Do not widen the approved scope just
+    to obtain a green result. Without a saved request, use the full Hardened reference.
+    The current-system check reads the policy without replacing it.
 
     :::hint Optional catch-up — for less technical students or teams behind schedule
     This replaces typing rules. It does not replace your own observations, operator check or sign-off.
-    Apply Your Plan to test the choices from Lab 1.4. Use Apply Hardened only for
-    the full reference.
-    :::
-    Apply your policy before using Execute Step. Execute Step checks the active policy without replacing it; its recorded identity must match, and an applied plan must retain matching provenance.
-
-    Recommit your Lab 2.2 named-source policy. Only CC 10.60.60.20 may initiate RTU TCP/2404. Preserve six operational intents, deny new foreign sources and inspect the running rules. A plan that defers enterprise-to-station closure may still expose this attack.
-
-    **Block enterprise → station RTU access** owns the Kali→RTU TCP/2404 path. If
-    selected, expect denial. If deferred, the Weak exposure stays open and the
-    breaker command can still land. **Monitor IEC 104 commands** adds explicit
-    monitor rules on the allowed CC conduit, not foreign-source prevention;
-    logging changes no rule.
-    The L4 source pin enforces; DPI detects and logs. A would-deny match is not
-    a denied command, and monitoring never satisfies a BLOCK requirement.
-
-    :::plan-coverage title="Your plan vs the attack"
+    Apply Your Plan for the approved Lab 1.4 scope. Apply Hardened only when
+    you intend to test the full reference. Read back what is running.
     :::
 
-    :::hint Live boundary and residual risk
-    L4 restricts foreign sources. It does not authorize commands on an allowed
-    CC session. Keep trusted-controller and same-subnet risks explicit.
-    :::
+    **Block enterprise → station RTU access** owns Kali→RTU TCP/2404.
+    If selected, expect timeout. If deferred, the breaker command can still land.
+    The full reference admits only CC 10.60.60.20 to RTU TCP/2404 and preserves
+    six operational intents. Compare a partial request with its approved exceptions.
+    **Monitor IEC 104 commands** adds explicit monitor rules on the allowed CC
+    conduit. A would-deny match is not a denied command. Monitoring never
+    satisfies a BLOCK requirement. Keep trusted-controller and same-subnet risks
+    explicit; an allowed CC session is not command authorization.
+
+    The L4 source pin enforces; DPI detects and logs.
   action:
     type: check
     expect:
@@ -164,8 +163,7 @@ steps:
     With **Block enterprise → station RTU access** selected, expect a connection
     timeout; the breaker stays closed and supply remains. With it deferred, the command
     still opens the breaker and removes supply. Record physical truth and fresh
-    CC feedback. The deferred result can pass plan proof but leaves a Hardened
-    prevention gap. An acknowledgement alone is not the physical outcome.
+    CC feedback. The deferred result leaves an exposure. Record it against the approved scope. An acknowledgement alone is not the physical outcome.
 
     :::decision id=retest-hmi-state options="NORMAL_OPS,LOSS_OF_SUPPLY,UNCHANGED_FROM_ATTACK"
     What did the feeder show for this applied plan?
@@ -191,7 +189,7 @@ steps:
     Required CC→RTU link, GI and supply checks do not depend on the selected plan.
 
     :::hint Preserve both claims
-    A deferred command can match plan proof while failing Hardened acceptance.
+    A deferred closure leaves the command path open. Record the risk and its owner.
     Neither TCP reachability nor a logged event establishes command authorization
     on an allowed CC session. Restore supply and fresh observations in all cases.
     :::
@@ -204,18 +202,39 @@ steps:
       breaker_closed: true
       supply_present: true
 - id: validate
-  title: Validate
+  title: "Read fresh CC points and record the result"
   expected_config: hardened
   description: |
-    Before Validate, force a fresh CC connection with `POST /api/operator/reconnect` (no body; see [operator API](/knowledge#eu-rtu-control-centre-apis)). Wait for `link.since` strictly later than the policy commit, matched GI completion on that connection and every inventory point non-null and valid received since GI start. Post-commit delivery on an existing connection tests the current policy, but this separate fresh-link check proves handshake admission and DPI inspection from SYN. If the link stays down, compare Network Map and the logged CC→RTU TCP/2404 deny in Live DPI Events; restore the missing CC allow, not the breaker.
+    Force a fresh CC connection after the policy commit. From cc-1 terminal:
 
-    Run Validate with the intended applied plan or reference active. It also requires restored breaker and fresh section supply, active strict foreign-source negative probes and absence of foreign breaker operations only when this plan denies
-    the Kali→RTU path. When it allows that path, retain the visible command
-    consequence instead. Missing evidence is not a pass. A physically supplied feeder with stale CC points fails visibility, not supply.
+        wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect
 
-    :::hint What this certifies
-    PASS checks the current sampled plan verdicts, restored breaker/supply and post-commit CC visibility. Bounded absence of foreign breaker operations is required only for a plan that denies that source. It does not certify that you performed the earlier attack/restoration sequence, command-aware filtering on an allowed session, all possible paths or regulatory compliance. IEC 104 monitor matches are separate observation evidence, not command denials; Modbus DPI remains planning-only. Keep the trusted-controller residual risk in your handover to [Lab 2.4](/exercises/eu-validation-evidence).
-    :::
+    This is the documented `POST /api/operator/reconnect` operation through the
+    CC service (no body; see [operator API](/knowledge#eu-rtu-control-centre-apis)).
+    Wait for `link.since` strictly later than the policy commit and matched GI
+    completion on that connection. In Control Centre, select **Interrogate station**.
+    Require every inventory point non-null and valid received since GI start.
+    Record the UTC window, point values, quality and running policy identity.
+    Do not run a second IEC 104 client from cc-1; watch the real CC connection.
+    Fresh-link admission starts at SYN; new points on an old connection alone
+    do not show that a new connection can be admitted.
+
+    Check breaker closed and fresh section supply in the operator view. A
+    physically supplied feeder with stale CC points fails visibility, not supply.
+    If the CC link stays down, inspect the running CC allow before changing plant
+    state. Restore supply and fresh observations for every approved scope.
+
+    | UTC / source | Point / value / quality | Link since / GI window | Supply / alarms | Running policy identity | Tester / operator |
+    |---|---|---|---|---|---|
+    | | | | | | |
+
+    Record the attack and retest outcomes separately. Name remaining exposures
+    and their risk owners. The optional current-system cross-check samples the
+    current policy, breaker, supply and CC visibility. It does not sign this
+    record or certify the earlier restoration, command authorization on an
+    allowed session, all possible paths or regulatory compliance. Keep the
+    readings for Lab 2.4. IEC 104 monitoring is observation, not denial;
+    Modbus DPI remains planning-only.
   action:
     type: check
     expect:

@@ -41,7 +41,7 @@
       "SKIP": 6
     },
     "hardening-configurations": {
-      "RUN": 14,
+      "RUN": 15,
       "SKIP": 0
     },
     "remediation-planning": {
@@ -61,7 +61,7 @@
       "SKIP": 3
     }
   },
-  "minimum_executed": 79,
+  "minimum_executed": 80,
   "commands": {
     "baseline-assessment|3|tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'|1": {
       "container": "rangerdanger-firewall",
@@ -1147,6 +1147,18 @@
       "action": "SKIP",
       "reason": "Interactive desktop/login example; requires a human terminal and is copy-only in the UI.",
       "oracle": null
+    },
+    "hardening-configurations|6|mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
     }
   }
 }

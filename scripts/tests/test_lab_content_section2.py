@@ -171,7 +171,7 @@ class EnforcementContracts(unittest.TestCase):
         validate = self.flat(steps[5]["description"])
         for phrase in ("Restoration is common to every plan", "voltage normal and loads energized",
                        "Audit history can include earlier Weak-policy writes", "do not clear history",
-                       "21-row matrix, capture and stable-hash evidence"):
+                       "Device / point", "Running policy identity / commit", "does not sign this record"):
             self.assertIn(phrase, validate)
 
     def test_no_independent_dpi_overclaim_remains(self):
