@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { compilePlan, applyPlan } from "./api";
 import { ALL_PLANS, EU_PLANS, US_PLANS } from "./plan-fixtures.test-util";
