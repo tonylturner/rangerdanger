@@ -350,6 +350,21 @@ class ActionContracts(unittest.TestCase):
         self.assertNotRegex(step["description"], r"`[a-z]+-[a-z-]+`")
         self.assertNotIn("Selection order does not set rule order", step["description"])
 
+    def test_change_request_deliverable_matches_in_both_packages(self):
+        us = scenario("remediation-planning")
+        eu = yaml.safe_load((ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios/eu-remediation-planning.yml").read_text())
+        self.assertEqual(us["steps"][-1]["description"], eu["steps"][-1]["description"])
+        for doc in (us, eu):
+            text = "\n".join(step["description"] for step in doc["steps"])
+            self.assertNotIn("Apply Your Plan", text)
+            self.assertIn("change-request scope", text)
+            for field in ("Change ID", "Findings and approved scope", "Rule changes", "Order | Source host/zone",
+                          "Roles and labor hours", "Dependencies", "Maintenance window", "Pre-change running export",
+                          "review full diff", "single commit", "Positive acceptance tests", "Negative acceptance tests",
+                          "Abort / rollback triggers", "Rollback owner", "Restore steps", "named risk owner",
+                          "Requester:", "Implementer:", "OT reviewer", "Security reviewer", "Approver"):
+                self.assertIn(field, doc["steps"][-1]["description"])
+
     def test_frozen_runner_action_accounting(self):
         # evaluateTestStep auto-passes missing actions and decisions only.
         expected = {

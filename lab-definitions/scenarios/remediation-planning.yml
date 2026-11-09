@@ -1,14 +1,11 @@
 id: remediation-planning
 order: "1.4"
 name: "Remediation Planning Under Constraint"
-summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
+summary: "Review findings, fund the scope and write an approved change request with tests and rollback."
 estimated_minutes: 12
 validator: us-remediation-planning
 description: >
-  You have findings from the baseline assessment but not unlimited time, people,
-  or political capital. Pick which remediations to execute this quarter - knowing
-  some attack paths stay open because you can't fix everything at once.
-  Apply Your Plan compiles your selections. Deferred controls leave their Weak exposures open.
+  Write a change request for the substation firewall. Use the findings, required conduits and available roles to agree what to change now. Name an owner for every deferred exposure.
 nodes: []
 tags:
   - planning
@@ -78,7 +75,7 @@ steps:
 
       Actions require one or more roles simultaneously. If a role is assigned more work than its capacity, that team is overloaded even if the total 500-hour budget still has room. An action's effort is split evenly across its required roles; for example, an 80h DNP3 DPI action shared by three roles is about 27h per role after rounding.
 
-      Lab 1.3 readiness can reduce caps, increase action effort or block actions with unmet dependencies. **Use default budget** restores the unconstrained model. Blocked saved choices stay recorded but are excluded from draft totals, coverage and Apply Your Plan; already-applied provenance is unchanged.
+      Lab 1.3 readiness can reduce caps, increase action effort or block actions with unmet dependencies. **Use default budget** restores the unconstrained model. Blocked choices stay saved but are excluded from the scope and budget totals. Resolve their dependencies before scheduling them.
 
       Watch the role utilization bars as you select actions. A role in red is over capacity. This is a warning, not an apply limit.
 
@@ -88,41 +85,73 @@ steps:
   - id: choose-your-remediation-plan
     title: "Choose your remediation plan"
     description: |
-      Select a defensible subset in the planner. Some actions change L4 reachability; others add detection or remain planning-only.
+      Select a defensible subset in the planner. Some actions change L4
+      reachability; others add detection or remain planning-only.
 
-      The L4 source pin enforces; DPI detects and logs.
+      The L4 source pin enforces; DPI detects and logs. Monitoring never satisfies
+      a BLOCK requirement. Planning-only actions do not change the firewall.
 
-      Planning-only actions do not change the running firewall.
+      Read each action's **why** and link it to a finding. Check Remaining hours,
+      role utilization and readiness. Your selections save automatically. They
+      set the change-request scope used to cross-check your hand-written policy
+      in Lab 2.2. Keep the written request and the selection in agreement.
 
-      Partial plans are valid. An empty or planning-only plan compiles to Weak exposures. Required RTAC, HMI and NTP operations remain in every plan.
+      Partial plans are valid. Deferred controls leave their Weak exposures open;
+      name the risk and its owner. Required operations cannot be deferred.
+      If no eligible actions are selected, there is no change request for the
+      system cross-check: it uses the full Hardened reference instead.
+      Selecting only detection or planning work does not close an exposure.
 
-      Before choosing, read each action's **why** and connect it to a finding.
+      Selection does not change the running firewall. Write the implementation,
+      tests and rollback in the next step before seeking approval.
 
-      Selection alone does not apply changes: test your saved choices with Apply Your Plan in Lab 2.2.
-      After selecting actions, review Remaining hours and role utilization. Selections save automatically; click **Mark Complete** to continue to the reflection.
-
-      :::hint Optional depth
-      Confirm the site test owner and operational window before scheduling policy changes.
-      :::
     action:
       type: decision
 
   - id: reflect-what-are-you-accepting
-    title: "Reflect - what are you accepting?"
+    title: "Write and approve the change request"
     description: |
       :::plan-coverage title="Coverage of your design"
       :::
 
-      For discussion:
+      ### Write the change request
 
-      1. Which findings do the funded actions address, and what stays open?
-      2. What did you defer, why, and who accepts the residual risk?
-      3. Which role or readiness constraint binds, and what test shows the work is done?
+      Copy this template into **Notes**. Fill it in with your partner. Use names,
+      addresses and expected results, not just action titles. Check that the
+      approved scope agrees with your saved selections. Do not approve a change
+      that removes required operations or firewall management access.
 
-      Your action selections and design verdicts carry forward as structured inputs. Applying a plan and validating the running policy happen in later labs.
+          Change ID / site:
+          Findings and approved scope:
+          Rule changes (one row per change):
+            Order | Source host/zone | Destination host/zone | Service | Allow/deny | Reason
+          Roles and labor hours:
+          Dependencies and readiness limits:
+          Maintenance window (UTC start/end):
+          Sequence and operator hold points:
+          Pre-change running export / identity / retained location:
+          Cut-in: stage deletes and replacements → review full diff → single commit → read back
+          Positive acceptance tests:
+            Test ID | Source host/zone | Destination | Service | Expected response
+          Negative acceptance tests:
+            Test ID | Source host/zone | Destination | Service | Expected result
+          Abort / rollback triggers:
+          Rollback owner and authority:
+          Restore steps: re-stage previous rules from the export, review, commit, read back, retest
+          Deferred exposures / reason / residual risk / named risk owner:
+          Requester:
+          Implementer:
+          OT reviewer / operator:
+          Security reviewer:
+          Approver / date:
 
-      Labs 2.3 and 2.4 judge the applied plan against its expected results, with Hardened as the comparison. A saved selection is not running-state evidence; test after applying it.
+      Agree rollback triggers before the window. Include lost required traffic,
+      unexpected prohibited access, lost management and degraded operator data.
+      The export is your record and diff reference. Restore by re-staging its
+      previous rules and committing them; do not assume an import command exists.
 
-      :::hint Optional depth
-      Coverage reports what a plan targets; it is not evidence that live validation has passed.
-      :::
+      Ask the OT reviewer to check the operating sequence and acceptance tests.
+      Ask the security reviewer to check the source boundaries and deferred risk.
+      Obtain approval before Lab 2.2. There you implement this request by hand.
+      Lab 2.4 adds the test record and operator sign-off. Planned coverage is not
+      evidence of a running change.

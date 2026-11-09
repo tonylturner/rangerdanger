@@ -82,12 +82,7 @@ HEADER_EXCEPTIONS = {
         'enforcement by device state, not by policy labels. Optional Modbus FC5/FC6 cases '
         'follow the same owning action.\n'
     ),
-    "remediation-planning": (
-        'You have findings from the baseline assessment but not unlimited time, people, or '
-        'political capital. Pick which remediations to execute this quarter - knowing some '
-        "attack paths stay open because you can't fix everything at once. Apply Your Plan "
-        'compiles your selections. Deferred controls leave their Weak exposures open.\n'
-    ),
+    "remediation-planning": 'Write a change request for the substation firewall. Use the findings, required conduits and available roles to agree what to change now. Name an owner for every deferred exposure.\n',
     "validation-evidence": (
         'After applying your plan or the Hardened reference in Lab 2.2 and stress-testing it '
         'in Lab 2.3, this exercise builds the formal evidence package: positive tests '
