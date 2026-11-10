@@ -9,32 +9,32 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ContaindReleaseDocsTests(unittest.TestCase):
-    def test_current_install_and_staging_commands_select_v023(self):
+    def test_current_install_and_staging_commands_select_v024(self):
         for path in ("README.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
             text = (ROOT / path).read_text()
             with self.subTest(path=path):
-                self.assertIn("v0.2.3", text)
-                self.assertIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.3", text)
-                self.assertNotIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.2", text)
+                self.assertIn("v0.2.4", text)
+                self.assertIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.4", text)
+                self.assertNotIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.3", text)
                 self.assertNotRegex(text, r"(?:--version|-Version) v0\.2\.0\b")
                 self.assertNotIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0", text)
         for path in ("README.md", "docs/quickstart.md"):
             text = (ROOT / path).read_text()
             with self.subTest(path=path):
-                self.assertIn("./setup.sh --version v0.2.3", text)
-                self.assertIn(r".\setup.ps1 -Version v0.2.3", text)
-                self.assertNotIn("./setup.sh --version v0.2.2", text)
-                self.assertNotIn(r".\setup.ps1 -Version v0.2.2", text)
+                self.assertIn("./setup.sh --version v0.2.4", text)
+                self.assertIn(r".\setup.ps1 -Version v0.2.4", text)
+                self.assertNotIn("./setup.sh --version v0.2.3", text)
+                self.assertNotIn(r".\setup.ps1 -Version v0.2.3", text)
         for path in ("README.md", "docs/v0.1.36-hotfix.md"):
-            self.assertIn("quickstart.md#upgrading-to-v023", (ROOT / path).read_text())
+            self.assertIn("quickstart.md#upgrading-to-v024", (ROOT / path).read_text())
 
-    def test_v023_upgrade_from_v022_has_no_migration_but_older_backup_still_applies(self):
+    def test_v024_upgrade_from_v023_has_no_migration_but_older_backup_still_applies(self):
         text = " ".join((ROOT / "docs/quickstart.md").read_text().split())
         current, history = text.split("## Upgrading to v0.2.0", 1)
-        for phrase in ("## Upgrading to v0.2.3", "v0.2.2 → v0.2.3",
+        for phrase in ("## Upgrading to v0.2.4", "v0.2.3 → v0.2.4",
                        "does not require a firewall-data migration",
-                       "same no-migration guidance applies to v0.2.1",
-                       "git fetch origin tag v0.2.3", "git checkout --detach v0.2.3",
+                       "same no-migration guidance applies to v0.2.2 and v0.2.1",
+                       "git fetch origin tag v0.2.4", "git checkout --detach v0.2.4",
                        "A direct upgrade from v0.2.0 or older data not yet migrated",
                        "requires containd 0.1.41 or later", "containd:latest",
                        "tested on 0.1.42",
@@ -44,8 +44,11 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                        "main/docs/mkdocs/update-policy.md",
                        "main/docs/mkdocs/config-format.md",
                        "./scripts/dev-down.sh", r".\scripts\dev-down.ps1",
-                       "release workflow promotes eligible unchanged images",
-                       "SSD delta carries only the images this release rebuilt"):
+                       "All 20 first-party images are rebuilt from refreshed bases",
+                       "with `[rebuild-all]`; none are reused from the previous release",
+                       "SSD delta carries the full first-party image set",
+                       "Budget disk space and image-import time accordingly",
+                       "a fresh full SSD bundle is simpler"):
             self.assertIn(phrase, current)
         for phrase in ("v0.1.x", "rebuilt all 20 first-party images",
                        "minimum was 0.1.37", "one-way to 0.1.10",
@@ -55,20 +58,37 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         self.assertNotIn("git checkout --detach v0.2.0", text)
         self.assertNotIn("the tag carries `[rebuild-all]`", text)
 
-    def test_v023_delta_examples_describe_promoted_images_and_optional_containd(self):
+    def test_v024_upgrade_warns_about_revision_scoped_state_and_api_cutover(self):
+        text = " ".join((ROOT / "docs/quickstart.md").read_text().split())
+        for phrase in ("US curriculum revision 4 and EU revision 8",
+                       "fresh browser state",
+                       "remain in browser storage but are not loaded or migrated",
+                       "write a new Lab 1.4 change request",
+                       "`GET /api/scenarios/:id/validate` to `POST /api/scenarios/:id/validate`",
+                       "optional `changeRequest`",
+                       "`POST /api/firewall/validation-report` endpoint is removed"):
+            self.assertIn(phrase, text)
+
+    def test_v024_delta_examples_describe_full_rebuild_and_optional_containd(self):
         text = (ROOT / "docs/workshop-ssd.md").read_text()
         with_containd = (
-            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.3 v0.2.2 v0.2.3 \\\n"
+            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.4 v0.2.3 v0.2.4 \\\n"
             "  --include-upstream --include containd"
         )
         self.assertEqual(text.count(with_containd), 1)
         self.assertEqual(text.count(
-            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.3 v0.2.2 v0.2.3"
+            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.4 v0.2.3 v0.2.4"
         ), 2)
-        self.assertIn("v0.2.0 → v0.2.3, a fresh full\nstorage backup is still required", text)
-        self.assertIn("promotes images whose inputs are unchanged from v0.2.2", text)
-        self.assertIn("images this release rebuilt", text)
-        self.assertNotIn("rebuilds all 20 first-party images", text)
+        self.assertIn("v0.2.0 → v0.2.4, a fresh full\nstorage backup is still required", text)
+        for phrase in ("rebuilds all 20 first-party images from refreshed bases",
+                       "`[rebuild-all]`", "none are reused from the previous release",
+                       "compares registry manifest digests",
+                       "delta carries the full\nfirst-party image set",
+                       "Budget disk space and image-import time accordingly",
+                       "Unchanged upstream images are not automatically included"):
+            self.assertIn(phrase, text)
+        self.assertNotIn("promotes images whose inputs are unchanged", text)
+        self.assertNotIn("carries only the images this release rebuilt", text)
         self.assertIn("A fresh full bundle\nis simpler.", text)
         self.assertNotIn("This is a future-version example", text)
 
