@@ -416,6 +416,11 @@ steps:
   expected_config: hardened
   node: kali-1
   description: |
+    Before retesting, start the bounded fw-1 boundary capture described in
+    Lab 2.4's baseline step. For each expected deny retain the source-zone SYN
+    and checked absence on the destination-zone interface, in the same UTC
+    window as the host timeout and the rule event below.
+
     Test new unauthorized connections from each real source terminal: Kali→RTU:2404, Kali→all field:502, vendor→all field:502, eng-ws→all field:502, enterprise→PLC:8080 and Kali→vendor:3389/5900. Expect timeout for a selected closure, but reachable for an approved deferral.
     Use your change request, not the policy label, to set each expected result.
     If no eligible action is selected, use the full Hardened reference.
@@ -449,6 +454,20 @@ steps:
     Lab 2.4. TCP reachability does not establish command filtering.
     Write actual results in Notes. An optional system cross-check does not grade
     your written test plan or sign the test record.
+
+    For every negative row, correlate the named host's connect timeout with a
+    fw-1 DENY event and the boundary capture in the same UTC window. In the
+    fw-1 containd configuration CLI (type `containd cli` if in Linux), type:
+
+        show events
+
+    Match `KIND=firewall.rule.hit`, `action=DENY`, `proto=tcp`, `port=<p>` and
+    `ruleId=<rule>` to that row's real SRC host:port, DST and UTC time. Record
+    its event ID and matching ruleId, not merely the presence of any deny.
+    A rule without logging or a default drop can deny without an event:
+    absence of an event is not proof of an allow. An event alone does not
+    prove the application is unaffected; keep the operator observations.
+
   action:
     type: probe
     targets:

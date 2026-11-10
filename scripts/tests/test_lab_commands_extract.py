@@ -19,41 +19,19 @@ spec.loader.exec_module(extract)
 
 
 class SmokeLoopTests(unittest.TestCase):
-    def test_exit_cleanup_restores_weak_only_after_verified_range_preflight(self):
-        source = (ROOT / "scripts/lab-commands-smoke.sh").read_text()
-        cleanup = source.split("cleanup() {", 1)[1].split("\n}", 1)[0]
-        for live, restore_rc, status, expected in ((0, 0, 1, 1), (1, 0, 1, 1),
-                                                    (1, 1, 1, 1), (1, 1, 0, 1), (1, 0, 0, 0)):
-            with self.subTest(live=live, restore_rc=restore_rc), tempfile.TemporaryDirectory() as directory:
-                matrix = Path(directory) / "matrix"
-                matrix.touch()
-                script = (
-                    f"matrix={shlex.quote(str(matrix))}\nlive_started={live}\n"
-                    f'apply_policy() {{ echo "restore:$1"; return {restore_rc}; }}\n'
-                    "cleanup() {" + cleanup + f"\n}}\ntrap cleanup EXIT\nexit {status}\n")
-                result = subprocess.run(["bash", "-c", script],
-                                        capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode, expected, result.stderr)
-                self.assertEqual(result.stdout, "restore:weak\n" if live else "")
-                self.assertFalse(matrix.exists())
-
-    def test_matrix_loop_survives_children_that_read_stdin(self):
-        # docker exec children inherited the matrix on stdin and swallowed it:
-        # the live gate ran 2 of 77 rows. Run the real loop with stdin-eating stubs.
-        source = (ROOT / "scripts/lab-commands-smoke.sh").read_text()
-        start = source.index("# fd 3: docker exec children")
-        loop = source[start:source.index('done 3<"$matrix"', start) + len('done 3<"$matrix"')]
+    def test_shell_entry_delegates_both_packages_and_propagates_failures(self):
         with tempfile.TemporaryDirectory() as directory:
-            matrix = Path(directory, "matrix")
-            matrix.write_text("".join(f"{i}|lab|{i}|weak|RUN|deny\n" for i in range(5)))
-            script = ("set -euo pipefail\nexecuted=0 passed=0 skipped=0 logs=x helper=x"
-                      " target=x PROBE_TIMEOUT=1\nmatrix=" + json.dumps(str(matrix)) + "\n"
-                      "python3() { cat >/dev/null; }\npolicy() { cat >/dev/null; }\n"
-                      "err() { echo \"$*\" >&2; }\n" + loop + "\necho \"$executed $passed\"\n")
-            result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                                    timeout=10, stdin=subprocess.DEVNULL)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.strip(), "5 5")
+            python = Path(directory) / "python3"
+            python.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\nexit 37\n')
+            python.chmod(0o755)
+            for package in ("us-dnp3-substation", "eu-iec104-substation"):
+                result = subprocess.run(
+                    ["bash", str(ROOT / "scripts/lab-commands-smoke.sh"), package],
+                    env={**os.environ, "PATH": directory + os.pathsep + os.environ["PATH"]},
+                    capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
+                self.assertEqual(result.returncode, 37)
+                self.assertEqual(result.stdout.splitlines(), [
+                    str(ROOT / "scripts/lib/lab_commands_smoke.py"), package])
 
 
 class ExtractTests(unittest.TestCase):
@@ -321,7 +299,8 @@ class ExtractTests(unittest.TestCase):
         oracle = {"intent": "capture"}
         self.assertFalse(extract.verdict(oracle, 124, "", ""))
         self.assertFalse(extract.verdict(oracle, 124, "", "", frames=0))
-        self.assertTrue(extract.verdict(oracle, 124, "", "", frames=2))
+        self.assertFalse(extract.verdict(oracle, 124, "", "", frames=2))
+        self.assertTrue(extract.verdict(oracle, 130, "", "", frames=2))
 
     def test_cli_error_is_not_masked_by_rc_zero(self):
         oracle = {"intent": "cli", "match": "firewall"}

@@ -1,5 +1,6 @@
 """The workshop teaches a hand test record, not a generated acceptance result."""
 import importlib.util
+import json
 import unittest
 from pathlib import Path
 
@@ -18,6 +19,32 @@ def lesson(name, eu):
 
 
 class ManualValidationContentTests(unittest.TestCase):
+    def test_deny_correlation_is_taught_in_static_dynamic_retest_and_both_capture_steps(self):
+        from lab_commands_inventory import extract
+        for eu, package in ((False, "us-dnp3-substation"), (True, "eu-iec104-substation")):
+            implementation = lesson("firewall-implementation", eu)
+            retest = next(s["description"] for s in implementation["steps"]
+                          if s["id"] in ("test-negative", "phase-6-validate-blocked-traffic"))
+            dynamic = yaml.safe_load((ROOT / "lab-definitions/packages" / package /
+                                      "curriculum/implementation.yml").read_text())["phases"]["negative"]
+            validation = lesson("validation-evidence", eu)
+            for text in (retest, dynamic, validation["steps"][2]["description"],
+                         validation["steps"][3]["description"]):
+                for required in ("show events", "firewall.rule.hit", "DENY", "ruleId",
+                                 "SRC", "DST", "UTC", "fw-1", "containd cli"):
+                    self.assertIn(required, text)
+                self.assertNotIn("diag reach", text)
+                self.assertIn("not", text)
+            rows = [r for r in extract(package_id=package) if r["command"] == "show events"]
+            self.assertEqual(len(rows), 3)
+            suffix = "-eu-iec104-substation" if eu else ""
+            contracts = json.loads((ROOT / f"scripts/lab-commands-expectations{suffix}.json").read_text())
+            for row in rows:
+                key = f'{row["scenario"]}|{row["step"]}|show events|1'
+                self.assertEqual((row["node"], row["prompt"], row["action"]), ("fw-1", "cli", "RUN"))
+                self.assertEqual(contracts["commands"][key]["oracle"]["intent"], "read")
+                self.assertIn(r"firewall\.rule\.hit", contracts["commands"][key]["oracle"]["match"])
+
     def test_shared_six_step_design_and_artifacts(self):
         for eu in (False, True):
             doc = lesson("validation-evidence", eu)
@@ -52,8 +79,12 @@ class ManualValidationContentTests(unittest.TestCase):
             doc = lesson("validation-evidence", eu)
             baseline, capture = doc["steps"][1]["description"], doc["steps"][3]["description"]
             command = next(line.strip() for line in baseline.splitlines() if line.strip().startswith("tcpdump "))
-            self.assertTrue(command.startswith("tcpdump -i any -nn -w /data/captures/validation.pcap"))
+            self.assertTrue(command.startswith("tcpdump -i any -nn -U -G 1200 -W 1 -w /data/captures/validation.pcap"))
             self.assertNotIn("port ", command)
+            self.assertIn("Ctrl-C stops it early", baseline)
+            self.assertIn("sll.ifindex", capture)
+            self.assertNotIn(" -V", capture)
+            self.assertIn("-T fields", capture)
             for field in ("10.10.10.50", "10.20.20.0/24", "10.30.30.0/24", "10.40.40.0/24"):
                 self.assertIn(field, command)
             if eu:

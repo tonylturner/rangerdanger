@@ -117,9 +117,11 @@ steps:
       In the host filter below include every source and destination in your plan.
       Do not filter only application ports: that would hide remote-access negatives.
 
-          tcpdump -i any -nn -w /data/captures/validation.pcap 'host 10.10.10.50 or net 10.20.20.0/24 or net 10.30.30.0/24 or net 10.40.40.0/24 or net 10.60.60.0/24 or net 10.70.70.0/24'
+          tcpdump -i any -nn -U -G 1200 -W 1 -w /data/captures/validation.pcap 'host 10.10.10.50 or net 10.20.20.0/24 or net 10.30.30.0/24 or net 10.40.40.0/24 or net 10.60.60.0/24 or net 10.70.70.0/24'
 
-      Leave this terminal capturing. Wait for the listening message, then use
+      The capture is bounded to 1200 seconds (20 minutes); Ctrl-C stops it early.
+      If it expires before all tests finish, start a new named file/window and
+      repeat those rows. Leave this terminal capturing. Wait for the listening message, then use
       other terminals for tests. `any` writes Linux cooked SLL2 with interface
       metadata. A routed packet may appear twice; counts are not operation counts.
       A field-only egress capture misses dropped SYNs. Save the file outside the
@@ -251,6 +253,19 @@ steps:
       probing. See [port and source boundaries](/knowledge#eu-port-source-boundary).
       :::
 
+      For every negative row, correlate the named host's connect timeout with a
+      fw-1 DENY event and the boundary capture in the same UTC window. In the
+      fw-1 containd configuration CLI (type `containd cli` if in Linux), type:
+
+          show events
+
+      Match `KIND=firewall.rule.hit`, `action=DENY`, `proto=tcp`, `port=<p>` and
+      `ruleId=<rule>` to that row's real SRC host:port, DST and UTC time. Record
+      its event ID and matching ruleId, not merely the presence of any deny.
+      A rule without logging or a default drop can deny without an event:
+      absence of an event is not proof of an allow. An event alone does not
+      prove the application is unaffected; keep the operator observations.
+
   - id: read-boundary-capture
     title: "Read the boundary capture"
     expected_config: hardened
@@ -258,10 +273,14 @@ steps:
       Stop tcpdump with Ctrl-C in fw-1 after the last test. Note the UTC end and
       its packet/drop statistics. A capture that dropped packets cannot establish
       absence reliably. Open `/home/abc/pcaps/validation.pcap` in Wireshark on
-      eng-ws, or read the same file with tshark there:
+      eng-ws. From the eng-ws terminal, list SYN/SYN-ACK rows for one test tuple
+      (replace both hosts and port for each test):
 
-          tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp' -V
+          tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 502' -T fields -E header=y -e frame.number -e frame.time_epoch -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags
 
+      The `sll.ifindex` column is the Linux cooked SLL2 interface index;
+      `frame.interface_id` is not the capture interface in this classic PCAP.
+      The short listing is one row per matching frame, not a full packet dump.
       Use packet details → Linux cooked capture v2 interface index to distinguish
       the ingress and egress legs. Read fw-1's current interface indexes in its
       Linux terminal with `ip link`; join each index to its exact kernel name.
@@ -283,15 +302,32 @@ steps:
       do not turn missing evidence into a pass.
       :::
 
-      For each routed positive, find the handshake on both interfaces and the
+      From the fw-1 terminal, return to the containd CLI with `containd cli`
+      and type:
+
+          show events
+
+      Join the `firewall.rule.hit` DENY row's event ID, ruleId, real SRC,
+      DST, TCP port and UTC time to each negative's host timeout and source-zone
+      SYN / destination-zone absence. Preserve all three references. A missing
+      event can mean an unlogged rule or default drop, not an allow; mark the
+      missing correlation as a limitation and investigate. An event alone does
+      not establish that required applications are unaffected.
+
+      For each new routed positive connection, find the handshake on both interfaces and the
       source's native request/response. Match the live poller's responses to the
       fresh points observed by the operator. A handshake without application
       response proves TCP reach only. Intra-zone traffic is outside this capture's
       scope; retain its endpoint and operator evidence separately.
 
-      | Test ID | UTC / tuple | Source-zone SYN frame | Destination-zone frame or checked absence | Handshake / request-response frames | Result / limitation |
-      |---|---|---|---|---|---|
-      | | | | | | |
+      An already established production poller may send no SYN in this window.
+      Clear the SYN filter in Wireshark and match its request/response pairs on
+      both boundary interfaces. Record that a new handshake was not observed;
+      do not restart a production poller just to manufacture one.
+
+      | Test ID | UTC / tuple | Source-zone SYN frame | Destination-zone frame or checked absence | DENY event ID / ruleId | Handshake / request-response frames | Result / limitation |
+      |---|---|---|---|---|---|---|
+      | | | | | | | |
 
       Copy the PCAP out before any reset. Keep this table, capture statistics,
       running export and UTC window together. Supplementary **Live Firewall Events**

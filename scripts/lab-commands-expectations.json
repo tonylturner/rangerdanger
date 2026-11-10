@@ -37,7 +37,7 @@
       "SKIP": 0
     },
     "firewall-implementation": {
-      "RUN": 23,
+      "RUN": 24,
       "SKIP": 6
     },
     "hardening-configurations": {
@@ -53,7 +53,7 @@
       "SKIP": 0
     },
     "validation-evidence": {
-      "RUN": 19,
+      "RUN": 21,
       "SKIP": 1
     },
     "vendor-rdp-compromise": {
@@ -61,7 +61,7 @@
       "SKIP": 3
     }
   },
-  "minimum_executed": 83,
+  "minimum_executed": 86,
   "commands": {
     "baseline-assessment|3|tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'|1": {
       "container": "rangerdanger-firewall",
@@ -846,7 +846,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|tcpdump -i any -nn -w /data/captures/validation.pcap 'host 10.10.10.50 or net 10.20.20.0/24 or net 10.30.30.0/24 or net 10.40.40.0/24'|1": {
+    "validation-evidence|2|tcpdump -i any -nn -U -G 1200 -W 1 -w /data/captures/validation.pcap 'host 10.10.10.50 or net 10.20.20.0/24 or net 10.30.30.0/24 or net 10.40.40.0/24'|1": {
       "oracle": {
         "intent": "capture",
         "file": "/data/captures/validation.pcap"
@@ -1045,10 +1045,10 @@
       },
       "reason": null
     },
-    "validation-evidence|4|tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp' -V|1": {
+    "validation-evidence|4|tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 20000' -T fields -E header=y -e frame.number -e frame.time_epoch -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags|1": {
       "oracle": {
         "intent": "read",
-        "match": "Linux cooked capture v2"
+        "match": "(?m)^\\d+\\t\\d+\\.\\d+\\t[1-9]\\d*\\t10\\.10\\.10\\.50\\t\\d+\\t10\\.40\\.40\\.20\\t20000\\t0x[0-9a-f]+$"
       },
       "reason": null,
       "container": "rangerdanger-eng-ws",
@@ -1195,6 +1195,42 @@
         "match": "(?s)DNP3 Outstation .*\\(addr 2\\).*\\[\\s*\\d+\\] = "
       },
       "reason": null
+    },
+    "firewall-implementation|8|show events|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "reason": null,
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=\\S+)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
+      }
+    },
+    "validation-evidence|3|show events|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "reason": null,
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=\\S+)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
+      }
+    },
+    "validation-evidence|4|show events|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "reason": null,
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=\\S+)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
+      }
     }
   }
 }
