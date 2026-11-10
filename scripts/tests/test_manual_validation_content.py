@@ -20,7 +20,7 @@ def lesson(name, eu):
 
 class ManualValidationContentTests(unittest.TestCase):
     def test_deny_correlation_is_taught_in_static_dynamic_retest_and_both_capture_steps(self):
-        from lab_commands_inventory import extract
+        from scripts.lib.lab_commands_inventory import extract
         for eu, package in ((False, "us-dnp3-substation"), (True, "eu-iec104-substation")):
             implementation = lesson("firewall-implementation", eu)
             retest = next(s["description"] for s in implementation["steps"]
