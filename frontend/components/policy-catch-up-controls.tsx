@@ -4,6 +4,10 @@ import { useState } from "react";
 import { applyFirewallConfig, type CompiledPlan, type PolicySource } from "../lib/api";
 import { CatchUp } from "./catch-up";
 import { ApplyPlanButton } from "./apply-plan-button";
+import { useCurriculumScope } from "../lib/curriculum-scope";
+import { loadSavedRemediationPlan } from "../lib/remediation-plan";
+import { useCurriculumStorageRevision } from "../lib/use-curriculum-storage-revision";
+import { useHydrated } from "../lib/use-hydrated";
 
 export function PolicyCatchUpControls({ activeConfig, policySource, plan, error, onApplied }: {
   activeConfig: string | null;
@@ -12,6 +16,12 @@ export function PolicyCatchUpControls({ activeConfig, policySource, plan, error,
   error?: string;
   onApplied: () => void;
 }) {
+  const scope = useCurriculumScope();
+  const hydrated = useHydrated();
+  useCurriculumStorageRevision(scope);
+  // Saved intent, not a compile response: also hide while compilation is
+  // pending/failed or readiness temporarily excludes the saved choices.
+  const hasSavedRequest = hydrated && !!loadSavedRemediationPlan(scope)?.selectedActionIds.length;
   const [pending, setPending] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
@@ -35,7 +45,7 @@ export function PolicyCatchUpControls({ activeConfig, policySource, plan, error,
   };
   return <CatchUp id="catch-up-controls">
     <div className="flex flex-wrap gap-2">
-      {activeConfig !== "improved" && <button disabled={!activeConfig || pending !== null} aria-busy={pending === "improved"}
+      {hydrated && !hasSavedRequest && activeConfig !== "improved" && <button disabled={!activeConfig || pending !== null} aria-busy={pending === "improved"}
         onClick={() => apply("improved", "Apply Hardened")}
         className="rounded-sm border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50 disabled:opacity-50">
         {pending === "improved" ? "Applying Hardened…" : "Apply Hardened"}
