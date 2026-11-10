@@ -1,10 +1,7 @@
 import type { OperatorJournal, OperatorState } from "./operator-api";
 
-// The operator API does not expose eu_lab2_evidence.go's conduitAttemptLimit.
-// Keep this display-only fallback separate from command/telemetry health.
-export const RUNNER_GI_EVIDENCE_WINDOW_MS = 10 * 60 * 1000;
-
 export function runnerGiStatus(state: OperatorState, journal: OperatorJournal | undefined, now: number) {
+  const windowMs = state.gi_evidence_window_ms;
   const complete = state.link.gi.last_complete_at;
   const completedAt = complete === null ? NaN : Date.parse(complete);
   const age = now - completedAt;
@@ -19,12 +16,12 @@ export function runnerGiStatus(state: OperatorState, journal: OperatorJournal | 
       if (entry.kind === "gi_started") start = at;
       if (entry.kind === "gi_complete" && start !== undefined && at >= start && at <= now) {
         matched = true;
-        recent ||= now - start <= RUNNER_GI_EVIDENCE_WINDOW_MS;
+        recent ||= now - start <= windowMs;
       }
     }
   }
   return {
     value: `${complete ? "GI complete" : state.link.gi.state.toUpperCase()} · ${ageText} · ${matched ? `current connection #${state.link.connection_seq}` : "current connection unverified"}`,
-    fresh: matched && recent && age >= 0 && age <= RUNNER_GI_EVIDENCE_WINDOW_MS,
+    fresh: matched && recent && age >= 0 && age <= windowMs,
   };
 }

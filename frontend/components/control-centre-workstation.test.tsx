@@ -131,12 +131,21 @@ describe("operator workstation interactions", () => {
   it("marks the runner's retained snapshot when its operator API fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("operator proxy offline")));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
-    client.setQueryData(["operator", "state"], FEEDER_STATE);
+    client.setQueryData(["operator", "state"], { ...FEEDER_STATE, gi_evidence_window_ms: 90_000 });
     const tree = render(<QueryClientProvider client={client}><RunnerOperatorStatus resolution={resolveOperatorView(EU_PACKAGE, null)} /></QueryClientProvider>);
     await waitFor(() => expect(output(tree)).toContain("operator proxy offline"));
     expect(output(tree)).toContain("Operator API unavailable");
     expect(output(tree)).toContain("Cached snapshot");
+    expect(output(tree)).toContain("GI evidence window: 1.5 minutes");
     expect(output(tree)).toContain("operator proxy offline");
+  });
+  it("shows an unavailable evidence window until the API supplies it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("operator proxy offline")));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
+    const tree = render(<QueryClientProvider client={client}><RunnerOperatorStatus resolution={resolveOperatorView(EU_PACKAGE, null)} /></QueryClientProvider>);
+    await waitFor(() => expect(output(tree)).toContain("No operator snapshot"));
+    expect(output(tree)).toContain("GI evidence window: unavailable");
+    expect(output(tree)).not.toContain("10 minutes");
   });
   it("keeps commands admitted and integrity true during a later GI, with no receipt-age rule", () => {
     const state = structuredClone(PERIODIC_GI_STATE);

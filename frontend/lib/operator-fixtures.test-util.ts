@@ -124,6 +124,7 @@ export const FRESH_STATE: OperatorState = {
   points: FRESH_POINTS,
   package_id: "eu-iec104-substation",
   range_generation: 7,
+  gi_evidence_window_ms: 600_000,
 };
 
 // The link was cut: every point keeps its value and times, IV+NT set.

@@ -137,6 +137,13 @@ describe("increment-4 operator contract", () => {
     await expect(getFieldState()).rejects.toThrow("Expected field and process schema 3");
   });
 
+  it.each([undefined, null, 0, -1, 1.5, "600000", Infinity, NaN])("rejects an absent or invalid evidence window (%s)", async (gi_evidence_window_ms) => {
+    const { getOperatorState } = await import("./operator-api");
+    const { FRESH_STATE } = await import("./operator-fixtures.test-util");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...FRESH_STATE, gi_evidence_window_ms }))));
+    await expect(getOperatorState()).rejects.toThrow("Expected CC state schema 3");
+  });
+
   it("preserves the CC reason on a 409 refusal", async () => {
     const { sendOperatorCommand } = await import("./operator-api");
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ reason: "feedback_stale" }), { status: 409 }));
