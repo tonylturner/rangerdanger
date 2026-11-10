@@ -35,6 +35,12 @@ steps:
     it from the named sources. Optional catch-up controls replace rule entry,
     not observations, operator checks or sign-off.
 
+    :::hint Follow the complete control path
+    CC→RTU uses IEC 104; RTU→field uses Modbus. A healthy CC link alone does not
+    show that field polling works. Check both hops and the separate PLC→OLTC
+    conduit before accepting the change.
+    :::
+
     :::findings-panel from=eu-baseline-assessment title="Your baseline findings"
     enterprise-to-field: Enterprise/vendor → field on Modbus/502
     enterprise-to-station: Enterprise → station RTU on IEC 104/2404
@@ -484,8 +490,10 @@ steps:
     restoration. Carry these records into Lab 2.4 for acceptance review and sign-off.
     A configuration export alone is not evidence that the tests passed.
 
+    :::hint Configuration checks are not traffic tests
     In containd, JSON **Validate** only checks editor text without staging it.
     It does not test running traffic.
+    :::
 
     ### Save evidence status for Lab 2.4
 

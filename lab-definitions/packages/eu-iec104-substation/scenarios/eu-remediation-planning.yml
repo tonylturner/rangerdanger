@@ -95,7 +95,10 @@ steps:
     name the risk and its owner. Required operations cannot be deferred.
     If no eligible actions are selected, there is no change request for the
     system cross-check: it uses the full Hardened reference instead.
+
+    :::hint Detection is not closure
     Selecting only detection or planning work does not close an exposure.
+    :::
 
     Selection does not change the running firewall. Write the implementation,
     tests and rollback in the next step before seeking approval.
@@ -141,8 +144,11 @@ steps:
 
     Agree rollback triggers before the window. Include lost required traffic,
     unexpected prohibited access, lost management and degraded operator data.
+
+    :::hint An export is a rollback reference
     The export is your record and diff reference. Restore by re-staging its
     previous rules and committing them; do not assume an import command exists.
+    :::
 
     Ask the OT reviewer to check the operating sequence and acceptance tests.
     Ask the security reviewer to check the source boundaries and deferred risk.

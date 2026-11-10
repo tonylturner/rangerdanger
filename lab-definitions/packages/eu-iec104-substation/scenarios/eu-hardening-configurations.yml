@@ -218,8 +218,11 @@ steps:
     Require every inventory point non-null and valid received since GI start.
     Record the UTC window, point values, quality and running policy identity.
     Do not run a second IEC 104 client from cc-1; watch the real CC connection.
+
+    :::hint Fresh points and fresh admission are different checks
     Fresh-link admission starts at SYN; new points on an old connection alone
     do not show that a new connection can be admitted.
+    :::
 
     Check breaker closed and fresh section supply in the operator view. A
     physically supplied feeder with stale CC points fails visibility, not supply.
