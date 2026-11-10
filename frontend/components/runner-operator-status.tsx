@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { OperatorJournal, OperatorState } from "../lib/operator-api";
 import { LINK_STATE_TEXT, formatPointValue, pointCondition, telemetrySummary, telemetryText } from "../lib/operator-format";
 import { useNow, useOperatorJournal, useOperatorState } from "../lib/operator-queries";
-import { runnerGiStatus, RUNNER_GI_EVIDENCE_WINDOW_MS } from "../lib/runner-gi-status";
+import { runnerGiStatus } from "../lib/runner-gi-status";
 import { EU_OPERATOR_VIEW, isView, operatorViewProblem, type OperatorViewResolution } from "../lib/operator-view";
 import { errorMessage } from "../lib/utils";
 import { isRangeNotReady } from "../lib/range";
@@ -52,7 +52,7 @@ function EuStatus() {
       </div>
       {query.error && <p role="alert" className="text-xs text-amber-300">Operator API unavailable: {errorMessage(query.error)}. {query.data ? `Cached snapshot · ${Math.max(0, Math.floor((now - query.dataUpdatedAt) / 1000))} s since last API answer; not live.` : "No operator snapshot."}</p>}
       <ControlCentreMiniStatus state={query.data} waiting={!query.data && isRangeNotReady(query.error)} journal={query.error || journal.error ? undefined : journal.data} now={now} />
-      <p className="text-[11px] text-slate-400">GI evidence window: {RUNNER_GI_EVIDENCE_WINDOW_MS / 60000} minutes. If amber, press Interrogate station in the Control Centre. Execute Step checks the retained evidence and attempt boundary.</p>
+      <p className="text-[11px] text-slate-400">GI evidence window: {query.data ? `${query.data.gi_evidence_window_ms / 60000} minutes` : "unavailable"}. If amber, press Interrogate station in the Control Centre. Execute Step checks the retained evidence and attempt boundary.</p>
     </>
   );
 }

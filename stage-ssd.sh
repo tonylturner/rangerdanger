@@ -479,24 +479,24 @@ if [ "$actual_sha256" != "$expected_sha256" ]; then
 fi
 kernel_size=$(du -h "$kernel_path" | awk '{print $1}')
 say "wrote $kernel_path ($kernel_size)"
-KERNEL_README_ROW="- \`rangerdanger-wsl2-kernel\` + \`.sha256\` — custom WSL2 kernel with CONFIG_NFT_QUEUE=y for Windows ICS DPI labs (see wsl-kernel/README.md). \`setup.ps1 -FromTarballs\` picks it up automatically."
+KERNEL_README_ROW="- \`rangerdanger-wsl2-kernel\` + \`.sha256\` -- custom WSL2 kernel with CONFIG_NFT_QUEUE=y for Windows ICS DPI labs (see wsl-kernel/README.md). \`setup.ps1 -FromTarballs\` picks it up automatically."
 
 banner "Write README"
 cat > "$OUT/README.md" <<EOF
-# RangerDanger — offline / SSD install
+# RangerDanger -- offline / SSD install
 
 Staged $(date -u +%FT%TZ) for version \`$VERSION\`.
 
 ## Contents
 
-- \`images-amd64.tar\` — Docker images for Intel / AMD64 hosts
-- \`images-arm64.tar\` — Docker images for Apple Silicon / ARM64 hosts. Includes the amd64 openplc image (cross-arch; macOS runs it under Rosetta 2) plus \`tonistiigi/binfmt\`, which \`setup.sh\` uses to register amd64 emulation on arm64 *Linux* so openplc runs fully offline.
-- \`rangerdanger.tgz\` — Repo archive at $(git -C "$ROOT_DIR" rev-parse --short HEAD) ($(git -C "$ROOT_DIR" log -1 --format=%s | head -c 80))
+- \`images-amd64.tar\` -- Docker images for Intel / AMD64 hosts
+- \`images-arm64.tar\` -- Docker images for Apple Silicon / ARM64 hosts. Includes the amd64 openplc image (cross-arch; macOS runs it under Rosetta 2) plus \`$BINFMT_IMAGE\`, which \`setup.sh\` uses to register amd64 emulation on arm64 *Linux* so openplc runs fully offline.
+- \`rangerdanger.tgz\` -- Repo archive at $(git -C "$ROOT_DIR" rev-parse --short HEAD) ($(git -C "$ROOT_DIR" log -1 --format=%s))
 $KERNEL_README_ROW
 
 ## Use
 
-Copy the four files to the student's laptop, then:
+Copy the whole folder, including hidden files such as .version, to the student's laptop, then:
 
 \`\`\`sh
 tar xzf rangerdanger.tgz -C ~
@@ -506,8 +506,15 @@ cd ~/rangerdanger
 
 (or \`./setup.ps1 -FromTarballs <dir>\` on Windows).
 
-\`setup.sh\` auto-detects the host architecture and loads the right
-\`images-<arch>.tar\` before bringing the stack up.
+\`setup.sh\` / \`setup.ps1\` auto-detects the host architecture and
+loads the right \`images-<arch>.tar\` before bringing the stack up.
+
+On arm64 Linux, register amd64 emulation after loading the bundle if it
+is not already enabled:
+
+\`\`\`sh
+docker run --privileged --rm $BINFMT_IMAGE --install amd64
+\`\`\`
 EOF
 say "wrote $OUT/README.md"
 

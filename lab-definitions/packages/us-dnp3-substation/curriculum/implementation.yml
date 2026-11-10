@@ -201,11 +201,3 @@ phases:
 noPlan: |+
   This applied selection leaves Weak exposures open. Review the expected results
   against your [change request](/exercises/{{planRole}}) before testing.
-
-tests:
-  - kind: positive
-    text: |-
-      Verify current RTAC application/device state (TCP reachability alone is not operational proof):
-
-          curl -s http://${ip:rtac-1}:8080/api/state | python3 -m json.tool
-negativeEmpty: No additional closures are selected. Keep the deferred exposures and their named risk owners in your test record.
