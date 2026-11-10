@@ -147,8 +147,11 @@ steps:
 
       Agree rollback triggers before the window. Include lost required traffic,
       unexpected prohibited access, lost management and degraded operator data.
+
+      :::hint An export is a rollback reference
       The export is your record and diff reference. Restore by re-staging its
       previous rules and committing them; do not assume an import command exists.
+      :::
 
       Ask the OT reviewer to check the operating sequence and acceptance tests.
       Ask the security reviewer to check the source boundaries and deferred risk.
