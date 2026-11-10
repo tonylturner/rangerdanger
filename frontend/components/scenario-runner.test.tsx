@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test-util";
 import { loadSavedRemediationPlan, saveRemediationPlan } from "../lib/remediation-plan";
 import { decisionName, writeCurriculum } from "../lib/curriculum-storage";
-import { EU_PLANS } from "../lib/plan-fixtures.test-util";
+import { EU_PLANS, US_PLANS } from "../lib/plan-fixtures.test-util";
 import { useCompiledPlan } from "../lib/use-compiled-plan";
 import * as api from "../lib/api";
 import { ScenarioRunner } from "./scenario-runner";
@@ -261,6 +261,25 @@ describe("interactive grading change requests", () => {
 });
 
 describe("authored description → Run → node exec", () => {
+  it.each([
+    { binding: US_CURRICULUM, plan: US_PLANS[2], eu: false },
+    { binding: EU, plan: EU_PLANS[2], eu: true },
+  ])("keeps the complete six-column rule reference in the $plan.packageId implementation body", ({ binding, plan, eu }) => {
+    compiled.data = plan;
+    const stepId = Object.entries(binding.dynamicSteps).find(([, phase]) => phase === "rules")![0];
+    const tree = renderStep(authoredScenario(binding.roles.implementation, eu), stepId, binding);
+    try {
+      const table = tree.getAllByRole("table").find((candidate) =>
+        Array.from(candidate.querySelectorAll("th")).map((header) => header.textContent).join(",") === "Rule,From,To,Port,Action,Log");
+      expect(table).toBeDefined();
+      expect(table!.closest("details")).toBeNull();
+      expect(table!.querySelectorAll("tbody tr")).toHaveLength(2 * plan.rules.length);
+      for (const { rule } of plan.rules) expect(table!.textContent).toContain(rule.id);
+      expect(table!.textContent).toContain("ICS selectors: Protocol:");
+      expect(table!.textContent).not.toContain('"protocol":');
+    } finally { tree.close(); }
+  });
+
   it("renders the interactive directive as a named copy-only capture", () => {
     const authored = { ...scenario, nodes: ["fw-1"], steps: [{
       ...scenario.steps[0], node: "fw-1",

@@ -10,7 +10,7 @@ describe("US compiled-plan presentation", () => {
     for (const plan of US_PLANS) {
       const before = JSON.stringify(plan);
       const text = renderRuleTable(plan, US_CURRICULUM);
-      expect(text).toContain("Source zones / addresses");
+      expect(text).toContain("| Rule | From | To | Port | Action | Log |");
       expect(text).toContain("required");
       expect(text.indexOf(plan.rules[0].rule.id)).toBeLessThan(text.indexOf(plan.rules[1].rule.id));
       expect(text).toContain(plan.rules[1].origin.kind);
