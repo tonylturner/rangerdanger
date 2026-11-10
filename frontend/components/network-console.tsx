@@ -539,8 +539,8 @@ export function NetworkConsole() {
             />
           </div>
 
-          {/* Reserve viewer space independently of the scrollable node details. */}
-          <div aria-label="Node viewer" className="relative mt-4 min-h-[240px] flex-[2] overflow-hidden rounded-xl border border-slate-800 bg-black">
+          {/* Only active viewers reserve space; idle details get the remaining height. */}
+          <div aria-label="Node viewer" className={`relative mt-4 overflow-hidden rounded-xl border border-slate-800 bg-black ${showTerminal || iframeUrl ? "min-h-[240px] flex-[2]" : "flex-none py-3"}`}>
             {/* Shared terminals - state tracked across pages */}
             {showTerminal && (
               <SharedTerminalPanel
@@ -589,7 +589,7 @@ export function NetworkConsole() {
                 </Button>
               </div>
             ) : !showTerminal && !iframeUrl ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-500">
+              <div className="flex items-center justify-center text-sm text-slate-500">
                 Select UI or Terminal to view here.
               </div>
             ) : null}

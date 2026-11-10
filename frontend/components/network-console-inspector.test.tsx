@@ -39,6 +39,14 @@ function inspect(id: string) {
   fireEvent.click(screen.getByRole("button", { name: `Inspect ${id}` }));
 }
 
+function expectViewerLayout(active: boolean) {
+  const viewer = screen.getByLabelText("Node viewer");
+  expect(viewer.classList.contains("flex-[2]")).toBe(active);
+  expect(viewer.classList.contains("min-h-[240px]")).toBe(active);
+  expect(viewer.classList.contains("flex-none")).toBe(!active);
+  expect(viewer.classList.contains("py-3")).toBe(!active);
+}
+
 function expectSelection(uiSelected: boolean, terminalSelected: boolean) {
   const inspector = within(screen.getByRole("complementary", { name: "Node inspector" }));
   const ui = inspector.getByRole("button", { name: /^(UI|No UI)$/ });
@@ -47,6 +55,7 @@ function expectSelection(uiSelected: boolean, terminalSelected: boolean) {
     expect(button.getAttribute("aria-pressed")).toBe(String(selected));
     expect(button.classList.contains("bg-brand")).toBe(selected);
   }
+  expectViewerLayout(uiSelected || terminalSelected);
 }
 
 describe("Network Map node inspector", () => {
@@ -84,7 +93,7 @@ describe("Network Map node inspector", () => {
     expectSelection(false, true);
   });
 
-  it.each(["rtu", "eng-ws", "firewall"])("bounds %s details separately from the flexible viewer", (id) => {
+  it.each(["rtu", "eng-ws", "firewall"])("gives %s details the idle space and reserves space only for active viewers", (id) => {
     render(<TerminalProvider><NetworkConsole /></TerminalProvider>);
     inspect(id);
     const inspector = screen.getByRole("complementary", { name: "Node inspector" });
@@ -98,13 +107,16 @@ describe("Network Map node inspector", () => {
     }
     expect(details.tabIndex).toBe(0);
     expect(within(details).getByText("Tall communications details")).toBeTruthy();
-    for (const token of ["min-h-[240px]", "flex-[2]", "overflow-hidden"]) {
-      expect(viewer.classList.contains(token)).toBe(true);
-    }
+    expectViewerLayout(false);
+    expect(viewer.classList.contains("overflow-hidden")).toBe(true);
     const buttons = screen.getByRole("button", { name: "Terminal" }).parentElement!;
     expect(buttons.classList.contains("shrink-0")).toBe(true);
     expect(inspector.firstElementChild?.classList.contains("shrink-0")).toBe(true);
     expect(Array.from(inspector.children)).toEqual([inspector.firstElementChild, buttons, details, viewer]);
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    expectViewerLayout(true);
+    expect(details.classList.contains("flex-1")).toBe(true);
+    expect(details.classList.contains("overflow-y-auto")).toBe(true);
   });
 
   it("keeps both expand-to-modal actions working", () => {
