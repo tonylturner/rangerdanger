@@ -4,7 +4,7 @@ name: Vendor Remote Access Compromise (Bonus)
 summary: Prove enterprise remote-access exposure, pivot from the vendor terminal, then retest both hops independently.
 estimated_minutes: 25
 validator: eu-vendor-rdp-compromise
-description: Walk the same two-hop vendor compromise as the US workshop. Prove RDP/VNC reachability from enterprise,
+description: Trace a two-hop vendor compromise. Prove RDP/VNC reachability from enterprise,
   represent the compromised foothold in the vendor terminal and issue the prescribed Modbus write. Restore service,
   harden and independently test the first and second hop without requiring a graphical desktop.
 nodes:
@@ -27,6 +27,16 @@ steps:
   expected_config: weak
   node: kali-1
   description: |
+    Before proceeding, save your Lab 2.2 running export and Notes. **Reset to
+    Weak** replaces your Lab 2.2 policy, including hand-written rules; it does
+    not preserve them for automatic restoration. Use Reset to Weak for this
+    lesson's initial demonstration only. After restoring the plant, use
+    **Apply Your Plan** with your saved Lab 1.4 request to return to the
+    approved scope before the retest. This is the normal route back, not a
+    catch-up exercise. It regenerates the approved scope, not your exact
+    hand-written IDs or unrelated edits. An empty selection loads Weak; if
+    you have no saved request, use the full Hardened reference instead.
+
     **Time budget:** ~25 minutes (estimate; optional depth takes extra time).
 
     Optional bonus, weak active. From **Kali** prove the first hop:
@@ -80,11 +90,18 @@ steps:
     **real wire write** from the vendor source; Execute Step on this step only
     reads the resulting device state, it does not send the write for you.
 
+    To locate device evidence, open **Control Centre → Physical System →
+    Advanced diagnostics → Audit device** in the second browser tab. Select
+    `breaker-1` for the breaker lesson or `rmu-1` for the vendor lesson. Copy
+    the relevant audit row (UTC, revision, peer, operation and result) and the
+    terminal command output into Notes before restoration. Record the displayed
+    solved revision and supply outcome too; “export evidence” means saving
+    those records, not Reset Lab.
+
     Wait for the poll/solve interval, then confirm the outcome:
 
     - **Physical System** view in [/substation](/substation): opening RMU1 drops
-      the section it feeds, so that section loses supply. The EU range has no
-      local HMI — the Control Centre and Physical System view are the
+      the section it feeds, so that section loses supply. Use the Control Centre and Physical System view as the
       operator-facing surfaces.
     - **Device audit:** the RMU records the Modbus request with its peer. The peer
       reads **10.20.20.10** (the vendor jump host), not Kali 10.10.10.50 or the
@@ -115,7 +132,7 @@ steps:
     the enterprise→vendor hop must be closed.
     :::
 
-    :::hint Same teaching activity, real wire write
+    :::hint Real wire write
     This is a real wire write. No out-of-band simulator attack substitutes for the
     packet from the vendor source; Execute Step only reads the state it left.
     :::
@@ -146,12 +163,20 @@ steps:
   title: "Review and commit the two boundaries"
   expected_config: hardened
   description: |
+    Use **Apply Your Plan** now to regenerate your saved, approved Lab 1.4
+    scope after the Weak demonstration. Read back the running rules and
+    record the running identity and commit time before retesting. Without a
+    saved request, use **Apply Hardened** for the full reference. Neither
+    route replaces your observations, operator checks or sign-off. If you
+    choose to re-author the policy manually instead, follow the Lab 2.2
+    procedure below rather than mixing manual and automatic changes.
+
     Reuse the reviewed Lab 2.2 policy and the Lab 1.4 change request. Inspect
     both boundaries in containd. If either differs from the approved scope,
     export the running rules, stage the removals and replacements together,
     review the full diff and first-match order, commit once and read back.
     Record the running identity and commit time. Preserve management access.
-    The optional current-system check reads the policy without replacing it.
+    The **Cross-check the current system** reads the policy without replacing it.
 
     | Chain link | Owning action | Selected / deferred |
     |---|---|---|
@@ -167,11 +192,13 @@ steps:
     A ZTNA broker selection is planning-only; it deploys no login control.
     The L4 source pin enforces; DPI detects and logs.
 
-    :::hint Optional catch-up — for less technical students or teams behind schedule
-    This replaces typing rules. It does not replace your own observations, operator check or sign-off.
-    Apply Your Plan for the approved Lab 1.4 scope. Apply Hardened only for
-    the full reference. Read back the running rules before retesting.
+    :::hint Scope is not a policy backup
+    Apply Your Plan compiles the saved selection; it does not import the
+    hand-written Lab 2.2 export. Compare source pins, required conduits and
+    deferred paths with that record. If the scope is wrong, stop before retesting
+    and correct the saved request or return to reviewed manual entry.
     :::
+
   action:
     type: check
     expect:
@@ -195,8 +222,9 @@ steps:
     With **Block vendor → field access** selected, expect a timeout and unchanged RMU1.
     Deferred means the write still opens RMU1 and removes section supply, even
     when hop one is denied. Record device audit, source tuples and results.
-    Restore RMU1 closed, RMU2 open and normal supply before Validate for every
-    plan. Preserve evidence before restoration; Reset Lab would reapply Weak.
+    Restore RMU1 closed, RMU2 open and normal supply before **Cross-check the current system** for every
+    plan. Preserve evidence first, then return to **Restore service** and select
+    **Run again** to restore RMU1. Reset Lab would reapply Weak.
 
     :::decision id=vendor-retest-hmi-state options="NORMAL_OPS,SECTION_OUTAGE,UNCHANGED_FROM_ATTACK"
     What did the feeder show after retest?
@@ -255,7 +283,7 @@ steps:
     open boundary, exception and risk owner. Sign the record as tester and
     operator; ask the change owner to accept or reject the remaining risk.
 
-    The optional current-system cross-check samples current policy and recovery
+    The **Cross-check the current system** samples current policy and recovery
     state. It does not sign this record, prove an earlier login/pivot or certify
     all restoration actions. Keep those observations separately. This bonus is
     optional; Lab 2.4 does not require its records.

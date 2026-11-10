@@ -28,6 +28,19 @@ steps:
   description: |
     **Time budget:** ~15 minutes (estimate; optional depth takes extra time).
 
+    ### Quick glossary
+    - **CC / RTU:** Control Centre master / Remote Terminal Unit gateway ([architecture](/knowledge#eu-telecontrol-architecture)).
+    - **GI:** general interrogation, a request for the complete station inventory ([GI and quality](/knowledge#iec104-gi-cot-quality)).
+    - **OLTC / PLC:** on-load tap changer / programmable logic controller regulating it ([architecture](/knowledge#eu-telecontrol-architecture)).
+    - **RMU:** ring main unit, a field switching device ([architecture](/knowledge#eu-telecontrol-architecture)).
+    - **Deadband:** a value-change threshold for spontaneous reporting, not a permission rule ([GI and quality](/knowledge#iec104-gi-cot-quality)).
+
+    Before **Execute Step**, open **Control Centre** in [/substation](/substation)
+    in a second tab, press **Interrogate station**, and wait for GI completion.
+    GI means general interrogation: refresh the station inventory on the current
+    connection. The check needs matched GI evidence within ten minutes; routine
+    GI runs only every 15 minutes, so do not rely on the periodic cycle.
+
     Start with weak policy and a healthy feeder. Use Reset Lab only before gathering evidence. On the [Network Map](/console), walk Enterprise, Vendor/Engineering, Station, Field, Control Centre and Operations DMZ. Label the two control hops: CC→RTU TCP/2404 and RTU→field TCP/502. The PLC has a separate pinned OLTC conduit.
 
     In [/substation](/substation), compare the **Control Centre** observations, quality and receipt times with the separate **Physical System** view. GI runs on connect, every 15 minutes or via **Interrogate station**; quiet valid status does not expire. Float measurements are cyclic every 10 seconds, PLC parameters every 60 seconds, with deadband/quality spontaneous reports between cycles. Breaker closed and supply present are your known-good baseline; a socket is not proof of fresh observation.
@@ -77,12 +90,12 @@ steps:
 - id: generate-scenario-traffic
   title: Generate scenario traffic
   description: |
-    On the Network Map, start **Generate scenario traffic** before capturing. Leave it running during the capture, then stop it. The generator makes real engineering→PLC maintenance GETs, enterprise→historian reads and vendor→historian reads under weak policy. These are scenario flows, not autonomous control polls.
+    Press **Generate Traffic (45s)** to preview generated flows. This is a fixed-duration run, not a toggle; start it again immediately before the capture in the next step. The generator makes real engineering→PLC maintenance GETs, enterprise→historian reads and vendor→historian reads under weak policy. These are scenario flows, not autonomous control polls.
 
     :::generate-traffic-button
     :::
 
-    While generation runs, open the [Network Map](/console) and click **Traffic Matrix** in the left drawer. Compare active Station→Field polling with Vendor→Station maintenance and Enterprise/Vendor→Operations DMZ reads. Same-subnet RTU↔PLC/GPS is absent from this cross-zone view. Leave generation running for the next capture.
+    While generation runs, open the [Network Map](/console) and click **Traffic Matrix** in the left drawer. Compare active Station→Field polling with Vendor→Station maintenance and Enterprise/Vendor→Operations DMZ reads. Same-subnet RTU↔PLC/GPS is absent from this cross-zone view. Restart generation in the capture step; this preview may have ended by then.
 
     ### Sneak preview: the live Traffic Matrix
 
@@ -106,14 +119,28 @@ steps:
     The generator includes Enterprise historian reads, but no Enterprise RTU or field probe; distinguish those paths.
     :::
 
-    :::hint Optional depth
-    Traffic describes what occurred; a policy row describes what is allowed. Compare the two without treating them as interchangeable.
+    :::hint Compare generated reads with permissions
+    A generated Vendor→historian read on TCP/8080 is not CC ingest on TCP/8081.
+    Record the service and actual source separately. A quiet Enterprise→field
+    cell is not closure: the generator sends no Enterprise field probe.
     :::
+
+
 - id: capture-traffic-at-the-firewall
   title: Capture traffic at the firewall
   node: fw-1
   description: |
-    > **Tip—where you run commands:** click **Show terminal** (the terminal icon at the top right of this exercise) to open an embedded shell beside the steps. It drops you on the step's node (here the firewall, `fw-1`). You can type commands there or use the **copy** button on a command block. You can also open a node terminal from the [Network Map](/console); it remains available for the rest of the workshop.
+    **Terminal choice:** select **fw-1** in the terminal tabs before running
+    capture commands. **Show terminal** reveals the terminal panel; verify its
+    active node label rather than assuming the current tab is the firewall.
+    The [Network Map](/console) also opens a terminal on its selected node.
+
+    Immediately before starting tcpdump, press **Generate Traffic (45s)** here.
+    Wait for the generation acknowledgement, then start the capture without
+    reading ahead. The generator stops automatically.
+
+    :::generate-traffic-button
+    :::
 
     Switch to **fw-1**'s terminal. If the configuration CLI is open, type `exit` first; RangerDanger then starts Linux bash. Capture there while the generator runs; use `containd cli` to return for policy commands:
 
@@ -170,7 +197,7 @@ steps:
 - id: critical-conduits-what-must-flow
   title: Critical conduits - what MUST flow
   description: |
-    Use the capture and station-state evidence to distinguish required cross-zone flows from same-zone dependencies and other observed access.
+    Use the capture and station-state evidence to distinguish required cross-zone flows from same-zone dependencies and other observed access. The six operational intents are CC→RTU, RTU→field, PLC→OLTC, CC historian ingest, enterprise historian read and engineering→PLC web.
 
     :::decision id=required-cross-zone-conduits options=SIX_OPERATIONAL_INTENTS,EVERY_OBSERVED_FLOW,CC_ONLY correct=SIX_OPERATIONAL_INTENTS
     Which cross-zone flows must remain available for normal operation?
@@ -224,9 +251,6 @@ steps:
     Use Control Centre quality and receipt times together with physical observations; a permitted socket alone is not evidence of fresh operation.
     :::
 
-    :::hint Optional depth
-    A firewall capture and the station state API observe different network boundaries; neither replaces the other's evidence.
-    :::
 - id: findings-what-you-observed
   title: Findings - what you observed
   description: |
@@ -262,9 +286,13 @@ steps:
     The capture does not generate foreign-source control attempts. It cannot establish whether an allowed CC session authorizes a command.
     :::
 
-    :::hint Optional depth
-    Record the capture start and end times so later comparisons use the same observation window.
+    :::hint Keep passive and active evidence separate
+    If the passive Enterprise→field filter is empty, record NOT_OBSERVED for
+    that window. In the next step, a successful Kali Modbus read establishes
+    latent reachability; it does not retroactively put traffic in the old PCAP.
     :::
+
+
 - id: probe-for-latent-exposure
   title: Probe for latent exposure
   expected_config: weak
@@ -298,6 +326,12 @@ steps:
 - id: transition-decide-what-to-fix-first
   title: Transition - decide what to fix first
   description: |
+    In **Control Centre**, press **Interrogate station** again and wait for GI
+    completion before this final **Execute Step** link check. Expand the station
+    inventory there to see the 44 points and command controls. The six operational
+    intents are CC→RTU, RTU→field, PLC→OLTC, CC historian ingest, enterprise
+    historian read and engineering→PLC web.
+
     Confirm the known-good baseline: five field devices, 44 IEC 104 points including F2 position/trip/lockout/current/MW, and five unchanged commands. You have observed traffic, identified six operational conduits, classified passive findings and tested latent reachability; Lab 1.3 now turns those structured answers into design verdicts and test criteria.
 
     [Continue to Lab 1.3](/exercises/eu-segmentation-requirements), then use Lab 1.4 to choose which changes to fund. Deferred exposure remains risk, not a completed control.

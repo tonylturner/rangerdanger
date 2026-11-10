@@ -38,7 +38,7 @@
     },
     "firewall-implementation": {
       "RUN": 24,
-      "SKIP": 6
+      "SKIP": 9
     },
     "hardening-configurations": {
       "RUN": 16,
@@ -1045,10 +1045,10 @@
       },
       "reason": null
     },
-    "validation-evidence|4|tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 20000' -T fields -E header=y -e frame.number -e frame.time_epoch -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags|1": {
+    "validation-evidence|4|tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 20000' -T fields -E header=y -e frame.number -e frame.time_utc -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags|1": {
       "oracle": {
         "intent": "read",
-        "match": "(?m)^\\d+\\t\\d+\\.\\d+\\t[1-9]\\d*\\t10\\.10\\.10\\.50\\t\\d+\\t10\\.40\\.40\\.20\\t20000\\t0x[0-9a-f]+$"
+        "match": "(?m)^\\d+\\t\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+Z\\t[1-9]\\d*\\t10\\.10\\.10\\.50\\t\\d+\\t10\\.40\\.40\\.20\\t20000\\t0x[0-9a-f]+$"
       },
       "reason": null,
       "container": "rangerdanger-eng-ws",
@@ -1231,6 +1231,33 @@
         "intent": "read",
         "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=\\S+)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
       }
+    },
+    "firewall-implementation|5|add firewall rule rtac-to-field-modbus ALLOW lan1 lan2|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "firewall-implementation|5|set firewall rule rtac-to-field-modbus --sources 10.30.30.20/32 --protocols tcp:502 --log true|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "firewall-implementation|5|move firewall rule rtac-to-field-modbus top|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
     }
   }
 }

@@ -120,9 +120,6 @@ steps:
     Required diagnostic deny rules log the blocked attempt. IEC 104 DPI adds monitor-only observations of allowed Control Centre commands; Modbus DPI and logging selections do not create enforcing rules. Monitoring never satisfies a BLOCK requirement, and an allowed port does not establish a user's identity.
     :::
 
-    :::hint Optional depth
-    For a formal assessment, distinguish an architectural target from a verified control or protocol outcome.
-    :::
 - id: resourcing-reality-check
   title: Resourcing reality check
   expected_config: weak
