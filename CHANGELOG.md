@@ -6,6 +6,45 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-11-10
+
+Manual validation release: students in both packages implement their
+firewall change request, collect evidence and sign their own test record.
+Tested on containd 0.1.42 (`latest`); the minimum remains 0.1.41.
+No firewall-data migration is required from v0.2.3. This release moves
+`latest`.
+
+### Changed
+
+- Labs 1.4 and 2.2–2.4 in both packages now teach a change request,
+  hand-authored rules, named-source tests, boundary captures, correlation
+  with `show events` DENY rows, an operator check and a signed test record.
+- Optional catch-up hints replace the Guided/Advanced tracks.
+- Package curriculum revisions are now US 4 and EU 8. Browser state is
+  scoped by package and revision: progress, notes, decisions and saved
+  plans from earlier revisions are not loaded or migrated into these
+  revisions. Students start fresh; older records remain in browser storage.
+- **Breaking API change for callers:** `GET /api/scenarios/:id/validate`
+  is replaced by `POST /api/scenarios/:id/validate`, accepting an optional
+  `changeRequest`. Callers must switch to POST.
+
+### Added
+
+- `POST /api/workshop/probe-matrix`, a measurement-only automation
+  diagnostic. It does not capture traffic or produce a signed test record.
+
+### Removed
+
+- The one-click validation report: `POST /api/firewall/validation-report`,
+  its panel, `:::validation-report` directive and supporting scripts.
+
+### Fixed
+
+- The lab-commands smoke uses a shared bounded capture lifecycle for both
+  packages and reports exceptions as failures rather than silently
+  dropping rows.
+- The shared canary no longer treats a refused connection as a deny.
+
 ## [v0.2.3] - 2026-11-07
 
 Lab parity release: sections 1 and 2 use the same activity design in the
@@ -3629,7 +3668,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.3.0...HEAD
+[v0.3.0]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.3.0
 [v0.2.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.3
 [v0.2.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.2
 [v0.2.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.1
