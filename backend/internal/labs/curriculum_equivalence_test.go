@@ -20,10 +20,11 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// catalog titles instead of action IDs in implementation prose, and the
 	// single-path rule-authoring / optional catch-up directive cutover, and
 	// hand-authored change-request implementation with single-commit cutover,
-	// and firewall-native DENY event correlation in both dynamic retest lessons.
+	// and firewall-native DENY event correlation in both dynamic retest lessons
+	// without requiring the later Lab 2.4 boundary capture.
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "9dbc43b57c9d87cbf559ce63d4b9afcdb5163eb5885dc793a5eaaff8c5197a11",
-		"eu-iec104-substation": "f06f45526249a19727f1723eed2f6fa536766261727549a6f91d145ebba40110",
+		"us-dnp3-substation":   "7c469fa6b1e96e47753c61016d3353d5b7ff4553777b52a96f4e585e4e028124",
+		"eu-iec104-substation": "518d260d9d4e15ae8f5922780c3d037a73e671ecd24c6237cbd84e7207288ced",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

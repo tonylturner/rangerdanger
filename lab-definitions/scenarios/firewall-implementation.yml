@@ -395,11 +395,6 @@ steps:
     expected_config: hardened
     node: kali-1
     description: |
-      Before retesting, start the bounded fw-1 boundary capture described in
-      Lab 2.4's baseline step. For each expected deny retain the source-zone SYN
-      and checked absence on the destination-zone interface, in the same UTC
-      window as the host timeout and the rule event below.
-
       Test the prohibited paths in your change request from their named sources.
       Record source, destination, service, expected result, observation and UTC time.
       A deny verdict requires a connection timeout. Connection refused means
@@ -442,7 +437,7 @@ steps:
       :::
 
       For every negative row, correlate the named host's connect timeout with a
-      fw-1 DENY event and the boundary capture in the same UTC window. In the
+      fw-1 DENY event in the same UTC window. In the
       fw-1 containd configuration CLI (type `containd cli` if in Linux), type:
 
           show events

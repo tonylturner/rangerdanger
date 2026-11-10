@@ -28,6 +28,15 @@ class ManualValidationContentTests(unittest.TestCase):
             dynamic = yaml.safe_load((ROOT / "lab-definitions/packages" / package /
                                       "curriculum/implementation.yml").read_text())["phases"]["negative"]
             validation = lesson("validation-evidence", eu)
+            for text in (retest, dynamic):
+                self.assertNotIn("boundary capture", text)
+                self.assertNotIn("baseline step", text)
+                self.assertIn("connect timeout with a fw-1 DENY event in the same UTC window",
+                              " ".join(text.split()))
+            self.assertIn("fw-1 DENY event and the boundary capture",
+                          validation["steps"][2]["description"])
+            self.assertIn("Preserve all three references",
+                          validation["steps"][3]["description"])
             for text in (retest, dynamic, validation["steps"][2]["description"],
                          validation["steps"][3]["description"]):
                 for required in ("show events", "firewall.rule.hit", "DENY", "ruleId",
