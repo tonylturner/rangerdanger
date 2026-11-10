@@ -25,7 +25,11 @@ func euWorkshopValidator(slot string) scenarioValidator {
 	return scenarioValidator{
 		capabilities: []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
 		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
-			return evaluateEUWorkshop(slot, s.collectEUWorkshop(ctx, in.gen, slot))
+			checks := evaluateEUWorkshop(slot, s.collectEUWorkshop(ctx, in.gen, slot))
+			if slot == "eu-validation-evidence" {
+				checks = append(checks, s.policyJudgment(ctx, in.gen))
+			}
+			return checks
 		},
 	}
 }

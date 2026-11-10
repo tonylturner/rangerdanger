@@ -56,14 +56,18 @@ func evaluateTestStep(index int, step labs.ScenarioStep, executors stepExecutors
 		}
 		checks := executors.check(step.Action.Expect)
 		allPass := true
+		var failures []string
 		for _, check := range checks {
 			if !check.Success {
 				allPass = false
-				break
+				failures = append(failures, check.Action+": "+check.Detail)
 			}
 		}
 		result.Passed = allPass
 		result.Detail = fmt.Sprintf("%d checks, all pass: %v", len(checks), allPass)
+		if len(failures) > 0 {
+			result.Detail += "; " + strings.Join(failures, "; ")
+		}
 		if runDetail != "" {
 			result.Detail = runDetail + "; " + result.Detail
 		}

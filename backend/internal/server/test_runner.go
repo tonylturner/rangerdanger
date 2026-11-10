@@ -300,7 +300,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 						applyErr = action.applyError
 						return action
 					},
-					check:      func(expect map[string]any) []StepActionResult { return s.executeCheck(ctx, gen, expect) },
+					check:      func(expect map[string]any) []StepActionResult { return s.executeSuiteCheck(ctx, gen, expect) },
 					probe:      func(step labs.ScenarioStep) []StepActionResult { return s.executeProbe(ctx, gen, step) },
 					sessionCut: func(flow string) StepActionResult { return s.executeSessionCut(ctx, gen, flow) },
 					sequencePause: func() {
