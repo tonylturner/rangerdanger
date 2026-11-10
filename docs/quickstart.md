@@ -1,7 +1,7 @@
 # Quickstart
 
-Full install walkthrough for package-based v0.2.3 (tagged commands
-require published v0.2.3 images). The 5-line version lives
+Full install walkthrough for package-based v0.2.4 (tagged commands
+require published v0.2.4 images). The 5-line version lives
 in the [README](../README.md); this doc covers the offline / SSD
 path, common errors, and what to do when something breaks.
 
@@ -103,7 +103,7 @@ git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
 ./setup.sh                   # latest release
 # or pin a specific version:
-./setup.sh --version v0.2.3
+./setup.sh --version v0.2.4
 ```
 
 PowerShell (Docker Desktop WSL2, local-drive checkout):
@@ -112,7 +112,7 @@ PowerShell (Docker Desktop WSL2, local-drive checkout):
 git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
 .\setup.ps1                  # latest release
-.\setup.ps1 -Version v0.2.3
+.\setup.ps1 -Version v0.2.4
 ```
 
 Windows 11 blocks local scripts by default ("running scripts is disabled on
@@ -186,7 +186,7 @@ isn't realistic. The instructor stages an SSD; students load from it.
 **On a machine with internet (instructor):**
 
 ```bash
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.3
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.4
 ```
 
 The positional version selects every first-party image tag independently
@@ -228,23 +228,36 @@ has prebuilt image tarballs attached. Use an instructor-staged, verified
 bundle, or verify any manually supplied assets and their `.version`
 before using them offline.
 
-## Upgrading to v0.2.3
+## Upgrading to v0.2.4
 
-For v0.2.2 → v0.2.3, save your work, then fetch/check out v0.2.3 and rerun
+For v0.2.3 → v0.2.4, save your work, then fetch/check out v0.2.4 and rerun
 setup using the commands under
 [Installing the upgrade](#installing-the-upgrade). These commands require
-published v0.2.3 images. The containd minimum is unchanged, so this update
+published v0.2.4 images. The containd minimum is unchanged, so this update
 does not require a firewall-data migration. Setup still restarts the range
 and resets its policy; save evidence and local work first. On Windows, setup
 probes the current kernel and leaves it unchanged if its required features
-work; it installs the v0.2.3 kernel asset only if the probe finds them missing.
+work; it installs the v0.2.4 kernel asset only if the probe finds them missing.
 
-The same no-migration guidance applies to v0.2.1, which already required
+US curriculum revision 4 and EU revision 8 start with fresh browser state.
+Earlier-revision progress, notes, decisions and saved plans remain in browser
+storage but are not loaded or migrated into the new revisions. Save your notes
+and evidence before upgrading, and write a new Lab 1.4 change request.
+
+API callers must also update: scenario validation changes from
+`GET /api/scenarios/:id/validate` to `POST /api/scenarios/:id/validate`,
+with an optional `changeRequest`. The one-click
+`POST /api/firewall/validation-report` endpoint is removed.
+
+The same no-migration guidance applies to v0.2.2 and v0.2.1, which already required
 containd 0.1.41. A direct upgrade from v0.2.0 or older data not yet migrated
 by containd 0.1.41 still requires the full pre-upgrade backup described below.
-The release workflow promotes eligible unchanged images, so a v0.2.2 → v0.2.3
-SSD delta carries only the images this release rebuilt; a fresh full bundle
-remains an option.
+All 20 first-party images are rebuilt from refreshed bases for v0.2.4
+with `[rebuild-all]`; none are reused from the previous release.
+The v0.2.3 → v0.2.4 SSD delta carries the full first-party image set,
+not a small content-only patch.
+Budget disk space and image-import time accordingly; a fresh full SSD bundle
+is simpler.
 
 **This release requires containd 0.1.41 or later** for online, offline and source
 installs; it was tested on 0.1.42. Check the actual containd build, not just
@@ -313,9 +326,9 @@ assignments. It is not a binary/schema rollback.
 From a clean macOS/Linux checkout:
 
 ```bash
-git fetch origin tag v0.2.3 &&
-git checkout --detach v0.2.3 &&
-./setup.sh --version v0.2.3 --package us-dnp3-substation
+git fetch origin tag v0.2.4 &&
+git checkout --detach v0.2.4 &&
+./setup.sh --version v0.2.4 --package us-dnp3-substation
 # Or select --package eu-iec104-substation
 ```
 
@@ -331,18 +344,18 @@ release lacks the package Compose metadata required by the delta helper. Delta
 staging remains supported between compatible package-aware releases; follow
 its generated `DELTA-README.md`, including backup and rollback. Include
 containd explicitly when you need the staged bundle to carry the current
-mutable `latest`. The v0.2.2 → v0.2.3 delta carries only images rebuilt for
-this release; prefer a fresh full bundle when that is simpler.
+mutable `latest`. The v0.2.3 → v0.2.4 delta carries the full first-party image
+set and can be close to a full bundle; prefer a fresh full bundle.
 
 PowerShell has the same package-aware installation path. From a clean
 local-drive checkout on Docker Desktop WSL2:
 
 ```powershell
-git fetch origin tag v0.2.3
-if ($LASTEXITCODE -ne 0) { throw 'Could not fetch v0.2.3' }
-git checkout --detach v0.2.3
-if ($LASTEXITCODE -ne 0) { throw 'Could not check out v0.2.3' }
-.\setup.ps1 -Version v0.2.3 -Package us-dnp3-substation
+git fetch origin tag v0.2.4
+if ($LASTEXITCODE -ne 0) { throw 'Could not fetch v0.2.4' }
+git checkout --detach v0.2.4
+if ($LASTEXITCODE -ne 0) { throw 'Could not check out v0.2.4' }
+.\setup.ps1 -Version v0.2.4 -Package us-dnp3-substation
 # Or select -Package eu-iec104-substation
 ```
 
@@ -361,9 +374,9 @@ Historical context for v0.1.x users: v0.2.0 introduced package-based installs
 and rebuilt all 20 first-party images (`[rebuild-all]`). Its containd minimum
 was 0.1.37; the first start migrated stored schema one-way to 0.1.10.
 The [firewall storage backup and rollback](#firewall-storage-backup-and-rollback)
-requirements still apply when moving from v0.1.x directly to v0.2.3.
+requirements still apply when moving from v0.1.x directly to v0.2.4.
 Use the [current upgrade commands](#installing-the-upgrade), or a full
-v0.2.3 SSD bundle, rather than installing an intermediate v0.2.0 release.
+v0.2.4 SSD bundle, rather than installing an intermediate v0.2.0 release.
 Save evidence first: setup resets the workshop and does not migrate old
 single-package browser progress. A rollback across the schema boundary needs
 the matching complete pre-upgrade storage, image and older RangerDanger release.
