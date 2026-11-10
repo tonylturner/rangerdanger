@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -121,27 +122,53 @@ func (o *Orchestrator) ExecCommand(ctx context.Context, containerName string, cm
 
 	execID, err := o.dockerClient.ContainerExecCreate(execCtx, containerName, execConfig)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", "", -1, fmt.Errorf("command timed out before start: %w; the process was not started", err)
+		}
 		return "", "", -1, fmt.Errorf("exec create: %w", err)
 	}
 
 	resp, err := o.dockerClient.ContainerExecAttach(execCtx, execID.ID, container.ExecStartOptions{Tty: false})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", "", -1, fmt.Errorf("command timed out during start: %w; process state is unknown and it may still be running. Check the node terminal before running it again", err)
+		}
 		return "", "", -1, fmt.Errorf("exec attach: %w", err)
 	}
 	defer resp.Close()
+	// Docker's hijacked output stream does not follow context cancellation.
+	// Close only our attachment at the deadline; Docker exec keeps running.
+	stopClose := context.AfterFunc(execCtx, resp.Close)
+	defer stopClose()
 
 	// Non-TTY output is multiplexed into stdout and stderr frames.
 	var stdout, stderr bytes.Buffer
-	if _, err := stdcopy.StdCopy(&stdout, &stderr, resp.Reader); err != nil && execCtx.Err() == nil {
-		return "", "", -1, fmt.Errorf("read output: %w", err)
-	}
+	_, readErr := stdcopy.StdCopy(&stdout, &stderr, resp.Reader)
 
-	// Get exit code
+	// A running exec's ExitCode is not a completed command's exit status.
 	inspect, err := o.dockerClient.ContainerExecInspect(ctx, execID.ID)
-	exitCode := -1
-	if err == nil {
-		exitCode = inspect.ExitCode
+	if ctxErr := execCtx.Err(); ctxErr != nil {
+		state := "process state is unknown (status unavailable); it may still be running"
+		if err == nil {
+			state = "the process is no longer running"
+			if inspect.Running {
+				state = "the process is still running in the container; Run did not stop it"
+			}
+		}
+		reason := "command canceled"
+		if errors.Is(ctxErr, context.DeadlineExceeded) {
+			reason = "command timed out"
+		}
+		return stdout.String(), stderr.String(), -1, fmt.Errorf("%s: %w; %s. Check it in the node terminal before running it again; use the terminal for long-running commands", reason, ctxErr, state)
 	}
-
-	return stdout.String(), stderr.String(), exitCode, nil
+	if readErr != nil {
+		return stdout.String(), stderr.String(), -1, fmt.Errorf("read output: %w", readErr)
+	}
+	if err != nil {
+		return stdout.String(), stderr.String(), -1, fmt.Errorf("command status unavailable; the process may still be running: %w", err)
+	}
+	if inspect.Running {
+		return stdout.String(), stderr.String(), -1, fmt.Errorf("output stream ended but the process is still running; check it in the node terminal before running it again")
+	}
+	return stdout.String(), stderr.String(), inspect.ExitCode, nil
 }
