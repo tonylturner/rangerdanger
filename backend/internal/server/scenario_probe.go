@@ -12,11 +12,11 @@ import (
 
 const probeCommand = `if command -v bash >/dev/null 2>&1; then timeout 3 bash -c 'exec 3<>/dev/tcp/$1/$2' _ "$1" "$2"; else timeout 3 nc -w 3 "$1" "$2" </dev/null; fi`
 
-// executeProbe compares TCP observations with the shared judging target.
+// executeProbe compares TCP observations with the step's declared reference.
 // Rows remain in YAML order while connection attempts run concurrently.
 func (s *Server) executeProbe(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep) []StepActionResult {
 	results := make([]StepActionResult, len(step.Action.Targets))
-	judging, err := s.judgingTarget(ctx, gen)
+	judging, err := s.probeJudgingTarget(ctx, gen, step)
 	if err != nil {
 		return probePolicyFailures(step, judging.detail+": judging target unavailable: "+err.Error())
 	}
@@ -37,6 +37,21 @@ func (s *Server) executeProbe(ctx context.Context, gen *lifecycle.Generation, st
 	}
 	workers.Wait()
 	return results
+}
+
+func (s *Server) probeJudgingTarget(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep) (gradingTarget, error) {
+	if step.ExpectedConfig != "weak" {
+		return s.judgingTarget(ctx, gen)
+	}
+	target := gradingTarget{detail: "the Weak baseline"}
+	// Use the same packaged reference source as policyJudgment's Weak check.
+	// An empty compiled plan is not the authority for arbitrary probe tuples.
+	path, err := s.policyPath(gen.Package, "weak")
+	if err != nil {
+		return target, err
+	}
+	target.plan.Config, err = readPolicyJSONWithRetry(path)
+	return target, err
 }
 
 func probePolicyFailures(step labs.ScenarioStep, detail string) []StepActionResult {
@@ -95,7 +110,11 @@ func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, ste
 	if expectedVerdict == labs.VerdictAllow {
 		expected = "reachable"
 	}
-	row.Detail = prefix + fmt.Sprintf("expected %s by %s, observed %s%s", strings.ToUpper(string(expectedVerdict)), judgingLabel, verdict, detail)
+	expectedLabel := strings.ToUpper(string(expectedVerdict))
+	if step.ExpectedConfig == "weak" {
+		expectedLabel = expected
+	}
+	row.Detail = prefix + fmt.Sprintf("expected %s by %s, observed %s%s", expectedLabel, judgingLabel, verdict, detail)
 	row.Success = verdict == expected
 	return row
 }

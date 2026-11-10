@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -34,7 +35,7 @@ func TestProbeExecuteStepJudgingTargetAndResponse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			step := labs.ScenarioStep{Title: "Probe target", Node: "kali-1", Action: &labs.StepAction{
+			step := labs.ScenarioStep{ExpectedConfig: "hardened", Title: "Probe target", Node: "kali-1", Action: &labs.StepAction{
 				Type: "probe", Targets: []labs.ProbeTarget{
 					{Host: "10.40.40.20", Port: 502},
 					{From: controller, Host: "10.40.40.20", Port: 502},
@@ -50,7 +51,7 @@ func TestProbeExecuteStepJudgingTargetAndResponse(t *testing.T) {
 			empty := compileProbePlan(t, gen, nil)
 			full := compileProbePlan(t, gen, all)
 			for _, tc := range []struct {
-				name                   string
+				name, config           string
 				request                *planSelection
 				applied                *labs.CompiledPlan
 				negativeRC, positiveRC int
@@ -65,8 +66,20 @@ func TestProbeExecuteStepJudgingTargetAndResponse(t *testing.T) {
 				{name: "selected request rejects exposure", request: &planSelection{pkg, gen.Package.Revision, []string{"block-enterprise-to-field"}}, target: "your 1.4 change request (1 actions)"},
 				{name: "applied empty supersedes request", applied: &empty, request: &planSelection{pkg, gen.Package.Revision, all}, target: "applied plan", pass: true},
 				{name: "applied full supersedes request", applied: &full, request: &planSelection{pkg, gen.Package.Revision, nil}, target: "applied plan"},
+				{name: "improved uses saved request", config: "improved", request: &planSelection{pkg, gen.Package.Revision, []string{"block-enterprise-to-field"}}, target: "your 1.4 change request (1 actions)"},
+				{name: "weak reachable matches", config: "weak", target: "the Weak baseline", pass: true},
+				{name: "weak refusal matches", config: "weak", target: "the Weak baseline", negativeRC: 1, stderr: "Connection refused", pass: true},
+				{name: "weak timeout mismatch", config: "weak", target: "the Weak baseline", negativeRC: 124},
+				{name: "weak supersedes applied and request", config: "weak", applied: &full, request: &planSelection{pkg, gen.Package.Revision, all}, target: "the Weak baseline", pass: true},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
+					step.ExpectedConfig = "hardened"
+					if tc.config != "" {
+						step.ExpectedConfig = tc.config
+					}
+					if err := s.db.Model(&models.Scenario{}).Where("id = ?", "probe-contract").Update("steps", string(mustJSON(t, []labs.ScenarioStep{step}))).Error; err != nil {
+						t.Fatal(err)
+					}
 					s.policySource, s.appliedPlan, s.planProvenance = "manual-custom", nil, nil
 					if tc.applied != nil {
 						useAppliedProbePlan(t, s, *tc.applied)
@@ -110,13 +123,16 @@ func TestProbeExecuteStepJudgingTargetAndResponse(t *testing.T) {
 	}
 }
 
-func TestSuiteProbeJudgesReferenceAndAppliedPlan(t *testing.T) {
+// Exercise the shipped Weak demonstrations through the suite's real evaluator.
+// A baseline observation passes even when a conflicting plan/request exists;
+// changing just one observation to a timeout still fails the step.
+func TestSuiteProbeJudgesDeclaredWeakBaseline(t *testing.T) {
 	for _, pkg := range []string{usPackageID, euPackageID} {
 		t.Run(pkg, func(t *testing.T) {
 			gen := usGeneration(nil)
-			scenarioID := "firewall-implementation"
+			prefix := ""
 			if pkg == euPackageID {
-				gen, scenarioID = euGeneration(t, nil, nil), "eu-firewall-implementation"
+				gen, prefix = euGeneration(t, nil, nil), "eu-"
 			}
 			s := rangeServer(gen, "weak")
 			var err error
@@ -128,45 +144,133 @@ func TestSuiteProbeJudgesReferenceAndAppliedPlan(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			scenario, err := s.findActiveScenario(scenarioID)
+			var all []string
+			for _, action := range gen.Package.Curriculum.Catalog {
+				all = append(all, action.ID)
+			}
+			full := compileProbePlan(t, gen, all)
+			for _, scenarioID := range []string{"baseline-assessment", "firewall-implementation", "vendor-rdp-compromise"} {
+				t.Run(scenarioID, func(t *testing.T) {
+					scenario, err := s.findActiveScenario(prefix + scenarioID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var steps []labs.ScenarioStep
+					if err := json.Unmarshal([]byte(scenario.Steps), &steps); err != nil {
+						t.Fatal(err)
+					}
+					found := false
+					for i, step := range steps {
+						if step.Action == nil || step.Action.Type != "probe" || step.ExpectedConfig != "weak" {
+							continue
+						}
+						found = true
+						for _, applied := range []bool{false, true} {
+							for _, rc := range []int{0, 1, 124} {
+								t.Run(fmt.Sprintf("step=%d/applied=%t/rc=%d", i, applied, rc), func(t *testing.T) {
+									s.policySource, s.appliedPlan, s.planProvenance = "weak", nil, nil
+									if applied {
+										useAppliedProbePlan(t, s, full)
+									}
+									first := step.Action.Targets[0]
+									s.execInContainer = func(_ context.Context, _ string, cmd []string, _ int) (string, string, int, error) {
+										if cmd[4] == first.Host && cmd[5] == fmt.Sprint(first.Port) {
+											if rc == 1 {
+												return "", "Connection refused", rc, nil
+											}
+											return "", "", rc, nil
+										}
+										return "", "", 0, nil
+									}
+									changed, err := ensureHardenedPrecondition(step, "weak", func(string) ([]string, error) {
+										t.Error("suite changed policy to make a baseline probe pass")
+										return nil, nil
+									})
+									if err != nil || changed {
+										t.Fatalf("baseline precondition changed: %t %v", changed, err)
+									}
+									ctx := context.WithValue(t.Context(), changeRequestKey{}, compiledChangeRequest{full})
+									result := evaluateTestStep(i, step, stepExecutors{
+										probe: func(step labs.ScenarioStep) []StepActionResult {
+											rows := s.executeProbe(ctx, gen, step)
+											for _, row := range rows {
+												if !strings.Contains(row.Detail, "expected reachable by the Weak baseline") {
+													t.Fatal(row)
+												}
+											}
+											return rows
+										},
+									})
+									if result.Passed != (rc != 124) || result.AutoPass {
+										t.Fatalf("suite ignored declared target or mismatch: %+v", result)
+									}
+								})
+							}
+						}
+					}
+					if !found {
+						t.Fatal("authored baseline probe was not found")
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestProbeWeakUsesPackagedReference(t *testing.T) {
+	for _, pkg := range []string{usPackageID, euPackageID} {
+		t.Run(pkg, func(t *testing.T) {
+			gen := usGeneration(nil)
+			if pkg == euPackageID {
+				gen = euGeneration(t, nil, nil)
+			}
+			s := rangeServer(gen, "weak")
+			// Keep a real reference envelope, but deliberately make its verdict
+			// differ from an empty compiled plan: probes must read the package.
+			path, err := s.policyPath(gen.Package, "weak")
 			if err != nil {
 				t.Fatal(err)
 			}
-			var steps []labs.ScenarioStep
-			if err := json.Unmarshal([]byte(scenario.Steps), &steps); err != nil {
+			data, err := os.ReadFile(path)
+			if err != nil {
 				t.Fatal(err)
 			}
-			for i, step := range steps {
-				if step.Action == nil || step.Action.Type != "probe" || step.ExpectedConfig != "weak" {
-					continue
-				}
-				for _, applied := range []bool{false, true} {
-					t.Run(fmt.Sprintf("applied-empty-plan=%t", applied), func(t *testing.T) {
-						s.policySource, s.appliedPlan, s.planProvenance = "weak", nil, nil
-						if applied {
-							useAppliedProbePlan(t, s, compileProbePlan(t, gen, nil))
-						}
-						s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
-							return "", "", 0, nil // The authored Weak-baseline exposure.
-						}
-						changed, err := ensureHardenedPrecondition(step, "weak", func(string) ([]string, error) {
-							t.Error("suite changed policy to make a baseline probe pass")
-							return nil, nil
-						})
-						if err != nil || changed {
-							t.Fatalf("baseline precondition changed: %t %v", changed, err)
-						}
-						result := evaluateTestStep(i, step, stepExecutors{
-							probe: func(step labs.ScenarioStep) []StepActionResult { return s.executeProbe(t.Context(), gen, step) },
-						})
-						if result.Passed != applied || result.AutoPass {
-							t.Fatalf("suite did not preserve target mismatch: %+v", result)
-						}
-					})
-				}
-				return
+			var document map[string]any
+			if err := json.Unmarshal(data, &document); err != nil {
+				t.Fatal(err)
 			}
-			t.Fatal("authored baseline probe was not found")
+			firewall := document["firewall"].(map[string]any)
+			firewall["rules"], firewall["defaultAction"] = []any{}, "DENY"
+			s.cfg.LabDefinitionsPath = t.TempDir()
+			gen.Package.Policies = map[string]string{"weak": "weak.json"}
+			path = filepath.Join(s.cfg.LabDefinitionsPath, "weak.json")
+			if err := os.WriteFile(path, mustJSON(t, document), 0600); err != nil {
+				t.Fatal(err)
+			}
+			step := labs.ScenarioStep{ExpectedConfig: "weak", Node: "kali-1", Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.40.40.20", Port: 502}}}}
+			for _, rc := range []int{0, 124} {
+				s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) { return "", "", rc, nil }
+				rows := s.executeProbe(t.Context(), gen, step)
+				if len(rows) != 1 || rows[0].Success != (rc == 124) || !strings.Contains(rows[0].Detail, "expected blocked by the Weak baseline") {
+					t.Fatal(rows)
+				}
+			}
+			if err := os.WriteFile(path, []byte(`{}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
+				t.Error("probe ran without a valid Weak reference")
+				return "", "", 0, nil
+			}
+			rows := s.executeProbe(t.Context(), gen, step)
+			if len(rows) != 1 || rows[0].Success || !strings.Contains(rows[0].Detail, "the Weak baseline: judging target cannot be evaluated") {
+				t.Fatal(rows)
+			}
+			delete(gen.Package.Policies, "weak")
+			rows = s.executeProbe(t.Context(), gen, step)
+			if len(rows) != 1 || rows[0].Success || !strings.Contains(rows[0].Detail, "the Weak baseline: judging target unavailable") {
+				t.Fatal(rows)
+			}
 		})
 	}
 }
