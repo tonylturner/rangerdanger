@@ -46,6 +46,11 @@ No firewall-data migration is required from v0.2.3. This release moves
   packages and reports exceptions as failures rather than silently
   dropping rows.
 - The shared canary no longer treats a refused connection as a deny.
+- EU Lab 2.4 Validate judges the running policy against the change
+  request or full reference, as US Lab 2.4 does.
+- The EU workshop test-suite waits for the Control Centre link and a
+  completed GI before checking link freshness, and failed suite steps now
+  name each failed check. The check itself is unchanged.
 
 ## [v0.2.3] - 2026-11-07
 
