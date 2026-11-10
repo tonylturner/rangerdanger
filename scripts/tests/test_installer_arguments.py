@@ -1,6 +1,7 @@
 """Installer argument errors stop before any Docker or staging work."""
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -33,12 +34,12 @@ class InstallerArgumentTests(unittest.TestCase):
             DOCKER_CALLS=str(self.docker_calls),
         )
 
-    def run_script(self, script, args, executable="bash"):
+    def run_script(self, script, args, executable="bash", cwd=ROOT):
         command = (["pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-File"]
                    if executable == "pwsh" else ["bash"])
         result = subprocess.run(
             [*command, str(ROOT / script), *args],
-            cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=10,
+            cwd=cwd, env=self.env, capture_output=True, text=True, timeout=10,
         )
         self.assertFalse(self.docker_calls.exists(), "argument parsing called Docker")
         self.assertNotIn("unbound variable", result.stdout + result.stderr)
@@ -82,6 +83,51 @@ class InstallerArgumentTests(unittest.TestCase):
                     else:
                         self.assertEqual(result.returncode, 0, result.stderr)
                         self.assertIn("Usage:", result.stdout)
+
+    def file_arguments(self):
+        folder = Path(self.temp.name) / "offline files [test]'s"
+        folder.mkdir()
+        child = folder / "child"
+        child.mkdir()
+        for name in ("images-arm64.tar", "notes.txt"):
+            file = folder / name
+            file.touch()
+            yield str(file), folder, ROOT
+            yield str(file.relative_to(folder.parent)), Path(folder.name), folder.parent
+            yield file.name, Path("."), folder
+            yield "../" + file.name, Path(".."), child
+
+    def test_shell_rejects_files_and_suggests_their_folder(self):
+        for file, folder, cwd in self.file_arguments():
+            for args in (["--from-tarballs", file], ["--from-tarballs=" + file]):
+                with self.subTest(args=args, cwd=cwd):
+                    result = self.run_script("setup.sh", args, cwd=cwd)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(
+                        "--from-tarballs expects the folder containing "
+                        "images-<arch>.tar, not the file; try: ",
+                        result.stderr,
+                    )
+                    suggestion = result.stderr.split("try: ", 1)[1].strip()
+                    self.assertEqual(shlex.split(suggestion), ["--from-tarballs", str(folder)])
+                    self.assertNotIn("Pre-flight checks", result.stdout)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not installed")
+    def test_powershell_rejects_files_and_suggests_their_folder(self):
+        for file, folder, cwd in self.file_arguments():
+            with self.subTest(file=file, cwd=cwd):
+                result = self.run_script(
+                    "setup.ps1", ["-FromTarballs", file], executable="pwsh", cwd=cwd,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "-FromTarballs expects the folder containing "
+                    "images-<arch>.tar, not the file; try: ",
+                    result.stdout,
+                )
+                quoted_folder = str(folder).replace("'", "''")
+                self.assertIn(f"try: -FromTarballs '{quoted_folder}'", result.stdout)
+                self.assertNotIn("Pre-flight checks", result.stdout)
 
     @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not installed")
     def test_powershell_reports_missing_from_tarballs(self):

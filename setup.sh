@@ -93,6 +93,11 @@ if [ "$SHOW_HELP" -eq 1 ]; then
     exit 0
 fi
 
+if [ -f "$TARBALL_DIR" ]; then
+    printf -v TARBALL_FOLDER '%q' "$(dirname "$TARBALL_DIR")"
+    die "--from-tarballs expects the folder containing images-<arch>.tar, not the file; try: --from-tarballs $TARBALL_FOLDER"
+fi
+
 # Installation root H: Compose's project directory for the platform and
 # every range, and the path the backend sees H at (it mounts H at H, so
 # the daemon resolves the range's relative binds to real host paths).
