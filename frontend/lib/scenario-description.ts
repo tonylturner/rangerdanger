@@ -100,7 +100,7 @@ export type FindingsPanelItem = { id: string; label: string };
 
 export type Segment =
   | { type: "prose"; value: string }
-  | { type: "cmd"; value: string; cli?: boolean; copyOnly?: boolean; sourceNode?: string }
+  | { type: "cmd"; value: string; cli?: boolean; copyOnly?: boolean; interactive?: boolean; sourceNode?: string }
   | { type: "hint"; title: string; value: string; sourceNode?: string }
   | {
       type: "decision";
@@ -201,7 +201,7 @@ export function parsePlanCoverageAttrs(attrs: string): { title: string } {
  * decision, and findingsPanel segments. Order in the output preserves
  * the order in the input.
  */
-export function splitDescription(text: string, inheritedSource?: string): Segment[] {
+export function splitDescription(text: string, inheritedSource?: string, interactive = false): Segment[] {
   const result: Segment[] = [];
   const lines = text.split("\n");
   let prose: string[] = [];
@@ -224,18 +224,41 @@ export function splitDescription(text: string, inheritedSource?: string): Segmen
 
   while (i < lines.length) {
     const trimmed = lines[i].trim();
-    const hintOpen = HINT_OPEN_RE.exec(trimmed);
-    if (hintOpen) {
+    // A template or sample output is Markdown, not a command recipe.
+    const codeFence = /^(`{3,}|~{3,})/.exec(trimmed);
+    if (codeFence) {
+      const fence = codeFence[1];
       flushProse();
-      const title = hintOpen[1]?.trim() || "Reveal answer";
+      const code = [lines[i++]];
+      while (i < lines.length) {
+        const line = lines[i++];
+        code.push(line);
+        if (line.trim() === fence) break;
+      }
+      result.push({ type: "prose", value: code.join("\n") });
+      continue;
+    }
+    const hintOpen = HINT_OPEN_RE.exec(trimmed);
+    if (hintOpen || trimmed === ":::interactive") {
+      flushProse();
+      const title = hintOpen?.[1]?.trim() || "Reveal answer";
       const body: string[] = [];
       i++;
-      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
+      let depth = 1;
+      while (i < lines.length) {
+        const line = lines[i].trim();
+        if (line === ":::") depth--;
+        else if (/^:::(?!why\b)[a-z-]+/.test(line)) depth++;
+        if (depth === 0) break;
         body.push(lines[i]);
         i++;
       }
       if (i < lines.length) i++; // skip closing fence
-      result.push({ type: "hint", title, value: body.join("\n"), ...source() });
+      if (hintOpen) {
+        result.push({ type: "hint", title, value: body.join("\n"), ...source() });
+      } else {
+        result.push(...splitDescription(body.join("\n"), sourceNode, true));
+      }
       continue;
     }
     const planCoverageOpen = PLAN_COVERAGE_OPEN_RE.exec(trimmed);
@@ -349,16 +372,16 @@ export function splitDescription(text: string, inheritedSource?: string): Segmen
         i++;
         cmd += "\n  " + lines[i].trim();
       }
-      result.push({ type: "cmd", value: cmd, ...source(), ...(sourceNode === "host" || !RUN_TOOL_RE.test(cmd) ? { copyOnly: true } : {}) });
+      result.push({ type: "cmd", value: cmd, ...source(), ...(sourceNode === "host" || !RUN_TOOL_RE.test(cmd) ? { copyOnly: true } : {}), ...(interactive ? { copyOnly: true, interactive: true } : {}) });
     } else if (isIndented && CONTAIND_CLI_RE.test(trimmed)) {
       // containd CLI command — copy-only (the student runs it in the
       // fw-1 containd terminal, not via the lab's per-node Run).
       flushProse();
-      result.push({ type: "cmd", value: trimmed, cli: true, ...source() });
+      result.push({ type: "cmd", value: trimmed, cli: true, ...source(), ...(interactive ? { copyOnly: true, interactive: true } : {}) });
     } else if (isIndented && COPY_ONLY_TOOL_RE.test(trimmed)) {
       // Interactive/GUI command — copy-only (run it in a real terminal).
       flushProse();
-      result.push({ type: "cmd", value: trimmed, copyOnly: true, ...source() });
+      result.push({ type: "cmd", value: trimmed, copyOnly: true, ...source(), ...(interactive ? { interactive: true } : {}) });
     } else {
       prose.push(lines[i]);
     }

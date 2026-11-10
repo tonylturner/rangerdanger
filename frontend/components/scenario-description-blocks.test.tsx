@@ -247,3 +247,12 @@ describe("live shared curriculum panels", () => {
     }
   });
 });
+
+describe("copy-only long-running commands", () => {
+  it("names the target terminal and has no Run action", () => {
+    const tree = rtlRender(<CommandBlock cmd="tcpdump -i any" runId="capture" runningId={null} onRun={vi.fn()} sourceNode="fw-1" copyOnly interactive />);
+    expect(tree.queryByRole("button", { name: "Run" })).toBeNull();
+    expect(tree.getByText("Long-running: paste into the fw-1 terminal and leave it running.")).toBeTruthy();
+    expect(tree.getByRole("button", { name: "copy" }).className).toContain("group-focus-within:opacity-100");
+  });
+});

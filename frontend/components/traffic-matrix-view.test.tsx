@@ -40,7 +40,7 @@ describe("TrafficMatrixView", () => {
     expect(out).not.toContain("relay-1");
     // The EU workshop drives scenario traffic in lab 1.2, same as US, so the
     // generator controls are present (traffic_generation is true).
-    expect(out).toContain('aria-label="Generate Traffic"');
+    expect(out).toContain('aria-label="Generate scenario traffic"');
     expect(out).toContain("Generate + PCAP");
     expect(out).toContain("scenario traffic generator");
     expect(out).toContain("sessions show conntrack entries, not delivery; traffic may already be blocked");
@@ -64,7 +64,7 @@ describe("TrafficMatrixView", () => {
 
   it("retains US generation controls and protocol labels", () => {
     const out = render(usFixture as LabGraph);
-    expect(out).toContain('aria-label="Generate Traffic"');
+    expect(out).toContain('aria-label="Generate scenario traffic"');
     expect(out).toContain("Generate + PCAP");
     expect(out).toContain("RTAC device comms");
     expect(out).toContain("DNP3");
