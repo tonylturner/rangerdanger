@@ -6,6 +6,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Network Map: a node's Terminal and UI viewer stays visible in the
+  inspector. The node details scroll on their own, and the UI and Terminal
+  buttons show as selected only when that viewer is open.
+
 ## [v0.2.4] - 2026-11-10
 
 Manual validation release: students in both packages implement their
