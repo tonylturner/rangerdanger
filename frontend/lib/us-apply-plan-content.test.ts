@@ -38,9 +38,9 @@ describe("US Apply Your Plan content", () => {
     }
   });
 
-  it("pins revision three's 8+13 proof universe and partial-plan gaps", () => {
+  it("pins revision four's 8+13 proof universe and partial-plan gaps", () => {
     for (const plan of US_PLANS) {
-      expect(plan.revision).toBe(3);
+      expect(plan.revision).toBe(4);
       expect(plan.expectations.filter((r) => r.category === "authorized")).toHaveLength(8);
       expect(plan.expectations.filter((r) => r.category === "unauthorized")).toHaveLength(13);
     }

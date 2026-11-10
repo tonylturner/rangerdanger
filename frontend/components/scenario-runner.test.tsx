@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -357,9 +357,11 @@ describe("authored description → Run → node exec", () => {
     const step = authored.steps.find((s) => s.description.includes("### Prepared positive test commands"))!;
     const tree = renderStep(authored, step.id, US_CURRICULUM);
     try {
-      fireEvent.click(tree.getAllByRole("button", { name: /Optional catch-up — for less technical students or teams behind schedule/ })[0]);
+      const hint = tree.getAllByRole("button", { name: /Optional catch-up — for less technical students or teams behind schedule/ })[0];
+      fireEvent.click(hint);
+      const prepared = within(hint.parentElement!);
       for (const [cmd, node] of [["mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20", "rtac-1"], ["curl -ks https://10.30.30.20/ -o /dev/null -w '%{http_code}\\n'", "vendor-jump-1"]]) {
-        const block = tree.getByText(cmd).parentElement!;
+        const block = prepared.getByText(cmd).parentElement!;
         fireEvent.click(Array.from(block.querySelectorAll("button")).find((b) => b.textContent === "Run")!);
         await waitFor(() => expect(exec).toHaveBeenCalledWith(node, cmd, 30));
         await waitFor(() => expect(tree.queryByRole("button", { name: "Running..." })).toBeNull());

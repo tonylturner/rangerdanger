@@ -2,7 +2,7 @@ id: hardening-configurations
 order: "2.3"
 name: "Protocol-Hardened Configurations"
 summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection from an unauthorized source. The remote trip stays open until someone closes it; disabling auto-reclose removes automatic restoration after a fault. The lesson: on this build the L4 source pin is what enforces, so verify enforcement by device state, not by policy labels. Modbus FC5/FC6 variants available as optional bonus attacks."
-estimated_minutes: 12
+estimated_minutes: 25
 validator: us-hardening-configurations
 description: >
   Stress-test the policy you built in Lab 2.2 against the canonical
@@ -66,7 +66,7 @@ steps:
       re-read.
       :::
 
-      **Time budget:** ~12 minutes (the primary DNP3 attack and re-test. The optional Modbus cases are extra).
+      **Time budget:** ~25 minutes (estimate) for the primary DNP3 attack, retest and hand record. Optional Modbus cases take extra time.
     action:
       type: check
       expect:
@@ -380,8 +380,13 @@ steps:
 
           mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20
 
-      `[2]` is recloser closed; `[3]` is auto-reclose enabled. Compare the values
-      with the HMI. Use the earlier RTAC field reads if a device disagrees.
+      `[2]` is recloser closed; `[3]` is auto-reclose enabled. From the same
+      RTAC terminal, read the recloser's own DNP3 points:
+
+          dnp3poll -a 2 -t 3s 10.40.40.21:20000
+
+      Record the binary states and compare them with the RTAC and HMI. Do not
+      send a control write to prove that a read path works.
       Restoration is common to every plan: breaker and recloser closed,
       auto-reclose enabled, regulator auto, voltage normal and loads energized.
       A successful deferred test is not permission to leave the feeder degraded.
@@ -393,8 +398,7 @@ steps:
       | | | | | | |
 
       Record the attack and retest outcomes, re-test timestamps and expected verdict
-      separately. Name any remaining
-      exposure and its risk owner. Audit history can include earlier Weak-policy
+      separately. Name any remaining exposure and its risk owner. Audit history can include earlier Weak-policy
       writes; do not clear history or repeatedly reset to obtain a green banner.
       A state check is not TCP proof. The optional cross-check samples the current
       system; it does not sign this record or certify the earlier restoration.

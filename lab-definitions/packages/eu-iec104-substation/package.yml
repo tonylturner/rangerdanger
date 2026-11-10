@@ -1,7 +1,7 @@
 schema: 1
 id: eu-iec104-substation
 title: European feeder telecontrol (IEC104)
-revision: 7
+revision: 8
 topology: topology.yml
 knowledge: knowledge/index.yml
 scenarios: scenarios

@@ -542,9 +542,12 @@ eu_lab_vendor_prepare() {
 eu_lab_validation_walk() {
   local scenario="$1"
   eu_apply_named improved || return
+  eu_lab_step "$scenario" write-test-plan || return
   eu_lab_step "$scenario" confirm-hardened-config-is-active || return
-  eu_lab_step "$scenario" generate-the-validation-report || return
-  eu_lab_step "$scenario" reflection-what-did-your-plan-close
+  eu_lab_step "$scenario" run-source-tests || return
+  eu_lab_step "$scenario" read-boundary-capture || return
+  eu_lab_step "$scenario" check-operator-health || return
+  eu_lab_step "$scenario" sign-test-record
 }
 
 eu_lab_validation_prepare() {

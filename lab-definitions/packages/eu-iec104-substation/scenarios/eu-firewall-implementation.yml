@@ -2,7 +2,7 @@ id: eu-firewall-implementation
 order: '2.2'
 name: Firewall Policy Implementation
 summary: Implement default deny and six pinned conduits; test allowed and denied flows, then export.
-estimated_minutes: 22
+estimated_minutes: 45
 validator: eu-firewall-implementation
 description: Implement your approved Lab 1.4 change request by authoring and committing rules in containd.
   Preserve required operations and test the named sources.
@@ -30,7 +30,7 @@ steps:
 
     This lab turns your design and funded plan into an enforceable boundary. Work in order: prove weak access, remove broad trust, preserve six minimal conduits, enable visibility, test both directions and export. Keep rollback available.
 
-    **Time budget:** ~22 minutes. Use the containd web UI or CLI.
+    **Time budget:** ~45 minutes (estimate). Use the containd web UI or CLI.
     Author, review and commit your rules. Read back the running policy and test
     it from the named sources. Optional catch-up controls replace rule entry,
     not observations, operator checks or sign-off.

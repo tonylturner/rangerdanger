@@ -149,7 +149,7 @@ eu_api_post() {
 t_run eu_lab_validation_walk eu-validation-evidence
 t_expect_eq "$T_STATUS" 0 "validation evidence walk establishes its hardened pre-state"
 t_expect_eq "$CALLS" \
-  " policy:improved step:confirm-hardened-config-is-active step:generate-the-validation-report step:reflection-what-did-your-plan-close" \
+  " policy:improved step:write-test-plan step:confirm-hardened-config-is-active step:run-source-tests step:read-boundary-capture step:check-operator-health step:sign-test-record" \
   "hardened policy is active before the served checks and continuity"
 
 # Package curriculum binding supplies the action catalog; scenario prompts

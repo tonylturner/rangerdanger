@@ -190,11 +190,12 @@ when the package declares `improved`. The runtime semantics are:
   before running that step. This is separate from action-level checks:
   in `scenario_execute.go`, a US `check` action with
   `expect.firewall_config: improved` evaluates the running L4 rules
-  against the applied plan (when its provenance holds), or Hardened
-  otherwise. Other `expect.firewall_config` strings are compared
+  against the applied plan (when its provenance holds), otherwise the supplied
+  Lab 1.4 change request, or the full Hardened reference when no request is
+  supplied. Other `expect.firewall_config` strings are compared
   literally with the active configuration; `hardened` is not an alias
-  in that action-level field. Use validators and the validation report
-  for policy evidence, not the banner's name match.
+  in that action-level field. Use validators for current-system cross-checks.
+  Retain separate wire evidence and a signed test record, not the banner's name match.
 
 ### Attack and retest checks: `run`
 
@@ -233,7 +234,7 @@ presumes the student sent in this step:
 
 ## Validators
 
-`GET /api/scenarios/:id/validate` runs the validator the scenario
+`POST /api/scenarios/:id/validate` runs the validator the scenario
 declares with `validator: <key>`. A scenario without one has no
 validation result (the route returns 404). Keys and their Go code live
 in the registry in `backend/internal/server/scenario_validators.go`;

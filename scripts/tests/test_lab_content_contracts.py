@@ -342,7 +342,6 @@ class ActionContracts(unittest.TestCase):
                     for phrase in ("without replacing it", "running identity", "full diff", "read back"):
                         self.assertIn(phrase, step["description"])
 
-
     def test_planning_keeps_decision_ui_and_manual_completion(self):
         doc = scenario("remediation-planning")
         step = doc["steps"][2]
@@ -376,7 +375,7 @@ class ActionContracts(unittest.TestCase):
             "hardening-configurations": (0, 0, 6),
             "remediation-planning": (3, 1, 0),
             "segmentation-requirements": (3, 0, 0),
-            "validation-evidence": (1, 0, 2),
+            "validation-evidence": (4, 0, 2),
             "vendor-rdp-compromise": (1, 0, 6),
         }
         auto_total = 0
@@ -386,34 +385,41 @@ class ActionContracts(unittest.TestCase):
             decision = sum(s.get("action", {}).get("type") == "decision" for s in steps)
             self.assertEqual((manual, decision, len(steps) - manual - decision), counts)
             auto_total += manual + decision
-        self.assertEqual(auto_total, 18)
+        self.assertEqual(auto_total, 21)
 
 
 class TimingContracts(unittest.TestCase):
-    # Guided golden-path estimates from the rc.3 student walkthrough QA.
+    # Estimates for the manual activity; these are not measured walkthroughs.
     MINUTES = {
         "baseline-assessment": 20,
         "segmentation-requirements": 10,
-        "remediation-planning": 12,
-        "firewall-implementation": 22,
-        "hardening-configurations": 12,
-        "vendor-rdp-compromise": 12,
-        "validation-evidence": 7,
+        "remediation-planning": 30,
+        "firewall-implementation": 45,
+        "hardening-configurations": 25,
+        "vendor-rdp-compromise": 25,
+        "validation-evidence": 40,
     }
 
     def test_card_chip_time_budget_and_overview_agree(self):
         overview = (ROOT / "docs/workshop-overview.md").read_text()
-        for name, minutes in self.MINUTES.items():
-            doc = scenario(name)
-            with self.subTest(scenario=name):
-                self.assertEqual(doc["estimated_minutes"], minutes)
-                budgets = re.findall(r"\*\*Time budget:\*\* ~(\d+) minutes", doc["steps"][0]["description"])
-                self.assertEqual(budgets, [str(minutes)])
-                self.assertRegex(overview, rf"\| `{name}` \| [^|]+ \| ~{minutes} min \|")
-        core = sum(m for n, m in self.MINUTES.items() if n != "vendor-rdp-compromise")
-        self.assertEqual(core, 83)
-        self.assertIn(f"Total ≈ {core} min for the 6 core labs (Guided path), "
-                      f"+{self.MINUTES['vendor-rdp-compromise']} min for the bonus.", overview)
+        for eu, total in ((False, 170), (True, 167)):
+            minutes_by_lab = dict(self.MINUTES)
+            if eu:
+                minutes_by_lab.update({"baseline-assessment": 15, "segmentation-requirements": 12})
+            for name, minutes in minutes_by_lab.items():
+                scenario_id = ("eu-" if eu else "") + name
+                path = (ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios" if eu else SCENARIOS)
+                doc = yaml.safe_load((path / (scenario_id + ".yml")).read_text())
+                with self.subTest(scenario=scenario_id):
+                    self.assertEqual(doc["estimated_minutes"], minutes)
+                    budgets = re.findall(r"\*\*Time budget:\*\* ~(\d+) minutes", doc["steps"][0]["description"])
+                    self.assertEqual(budgets, [str(minutes)])
+                    self.assertRegex(overview, rf"\| `{scenario_id}` \| [^|]+ \| ~{minutes} min \|")
+                    self.assertIn("estimate", doc["steps"][0]["description"])
+            self.assertEqual(sum(m for n, m in minutes_by_lab.items() if n != "vendor-rdp-compromise"), total)
+            label = "EU" if eu else "US"
+            self.assertIn(f"Total ≈ {total} min for the 6 core {label} labs, +25 min for the optional bonus (estimates).", overview)
+        self.assertIn("not timed walks", overview)
 
 
 if __name__ == "__main__":

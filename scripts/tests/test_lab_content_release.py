@@ -84,11 +84,9 @@ HEADER_EXCEPTIONS = {
     ),
     "remediation-planning": 'Write a change request for the substation firewall. Use the findings, required conduits and available roles to agree what to change now. Name an owner for every deferred exposure.\n',
     "validation-evidence": (
-        'After applying your plan or the Hardened reference in Lab 2.2 and stress-testing it '
-        'in Lab 2.3, this exercise builds the formal evidence package: positive tests '
-        'confirming authorized flows still work, tests comparing unauthorized flows with the '
-        'applied plan and Hardened, and PCAP evidence from the firewall. This is the validation '
-        'step required before any segmentation change goes to production.\n'
+        'Test the approved firewall change without control writes. Build a test plan, '
+        'collect source and boundary evidence, check operations and sign a go/no-go '
+        'record. These are sampled observations, not universal or regulatory proof.\n'
     ),
     "vendor-rdp-compromise": (
         'Optional companion to Lab 2.3. Phished vendor credentials let an attacker RDP/VNC '
@@ -144,8 +142,8 @@ class ErrataContracts(unittest.TestCase):
                 4: ("Apply Your Plan", "without replacing it", "| Restrict enterprise → vendor remote access |"),
                 5: ("Deferred means reachable", "Restore auto-reclose", "A refused connection counts as reached")},
             "validation-evidence": {
-                0: ("Do not replace a partial plan", "A saved browser plan is not an applied plan"),
-                1: ("Validate Exercise does not replace your test evidence",)},
+                1: ("Do not replace a partial plan", "A saved browser plan is not an applied plan"),
+                5: ("Validate Exercise does not replace your test evidence",)},
         }
         for name, locations in expected.items():
             for index, phrases in locations.items():
@@ -167,10 +165,10 @@ class ErrataContracts(unittest.TestCase):
         for phrase in ("auto-reclose still enabled", "auto-reclose becomes disabled", "device evidence",
                        "Detection selections do not close it", "This command alone does not trip the recloser"):
             self.assertIn(phrase, hardening)
-        report = " ".join(scenario("validation-evidence")["steps"][1]["description"].split())
-        for phrase in ("not DNP3 function-code rejection",
+        tests = " ".join(scenario("validation-evidence")["steps"][2]["description"].split())
+        for phrase in ("not command authorization",
                        "These two management ports stay allowed for every plan"):
-            self.assertIn(phrase, report)
+            self.assertIn(phrase, tests)
         apply = " ".join(scenario("hardening-configurations")["steps"][3]["description"].split())
         self.assertIn("**Pin field-device access to RTAC source IP** owns non-RTAC OT→field attempts, "
                       "not Kali's enterprise path", apply)
@@ -292,8 +290,8 @@ class ErrataContracts(unittest.TestCase):
         for stale in ("Selections in earlier labs rewrite", "plan rewrites the steps",
                       "lab adapts to which actions"):
             self.assertNotIn(stale, readme)
-        self.assertIn("Lab 1.4 remediation plan is compiled and applied in Lab 2.2", readme)
-        self.assertIn("verify the running policy against your plan", readme)
+        self.assertIn("Write the Lab 1.4 change request, implement it by hand in Lab 2.2", readme)
+        self.assertIn("Retest named sources", readme)
         self.assertNotIn("#updating-to-v0136", readme)
         self.assertNotIn("docker compose -f docker-compose.release.yml down &&", quickstart)
         self.assertNotIn("stage-ssd-repo-update.sh", ssd)

@@ -15,13 +15,15 @@ describe("US knowledge guidance", () => {
     },
   );
 
-  it("separates saved selections, applied provenance and the two proof results", () => {
+  it("separates saved requests, running policy and the signed hand record", () => {
     const text = article("plan-coverage-pipeline");
     for (const required of ["Apply Your Plan", "A saved selection alone is not running state",
-      "Plan proof", "Hardened acceptance", "13/13", "Budget overrun is a warning only"]) {
+      "otherwise the saved change request", "otherwise the full Hardened reference",
+      "sign the test record", "cross-checks do not grade that record", "Budget overrun is a warning only"]) {
       expect(text).toContain(required);
     }
     expect(text).not.toContain("The plan is advisory");
+    expect(text).not.toMatch(/Plan proof|Hardened acceptance|13\/13|Two report results/);
   });
 
   it("uses flag-first polling and same-origin app links", () => {

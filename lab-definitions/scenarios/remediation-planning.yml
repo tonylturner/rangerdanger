@@ -2,7 +2,7 @@ id: remediation-planning
 order: "1.4"
 name: "Remediation Planning Under Constraint"
 summary: "Review findings, fund the scope and write an approved change request with tests and rollback."
-estimated_minutes: 12
+estimated_minutes: 30
 validator: us-remediation-planning
 description: >
   Write a change request for the substation firewall. Use the findings, required conduits and available roles to agree what to change now. Name an owner for every deferred exposure.
@@ -17,7 +17,7 @@ steps:
     title: "Review the findings you captured"
     expected_config: weak
     description: |
-      **Time budget:** ~12 minutes.
+      **Time budget:** ~30 minutes (estimate).
 
       Review your structured passive findings, latent exposure and design verdicts before planning.
 

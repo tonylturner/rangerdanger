@@ -2,7 +2,7 @@ id: eu-vendor-rdp-compromise
 order: 2.3-bonus
 name: Vendor Remote Access Compromise (Bonus)
 summary: Prove enterprise remote-access exposure, pivot from the vendor terminal, then retest both hops independently.
-estimated_minutes: 12
+estimated_minutes: 25
 validator: eu-vendor-rdp-compromise
 description: Walk the same two-hop vendor compromise as the US workshop. Prove RDP/VNC reachability from enterprise,
   represent the compromised foothold in the vendor terminal and issue the prescribed Modbus write. Restore service,
@@ -27,6 +27,8 @@ steps:
   expected_config: weak
   node: kali-1
   description: |
+    **Time budget:** ~25 minutes (estimate; optional depth takes extra time).
+
     Optional bonus, weak active. From **Kali** prove the first hop:
 
         nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4

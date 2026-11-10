@@ -140,12 +140,12 @@ The API applies the supplied index to that same active-package scenario
 | `GET` | `/scenarios` | List the active package's exercises |
 | `GET` | `/scenarios/:id` | Get exercise detail with steps |
 | `POST` | `/scenarios/:id/steps/:stepIdx/execute` | Execute the action at zero-based `stepIdx` in the served scenario's ordered `steps` array. The route takes an array index, not a step ID; callers that start from an authored ID must resolve its current index from `GET /scenarios/:id`. The response includes `step_index`, `step_title`, `action_type`, `success`, `results` and `timestamp` (see [`scenario_execute.go`](../backend/internal/server/scenario_execute.go#L20-L38)). |
-| `POST` | `/scenarios/:id/validate` | Run all validators for the exercise. Returns `{"scenario_id", "outcome", "checks": [...], "timestamp"}` |
+| `POST` | `/scenarios/:id/validate` | Cross-check the current system against the judging target below; this does not grade the student’s written test plan or signed record. Returns `{"scenario_id", "outcome", "checks": [...], "timestamp"}` |
 
 ### Interactive policy grading
 
 Execute Step and Cross-check the current system accept an optional JSON body
-`{"changeRequest":{"packageId":"us-dnp3-substation","revision":3,"actionIds":["pin-rtac-to-field"]}}`.
+`{"changeRequest":{"packageId":"us-dnp3-substation","revision":4,"actionIds":["pin-rtac-to-field"]}}`.
 Use the active package/revision and the effective saved Lab 1.4 action IDs (the frontend omits the request when the effective
 selection is empty, so manual work targets the full reference). The server compiles these IDs; it never accepts caller verdicts
 or tuples. Invalid package, revision or action IDs return 400, even with an applied

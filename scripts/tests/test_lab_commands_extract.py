@@ -286,7 +286,7 @@ class ExtractTests(unittest.TestCase):
     def test_cross_firewall_nmap_skips_discovery_and_checks_port_states(self):
         rows = [r for r in extract.extract(ROOT) if r["command"].startswith("nmap ")]
         data = json.loads(extract.EXPECTATIONS.read_text())
-        self.assertEqual(len(rows), 8)
+        self.assertEqual(len(rows), 9)
         # FUXA listens on the HMI (10.30.30.10), not the RTAC: the RTAC
         # answers 1881/tcp closed, which an "open" oracle rightly fails.
         fuxa = [r for r in rows if "1881" in r["command"]]
@@ -301,7 +301,7 @@ class ExtractTests(unittest.TestCase):
                 oracle = data["commands"][extract.key(row)]["oracle"]
                 down = "Note: Host seems down\nNmap done: 0 hosts up"
                 self.assertFalse(extract.verdict(oracle, 0, down, "", control=True))
-                if row["scenario"] == "validation-evidence":
+                if row["scenario"] == "validation-evidence" and oracle["intent"] == "deny":
                     self.assertTrue(extract.verdict(
                         oracle, 0, "20000/tcp filtered dnp", "", control=True))
                     self.assertFalse(extract.verdict(
@@ -309,6 +309,11 @@ class ExtractTests(unittest.TestCase):
                     control = {"intent": "read", "match": oracle["control_match"]}
                     self.assertTrue(extract.verdict(control, 0, "20000/tcp open dnp", ""))
                     self.assertFalse(extract.verdict(control, 0, "20000/tcp filtered dnp", ""))
+                elif row["scenario"] == "validation-evidence":
+                    self.assertEqual(oracle["intent"], "read")
+                    self.assertTrue(extract.verdict(oracle, 0, "502/tcp open modbus", ""))
+                    for state in ("filtered", "closed"):
+                        self.assertFalse(extract.verdict(oracle, 0, f"502/tcp {state} modbus", ""))
                 if row["scenario"] == "vendor-rdp-compromise":
                     self.assertEqual(row["container"], "rangerdanger-kali")
 

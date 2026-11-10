@@ -93,8 +93,10 @@ class EstablishedConnectionContracts(unittest.TestCase):
                 self.assertIn("Observe loss after commit", text)
                 self.assertNotIn("instructor must cut", text)
         text = (eu / "scenarios/eu-hardening-configurations.yml").read_text()
-        self.assertIn("Post-commit delivery on an existing connection tests the current policy", text)
-        self.assertIn("separate fresh-link check proves handshake admission", text)
+        text = " ".join(text.split())
+        self.assertIn("Fresh-link admission starts at SYN", text)
+        self.assertIn("new points on an old connection alone do not show that a new connection can be admitted", text)
+        self.assertIn("link.since` strictly later than the policy commit", text)
 
 
 class ChangeManagementContracts(unittest.TestCase):

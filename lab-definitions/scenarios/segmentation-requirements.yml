@@ -21,7 +21,7 @@ steps:
     title: "Translate findings into design requirements"
     expected_config: weak
     description: |
-      **Time budget:** ~10 minutes. This is a design and decision lab—no commands to run.
+      **Time budget:** ~10 minutes (estimate). This is a design and decision lab—no commands to run.
 
       ### Look at the policy that's running today
 
@@ -166,13 +166,13 @@ steps:
       ### Good segmentation for this substation means
 
       1. **Enterprise cannot directly reach Field devices.**
-         *Test:* `tcpdump -i lan2` on the firewall (its field interface) should show zero packets originating from `10.10.10.0/24`; new denied connections should report a TCP timeout.
+         *Test:* capture on the firewall with `tcpdump -i any`. Match each enterprise-source SYN on `wan` with its absence on `lan2`, alongside a working authorized control. New denied connections report a TCP timeout; no packets alone is inconclusive.
 
       2. **Vendor access to OT Ops is constrained and brokered.**
          *Test:* vendor DMZ can reach the RTAC/HMI only on approved management ports, not on raw Modbus/DNP3.
 
-      3. **Unauthorized writes are blocked and logged.**
-         *Test:* a Modbus FC6 write or DNP3 Direct Operate from a non-RTAC source should be denied and produce a firewall event.
+      3. **Unauthorized source paths are denied.**
+         *Test:* non-RTAC source attempts to field ports should time out. Compare ingress/egress captures; logging is supplementary. Lab 2.3 demonstrates control writes in its approved window. Lab 2.4 uses reads, not writes. An allowed RTAC session still carries command-authority risk.
 
       4. **Enterprise ransomware cannot propagate into OT.**
          *Test:* SMB, RDP, and SSH from `10.10.10.0/24` to `10.30.30.0/24` or `10.40.40.0/24` should be denied.

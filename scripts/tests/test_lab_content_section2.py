@@ -227,8 +227,8 @@ class EnforcementContracts(unittest.TestCase):
         self.assertRegex(raw, r"(?m)^    tcp   TIME_WAIT   10\.20\.20\.10 ")
 
     def test_validation_tcp_scope_is_narrow(self):
-        text = self.flat(scenario("validation-evidence")["steps"][1]["description"])
-        self.assertIn("not DNP3 function-code rejection", text)
+        text = self.flat(scenario("validation-evidence")["steps"][2]["description"])
+        self.assertIn("not command authorization", text)
         overview = (ROOT / "docs/workshop-overview.md").read_text()
         self.assertIn("The L4 source pin enforces; DPI detects and logs.", overview)
         errata = (ROOT / "docs/v0.1.36-hotfix.md").read_text()

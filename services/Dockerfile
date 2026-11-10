@@ -108,7 +108,7 @@ FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c03
 # iproute2: ip(8) for route manipulation in harden scripts
 # iptables: FORWARD DROP policy and per-interface INPUT filtering in rtac-harden.sh
 # bash:     student-facing terminal consistency (~2MB per image)
-# nmap:     The US Lab 2.4 validation report probes from historian-sim
+# nmap:     Manual source-pin tests originate from historian-sim
 #           (OT Ops only) to check non-RTAC → field denies. OpenPLC
 #           attaches to OT Ops/station and management, not field, in
 #           either package.

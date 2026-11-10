@@ -8,7 +8,7 @@ Include CC cache identity, journal bounds and device generations/revisions where
 
 The [change-resource plan](#eu-change-resource-plan) should already define the expected outcome and rollback criteria. Handover records what actually happened against that plan.
 
-Save **Export plan record** alongside **Export compiled config**. The record contains package ID, revision, label, action IDs and policy hash. Check `GET /api/firewall/active` to confirm what is running. Named and manual policies have no applicable plan proof and are judged against Hardened. The L4 source pin enforces; DPI detects and logs. Applied IEC 104 monitor observations are separate from TCP proof; Modbus DPI remains planning-only. Monitoring never satisfies a BLOCK requirement.
+Save the redacted running rules first. If you used optional catch-up, keep **Export plan record** alongside **Export compiled config** as design references. That record contains package ID, revision, label, action IDs and policy hash. Check `GET /api/firewall/active` to confirm what is running. Checks use the applied plan first, otherwise the saved Lab 1.4 change request, otherwise the full Hardened reference. An empty effective selection supplies no request; a Weak-identical manual policy still fails. The compiled export is not a running-policy export. Save the redacted running rules separately. The L4 source pin enforces; DPI detects and logs. Applied IEC 104 monitor observations are separate from TCP proof; Modbus DPI remains planning-only. Monitoring never satisfies a BLOCK requirement.
 
 ### Retain applied shadow evidence separately
 
@@ -59,3 +59,5 @@ Lab 2.2 requires a fresh post-commit CC session, current-connection GI, every in
 Lab 2.3 requires that same fresh CC visibility, restored breaker/fresh supply, active probes against the plan, and bounded absence of foreign breaker operations only when the plan denies the Kali→RTU path. A deferred path instead retains the visible command consequence; restore breaker and supply before completion. PASS does not certify that the earlier attack/restoration was performed, command-aware filtering or regulatory compliance. The bonus certifies its sampled plan verdicts and restored RMU/OLTC state, not attack completion, supply or fresh CC observations.
 
 Current CC integrity, all field revisions delivered and fresh supply remain separate completion checks.
+
+Lab 2.4 teaches a hand test plan, source tests without control writes, boundary-capture review, operator readings and a signed go/no-go record. Production-poller positives use their own traffic and fresh points. Current-system cross-checks do not grade the written record or grant approval.

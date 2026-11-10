@@ -83,7 +83,7 @@ steps:
       The Weak Baseline permits the RTAC-to-field control protocols on this crossing.
       :::
 
-      **Time budget:** ~20 minutes (optional analyst hints take extra time).
+      **Time budget:** ~20 minutes (estimate) (optional analyst hints take extra time).
     action:
       type: check
       expect:

@@ -2,7 +2,7 @@ id: eu-hardening-configurations
 order: '2.3'
 name: Protocol-Hardened Configurations
 summary: Unauthorized IEC 104 SBO breaker OPEN, loss of supply, restoration and identical retest under source pinning.
-estimated_minutes: 10
+estimated_minutes: 25
 validator: eu-hardening-configurations
 description: Stress-test the EU telecontrol boundary with an unauthorized breaker command from Kali. Observe loss
   of supply, restore the feeder, harden and repeat the identical wire command. L4 source pinning is live; IEC 104
@@ -27,6 +27,8 @@ steps:
   expected_config: weak
   node: cc-1
   description: |
+    **Time budget:** ~25 minutes (estimate; optional depth takes extra time).
+
     Under weak policy confirm breaker closed, RMU1 closed/RMU2 open, OLTC remote/auto and supply present. Compare fresh CC observations with the separate **Physical System** view in [/substation](/substation). The PLC targets 20.4 kV ±1% (20.196–20.604 kV); out-of-band voltage must persist for 30 s before a tap request, not a US low-voltage band.
 
     :::hint Do not repair stale data with truth
