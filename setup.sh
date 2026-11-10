@@ -66,15 +66,21 @@ SHOW_HELP=0
 CHECK_ONLY=0
 SKIP_FW_GATE=0
 
+require_value() {
+    case "${2:-}" in
+        ""|-*) die "$1 needs $3" ;;
+    esac
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
-        --version)            VERSION="$2"; shift 2 ;;
-        --version=*)          VERSION="${1#*=}"; shift ;;
-        --from-tarballs)      TARBALL_DIR="$2"; shift 2 ;;
-        --from-tarballs=*)    TARBALL_DIR="${1#*=}"; shift ;;
+        --version)            require_value --version "${2:-}" "a release version"; VERSION="$2"; shift 2 ;;
+        --version=*)          require_value --version "${1#*=}" "a release version"; VERSION="${1#*=}"; shift ;;
+        --from-tarballs)      require_value --from-tarballs "${2:-}" "a directory (the folder containing images-<arch>.tar)"; TARBALL_DIR="$2"; shift 2 ;;
+        --from-tarballs=*)    require_value --from-tarballs "${1#*=}" "a directory (the folder containing images-<arch>.tar)"; TARBALL_DIR="${1#*=}"; shift ;;
         --from-source)        FROM_SOURCE=1; shift ;;
-        --package)            PACKAGE="$2"; shift 2 ;;
-        --package=*)          PACKAGE="${1#*=}"; shift ;;
+        --package)            require_value --package "${2:-}" "a package ID"; PACKAGE="$2"; shift 2 ;;
+        --package=*)          require_value --package "${1#*=}" "a package ID"; PACKAGE="${1#*=}"; shift ;;
         --check-only)         CHECK_ONLY=1; shift ;;
         --skip-firewall-gate) SKIP_FW_GATE=1; shift ;;
         -h|--help)            SHOW_HELP=1; shift ;;
@@ -85,6 +91,11 @@ done
 if [ "$SHOW_HELP" -eq 1 ]; then
     sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
     exit 0
+fi
+
+if [ -f "$TARBALL_DIR" ]; then
+    printf -v TARBALL_FOLDER '%q' "$(dirname "$TARBALL_DIR")"
+    die "--from-tarballs expects the folder containing images-<arch>.tar, not the file; try: --from-tarballs $TARBALL_FOLDER"
 fi
 
 # Installation root H: Compose's project directory for the platform and
