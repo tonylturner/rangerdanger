@@ -122,7 +122,7 @@ eu_lab_gate() {
       result=1
     fi
   fi
-  if [ "$result" -ne 0 ] && eu_api_get "/api/scenarios/$scenario/validate" 30; then
+  if [ "$result" -ne 0 ] && eu_api_post "/api/scenarios/$scenario/validate" '{}' 30; then
     printf 'STOPPED %s validator: %s\n' "$scenario" "$API_BODY"
   fi
   eu_apply_named weak || result=1
@@ -542,22 +542,16 @@ eu_lab_vendor_prepare() {
 eu_lab_validation_walk() {
   local scenario="$1"
   eu_apply_named improved || return
+  eu_lab_step "$scenario" write-test-plan || return
   eu_lab_step "$scenario" confirm-hardened-config-is-active || return
-  eu_lab_step "$scenario" generate-the-validation-report || return
-  eu_api_post /api/firewall/validation-report '{}' || return
-  if [ "$HTTP_STATUS" != 200 ] || ! printf '%s' "$API_BODY" | jq -e \
-    '.summary.result == "PASS" and .summary.skipped == 0' >/dev/null; then
-    fail "student validation report did not prove the full matrix: HTTP $HTTP_STATUS $API_BODY"
-    return 1
-  fi
-  pass "student validation report is PASS with no skipped probes"
-  eu_lab_step "$scenario" reflection-what-did-your-plan-close
+  eu_lab_step "$scenario" run-source-tests || return
+  eu_lab_step "$scenario" read-boundary-capture || return
+  eu_lab_step "$scenario" check-operator-health || return
+  eu_lab_step "$scenario" sign-test-record
 }
 
 eu_lab_validation_prepare() {
-  eu_lab_wait_good_cc || return
-  eu_api_post /api/firewall/validation-report '{}' || return
-  [ "$HTTP_STATUS" = 200 ] && printf '%s' "$API_BODY" | jq -e '.summary.result == "PASS" and .summary.skipped == 0' >/dev/null
+  eu_lab_wait_good_cc
 }
 
 eu_lab_visibility_failed() {

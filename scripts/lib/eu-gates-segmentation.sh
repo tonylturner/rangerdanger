@@ -15,7 +15,7 @@ eu_plan_case() {
   local selection="$1" request
   local golden="$ROOT/frontend/lib/testdata/plans/eu-$selection.json"
   local applied="$TMP_DIR/G28-$selection-apply.json"
-  local report="$TMP_DIR/G28-$selection-report.json"
+  local matrix="$TMP_DIR/G28-$selection-matrix.json"
   local oracle="$ROOT/scripts/tests/fixtures"
   request=$(jq -ce -L "$oracle" 'include "plan-gate"; plan_request' "$golden") || return 1
   printf '%s\n' "$request" >"$TMP_DIR/G28-$selection-request.json" || return 1
@@ -27,11 +27,11 @@ eu_plan_case() {
   jq -e -L "$oracle" --slurpfile golden "$golden" \
     'include "plan-gate"; plan_applied($golden[0])' "$applied" || return 1
   eu_require_backend_protection "$API_BODY" || return 1
-  eu_api_post /api/firewall/validation-report '{}' 90 || return 1
+  eu_api_post /api/workshop/probe-matrix '' 90 || return 1
   [ "$HTTP_STATUS" = 200 ] || return 1
-  printf '%s\n' "$API_BODY" >"$report" || return 1
+  printf '%s\n' "$API_BODY" >"$matrix" || return 1
   jq -e -L "$oracle" --slurpfile golden "$golden" \
-    'include "plan-gate"; plan_report($golden[0])' "$report" || return 1
+    'include "plan-gate"; plan_matrix($golden[0])' "$matrix" || return 1
   pass "G28 $selection plan: faithful proof, golden hardened acceptance and exact prevention gaps; no skipped tuples"
 }
 
@@ -39,7 +39,7 @@ eu_gate_G28() {
   local selection actions result=0
   for selection in full partial; do
     if ! eu_plan_case "$selection"; then
-      fail "G28 $selection plan apply/report did not match its golden: HTTP ${HTTP_STATUS:-none} ${API_BODY:-}"
+      fail "G28 $selection plan apply/matrix did not match its golden: HTTP ${HTTP_STATUS:-none} ${API_BODY:-}"
       result=1
       break
     fi
@@ -51,7 +51,7 @@ eu_gate_G28() {
     if [ "$result" -eq 0 ]; then
       for selection in $actions; do
         if ! eu_plan_case "$selection"; then
-          fail "G28 $selection singleton plan apply/report did not match its golden: HTTP ${HTTP_STATUS:-none} ${API_BODY:-}"
+          fail "G28 $selection singleton plan apply/matrix did not match its golden: HTTP ${HTTP_STATUS:-none} ${API_BODY:-}"
           result=1
           break
         fi

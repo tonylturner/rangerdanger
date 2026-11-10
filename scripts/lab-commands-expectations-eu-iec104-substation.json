@@ -6,11 +6,11 @@
       "SKIP": 0
     },
     "eu-firewall-implementation": {
-      "RUN": 10,
+      "RUN": 11,
       "SKIP": 1
     },
     "eu-hardening-configurations": {
-      "RUN": 2,
+      "RUN": 3,
       "SKIP": 0
     },
     "eu-remediation-planning": {
@@ -22,7 +22,7 @@
       "SKIP": 0
     },
     "eu-validation-evidence": {
-      "RUN": 9,
+      "RUN": 16,
       "SKIP": 0
     },
     "eu-vendor-rdp-compromise": {
@@ -30,7 +30,7 @@
       "SKIP": 1
     }
   },
-  "minimum_executed": 35,
+  "minimum_executed": 44,
   "commands": {
     "eu-baseline-assessment|3|tcpdump -i any -nn 'not host 127.0.0.1' -G 12 -W 1 -w /data/captures/baseline.pcap|1": {
       "container": "rangerdanger-firewall",
@@ -323,96 +323,17 @@
       },
       "reason": null
     },
-    "eu-validation-evidence|2|curl -fsS --max-time 3 http://10.70.70.40:8080/api/points|1": {
-      "container": "rangerdanger-kali",
-      "policy": "hardened",
-      "prompt": "shell",
-      "entry": "",
-      "action": "RUN",
+    "eu-validation-evidence|2|show running-config|1": {
       "oracle": {
-        "intent": "read",
-        "match": "\"ioa\"",
-        "semantic": "historian"
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:"
       },
-      "reason": null
-    },
-    "eu-validation-evidence|2|curl -fsS --max-time 3 http://10.30.30.30:8080/login|1": {
-      "container": "rangerdanger-eng-ws",
-      "policy": "hardened",
-      "prompt": "shell",
-      "entry": "",
-      "action": "RUN",
-      "oracle": {
-        "intent": "read",
-        "match": "(?i)(?:<html|<!doctype html|<form)"
-      },
-      "reason": null
-    },
-    "eu-validation-evidence|2|nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4|1": {
-      "container": "rangerdanger-kali",
-      "policy": "hardened",
-      "prompt": "shell",
-      "entry": "",
-      "action": "RUN",
-      "oracle": {
-        "intent": "deny",
-        "match": "(?=[\\s\\S]*2404/tcp\\s+filtered)|Not shown: 1 filtered tcp ports",
-        "control_match": "(?=[\\s\\S]*2404/tcp\\s+open)",
-        "nmap": true
-      },
-      "reason": null
-    },
-    "eu-validation-evidence|2|nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4|1": {
-      "container": "rangerdanger-kali",
-      "policy": "hardened",
-      "prompt": "shell",
-      "entry": "",
-      "action": "RUN",
-      "oracle": {
-        "intent": "deny",
-        "match": "(?=[\\s\\S]*502/tcp\\s+filtered)|Not shown: 1 filtered tcp ports",
-        "control_match": "(?=[\\s\\S]*502/tcp\\s+open)",
-        "nmap": true
-      },
-      "reason": null
-    },
-    "eu-validation-evidence|2|nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4|1": {
-      "container": "rangerdanger-kali",
-      "policy": "hardened",
-      "prompt": "shell",
-      "entry": "",
-      "action": "RUN",
-      "oracle": {
-        "intent": "deny",
-        "match": "(?=[\\s\\S]*3389/tcp\\s+filtered)(?=[\\s\\S]*5900/tcp\\s+filtered)|Not shown: 2 filtered tcp ports",
-        "control_match": "(?=[\\s\\S]*3389/tcp\\s+open)(?=[\\s\\S]*5900/tcp\\s+open)",
-        "nmap": true
-      },
-      "reason": null
-    },
-    "eu-validation-evidence|2|tcpdump -i any -nn 'tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081' -G 12 -W 1 -w /data/captures/validation.pcap|1": {
+      "reason": null,
       "container": "rangerdanger-firewall",
       "policy": "hardened",
-      "prompt": "shell",
-      "entry": "exit",
-      "action": "RUN",
-      "oracle": {
-        "intent": "capture",
-        "file": "/data/captures/validation.pcap"
-      },
-      "reason": null
-    },
-    "eu-validation-evidence|2|tcpdump -r /data/captures/validation.pcap -nn|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "hardened",
-      "prompt": "shell",
-      "entry": "exit",
-      "action": "RUN",
-      "oracle": {
-        "intent": "read",
-        "match": "IP 10\\.\\d+\\.\\d+\\.\\d+\\.\\d+ > 10\\."
-      },
-      "reason": null
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN"
     },
     "eu-validation-evidence|2|export config|1": {
       "container": "rangerdanger-firewall",
@@ -437,6 +358,147 @@
         "match": "(?i)(?:config\\.|audit|no entries|\\[\\])"
       },
       "reason": null
+    },
+    "eu-validation-evidence|2|tcpdump -i any -nn -U -G 1200 -W 1 -w /data/captures/validation.pcap 'host 10.10.10.50 or net 10.20.20.0/24 or net 10.30.30.0/24 or net 10.40.40.0/24 or net 10.60.60.0/24 or net 10.70.70.0/24'|1": {
+      "oracle": {
+        "intent": "capture",
+        "file": "/data/captures/validation.pcap"
+      },
+      "reason": null,
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "exit",
+      "action": "RUN"
+    },
+    "eu-validation-evidence|3|wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect|1": {
+      "container": "rangerdanger-control-centre",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"requested_at\"",
+        "semantic": "reconnect"
+      },
+      "reason": null
+    },
+    "eu-validation-evidence|3|nmap -Pn -sT -p 8080 10.70.70.40 --max-retries 1 -T4|1": {
+      "oracle": {
+        "intent": "read",
+        "match": "8080/tcp\\s+open\\b"
+      },
+      "reason": null,
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN"
+    },
+    "eu-validation-evidence|3|curl -fsS --max-time 3 http://10.70.70.40:8080/api/points|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"ioa\"",
+        "semantic": "historian"
+      },
+      "reason": null
+    },
+    "eu-validation-evidence|3|curl -fsS --max-time 3 http://10.70.70.40:8080/api/points|2": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"ioa\"",
+        "semantic": "historian"
+      },
+      "reason": null
+    },
+    "eu-validation-evidence|3|nmap -Pn -sT -p 8080 10.30.30.30 --max-retries 1 -T4|1": {
+      "oracle": {
+        "intent": "read",
+        "match": "8080/tcp\\s+open\\b"
+      },
+      "reason": null,
+      "container": "rangerdanger-eng-ws",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN"
+    },
+    "eu-validation-evidence|3|curl -fsS --max-time 3 http://10.30.30.30:8080/login|1": {
+      "container": "rangerdanger-eng-ws",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?i)(?:<html|<!doctype html|<form)"
+      },
+      "reason": null
+    },
+    "eu-validation-evidence|3|nmap -Pn -sT -p 2404 10.30.30.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?=[\\s\\S]*2404/tcp\\s+filtered)|Not shown: 1 filtered tcp ports",
+        "control_match": "(?=[\\s\\S]*2404/tcp\\s+open)",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "eu-validation-evidence|3|nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?=[\\s\\S]*502/tcp\\s+filtered)|Not shown: 1 filtered tcp ports",
+        "control_match": "(?=[\\s\\S]*502/tcp\\s+open)",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "eu-validation-evidence|3|nmap -Pn -sT -p 3389,5900 10.20.20.10 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?=[\\s\\S]*3389/tcp\\s+filtered)(?=[\\s\\S]*5900/tcp\\s+filtered)|Not shown: 2 filtered tcp ports",
+        "control_match": "(?=[\\s\\S]*3389/tcp\\s+open)(?=[\\s\\S]*5900/tcp\\s+open)",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "eu-validation-evidence|4|tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 502' -T fields -E header=y -e frame.number -e frame.time_epoch -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags|1": {
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^\\d+\\t\\d+\\.\\d+\\t[1-9]\\d*\\t10\\.10\\.10\\.50\\t\\d+\\t10\\.40\\.40\\.20\\t502\\t0x[0-9a-f]+$"
+      },
+      "reason": null,
+      "container": "rangerdanger-eng-ws",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN"
     },
     "eu-vendor-rdp-compromise|1|nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
@@ -501,6 +563,55 @@
         "control_match": "Written 1 references|\\[0\\]:\\s*1"
       },
       "reason": null
+    },
+    "eu-hardening-configurations|6|wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect|1": {
+      "container": "rangerdanger-control-centre",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"requested_at\"",
+        "semantic": "reconnect"
+      },
+      "reason": null
+    },
+    "eu-firewall-implementation|8|show events|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "reason": null,
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=\\S+)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
+      }
+    },
+    "eu-validation-evidence|3|show events|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "reason": null,
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=\\S+)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
+      }
+    },
+    "eu-validation-evidence|4|show events|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "reason": null,
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=\\S+)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
+      }
     }
   }
 }

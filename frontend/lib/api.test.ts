@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { ApiError, compilePlan, applyPlan, getActiveFirewallConfig, getSubstationNetworkEvents, runValidationReport, sendFieldAction, stopTrafficGeneration, type NetworkEventsResponse, type ValidationReport } from "./api";
+import { ApiError, compilePlan, applyPlan, executeScenarioStep, validateScenario, getActiveFirewallConfig, getSubstationNetworkEvents, sendFieldAction, stopTrafficGeneration, type NetworkEventsResponse } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -47,36 +47,6 @@ it("names the observed run in an additive traffic stop request", async () => {
   }));
 });
 
-it.each([
-  ["EU", "sha256:" + "a".repeat(64), true],
-  ["US", "", false],
-] as const)("reads %s validation proof metadata without changing the verdict", async (_, policy_hash, policy_stable) => {
-  const answer: ValidationReport = {
-    planProof: { applicable: false, pass: false, policyHash: "", hashStable: false, skipped: 0, rows: [] },
-    acceptance: { pass: true, skipped: 0, rows: [], preventionGaps: [] },
-    markdown: "# Segmentation evidence",
-    summary: {
-      authorized_pass: 1,
-      authorized_total: 1,
-      unauthorized_pass: 1,
-      unauthorized_total: 1,
-      result: "PASS",
-    },
-    active_config: "custom",
-    policy_source: "manual-custom",
-    pcap_path: "/captures/validation.pcap",
-    policy_hash,
-    window_start: "2026-10-18T12:00:00.123456789Z",
-    window_end: "2026-10-18T12:00:09.987654321Z",
-    policy_stable,
-  };
-  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(answer)));
-  vi.stubGlobal("fetch", fetch);
-
-  await expect(runValidationReport()).resolves.toEqual(answer);
-  expect(fetch).toHaveBeenCalledWith("/api/firewall/validation-report", expect.objectContaining({ method: "POST" }));
-});
-
 const planRequest = { packageId: "us-dnp3-substation", revision: 2, actionIds: [] };
 it.each([[compilePlan, "/api/plan/compile"], [applyPlan, "/api/firewall/apply-plan"]] as const)("posts scoped IDs, not browser rules, to %s", async (call, path) => {
   const fetch = vi.fn().mockResolvedValue(new Response('{}'));
@@ -94,3 +64,15 @@ it("reads active plan provenance without relabelling custom", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
   await expect(getActiveFirewallConfig()).resolves.toEqual(answer);
 });
+
+it.each([undefined, planRequest, { ...planRequest, actionIds: ["pin-rtac-to-field"] }])(
+  "POSTs interactive grading with optional scoped IDs: %j", async (changeRequest) => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response("{}")));
+    vi.stubGlobal("fetch", fetch);
+    await executeScenarioStep("lab/id", 2, changeRequest);
+    await validateScenario("lab/id", changeRequest);
+    const options = expect.objectContaining({ method: "POST", body: JSON.stringify({ changeRequest }) });
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/scenarios/lab%2Fid/steps/2/execute", options);
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/scenarios/lab%2Fid/validate", options);
+  },
+);

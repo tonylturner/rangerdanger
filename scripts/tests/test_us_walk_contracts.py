@@ -46,15 +46,13 @@ class USWalkContracts(unittest.TestCase):
             self.assertEqual(by_id[name]["action"], "ALLOW")
         self.assertIn("reserved management access", phase3)
 
-        # These branches must remain the original one-click instructions.
-        guided2 = re.search(r":::guided\n(.*?)\n:::", phase2, re.S)[1]
-        self.assertEqual(guided2, "Apply Your Plan in the next step. Use Apply Hardened only for the reference.")
-        guided3 = re.search(r":::guided\n(.*?)\n:::", phase3, re.S)[1]
-        self.assertEqual(guided3, (
-            "Click **Apply Your Plan**, or **Apply Hardened** for the reference.\n"
-            "An empty or planning-only plan is valid. It leaves Weak exposures open.\n"
-            "Inspect the running rules, not just the policy banner. Execute Step checks\n"
-            "the active policy without replacing it."))
+        # Policy shortcuts remain available, but only in labelled catch-up hints.
+        for description in (phase2, phase3):
+            hint = re.search(r":::hint Optional catch-up — for less technical students or teams behind schedule\n(.*?)\n:::", description, re.S)[1]
+            self.assertIn("Apply Your Plan", hint)
+            self.assertIn("replaces typing rules", hint)
+            self.assertIn("does not replace your own observations, operator check or sign-off", hint)
+            self.assertNotRegex(description, r":::guided|:::technical|:::track-picker")
 
     def test_preview_answer_counts_action_changes_not_description_changes(self):
         # usCompare supplies the rows; compareRuleSets aggregates enforcing-rule

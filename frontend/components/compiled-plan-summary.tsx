@@ -7,17 +7,18 @@ import { planLabel } from "../lib/policy-wording";
 export function CompiledPlanSummary({ plan, binding, appliedPlan }: { plan: CompiledPlan; binding: CurriculumBinding; appliedPlan?: PlanProvenance }) {
   return (
     <div className="space-y-3 rounded-lg border border-sky-800/50 bg-sky-950/20 p-4 text-xs text-slate-300">
-      <div className="font-semibold text-sky-300">Your plan — {planLabel(plan.label)}</div>
-      <p className="text-slate-400">Revision {plan.revision} · Policy {plan.policyHash.slice(0, 12)}</p>
+      <div className="font-semibold text-sky-300">Rule reference — {planLabel(plan.label)}</div>
+      <p className="text-slate-400">Revision {plan.revision} · Reference policy {plan.policyHash.slice(0, 12)}</p>
       {plan.label === "weak" && <p>Weak exposures remain open. Applying this plan restores the Weak exposure verdicts.</p>}
       <ul className="space-y-2">
         {plan.actions.map((a) => <li key={a.id}>
           <span className="font-semibold">{actionName(a.id, binding)}</span>
-          {" — "}{a.chosen ? appliedPlan?.actionIds.includes(a.id) ? "applied in your plan" : "planned" : "deferred"}
+          {" — "}{a.chosen ? appliedPlan?.actionIds.includes(a.id) ? "applied in your plan" : "included in reference" : "deferred"}
           {" — "}{actionEffectLabel(a.kind)}
           {!a.chosen && a.kind === "enforce" && "; Weak exposure open"}
         </li>)}
       </ul>
+      <p>Compare this reference with the committed rules in containd. Exports below are compiled references, not running configuration exports.</p>
       <p>The L4 source pin enforces; DPI detects and logs. Detection changes no verdict.</p>
       <a className="inline-block text-sky-300 underline" download={planExportFilename(plan, "config")}
         href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(plan.config, null, 2))}`}>Export compiled config</a>

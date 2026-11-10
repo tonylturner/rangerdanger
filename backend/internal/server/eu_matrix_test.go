@@ -10,13 +10,13 @@ import (
 
 func TestEUMatrixOneDefinitionAndSourceIdentity(t *testing.T) {
 	gen := euGeneration(t, nil, nil)
-	report, err := euRecipe.resolveValidation(gen)
+	universe, err := referenceProof(gen, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	labels := map[string]string{}
 	negatives := map[validationProbe]bool{}
-	for _, row := range report {
+	for _, row := range universe {
 		if label, exists := labels[row.Src]; exists && label != row.SrcLabel {
 			t.Fatalf("inconsistent source label: %+v", row)
 		}
@@ -39,7 +39,7 @@ func TestEUMatrixOneDefinitionAndSourceIdentity(t *testing.T) {
 		}
 		for _, row := range matrix {
 			if !negatives[row] || !strings.Contains(row.Note, "topology source") {
-				t.Fatalf("validator tuple/identity absent from report: %+v", row)
+				t.Fatalf("validator tuple/identity absent from full proof universe: %+v", row)
 			}
 		}
 	}
@@ -59,7 +59,7 @@ func TestEUMatrixOneDefinitionAndSourceIdentity(t *testing.T) {
 	if err != nil || len(matrix) != 1 || !strings.Contains(matrix[0].Note, "10.10.10.99 on enterprise_net") {
 		t.Fatalf("source zone not derived: %+v %v", matrix, err)
 	}
-	again, err := euRecipe.resolveValidation(gen)
+	again, err := referenceProof(gen, "")
 	if err != nil {
 		t.Fatal(err)
 	}

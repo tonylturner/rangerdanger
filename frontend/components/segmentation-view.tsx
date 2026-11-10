@@ -1,5 +1,7 @@
 "use client";
 
+import { CatchUp } from "./catch-up";
+
 // Self-contained "containd Segmentation" panel. Originally lived inside
 // the Feeder HMI substation tab; lifted into its own file so the
 // Network Map can render the exact same panel as a collapsible overlay
@@ -221,6 +223,9 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
               </option>
             ))}
           </select>
+        </div>
+
+        <CatchUp>
           <button
             onClick={() => handleApply(selectedMeta.id)}
             disabled={applying || isSelectedActive}
@@ -228,24 +233,23 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
           >
             {applying ? "Applying…" : isSelectedActive ? "Active" : "Apply"}
           </button>
-        </div>
-
-        {/* Quick-set pills */}
-        <div className="flex items-center gap-1">
-          {policies.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => handleApply(p.id)}
-              disabled={applying || activeConfig === p.id}
-              className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors disabled:opacity-50 ${
-                activeConfig === p.id ? p.toneActive : p.toneInactive
-              }`}
-              title={`Apply ${p.label}`}
-            >
-              {p.pill}
-            </button>
-          ))}
-        </div>
+          {/* Quick-set pills */}
+          <div className="flex items-center gap-1">
+            {policies.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => handleApply(p.id)}
+                disabled={applying || activeConfig === p.id}
+                className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors disabled:opacity-50 ${
+                  activeConfig === p.id ? p.toneActive : p.toneInactive
+                }`}
+                title={`Apply ${p.label}`}
+              >
+                {p.pill}
+              </button>
+            ))}
+          </div>
+        </CatchUp>
         {applyFailure && (
           <div role="alert" className="text-[10px] leading-snug text-red-400">
             {applyFailure}

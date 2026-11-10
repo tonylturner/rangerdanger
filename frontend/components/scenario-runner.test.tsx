@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -11,7 +11,9 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test-util";
 import { loadSavedRemediationPlan, saveRemediationPlan } from "../lib/remediation-plan";
+import { decisionName, writeCurriculum } from "../lib/curriculum-storage";
 import { EU_PLANS } from "../lib/plan-fixtures.test-util";
+import { useCompiledPlan } from "../lib/use-compiled-plan";
 import * as api from "../lib/api";
 import { ScenarioRunner } from "./scenario-runner";
 
@@ -19,12 +21,11 @@ const { scope, compiled } = vi.hoisted(() => ({
   scope: { packageId: "us-dnp3-substation", revision: 1, curriculum: undefined as CurriculumBinding | undefined },
   compiled: { data: undefined as CompiledPlan | undefined },
 }));
-vi.mock("../lib/use-compiled-plan", () => ({ useCompiledPlan: () => compiled }));
+vi.mock("../lib/use-compiled-plan", () => ({ useCompiledPlan: vi.fn(() => compiled) }));
 vi.mock("../lib/curriculum-scope", () => ({
   useCurriculumScope: () => scope,
   useActiveCurriculum: () => ({ scenarios: [] }),
 }));
-vi.mock("../lib/use-firewall-track", () => ({ useFirewallTrack: () => ({ track: "guided", setTrack: vi.fn() }) }));
 vi.mock("../lib/operator-queries", () => ({
   useOperatorView: () => ({ status: "loading" }), usePackagePolicies: () => undefined,
 }));
@@ -60,6 +61,7 @@ const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
 afterEach(() => {
   scope.curriculum = undefined;
   compiled.data = undefined;
+  vi.mocked(useCompiledPlan).mockClear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   if (originalStorage) Object.defineProperty(window, "localStorage", originalStorage);
@@ -192,12 +194,69 @@ describe("Execute Step command log", () => {
     try {
       fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
       const line = await tree.findByText(/^\[NOT MET\] breaker_closed: Expected false; observed true$/);
-      expect(execute).toHaveBeenCalledWith(authored.id, 0);
+      expect(execute).toHaveBeenCalledWith(authored.id, 0, undefined);
       expect(line.classList.contains("text-amber-400")).toBe(true);
       expect(line.textContent).not.toContain("BLOCKED");
       expect(loadProgress(scope, authored).cmdLog).toEqual([line.textContent]);
       expect(loadProgress(scope, authored).completedStepIds).toEqual([]);
     } finally { tree.close(); }
+  });
+});
+
+describe("interactive grading change requests", () => {
+  it.each([US_CURRICULUM, EU])("sends effective saved intent on Execute and Validate in $roles.implementation", async (binding) => {
+    const authored: Scenario = {
+      ...scenario, id: binding.roles.implementation, validator: "policy",
+      steps: [{ id: "policy", title: "Policy", description: "Read policy", action: { type: "check" } }],
+    };
+    const execute = vi.spyOn(api, "executeScenarioStep").mockResolvedValue({
+      step_index: 0, step_title: "Policy", action_type: "check", success: false,
+      results: [], timestamp: "now",
+    });
+    const validate = vi.spyOn(api, "validateScenario").mockResolvedValue({
+      scenario_id: authored.id, outcome: "FAIL", checks: [], timestamp: "now",
+    });
+    const tree = renderStep(authored, "policy", binding);
+    try {
+      expect(useCompiledPlan).toHaveBeenCalledWith(scope, true, undefined, "request");
+      const clickBoth = async () => {
+        const calls = execute.mock.calls.length + 1;
+        fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
+        await waitFor(() => expect(execute).toHaveBeenCalledTimes(calls));
+        fireEvent.click(tree.getByRole("button", { name: "Cross-check the current system" }));
+        await waitFor(() => expect(validate).toHaveBeenCalledTimes(calls));
+      };
+      const expectRequest = (actionIds?: string[]) => {
+        const request = actionIds ? { packageId: scope.packageId, revision: scope.revision, actionIds } : undefined;
+        expect(execute).toHaveBeenLastCalledWith(authored.id, 0, request);
+        expect(validate).toHaveBeenLastCalledWith(authored.id, request);
+      };
+      // Empty effective intent is no request: never grade manual work against Weak.
+      await clickBoth();
+      expectRequest();
+      saveRemediationPlan(scope, { exerciseId: binding.roles.planning, selectedActionIds: [], savedAt: "now" });
+      await clickBoth();
+      expectRequest();
+      saveRemediationPlan(scope, {
+        exerciseId: binding.roles.planning,
+        selectedActionIds: ["block-enterprise-to-field", "block-vendor-to-field"],
+        savedAt: "now",
+      });
+      writeCurriculum(scope, decisionName(binding.roles.requirements, "vendor-change-window"), "NOT_DISCUSSED");
+      await clickBoth();
+      expectRequest(["block-enterprise-to-field"]);
+      expect(loadSavedRemediationPlan(scope)?.selectedActionIds).toEqual(["block-enterprise-to-field", "block-vendor-to-field"]);
+      saveRemediationPlan(scope, { exerciseId: binding.roles.planning, selectedActionIds: ["block-vendor-to-field"], savedAt: "now" });
+      await clickBoth();
+      expectRequest(); // The only saved choice is readiness-blocked.
+      // Browser storage is namespaced; old revisions never become a request.
+      scope.revision++;
+      await clickBoth();
+      expectRequest();
+    } finally {
+      scope.revision = 1;
+      tree.close();
+    }
   });
 });
 
@@ -278,9 +337,9 @@ describe("authored description → Run → node exec", () => {
     } finally { tree.close(); }
   });
 
-  it("passes inherited and overridden sources through track commands and hints", async () => {
+  it("passes inherited and overridden sources through commands and catch-up hints", async () => {
     const exec = vi.spyOn(api, "execOnNode").mockResolvedValue({ exit_code: 0, stdout: "ok", stderr: "", duration_ms: 1 });
-    const authored = { ...scenario, nodes: ["kali-1"], steps: [{ id: "nested", title: "Nested", node: "rtu-1", description: "From the cc-1 terminal:\n:::guided\n    wget inherited\n:::\n:::hint More\nFrom eng-ws:\n    curl override\n:::" }] };
+    const authored = { ...scenario, nodes: ["kali-1"], steps: [{ id: "nested", title: "Nested", node: "rtu-1", description: "From the cc-1 terminal:\n    wget inherited\n:::hint More\nFrom eng-ws:\n    curl override\n:::" }] };
     const tree = renderStep(authored, "nested", EU);
     try {
       fireEvent.click(tree.getByRole("button", { name: "Run" }));
@@ -295,17 +354,36 @@ describe("authored description → Run → node exec", () => {
   it("uses US multi-source markers inside a real hint, including a wrapped header", async () => {
     const exec = vi.spyOn(api, "execOnNode").mockResolvedValue({ exit_code: 0, stdout: "ok", stderr: "", duration_ms: 1 });
     const authored = authoredScenario("validation-evidence", false);
-    const step = authored.steps.find((s) => s.description.includes("Advanced: run the positive tests by hand"))!;
+    const step = authored.steps.find((s) => s.description.includes("### Prepared positive test commands"))!;
     const tree = renderStep(authored, step.id, US_CURRICULUM);
     try {
-      fireEvent.click(tree.getByRole("button", { name: /Advanced: run the positive tests by hand/ }));
+      const hint = tree.getAllByRole("button", { name: /Optional catch-up — for less technical students or teams behind schedule/ })[0];
+      fireEvent.click(hint);
+      const prepared = within(hint.parentElement!);
       for (const [cmd, node] of [["mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20", "rtac-1"], ["curl -ks https://10.30.30.20/ -o /dev/null -w '%{http_code}\\n'", "vendor-jump-1"]]) {
-        const block = tree.getByText(cmd).parentElement!;
+        const block = prepared.getByText(cmd).parentElement!;
         fireEvent.click(Array.from(block.querySelectorAll("button")).find((b) => b.textContent === "Run")!);
         await waitFor(() => expect(exec).toHaveBeenCalledWith(node, cmd, 30));
         await waitFor(() => expect(tree.queryByRole("button", { name: "Running..." })).toBeNull());
       }
     } finally { tree.close(); }
+  });
+});
+
+describe("manual evidence surfaces", () => {
+  it.each([false, true])("has no one-click evidence controls on hardening or validation (EU=%s)", (eu) => {
+    const binding = eu ? EU : US_CURRICULUM;
+    for (const role of ["hardening", "validation"] as const) {
+      const authored = authoredScenario(binding.roles[role], eu);
+      for (const step of authored.steps) {
+        const tree = renderStep(authored, step.id, binding);
+        try {
+          expect(tree.queryByRole("button", { name: /Generate Validation Report/i })).toBeNull();
+          expect(tree.queryByRole("link", { name: /Download markdown/i })).toBeNull();
+          expect(tree.container.textContent).not.toContain(":::validation-report");
+        } finally { tree.close(); }
+      }
+    }
   });
 });
 
@@ -321,7 +399,7 @@ describe("validation is separate from self-attested progress", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const tree = render(<QueryClientProvider client={client}><ScenarioRunner scenario={{ ...scenario, validator: "state" }} onExit={() => {}} /></QueryClientProvider>);
     try {
-      fireEvent.click(tree.getByRole("button", { name: "Validate Exercise" }));
+      fireEvent.click(tree.getByRole("button", { name: "Cross-check the current system" }));
       await waitFor(() => expect(tree.container.textContent).toContain("PASS"));
       expect(tree.container.textContent).toContain("Bounded check passed");
       expect(loadProgress(scope, scenario).completedStepIds).toEqual(["first"]);

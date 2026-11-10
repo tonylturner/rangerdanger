@@ -950,7 +950,7 @@
   ],
   "label": "hardened",
   "packageId": "us-dnp3-substation",
-  "revision": 3,
+  "revision": 4,
   "policyHash": "bd2f637dcdac1dbd5bbcdb7c4c556da9220a4f0199a57e00d139f4270a3d62a5",
   "expectations": [
     {

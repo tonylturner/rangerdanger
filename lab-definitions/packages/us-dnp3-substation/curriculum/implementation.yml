@@ -1,34 +1,56 @@
 phases:
   rules: |-
-    Review the compiled rules for this plan. Required rules stay in every plan.
-    Selected enforceable actions narrow their paths. Deferred rules retain the
-    same Weak exposures. Detection-only actions change no TCP verdict.
+    Implement your approved Lab 1.4 change request, not a policy label.
+    The saved selection sets the expected results below. If no eligible action
+    is selected, there is no change request and the full Hardened reference is
+    the target. A planning-only selection keeps the corresponding Weak exposures.
+    If you used a catch-up apply, the results follow the policy you applied.
+    Keep deferred exposures open only where the request accepts that risk.
+    Required operations and reserved management access must remain available.
+
+    Stage the Phase 2 deletes and all replacements in the same shared candidate.
+    Use the approved source, destination, service and action for each rule.
+    The first matching enforcing terminal rule decides; monitor rules never decide.
+    Rule IDs do not set priority. Review configured order and shadow warnings before commit.
+    Keep RTAC field exceptions before `deny-ot-to-field-direct`.
+
+    Before the single commit, verify the required operational rules:
+    `rtac-to-field-modbus`, `rtac-to-field-dnp3` and `rtac-to-field-http`
+    allow source `10.30.30.20/32` on TCP 502, 20000 and 8080 respectively.
+    Preserve `ot-intrazone-ops` for HMI operations, `gps-to-field-ntp` for
+    `10.30.30.50/32` UDP/123, and reserved management access.
+
+    With **Restrict enterprise → vendor remote access** selected, replace broad
+    enterprise→vendor access with TCP 22, 80 and 443. With it deferred, RDP/3389
+    and VNC/5900 remain reachable. Deferred rules retain the approved Weak access;
+    do not remove them just to make a reference test pass.
+
+    **Create rule** and **Delete** only stage edits. On **Configuration**, open
+    **Review changes** and inspect all entity summaries. **Advanced** shows the
+    exact JSON diff. Review the full candidate, including surviving rules and
+    first-match order, against your request with a second reviewer.
+    From the fw-1 configuration CLI, commit replacements and removals together:
+
+        show diff
+        commit
+
+    Or use **Commit** on **Configuration** after the same review. Make ONE commit
+    for this rule change. Read back with `show running-config` and record its
+    identity and UTC time before testing. Confirm the operational exceptions and
+    removal of the approved broad allows in the running rules, not just the candidate.
+    From Kali, test the enterprise-to-field boundary:
+
+        mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20
+
+    Expect timeout if that closure is selected; expect a response if deferred.
+    From Kali, also use `nmap -Pn -p 3389,5900 10.20.20.10` to test remote access.
+    Expect `filtered` for the selected restriction, not for an approved deferral.
+    Check required operations next. If a rollback trigger occurs, stop testing.
+    Re-stage the previous rules from your pre-change export, review the complete
+    diff, commit and read back. Retest operations before resuming the change.
+    The export is a record to work from, not an import or restore command.
+
     The L4 source pin enforces; DPI detects and logs.
-
-    :::guided
-    Click **Apply Your Plan**, or **Apply Hardened** for the reference.
-    An empty or planning-only plan is valid. It leaves Weak exposures open.
-    Inspect the running rules, not just the policy banner. Execute Step checks
-    the active policy without replacing it.
-    :::
-
-    :::technical
-    For a plan, use the compiled rule order without adding broad allows.
-    The first matching enforcing terminal rule decides; monitor rules never decide. Keep RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority. Review configured order and shadow warnings before commit, then inspect running order.
-    On Configuration, **Review changes** leads with entity summaries; **Advanced** opens the exact JSON diff. Review the complete candidate before using the persistent **Commit** actions.
-    For manual work, use Hardened as the judging target. With
-    **Restrict enterprise → vendor remote access** selected, replace broad enterprise→vendor
-    access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
-    remain reachable. **Create rule** and **Delete** do not reload the firewall.
-    Run `commit` in the configuration CLI or **Commit** on the **Configuration** page.
-    After commit, run `nmap -Pn -p 3389,5900 10.20.20.10` from Kali.
-    For the manual Hardened target, both ports must be `filtered`; if not,
-    fix the rule and commit again. A plan uses its compiled verdict instead.
-    :::
-
-    Keep the RTAC source `10.30.30.20/32` on its required field rules:
-    TCP/502, TCP/20000 and TCP/8080. Preserve GPS `10.30.30.50/32` NTP/123
-    and HMI operations. These operational paths cannot be deferred.
 
     :::hint Policy evidence at the containd CLI
     In the configuration CLI, `export config` prints redacted running JSON; it does not create a file:
@@ -51,16 +73,23 @@ phases:
         }
     :::
 
-    Export the compiled config and the companion **Export plan record**.
-    The record contains the package ID, revision, label, action IDs and policy
-    hash. Use `GET /api/firewall/active` to check what is running.
 
-    ### Compiled rules
+    :::hint Optional catch-up — for less technical students or teams behind schedule
+    This replaces typing rules. It does not replace your own observations, operator check or sign-off.
+    Use **Apply Your Plan** only if you want the saved selection entered for you.
+    With an empty selection, it loads Weak, not the full reference. Use
+    **Apply Hardened** for the full reference instead. Read back what was loaded.
+    You can also save **Export compiled config** and **Export plan record** as
+    reference material. Neither is an export of a hand-written running policy.
+    :::
+
+    ### Rule reference
 
     {{noPlan}}
     {{ruleTable}}
   positive: |-
-    Verify operations for every plan. From the RTAC terminal, run:
+    Check required operations after the commit. Record each source, destination,
+    service, UTC time, expected result and observation in Notes. From the RTAC terminal, run:
 
         mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
         dnp3poll -a 1 -t 3s 10.40.40.20:20000
@@ -70,11 +99,10 @@ phases:
         curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
 
     Open the HMI. Confirm no alarms, closed breaker and recloser, auto-reclose
-    on and energized loads. Check GPS NTP separately; the proof matrix is TCP.
-    All eight authorized TCP rows must remain reachable for every plan.
-    Bridged rows do not cross the firewall and do not prove a firewall rule.
-    Lab 2.4 separates plan proof from Hardened acceptance: 8/8 authorized and
-    13/13 unauthorized denied, 0 skipped, stable hash, capture and healthy HMI.
+    on and energized loads. Check GPS NTP separately; TCP tests do not test NTP.
+    Have the operator confirm fresh device communications and supplied loads.
+    A bridged same-zone connection does not prove a routed firewall rule.
+    Stop and follow the agreed rollback if required operations fail.
 
     From an OT Ops terminal, check the intra-zone HMI service:
 
@@ -82,14 +110,15 @@ phases:
 
     This check must work for every plan. It is not routed firewall proof.
 
-    ### Compiled expectations
+
+    ### Expected results
 
     {{tests}}
   negative: |-
-    Test the expected outcomes for the applied plan, not its label.
-    Run all 13 unauthorized TCP rows from their named sources in Lab 2.4.
+    Test the prohibited paths in your change request from their named sources.
+    Record source, destination, service, expected result, observation and UTC time.
     A deny verdict requires a connection timeout. Connection refused means
-    reached (allow). Tool or container errors are skipped evidence and fail proof.
+    reached (allow). A missing tool or container error is missing evidence, never a pass.
 
     | Path | Owning action | Selected / deferred |
     |---|---|---|
@@ -100,10 +129,12 @@ phases:
     | Vendor and eng-ws→field | Block vendor → field devices entirely | deny / allow |
     | Non-RTAC OT hosts→field | Pin field-device access to RTAC source IP | deny / allow |
 
-    A deferred exposure is a prevention gap against Hardened, not a failed
-    plan proof if it matches this plan. Do not change policy just to hide the gap.
-    Preserve timestamps and the running hash. `show audit` lists `config.commit` evidence,
-    not a per-flow verdict. Keep capture and HMI evidence with both results.
+    A deferred exposure remains a prevention gap, even when the policy matches
+    your request. Name its risk owner; do not change policy just to hide the gap.
+    Preserve timestamps and the running identity. `show audit` lists `config.commit`
+    evidence, not a per-flow verdict. A timeout alone does not identify the cause;
+    retain packet evidence and operator observations for review in Lab 2.4.
+    TCP reachability does not establish command filtering.
 
     :::hint Run the sampled protocol checks from their real sources
     From Kali, test the enterprise-to-field action:
@@ -120,16 +151,31 @@ phases:
         dnp3poll -a 1 -t 3s 10.40.40.20:20000
         mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
 
-    Selected means timeout; deferred means reachable. These sampled commands
-    do not replace the full report matrix. Execute Step checks the running
-    policy. Preserve the observation and the report verdict.
+    Selected means timeout; deferred means reachable. These samples do not
+    replace your test plan. Write the actual results, including unexpected ones,
+    in Notes for Lab 2.4. An optional system cross-check is not your test record.
     :::
 
-    ### Compiled expectations
+    For every negative row, correlate the named host's connect timeout with a
+    fw-1 DENY event in the same UTC window. In the
+    fw-1 containd configuration CLI (type `containd cli` if in Linux), type:
+
+        show events
+
+    Match `KIND=firewall.rule.hit`, `action=DENY`, `proto=tcp`, `port=<p>` and
+    `ruleId=<rule>` to that row's real SRC host:port, DST and UTC time. Record
+    its event ID and matching ruleId, not merely the presence of any deny.
+    A rule without logging or a default drop can deny without an event:
+    absence of an event is not proof of an allow. An event alone does not
+    prove the application is unaffected; keep the operator observations.
+
+    ### Expected results
 
     {{tests}}
+
 noPlan: |+
-  You have not completed a remediation plan yet. The rules below are the minimum baseline - RTAC and GPS access to field devices. Consider going back to the [Remediation Planning](/exercises/{{planRole}}) exercise to build a plan that drives additional rules.
+  This applied selection leaves Weak exposures open. Review the expected results
+  against your [change request](/exercises/{{planRole}}) before testing.
 
 tests:
   - kind: positive
@@ -137,4 +183,4 @@ tests:
       Verify current RTAC application/device state (TCP reachability alone is not operational proof):
 
           curl -s http://${ip:rtac-1}:8080/api/state | python3 -m json.tool
-negativeEmpty: Deferred controls leave their Weak exposures open. Run the full compiled proof matrix and retain the Hardened comparison.
+negativeEmpty: No additional closures are selected. Keep the deferred exposures and their named risk owners in your test record.

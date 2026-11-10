@@ -351,6 +351,41 @@ shows a "you haven't done lab X yet" link.
 Multiple panels in one step are fine - Lab 1.3 step 1 shows both
 "Passive capture findings" and "Active probe result" stacked.
 
+### Saved Notes - `:::notes-panel`
+
+Show the student's saved upstream Notes without creating a second record:
+
+```text
+:::notes-panel from=remediation-planning title="Your change request (Lab 1.4)"
+:::
+```
+
+`from` is the upstream scenario ID; `title` labels the read-only panel. Notes
+are scoped to the active package and revision and update when saved. An empty
+panel links back to the upstream lab. Use this in implementation and validation
+to carry the written change request, not just the selected action IDs.
+
+### Optional catch-up
+
+Use the existing hint with the exact reserved title:
+
+```text
+:::hint Optional catch-up — for less technical students or teams behind schedule
+This replaces typing rules. It does not replace your own observations, operator check or sign-off.
+:::
+```
+
+Keep manual work in the main flow. Put policy Apply shortcuts and the complete
+prepared test-command list inside catch-up hints. Say which work the shortcut
+replaces. Worked examples and attack/retest commands remain in the main flow.
+Do not add a second path or hide source attribution inside a shortcut.
+
+Lab 2.4 uses six steps: test plan, running-policy baseline/capture, source tests,
+capture interpretation, operator check and signed record. Omit `action` for the
+four manual steps. Policy and plant checks are non-mutating `check` actions;
+they do not grade the written test plan or sign the record. The button is
+**Cross-check the current system**, not a substitute for student evidence.
+
 ### Plan coverage - `:::plan-coverage`
 
 Renders the same per-requirement coverage view that Lab 1.4's
@@ -458,7 +493,6 @@ the active package's `id` and curriculum `revision` from
 exercise:<scenario-id>                   JSON {completedStepIds, notes, cmdLog}
 decision:<scenario-id>:<decision-id>     decision dropdown selection
 remediation-plan                         JSON {exerciseId, selectedActionIds, savedAt}
-firewall-track                           guided | technical
 ```
 
 Progress records step `id`s, never array positions, so reordering

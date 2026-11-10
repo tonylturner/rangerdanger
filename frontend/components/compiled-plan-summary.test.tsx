@@ -11,7 +11,9 @@ describe("compiled plan exports", () => {
     const html = renderToStaticMarkup(<CompiledPlanSummary plan={plan} binding={US_CURRICULUM} />);
     const links = [...html.matchAll(/<a[^>]*download="([^"]+)"[^>]*href="data:application\/json;charset=utf-8,([^"]+)"[^>]*>(.*?)<\/a>/g)];
 
-    expect(html).toContain(`Revision ${plan.revision} · Policy ${plan.policyHash.slice(0, 12)}`);
+    expect(html).toContain(`Revision ${plan.revision} · Reference policy ${plan.policyHash.slice(0, 12)}`);
+    expect(html).toContain("Rule reference");
+    expect(html).toContain("not running configuration exports");
     expect(links).toHaveLength(2);
     expect(links[0][1]).toBe(`${plan.packageId}-r${plan.revision}-${plan.policyHash.slice(0, 12)}-config.json`);
     expect(JSON.parse(decodeURIComponent(links[0][2]))).toEqual(plan.config);

@@ -292,7 +292,7 @@ func TestEUStrictTCPExecWireAndErrors(t *testing.T) {
 				}
 			})
 			row := (&Server{}).strictTCPProbe(t.Context(), cli, validationProbe{Src: "real-kali-container", Dst: "10.20.20.10", Port: "5900", Expected: "deny", Category: "unauthorized"})
-			if calls != 1 || row.Actual != tc.want || row.Pass != (tc.want == "deny") || (row.ProbeError != "") != (tc.want == "skipped") || tallyValidation([]validationRow{row}).pass != row.Pass {
+			if calls != 1 || row.Actual != tc.want || row.Pass != (tc.want == "deny") || (row.ProbeError != "") != (tc.want == "skipped") {
 				t.Fatalf("calls=%d row=%+v", calls, row)
 			}
 		})
@@ -348,7 +348,7 @@ func TestEUProbeMatrixBoundsAndRetries(t *testing.T) {
 	}
 	close(release)
 	rows := <-done
-	if peak.Load() != euProbeConcurrency || !tallyValidation(rows).pass {
+	if peak.Load() != euProbeConcurrency || !allMeasured(rows) {
 		t.Fatalf("peak=%d rows=%+v", peak.Load(), rows)
 	}
 	// Exercise the total-matrix cancellation with a shorter caller deadline.
@@ -393,4 +393,16 @@ func TestEUProbeMatrixBoundsAndRetries(t *testing.T) {
 	if calls["authorized"] != 2 || calls["unauthorized"] != 1 || calls["broken"] != 1 || !rows[0].Pass || rows[1].Pass || rows[2].Pass {
 		t.Fatal(rows)
 	}
+}
+
+func allMeasured(rows []validationRow) bool {
+	if len(rows) == 0 {
+		return false
+	}
+	for _, row := range rows {
+		if row.Actual == "skipped" || row.ProbeError != "" || !row.Pass {
+			return false
+		}
+	}
+	return true
 }

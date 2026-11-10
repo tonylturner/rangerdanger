@@ -25,18 +25,20 @@ func euWorkshopValidator(slot string) scenarioValidator {
 	return scenarioValidator{
 		capabilities: []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
 		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
-			return evaluateEUWorkshop(slot, s.collectEUWorkshop(ctx, in.gen, slot))
+			checks := evaluateEUWorkshop(slot, s.collectEUWorkshop(ctx, in.gen, slot))
+			if slot == "eu-validation-evidence" {
+				checks = append(checks, s.policyJudgment(ctx, in.gen))
+			}
+			return checks
 		},
 	}
 }
 
 type euWorkshopEvidence struct {
 	stationPoints                                      []labs.IEC104Point
-	policyHash                                         string
-	report                                             *retainedValidationReport
 	start, now, policyAt, hardeningSince, operationEnd time.Time
+	target                                             string
 	policy                                             string
-	isPlan                                             bool
 	foreignBreakerAllowed                              bool
 	policyErr                                          error
 	capture                                            bool
@@ -61,16 +63,19 @@ type euWorkshopEvidence struct {
 func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generation, slot string) euWorkshopEvidence {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	ev := euWorkshopEvidence{start: gen.StartedAt, stationPoints: gen.Package.StationPoints, devices: map[string]*euWorkshopDevice{}, deviceErrors: map[string]error{}}
+	target, targetErr := s.judgingTarget(ctx, gen)
+	ev := euWorkshopEvidence{target: target.detail, start: gen.StartedAt, stationPoints: gen.Package.StationPoints, devices: map[string]*euWorkshopDevice{}, deviceErrors: map[string]error{}}
 	s.activeConfigMu.RLock()
 	ev.policy, ev.policyAt, ev.hardeningSince = s.activeConfig, s.policyChangedAt, s.policyEvidenceSince
 	wantHash := s.lastAppliedHash
-	ev.policyHash, ev.report = wantHash, s.lastValidationReport
-	ev.isPlan = s.policySource == "plan" && s.planProvenance != nil && s.appliedPlan != nil
-	planIdentityOK := !ev.isPlan || s.planProvenance.PolicyHash == wantHash
+	isPlan := s.policySource == "plan" && s.planProvenance != nil && s.appliedPlan != nil
+	planIdentityOK := !isPlan || s.planProvenance.PolicyHash == wantHash
 	s.activeConfigMu.RUnlock()
 	hash, err := gen.Containd().GetFirewallHash(ctx)
 	ev.policyErr = err
+	if targetErr != nil {
+		ev.policyErr = targetErr
+	}
 	if err == nil && (wantHash == "" || hash != wantHash || !planIdentityOK) {
 		ev.policyErr = fmt.Errorf("running policy differs from recorded policy; wait for the observer or reapply")
 	}
@@ -84,7 +89,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 			if weakErr == nil {
 				var weakHash string
 				weakHash, weakErr = containd.FirewallHashFromBytes(data)
-				if weakErr == nil && !ev.isPlan && ((ev.policy == "weak") != (hash == weakHash)) {
+				if weakErr == nil && !isPlan && ((ev.policy == "weak") != (hash == weakHash)) {
 					weakErr = fmt.Errorf("weak/non-weak policy identity mismatch")
 				}
 			}
@@ -105,7 +110,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	}
 	// Collect current process truth after the negative probes.
 	if slot == "eu-firewall-implementation" || slot == "eu-hardening-configurations" || slot == "eu-vendor-rdp-compromise" {
-		expectations, matrixErr := s.judgingExpectations(gen)
+		expectations, matrixErr := target.plan.Expectations, targetErr
 		var matrix []validationProbe
 		if matrixErr == nil {
 			matrix, matrixErr = resolveProof(gen, expectations, slot, true)
@@ -144,7 +149,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	} else if slot == "eu-baseline-assessment" || slot == "eu-validation-evidence" {
 		ev.cc, ev.journal, ev.ccErr = euCC(ctx, gen)
 	}
-	if slot == "eu-hardening-configurations" && (!ev.isPlan || !ev.foreignBreakerAllowed) {
+	if slot == "eu-hardening-configurations" && !ev.foreignBreakerAllowed {
 		// Read both streams after this cutoff; later activity cannot sneak
 		// into a partially collected absence proof.
 		ev.operationEnd = time.Now().UTC()
@@ -182,13 +187,10 @@ func euWorkshopPolicy(ev euWorkshopEvidence, weak bool) ValidationCheck {
 	detail := "running weak baseline"
 	if !weak {
 		ok = ev.policyErr == nil && (ev.policy == "improved" || ev.policy == "custom") && insideEvidenceWindow(ev.policyAt, ev.start, ev.now)
-		detail = "recorded non-weak running policy (not a plan); judged against Hardened by the checks below"
-		if ev.isPlan {
-			detail = "applied plan is the judging target; Hardened acceptance is the comparison"
-		}
+		detail = "recorded non-weak running policy; judged against " + ev.target
 	}
 	if !ok {
-		return checkFail("Running policy identity", fmt.Sprintf("active %q; changed %s; %v", ev.policy, ev.policyAt.Format(time.RFC3339Nano), ev.policyErr))
+		return checkFail("Running policy identity", fmt.Sprintf("%s: active %q; changed %s; %v", ev.target, ev.policy, ev.policyAt.Format(time.RFC3339Nano), ev.policyErr))
 	}
 	return checkPass("Running policy identity", detail)
 }
@@ -217,14 +219,14 @@ func euWorkshopSupply(ev euWorkshopEvidence) ValidationCheck {
 func euWorkshopNegative(ev euWorkshopEvidence) ValidationCheck {
 	const name = "Active TCP matrix matches judging target"
 	if ev.negativeErr != nil || ev.negativeExpected == 0 || len(ev.negative) != ev.negativeExpected {
-		return checkFail(name, fmt.Sprintf("incomplete negative probe matrix: %d/%d; %v", len(ev.negative), ev.negativeExpected, ev.negativeErr))
+		return checkFail(name, ev.target+": "+fmt.Sprintf("incomplete negative probe matrix: %d/%d; %v", len(ev.negative), ev.negativeExpected, ev.negativeErr))
 	}
 	for _, row := range ev.negative {
 		if row.Actual == "skipped" || row.Actual != row.Expected || !row.Pass || row.ProbeError != "" {
-			return checkFail(name, fmt.Sprintf("%s (%s)→%s:%s: %s; %s", row.SrcLabel, row.Src, row.Dst, row.Port, row.Actual, row.ProbeError))
+			return checkFail(name, ev.target+": "+fmt.Sprintf("%s (%s)→%s:%s: %s; %s", row.SrcLabel, row.Src, row.Dst, row.Port, row.Actual, row.ProbeError))
 		}
 	}
-	return checkPass(name, fmt.Sprintf("all %d active TCP probes match the judging target; Hardened remains the comparison. No logged denies required, no decoded command or firewall-causation claim", len(ev.negative)))
+	return checkPass(name, ev.target+": "+fmt.Sprintf("all %d active TCP probes match the judging target; Hardened remains the comparison. No logged denies required, no decoded command or firewall-causation claim", len(ev.negative)))
 }
 
 func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
@@ -271,7 +273,7 @@ func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
 		}
 		checks = append(checks, euWorkshopDeviceCheck(ev, "oltc-1", "OLTC restored", func(d *euWorkshopDevice) bool { ok, err := euOLTCAuto(d); return err == nil && ok }))
 	case "eu-validation-evidence":
-		checks = append(checks, euWorkshopReport(ev), link(), euWorkshopDevicesFresh(ev), euWorkshopSupply(ev))
+		checks = append(checks, link(), euWorkshopDevicesFresh(ev), euWorkshopSupply(ev))
 	default:
 		checks = append(checks, checkFail("Known workshop slot", "unknown validator key "+slot))
 	}

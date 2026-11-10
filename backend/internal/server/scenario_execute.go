@@ -45,7 +45,6 @@ type StepActionResult struct {
 // handleExecuteStep executes the action defined in a scenario step.
 // POST /api/scenarios/:id/steps/:stepIdx/execute
 func (s *Server) handleExecuteStep(c *gin.Context) {
-	ctx := c.Request.Context()
 	gen := rangeOf(c)
 	scenarioID := c.Param("id")
 	stepIdxStr := c.Param("stepIdx")
@@ -73,6 +72,10 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		return
 	}
 
+	ctx, ok := gradingContext(c)
+	if !ok {
+		return
+	}
 	step := steps[stepIdx]
 	if step.Action == nil {
 		c.JSON(http.StatusOK, StepExecutionResult{

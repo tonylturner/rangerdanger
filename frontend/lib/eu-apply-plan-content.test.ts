@@ -28,8 +28,8 @@ describe("EU Apply Your Plan content", () => {
         // Only the generated section differs. Operational work is never hidden.
         expect(text).toContain(step.description.trim());
         expect(text).not.toMatch(/\{\{(?:ruleTable|tests|noPlan)\}\}/);
-        expect(text).toContain(phase === "rules" ? "Origin" : "Plan verdict");
-        if (phase !== "rules") expect(text).toContain("Hardened verdict");
+        expect(text).toContain(phase === "rules" ? "Origin" : "Expected result");
+        if (phase !== "rules") expect(text).toContain("Hardened reference");
       }
     }
   });
@@ -53,9 +53,6 @@ describe("EU Apply Your Plan content", () => {
     const text = validation.steps.map((s) => s.description).join("\n");
     expect(plans[0].expectations.filter((r) => r.category === "authorized")).toHaveLength(auth);
     expect(plans[0].expectations.filter((r) => r.category === "unauthorized")).toHaveLength(unauth);
-    for (const expected of ["Plan proof", "Hardened acceptance", `${auth}/${auth}`, `${unauth}/${unauth}`, "0 skipped", "hash", "capture"]) {
-      expect(text).toContain(expected);
-    }
     expect(text).not.toMatch(/11\/11|12\/12|nineteen probes|not \*\*Apply Your Plan/);
   });
 

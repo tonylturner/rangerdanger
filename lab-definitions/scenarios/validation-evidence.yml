@@ -1,18 +1,13 @@
 id: validation-evidence
 order: "2.4"
 name: "Testing & Validation"
-summary: "Generate a change-board validation report (authorized/unauthorized tests + PCAP) against the policy you have active, then reflect on residual risk."
-estimated_minutes: 7
+summary: "Write a test plan, test named sources, read boundary captures and sign the operating record."
+estimated_minutes: 40
 validator: us-validation-evidence
 description: >
-  After applying your plan or the Hardened reference in Lab 2.2 and
-  stress-testing it in Lab 2.3, this exercise builds the formal
-  evidence package: positive tests confirming authorized flows still
-  work, tests comparing unauthorized flows with the applied plan and Hardened, and
-  PCAP evidence from the firewall. You generate it in one click against
-  the policy you have active - then read it like a reviewer would. This
-  is the validation step required before any segmentation change goes to
-  production.
+  Test the approved firewall change without control writes. Build a test plan,
+  collect source and boundary evidence, check operations and sign a go/no-go
+  record. These are sampled observations, not universal or regulatory proof.
 nodes:
   - kali-1
   - vendor-jump-1
@@ -27,11 +22,39 @@ tags:
   - evidence
   - defense
 steps:
-  - id: confirm-hardened-config-is-active
-    title: "Confirm hardened config is active"
+  - id: write-test-plan
+    title: "Write the acceptance test plan"
     expected_config: hardened
     description: |
-      You're now validating the work you did across Labs 1.2 → 2.3. Below is the design + plan you committed; this validation pass tests whether the firewall enforces what you specified.
+      Write the test plan before touching the system. Use your Lab 1.3 requirements
+      and approved Lab 1.4 change request. Lab 2.2 supplies the running-policy record.
+      Do not derive an expected result from whatever happens to work today.
+      The bonus lab is optional; it is not a prerequisite.
+
+      Copy this table into Notes. Add a positive for every required conduit and
+      about one negative per prohibited requirement and source zone. Include
+      any deferred exposure as an expected reach, with its named risk owner.
+
+      | Test ID / requirement | Source host / IP / zone | Destination / IP | TCP port / purpose | Expected TCP and application result | Abort criteria |
+      |---|---|---|---|---|---|
+      | | | | | | |
+
+      Keep the change ID, approved scope, tester, operator, rollback owner and
+      UTC test window above the table. Name the evidence file for each row.
+      Stop if a required positive fails, prohibited access succeeds, management
+      is lost, points go stale, supply changes or a new alarm appears.
+      Follow the reviewed Lab 2.2 rollback procedure;
+      do not improvise a policy change during a test.
+
+      **Time budget:** ~40 minutes (estimate, not a timed walk). Plan 6 minutes,
+      baseline/capture 6, source tests 12, capture review 8, operator check 4 and
+      sign-off 4. Optional depth takes extra time.
+
+      :::notes-panel from=remediation-planning title="Your change request (Lab 1.4)"
+      :::
+
+      :::notes-panel from=firewall-implementation title="Your implementation record (Lab 2.2)"
+      :::
 
       :::findings-panel from=segmentation-requirements title="Your design verdicts (Lab 1.3)"
       enterprise-to-field: Enterprise → Field on Modbus/DNP3
@@ -41,11 +64,6 @@ steps:
       unauth-modbus-writes: Unauthorized Modbus writes / DNP3 Direct Operate
       :::
 
-      Confirm the intended applied plan in the policy banner. Keep its exported plan
-      record with package revision, action IDs and policy hash. Do not replace a partial plan with
-      Hardened just to make the report green. Apply Hardened only when you intend
-      to test the reference. A saved browser plan is not an applied plan.
-
       :::findings-panel from=firewall-implementation title="Your evidence status (Lab 2.2)"
       evidence-policy: Running policy export and identity
       evidence-positive: Positive tests and operational continuity
@@ -53,96 +71,121 @@ steps:
       evidence-capture: PCAP tied to the test window
       :::
 
-      These are your earlier evidence statuses, not current proof. Resolve missing or
-      unclear items and regenerate the report for this policy commit.
+  - id: confirm-hardened-config-is-active
+    title: "Confirm the running policy matches your change request"
+    expected_config: hardened
+    description: |
+      Read the running policy in [containd](/containd/), not just its label.
+      Compare its source, destination, service and first-match order with the
+      approved request. Without a saved request, use the full Hardened reference.
+      Do not replace a partial plan with Hardened just to obtain a green result.
+      A saved browser plan is not an applied plan. You are testing an existing
+      change, not authoring a new one. If the rules differ, stop and return to Lab 2.2.
 
-      Named and manual policies use Hardened expectations. Their plan proof is
-      not applicable. Check the running policy before generating the report.
+      Configuration → Running config shows committed policy. Firewall Rules edits
+      and its Default row describe the candidate. An uncommitted edit is not active.
+      From the fw-1 terminal, in the configuration CLI:
 
-      :::hint Optional: cross-check the running policy in containd
-      Confirm the running policy from
-      either interface:
+          show running-config
+          export config
+          show audit
 
-      - **Web UI:** [http://localhost:9080](http://localhost:9080),
-        Configuration → Running config shows committed policy.
-        Firewall Rules edits and its Default row describe the candidate;
-        applied counters are separate evidence, not candidate activation.
-        Log in with `containd` / `containd` if the session has expired.
-      - **CLI:** the `fw-1` terminal opens in the configuration CLI; run:
+      Copy that redacted running JSON to your evidence document; the CLI does not
+      create a file through shell redirection. Full export requires explicit
+      administrator intent. Keep the running identity, package revision, selected
+      actions if used, commit time and UTC start. Audit proves administrative
+      chronology, not a per-packet verdict. Keep secrets out of the record.
+      Take an operator baseline: values, quality, alarms and supplied loads.
 
-            show running-config
-
-      For Hardened, expect this rule set: RTAC source-pinned to
-      field, vendor restricted to SSH/HTTPS, enterprise-to-field
-      removed, default deny on cross-zone. For a plan, also expect the compiled
-      deferred Weak allows for actions you did not select.
+      :::hint Optional catch-up — for less technical students or teams behind schedule
+      This replaces typing rules. It does not replace your own observations, operator check or sign-off.
+      If the intended policy is missing, stop the test. Apply Your Plan for the
+      approved scope, or Apply Hardened for the full reference, then read back
+      and start a new test window. Do not silently overwrite a different policy.
       :::
 
-      **Time budget:** ~7 minutes (Guided path - one-click report plus reflection. The by-hand Advanced verification hints are optional).
+      Start ONE boundary capture before any source test. Use the fw-1 interactive
+      terminal, not Run: this capture must span the whole test window. Type `exit`
+      from `containd(config)#` to reach Linux bash; `containd cli` returns later.
+      In the host filter below include every source and destination in your plan.
+      Do not filter only application ports: that would hide remote-access negatives.
+
+          tcpdump -i any -nn -U -G 1200 -W 1 -w /data/captures/validation.pcap 'host 10.10.10.50 or net 10.20.20.0/24 or net 10.30.30.0/24 or net 10.40.40.0/24'
+
+      The capture is bounded to 1200 seconds (20 minutes); Ctrl-C stops it early.
+      If it expires before all tests finish, start a new named file/window and
+      repeat those rows. Leave this terminal capturing. Wait for the listening message, then use
+      other terminals for tests. `any` writes Linux cooked SLL2 with interface
+      metadata. A routed packet may appear twice; counts are not operation counts.
+      A field-only egress capture misses dropped SYNs. Save the file outside the
+      captures folder before Reset or shutdown; reset deletes /data/captures/*.pcap.
     action:
       type: check
       expect:
         firewall_config: improved
 
-  - id: generate-the-validation-report
-    title: "Generate the validation report"
+  - id: run-source-tests
+    title: "Run tests from the named sources"
     expected_config: hardened
     description: |
-      Generate the full **21-row TCP matrix** against the active policy.
-      The report has two independent results:
+      Open each named source terminal. Never move a test to a convenient host.
+      Use a scoped TCP connect and an application READ for test-host positives.
+      No control writes belong in this acceptance run. A TCP connection is not
+      command authorization; a refusal means reached, not a working application.
+      Only a connect timeout counts as a deny result. Tool/container errors are
+      untested evidence. A timeout alone does not explain why packets were lost.
+      Use the working baseline, capture and running rules together.
 
-      - **Plan proof** checks observed allow/deny results against this applied plan.
-        It requires 0 skipped and the recorded plan hash before and after probing.
-      - **Hardened acceptance** requires authorized **8/8** and unauthorized denied
-        **13/13**, 0 skipped, a stable running hash and capture evidence. Confirm a
-        healthy HMI separately. Acceptance does not prove command-level filtering.
+      For a production poller, use its own live traffic: fresh good-quality points
+      at the operator view after the change, plus its request/response pairs in
+      the boundary capture. You do not add test clients to a production RTU; you
+      watch it work. Add a TCP connect only where a tool is already installed.
+      Do not install tools or substitute another source. Do not call a connect a
+      protocol read. Same-subnet flows need endpoint observations; they do not
+      cross the firewall and cannot prove routed enforcement.
 
-      A partial plan can pass plan proof and fail Hardened acceptance. Read the
-      prevention gaps by row ID. Deferred controls keep their Weak exposures open;
-      that expected consequence is not a reason to hide a row or change the target.
-      A named or manual policy has no applicable plan proof; use Hardened acceptance.
+      | Source | Installed method / evidence | Where |
+      |---|---|---|
+      | Kali, eng-ws | `nmap -Pn -sT`, mbpoll and dnp3poll READs if the request allows that path | Run or terminal |
+      | Vendor-jump | `nmap -Pn -sT`, mbpoll/dnp3poll; documented SSH/HTTPS checks | Run, except interactive SSH |
+      | rtac-1 | `nmap -Pn -sT`, mbpoll/dnp3poll; own field polls plus fresh HMI points | Run or terminal |
+      | historian-1, gps-1 and field simulators | `nmap -Pn -sT`; historian fresh archive/RTAC data for its own poller | Run or terminal |
+      | hmi-1 | Actual HMI→RTAC requests and fresh displayed points | Operator view, not a substituted RTAC request |
 
-      :::validation-report
-      :::
+      For each routed RTAC→field positive, pair fresh HMI/device points with
+      captured RTAC requests/responses. The routed source must be 10.30.30.20,
+      not the RTAC's field interface. For same-subnet RTAC→PLC, HMI→RTAC and
+      historian→RTAC, keep their actual application observations. RTAC self-reads
+      are useful diagnostics, not proof of a request from HMI or historian.
 
-      Completion uses the backend-retained result for the judging target, full running firewall hash and probe UTC window from this range and latest policy commit. The running policy is read before and after probing; a change or unreadable hash fails the report. Reapplying even the same policy invalidates the previous commit window: generate again. The backend retains the latest generated report until range/backend restart. Use **Download markdown** to save the report, and copy the PCAP at the report's path (relative to the install root) out of the captures folder before any reset or shutdown; reset deletes captures. A local screenshot or old browser report cannot substitute for the retained proof.
+      Worked example — authorized RTAC→relay read, from the RTAC terminal:
 
-      Only a connection timeout counts as deny. Connection refused means reached
-      (allow). Tool or container errors are skipped evidence, never a pass.
-      The matrix tests TCP connectivity, not DNP3 function-code rejection.
-      The L4 source pin enforces; DPI detects and logs.
+          nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
 
-      Keep the report, UTC window, policy hash and PCAP with the plan's package
-      revision and action IDs. Inspect sources against Plan and Hardened results;
-      a captured ingress SYN alone does not prove that traffic reached a device.
+      Expect TCP open and coil values. Match the request/response to the capture.
+      For the live RTAC poller, the fresh points and its own traffic are the
+      application evidence; the manual READ is an extra diagnostic.
 
-      At the HMI, require no alarms, closed breaker/recloser, auto-reclose on and
-      energized loads. Restoration and operational checks apply to every plan.
-      Validate Exercise does not replace report evidence.
+      Compose the remaining commands from your test plan. Record source, tuple,
+      UTC start/end, TCP result, application result and any stderr for each row.
+      Run positives first, then negatives. Keep the operator watching throughout.
+      Deferred closures may remain reachable; compare with the approved scope,
+      not an assumed full-reference deny. The L4 source pin enforces; DPI detects and logs.
 
-      :::decision id=pos-test-ops-intact options=NORMAL_OPS,DEGRADED,ALARMS_PRESENT
-      Are operations healthy after validation?
-      :::why
-      NORMAL_OPS needs healthy operator observations and independent device/process continuity, not only open TCP ports. DEGRADED or ALARMS_PRESENT needs investigation and restoration; the dropdown records your run and is not an acceptance test.
-      :::
+      :::hint Optional catch-up — for less technical students or teams behind schedule
+      This replaces composing test commands. It does not replace your own observations, operator check or sign-off.
 
-      :::decision id=neg-test-no-impact options=UNCHANGED,DEGRADED,UNCLEAR
-      Did operations remain unchanged? Compare this result with the validation report and structured plan coverage.
-      :::why
-      UNCHANGED needs before/after operational evidence alongside the report. DEGRADED means investigate impact; UNCLEAR means collect a comparable baseline. A timeout alone does not establish that operations were unaffected.
-      :::
-
-      :::hint Advanced: run the positive tests by hand
-      The report automates this, but the manual method is what you'd do on a
-      real appliance. From the **RTAC** terminal, confirm authorized flows:
+      ### Prepared positive test commands
+      From the **RTAC** terminal, confirm authorized flows:
 
           mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
           dnp3poll -a 1 -t 3s 10.40.40.20:20000
           dnp3poll -a 2 -t 3s 10.40.40.21:20000
           dnp3poll -a 3 -t 3s 10.40.40.22:20000
 
-      All should return data. Then intra-zone HMI → RTAC, and the RTAC's
-      aggregated field-comms view:
+      All should return data. These RTAC self-reads show its
+      aggregated field-comms view, not HMI→RTAC source evidence:
 
           curl -s http://10.30.30.20:8080/api/health
           curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
@@ -157,138 +200,189 @@ steps:
       A banner or HTTP response confirms application access. A refusal means
       the port was reached but no service accepted it; it is not a deny.
       These two management ports stay allowed for every plan. They do not
-      prove that the other vendor paths closed. Use the full TCP matrix too.
+      prove that the other vendor paths closed. Test the other planned boundaries separately.
       :::
 
-      :::hint Advanced: run the negative tests by hand
+      :::hint Optional catch-up — for less technical students or teams behind schedule
+      This replaces composing test commands. It does not replace your own observations, operator check or sign-off.
+
+      ### Prepared negative test commands
       Use `-Pn` to skip host discovery across the firewall. A filtered TCP
-      port (with an open-port control under Weak baseline) proves denial;
+      port needs a working baseline and boundary capture;
       "host seems down" or "0 hosts up" does not.
 
       From **Kali** (`10.10.10.50`, enterprise) - lead with DNP3, the primary
       attack vector from Lab 2.3:
 
-          nmap -Pn -p 20000 10.40.40.20 --max-retries 1 -T4
+          nmap -Pn -sT -p 20000 10.40.40.20 --max-retries 1 -T4
           dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       From **vendor-jump** (`10.20.20.10`) - the vendor-pivot path (Lab
       2.3-bonus):
 
-          nmap -Pn -p 20000 10.40.40.21 --max-retries 1 -T4
+          nmap -Pn -sT -p 20000 10.40.40.21 --max-retries 1 -T4
           dnp3poll -a 2 -t 3s 10.40.40.21:20000
 
       From **historian** (a single-homed non-RTAC OT host) - the source-pin
       test: only the RTAC may reach field, even from inside OT Ops:
 
-          nmap -Pn -p 20000 10.40.40.22 --max-retries 1 -T4
+          nmap -Pn -sT -p 20000 10.40.40.22 --max-retries 1 -T4
 
       Under Hardened, all should be filtered / time out. For an applied plan,
       compare each path with its owning action: enterprise-to-field,
       vendor-to-field or non-RTAC OT-to-field. Deferred paths remain reachable. The same L4 source-pin closes Modbus
       too - repeat with port 502 and `mbpoll` for a two-protocol package.
-      Any single-homed OT host (historian-sim, fuxa-hmi, openplc) works as
-      the probe source.
+      Keep historian as this source; another OT host is a different test row.
       :::
 
-      :::hint Advanced: capture PCAP by hand
-      The report captures this automatically; the manual form, from the
-      `fw-1` terminal, captures on `lan2`, the firewall's field-zone
-      interface:
+      For every negative row, correlate the named host's connect timeout with a
+      fw-1 DENY event and the boundary capture in the same UTC window. In the
+      fw-1 containd configuration CLI (type `containd cli` if in Linux), type:
 
-      In the configuration CLI, type `exit` before these Linux commands.
-      RangerDanger then starts bash; use `containd cli` to return.
+          show events
 
-          tcpdump -i lan2 -nn 'tcp port 502 or tcp port 20000' -w /data/captures/validation.pcap
+      Match `KIND=firewall.rule.hit`, `action=DENY`, `proto=tcp`, `port=<p>` and
+      `ruleId=<rule>` to that row's real SRC host:port, DST and UTC time. Record
+      its event ID and matching ruleId, not merely the presence of any deny.
+      A rule without logging or a default drop can deny without an event:
+      absence of an event is not proof of an allow. An event alone does not
+      prove the application is unaffected; keep the operator observations.
 
-      Let it run ~30s while the RTAC polls, Ctrl-C, then see who's on the
-      wire:
+  - id: read-boundary-capture
+    title: "Read the boundary capture"
+    expected_config: hardened
+    description: |
+      Stop tcpdump with Ctrl-C in fw-1 after the last test. Note the UTC end and
+      its packet/drop statistics. A capture that dropped packets cannot establish
+      absence reliably. Open `/home/abc/pcaps/validation.pcap` in Wireshark on
+      eng-ws. From the eng-ws terminal, list SYN/SYN-ACK rows for one test tuple
+      (replace both hosts and port for each test):
 
-          tcpdump -r /data/captures/validation.pcap -nn | awk '{ s = $3; d = $5; sub(/\.[0-9]+$/, "", s); sub(/\.[0-9]+:$/, "", d); print s, "->", d }' | sort | uniq -c | sort -rn
+          tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 20000' -T fields -E header=y -e frame.number -e frame.time_epoch -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags
 
-      `lan2` records each packet once, as it enters or leaves the field
-      zone. The `awk` strips the ports, so each line counts packets from
-      one host to another.
+      The `sll.ifindex` column is the Linux cooked SLL2 interface index;
+      `frame.interface_id` is not the capture interface in this classic PCAP.
+      The short listing is one row per matching frame, not a full packet dump.
+      Use packet details → Linux cooked capture v2 interface index to distinguish
+      the ingress and egress legs. Read fw-1's current interface indexes in its
+      Linux terminal with `ip link`; join each index to its exact kernel name.
+      `wan` is enterprise, `dmz` vendor/engineering, `lan1` OT Operations and
+      `lan2` field. `lan3` is management.
+      Never infer a zone from packet order or an ethN number. In Wireshark, filter
+      one test tuple and its UTC window at a time. Expand TCP and the application
+      dissector. Save packet/frame references against each test ID.
 
-      Under Hardened, the only Modbus/DNP3 source reaching field should be
-      `10.30.30.20` (the RTAC). For a partial plan, compare additional
-      sources with deferred exposures; preserve the prevention gaps.
+      For each negative expected to be denied, find the SYN on the source-zone
+      interface and show it is absent on the destination-zone interface in that
+      same window. Compare with a working authorized control to show that the
+      capture covers both legs. If the destination sends RST, it was reached.
+      No packets is not proof of denial. Wrong filters, missing interfaces,
+      packet loss or no source SYN make the result inconclusive. A timeout alone
+      does not prove the firewall caused it. Record inconclusive rows and retest;
+      do not turn missing evidence into a pass.
+
+      From the fw-1 terminal, return to the containd CLI with `containd cli`
+      and type:
+
+          show events
+
+      Join the `firewall.rule.hit` DENY row's event ID, ruleId, real SRC,
+      DST, TCP port and UTC time to each negative's host timeout and source-zone
+      SYN / destination-zone absence. Preserve all three references. A missing
+      event can mean an unlogged rule or default drop, not an allow; mark the
+      missing correlation as a limitation and investigate. An event alone does
+      not establish that required applications are unaffected.
+
+      For each new routed positive connection, find the handshake on both interfaces and the
+      source's native request/response. Match the live poller's responses to the
+      fresh points observed by the operator. A handshake without application
+      response proves TCP reach only. Intra-zone traffic is outside this capture's
+      scope; retain its endpoint and operator evidence separately.
+
+      An already established production poller may send no SYN in this window.
+      Clear the SYN filter in Wireshark and match its request/response pairs on
+      both boundary interfaces. Record that a new handshake was not observed;
+      do not restart a production poller just to manufacture one.
+
+      | Test ID | UTC / tuple | Source-zone SYN frame | Destination-zone frame or checked absence | DENY event ID / ruleId | Handshake / request-response frames | Result / limitation |
+      |---|---|---|---|---|---|---|
+      | | | | | | | |
+
+      Copy the PCAP out before any reset. Keep this table, capture statistics,
+      running export and UTC window together. Supplementary **Live Firewall Events**
+      in the Segmentation drawer may add context. They do not replace this
+      capture comparison; a detection record alone is not proof of prevention.
+
+  - id: check-operator-health
+    title: "Check operator and plant health"
+    expected_config: hardened
+    description: |
+      Compare the plant with the baseline while the reviewed policy remains active.
+      At the Feeder HMI check breaker and recloser closed, auto-reclose enabled,
+      regulator auto/tap normal, fault/lockout cleared, normal voltage and loads
+      energized. Confirm fresh field communication and historian observations;
+      compare device readings with the HMI, not only its health banner.
+      Record point values, quality and UTC time, not just a green screen. Require
+      fresh good-quality points, no new alarms and loads supplied. A physically
+      healthy plant with stale points is a visibility failure. Do not change the
+      plant to manufacture an acceptance result.
+
+      :::decision id=pos-test-ops-intact options=NORMAL_OPS,DEGRADED,ALARMS_PRESENT
+      Are operations healthy after the tests?
+      :::why
+      This records your observation; it is not graded. NORMAL_OPS requires device
+      and process continuity, not only open TCP ports. Investigate and restore
+      DEGRADED or ALARMS_PRESENT before handing the change back.
       :::
 
-      :::hint Advanced: assemble the evidence package by hand
-      Beyond the test results + PCAP, a change board wants the policy itself
-      and proof it's the one running. From the `fw-1` terminal:
-
-      If still in bash after the capture, type `containd cli` to return
-      to the configuration CLI before these appliance commands.
-
-          export config
-          show audit
-
-      Copy that redacted running JSON to your evidence document; the appliance
-      CLI does not create a file through redirection. Full export requires
-      explicit administrator intent.
-
-      `export config` is the change-board-ready record of the running rule
-      set; the recent `config.commit` entries in `show audit` prove the
-      policy you attached is the policy that's loaded. Add an **HMI
-      screenshot** (Feeder One-Line, no alarms, customers served) for the
-      operational side. Per-rule deny events for each blocked probe are in
-      the [/console](/console) Segmentation drawer's **Live Firewall Events**
-      strip - correlate each event with its tuple and time. A detection record alone
-      is not proof of prevention.
+      :::decision id=neg-test-no-impact options=UNCHANGED,DEGRADED,UNCLEAR
+      Did the tests leave operations unchanged?
+      :::why
+      Compare before/after values. This is not graded. UNCLEAR needs a comparable
+      baseline; a timeout does not show that operations were unaffected.
       :::
+
+      If an abort criterion was met, stop, notify the operator and use the approved
+      rollback: re-stage the previous rules from the saved export, review the full
+      diff, commit, read back and retest. Record who authorized the restoration.
+      The optional current-system cross-check samples plant state. It does not
+      grade these observations or authorize the change.
     action:
       type: check
       expect:
-        firewall_config: improved
+        voltage_normal: true
         breaker_closed: true
+        recloser_closed: true
+        reclose_enabled: true
 
-  - id: reflection-what-did-your-plan-close
-    title: "Reflection - what did your plan close?"
+  - id: sign-test-record
+    title: "Sign the test record"
+    expected_config: hardened
     description: |
-      Before wrapping up, review what your plan addressed vs deferred.
+      Read back the running identity after the last test. If it changed, do not
+      merge evidence from different policies; start a new window. Copy this test
+      record into Notes and fill every field. Attach the test plan, row results,
+      packet references, PCAP, redacted running export and before/after operator
+      readings. Validate Exercise does not replace your test evidence; use
+      **Cross-check the current system** only as an optional second check.
 
-      Below are the design verdicts and findings you committed across the planning labs. The Plan Coverage panel in [Lab 1.4](/exercises/remediation-planning) shows, in real-time, which of these your selected actions implement and which remain gaps. Use that as the structured input to your reflection.
+      Test record
+      - Change ID / package / curriculum revision:
+      - Running policy identity before and after / commit / UTC window:
+      - Test IDs passed / failed / inconclusive, with evidence filenames:
+      - Deferred Lab 1.4 actions / remaining exposures / named risk owner:
+      - Exceptions and next test / owner / due date:
+      - Limits: sampled tuples and time only; intra-zone visibility gaps;
+        TCP reach is not command authorization. Monitoring never satisfies BLOCK.
+      - Operator baseline and final readings / alarms / supply:
+      - Abort or rollback performed / authority / restored readings:
+      - Go / no-go and reason:
+      - Tester signature / UTC:
+      - Operator signature / UTC:
+      - Change owner approval or rejection / UTC:
 
-      :::findings-panel from=baseline-assessment title="What you observed (Lab 1.2 step 6)"
-      enterprise-to-field: Enterprise → Field on Modbus/DNP3
-      enterprise-to-ot: Enterprise → OT Operations on ICS ports
-      vendor-to-ot: Vendor DMZ → OT Operations on Modbus/HMI control
-      non-rtac-to-field: Non-RTAC OT hosts → Field devices
-      unauth-modbus-writes: Unauthorized Modbus writes / DNP3 Direct Operate
-      :::
-
-      :::findings-panel from=baseline-assessment title="What active probing revealed (Lab 1.2 step 7)"
-      latent-exposure-confirmed: Latent exposure beyond passive observation
-      :::
-
-      :::findings-panel from=segmentation-requirements title="What you committed to as design (Lab 1.3)"
-      enterprise-to-field: Enterprise → Field
-      enterprise-to-ot: Enterprise → OT Operations
-      vendor-to-ot: Vendor DMZ → OT Operations
-      non-rtac-to-field: Non-RTAC OT hosts → Field
-      unauth-modbus-writes: Unauthorized Modbus writes / DNP3 Direct Operate
-      :::
-
-      ### Other observations from Lab 2.2 / 2.3
-
-      - **Firewall visibility blind spot at the RTAC.** The RTAC is multi-homed (it polls field devices over DNP3/Modbus) but its application traffic is routed through containd by preinstalled host-level hardening. The **Validate and document RTAC hardening** action plans a review; it installs no control. Worth noting as a compensating control on your evidence package, not a network-layer enforcement. The RTAC is the *only* host with a leg in field_net - every other OT host is single-homed on ot_ops_net.
-      - **No protocol-aware constraints by default.** L4 port filtering does not distinguish reads from writes. The **Apply Modbus ICS DPI - provide function-code visibility** and **Apply DNP3 ICS DPI - detect and log Direct Operate writes** actions add visibility only. The L4 source pin enforces; DPI detects and logs.
-
-      ### Review the structured plan coverage
-
-      :::plan-coverage title="Coverage of your committed Lab 1.3 design"
-      :::
-
-      The panel above is computed live from your Lab 1.4 selections. Each requirement is marked **fully addressed**, **partial**, **deferred** (gap), or **n/a** (you marked the verdict as ALLOW or didn't commit one). Use the panel and report together; the design verdicts and funded/deferred actions already carry forward as structured inputs.
-
-      ### Now reflect
-
-      In your Exercise Notes, discuss the validation evidence:
-
-      1. Which positive or negative test result most changed your confidence in the running policy?
-      2. What does the report prove, and what remains outside its scope?
-      3. What evidence, operational owner or retest is needed before this change could be approved?
-      4. What additional architecture or monitoring control would reduce a visibility blind spot?
-
-      These discussion notes add context to the report; they do not replace its evidence or repeat the structured plan inputs.
+      Choose go or no-go from your evidence and approved scope. A missing positive,
+      unexplained negative, stale point or unaccepted exception means no-go until
+      resolved. A green current-system result does not sign this record. Record
+      what remains untested and who accepts the residual risk. Preserve the files
+      outside the reset path before closing the exercise.

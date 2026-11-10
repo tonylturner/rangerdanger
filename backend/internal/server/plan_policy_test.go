@@ -87,7 +87,7 @@ func TestRetainedCommandSources(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s.appliedPlan, s.policySource = &compiled, "plan"
+			s.appliedPlan, s.policySource, s.planProvenance = &compiled, "plan", &planProvenance{}
 			if target == "manual-custom" {
 				s.policySource = target
 			}
@@ -115,7 +115,7 @@ func TestRetainedCommandSources(t *testing.T) {
 					if want == "warn" && target == "plan-deferred" {
 						want = "pass"
 					}
-					check := s.usAuditJudgment(gen, []map[string]any{entry})
+					check := s.usAuditJudgment(t.Context(), gen, []map[string]any{entry})
 					if check.Status != want {
 						t.Fatalf("got %+v, want %s", check, want)
 					}

@@ -88,13 +88,12 @@ type Server struct {
 	// A manual commit happened between the previous matching observation and
 	// discovery; backend commits between request start and response. Absence
 	// proofs use the lower bound, negative tests the upper bound.
-	policyEvidenceSince  time.Time
-	policyObservedAt     time.Time
-	lastValidationReport *retainedValidationReport // immutable, guarded by activeConfigMu
-	pcapMu               sync.Mutex
-	pcap                 pcapState
-	trafficMu            sync.Mutex
-	traffic              trafficState
+	policyEvidenceSince time.Time
+	policyObservedAt    time.Time
+	pcapMu              sync.Mutex
+	pcap                pcapState
+	trafficMu           sync.Mutex
+	traffic             trafficState
 }
 
 // New constructs a server with routes registered. catalog is the result of
@@ -168,7 +167,6 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 		firewall.GET("/active", s.handleFirewallActive)
 		firewall.POST("/apply", s.handleFirewallApply)
 		firewall.POST("/apply-plan", s.handleFirewallApplyPlan)
-		firewall.POST("/validation-report", s.handleValidationReport)
 		firewall.GET("/sessions", s.handleFirewallSessions)
 		firewall.POST("/sessions/kill", s.handleFirewallSessionKill)
 	}
@@ -181,6 +179,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 		workshop.POST("/nodes/:nodeId/exec", s.handleWorkshopExec)
 		workshop.POST("/reset", s.handleWorkshopReset)
 		workshop.POST("/test-suite", s.handleWorkshopTestSuite)
+		workshop.POST("/probe-matrix", s.handleProbeMatrix)
 	}
 
 	// Substation data (proxied from rtac-sim)
@@ -234,7 +233,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 	rng.POST("/traffic/stop", s.handleTrafficStop)
 	rng.GET("/traffic/status", s.handleTrafficStatus)
 
-	rng.GET("/scenarios/:id/validate", s.handleValidateScenario)
+	rng.POST("/scenarios/:id/validate", s.handleValidateScenario)
 	rng.POST("/scenarios/:id/steps/:stepIdx/execute", s.handleExecuteStep)
 
 	// Containd proxy - enables same-origin access to containd UI

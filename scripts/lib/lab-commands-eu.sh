@@ -10,10 +10,6 @@ shift
 case "$1" in
   reset) eu_reset_all ;;
   policy) eu_apply_named "$2" ;;
-  traffic)
-    eu_api_post /api/traffic/generate '{"duration_sec":30}'
-    [ "$HTTP_STATUS" = 200 ]
-    ;;
   management)
     eu_management "$2" GET "$3"
     [ "$HTTP_STATUS" = 200 ]

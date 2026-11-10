@@ -11,7 +11,7 @@ export function injectDynamicContent(desc: string, stepId: string, plan: Compile
   const phase = c.dynamicSteps[stepId];
   if (!phase || !c.phases[phase]) return desc;
   return c.phases[phase]
-    .replaceAll("{{noPlan}}", plan.actions.some((a) => a.chosen) ? "" : `Weak plan: no enforcement or detection selected. [Edit plan](/exercises/${c.roles.planning}).`)
+    .replaceAll("{{noPlan}}", plan.actions.some((a) => a.chosen) ? "" : c.noPlan.replaceAll("{{planRole}}", c.roles.planning))
     .replaceAll("{{ruleTable}}", renderRuleTable(plan, c))
     .replaceAll("{{tests}}", phase === "rules" ? "" : renderPlanTests(plan, c, role, phase));
 }

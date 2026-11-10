@@ -5,7 +5,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # Change the golden root without modifying repository fixtures. The gate must
-# follow the files here for both its request and every expected report value.
+# follow the files here for both its request and every expected measurement value.
 ORIGINAL_ROOT="$ROOT"
 ROOT="$TMP_DIR/root"
 mkdir -p "$ROOT/frontend/lib/testdata/plans" "$ROOT/scripts/tests/fixtures"
@@ -18,7 +18,7 @@ CASE_NOW=""
 MUTATION="."
 BREAK_AT=partial
 APPLY_STATUS=200
-REPORT_STATUS=200
+MATRIX_STATUS=200
 RESTORE_FAIL=0
 LEAK_PLAN=0
 sleep() { :; }
@@ -27,29 +27,13 @@ docker() { return 99; }
 curl() { return 99; }
 
 # Build independent HTTP fixtures directly from the golden, without invoking
-# the oracle under test. A faithful partial report has successful proof rows,
-# failed acceptance rows and only the remaining allow/deny prevention gaps.
-make_report() {
+# the oracle under test. A faithful partial matrix matches its plan while its measured rows
+# still expose the remaining Hardened prevention gaps.
+make_matrix() {
   jq -c '
-    .expectations as $rows
-    | all($rows[]; .planVerdict == .hardenedVerdict) as $accepted
-    | {
-      planProof: {applicable:true, pass:true, hashStable:true, skipped:0,
-        rows:[$rows[] | {id, expected:.planVerdict, observed:.planVerdict, pass:true}]},
-      acceptance: {pass:$accepted, skipped:0,
-        rows:[$rows[] | {id, expected:.hardenedVerdict, observed:.planVerdict,
-          pass:(.planVerdict == .hardenedVerdict)}],
-        preventionGaps:[$rows[] | select(.planVerdict == "allow"
-          and .hardenedVerdict == "deny") | .id]},
-      summary: {
-        authorized_total:([$rows[] | select(.category == "authorized")] | length),
-        authorized_pass:([$rows[] | select(.category == "authorized"
-          and .planVerdict == .hardenedVerdict)] | length),
-        unauthorized_total:([$rows[] | select(.category == "unauthorized")] | length),
-        unauthorized_pass:([$rows[] | select(.category == "unauthorized"
-          and .planVerdict == .hardenedVerdict)] | length),
-        skipped:0, result:(if $accepted then "PASS" else "FAIL" end)}
-    }' "$1"
+    {policyHash, policySource:"plan", policyStable:true,
+      policyChangedAt:"2026-11-09T10:00:00Z", startedAt:"2026-11-09T10:01:00Z", finishedAt:"2026-11-09T10:01:20Z",
+      rows:[.expectations[] | {id, observed:.planVerdict, error:""}]}' "$1"
 }
 eu_api_post() {
   local file request
@@ -72,10 +56,11 @@ eu_api_post() {
       API_BODY=$(jq -c '{applied:true,warnings:[],plan:.,containd:{applyId:"plan-id",protection:"protecting"}}' "$file")
       HTTP_STATUS="$APPLY_STATUS"
       ;;
-    /api/firewall/validation-report)
-      CALLS="$CALLS report:$CASE_NOW:$3"
-      API_BODY=$(make_report "$ROOT/frontend/lib/testdata/plans/eu-$CASE_NOW.json")
-      HTTP_STATUS="$REPORT_STATUS"
+    /api/workshop/probe-matrix)
+      [ "$2" = "" ] || return 99
+      CALLS="$CALLS matrix:$CASE_NOW:$3"
+      API_BODY=$(make_matrix "$ROOT/frontend/lib/testdata/plans/eu-$CASE_NOW.json")
+      HTTP_STATUS="$MATRIX_STATUS"
       ;;
     /api/firewall/apply)
       CALLS="$CALLS named:$2"
@@ -106,10 +91,10 @@ run_plan_gate() {
 run_plan_gate
 t_expect_eq "$T_STATUS" 0 "golden full and partial plans pass their independent judgements"
 t_expect_fails 0 "partial hardened rejection is expected, not a failed plan proof"
-expected_calls=' plan:full:60 report:full:90 plan:partial:60 report:partial:90'
+expected_calls=' plan:full:60 matrix:full:90 plan:partial:60 matrix:partial:90'
 for action in $(jq -r '.actions[] | select(.kind == "enforce" or .kind == "detect") | .id' \
   "$ROOT/frontend/lib/testdata/plans/eu-full.json"); do
-  expected_calls="$expected_calls plan:$action:60 report:$action:90"
+  expected_calls="$expected_calls plan:$action:60 matrix:$action:90"
 done
 expected_calls="$expected_calls named:{\"config\":\"weak\"} active"
 t_expect_eq "$CALLS" "$expected_calls" \
@@ -120,7 +105,7 @@ t_run jq -e --slurpfile golden "$ROOT/frontend/lib/testdata/plans/eu-partial.jso
 t_expect_eq "$T_STATUS" 0 "request evidence contains the golden-derived partial selection"
 for selection in full partial $(jq -r '.actions[] | select(.kind == "enforce" or .kind == "detect") | .id' \
   "$ROOT/frontend/lib/testdata/plans/eu-full.json"); do
-  for artifact in request apply report; do
+  for artifact in request apply matrix; do
     t_run test -s "$EU_GATE_EVIDENCE_DIR/G28/G28-$selection-$artifact.json"
     t_expect_eq "$T_STATUS" 0 "retained G28 $selection $artifact JSON is available"
   done
@@ -157,23 +142,30 @@ for BREAK_AT in full partial; do
     'if has("plan") then .warnings=["fixture warning"] else . end' \
     'if has("plan") then del(.warnings) else . end' \
     'if has("plan") then .plan.label="wrong" else . end' \
-    'if has("planProof") then .planProof.applicable=false else . end' \
-    'if has("planProof") then .planProof.pass=false else . end' \
-    'if has("planProof") then .planProof.hashStable=false else . end' \
-    'if has("planProof") then .planProof.skipped=1 else . end' \
-    'if has("planProof") then .planProof.rows=[] else . end' \
-    'if has("acceptance") then .acceptance.pass |= not else . end' \
-    'if has("acceptance") then .acceptance.skipped=1 else . end' \
-    'if has("acceptance") then .acceptance.rows=[] else . end' \
-    'if has("acceptance") then .acceptance.preventionGaps += ["unexpected"] else . end' \
-    'if has("summary") then .summary.unauthorized_total=0 else . end'; do
+    'if has("plan") then .plan.policyHash += "-different" else . end' \
+    'if has("rows") then .policySource="manual-custom" else . end' \
+    'if has("rows") then .policyHash="" else . end' \
+    'if has("rows") then .policyStable=false else . end' \
+    'if has("rows") then .rows[0].observed="untested" else . end' \
+    'if has("rows") then .rows=[] else . end' \
+    'if has("rows") then .rows[0].error="exec failed" else . end' \
+    'if has("rows") then .rows |= reverse else . end' \
+    'if has("rows") then .rows[0].observed="invalid" else . end' \
+    'if has("rows") then .rows += [.rows[0]] else . end' \
+    'if has("rows") then .rows[0].id="unknown" else . end' \
+    'if has("rows") then .rows[0].id=.rows[1].id else . end' \
+    'if has("rows") then .rows[0].observed |= (if . == "allow" then "deny" else "allow" end) else . end' \
+    'if has("rows") then .policyHash = ((if .policyHash[0:1] == "0" then "1" else "0" end) + .policyHash[1:]) else . end' \
+    'if has("rows") then .startedAt="" else . end' \
+    'if has("rows") then .finishedAt="" else . end' \
+    'if has("rows") then .policyChangedAt="" else . end'; do
     run_plan_gate
     t_expect_eq "$T_STATUS" 1 "$BREAK_AT fails closed: $MUTATION"
-    t_expect_fails 1 "invalid apply/report records a gate failure"
+    t_expect_fails 1 "invalid apply/matrix records a gate failure"
     t_expect_eq "${CALLS##* named:}" '{"config":"weak"} active' "failed proof still clears provenance"
   done
 done
-MUTATION='if has("acceptance") then .acceptance.preventionGaps |= .[1:] else . end'
+MUTATION='if has("rows") then .rows |= .[1:] else . end'
 run_plan_gate
 t_expect_eq "$T_STATUS" 1 "missing partial prevention gap fails exact equality"
 MUTATION='if has("plan") then .containd.protection="degraded" else . end'
@@ -189,10 +181,10 @@ for APPLY_STATUS in 422 500; do
   t_expect_eq "$T_STATUS" 1 "non-200 apply is not a successful plan"
   t_expect_eq "${CALLS##* named:}" '{"config":"weak"} active' "apply failure still restores named weak"
 done
-APPLY_STATUS=200 REPORT_STATUS=500
+APPLY_STATUS=200 MATRIX_STATUS=500
 run_plan_gate
-t_expect_eq "$T_STATUS" 1 "non-200 report fails"
-REPORT_STATUS=200 RESTORE_FAIL=1
+t_expect_eq "$T_STATUS" 1 "non-200 matrix fails"
+MATRIX_STATUS=200 RESTORE_FAIL=1
 run_plan_gate
 t_expect_eq "$T_STATUS" 1 "failed cleanup cannot pass the gate"
 RESTORE_FAIL=0 LEAK_PLAN=1

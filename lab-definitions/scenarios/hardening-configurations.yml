@@ -2,7 +2,7 @@ id: hardening-configurations
 order: "2.3"
 name: "Protocol-Hardened Configurations"
 summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection from an unauthorized source. The remote trip stays open until someone closes it; disabling auto-reclose removes automatic restoration after a fault. The lesson: on this build the L4 source pin is what enforces, so verify enforcement by device state, not by policy labels. Modbus FC5/FC6 variants available as optional bonus attacks."
-estimated_minutes: 12
+estimated_minutes: 25
 validator: us-hardening-configurations
 description: >
   Stress-test the policy you built in Lab 2.2 against the canonical
@@ -66,7 +66,7 @@ steps:
       re-read.
       :::
 
-      **Time budget:** ~12 minutes (Guided path - the primary DNP3 attack and re-test. The optional Modbus cases are extra).
+      **Time budget:** ~25 minutes (estimate) for the primary DNP3 attack, retest and hand record. Optional Modbus cases take extra time.
     action:
       type: check
       expect:
@@ -253,37 +253,33 @@ steps:
           source: "operator"
 
   - id: apply-the-hardened-policy
-    title: "Apply the hardened policy"
+    title: "Confirm the reviewed boundary before retesting"
     expected_config: hardened
     description: |
-      :::guided
-      Apply Your Plan to test the choices from Lab 1.4. Use Apply Hardened only
-      for the full reference.
+      Use the reviewed rules from Lab 2.2. Compare the running policy with your
+      Lab 1.4 change request. If it differs, export the running rules first.
+      Stage the approved removals and replacements together in containd. Review
+      the full diff and first-match order, commit once, then read back the rules.
+      Keep the management path and required operating conduits. Record the
+      commit time and running identity. Do not widen the approved scope just
+      to obtain a green result. Without a saved request, use the full Hardened reference.
+      The current-system check reads the policy without replacing it.
+
+      :::hint Optional catch-up — for less technical students or teams behind schedule
+      This replaces typing rules. It does not replace your own observations, operator check or sign-off.
+      Apply Your Plan for the approved Lab 1.4 scope. Apply Hardened only when
+      you intend to test the full reference. Read back what is running.
       :::
 
-      :::technical
-      A manual policy uses Hardened expectations. Commit the named-source
-      reference rules, then inspect the running configuration.
-      :::
-
-      Execute Step checks the active policy without replacing it. Verify the running hash and selected action IDs.
-
-      The primary Kali→field DNP3 and optional Modbus attempts belong to
-      **Block enterprise → field direct access**. If selected, expect a timeout. If
-      deferred, the Weak path stays open and the same command can still change
-      the device. **Pin field-device access to RTAC source IP** owns non-RTAC OT→field
-      attempts, not Kali's enterprise path.
-
-      The L4 source pin enforces; DPI detects and logs. Neither
-      **Apply DNP3 ICS DPI - detect and log Direct Operate writes** nor
+      **Block enterprise → field direct access** owns Kali→field Modbus/DNP3.
+      If selected, expect timeout. If deferred, expect the path to stay open.
+      **Pin field-device access to RTAC source IP** owns non-RTAC OT→field attempts,
+      not Kali's enterprise path. Preserve required RTAC and HMI flows.
+      Neither **Apply DNP3 ICS DPI - detect and log Direct Operate writes** nor
       **Apply Modbus ICS DPI - provide function-code visibility** changes these verdicts.
-      Required RTAC and HMI flows remain.
+      They add visibility, not command authorization. Record each deferred exposure and risk owner.
 
-      :::plan-coverage title="Your plan vs the primary attempt"
-      :::
-
-      Compare observed results with the applied plan, then record the Hardened
-      prevention gap for each deferred closure. A saved selection is not proof.
+      The L4 source pin enforces; DPI detects and logs.
     action:
       type: check
       expect:
@@ -303,7 +299,7 @@ steps:
       control now reports `[EXIT 2]` in the Run command log, rather than `[OK]`.
       With it deferred, the command still lands:
       auto-reclose becomes disabled. This command alone does not trip the recloser.
-      The deferred result matches plan proof but leaves a Hardened prevention gap.
+      The deferred result leaves an exposure. Record it against the approved scope.
       Detection selections do not close it.
 
       Read from the RTAC terminal after the poll/solve interval:
@@ -376,22 +372,37 @@ steps:
         reclose_enabled: true
 
   - id: validate
-    title: "Validate"
+    title: "Read device state and record the result"
     expected_config: hardened
     description: |
-      Keep the applied plan active. Compare the current re-test result with its
-      expected verdict. A deferred enterprise-to-field closure leaves the command
-      path open even when the plan proof passes. Hardened is the comparison.
+      Read the restored plant before using the optional current-system cross-check.
+      From the RTAC terminal, read the aggregated device state:
 
+          mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20
+
+      `[2]` is recloser closed; `[3]` is auto-reclose enabled. From the same
+      RTAC terminal, read the recloser's own DNP3 points:
+
+          dnp3poll -a 2 -t 3s 10.40.40.21:20000
+
+      Record the binary states and compare them with the RTAC and HMI. Do not
+      send a control write to prove that a read path works.
       Restoration is common to every plan: breaker and recloser closed,
       auto-reclose enabled, regulator auto, voltage normal and loads energized.
-      Restore before Validate. A successful deferred test is not permission to
-      leave the feeder degraded.
+      A successful deferred test is not permission to leave the feeder degraded.
 
-      Audit history can include earlier Weak-policy writes. Keep the current
-      re-test timestamps; do not clear history or repeatedly reset to obtain a
-      green banner. A state check is not TCP proof. Run Lab 2.4 for the full
-      21-row matrix, capture and stable-hash evidence.
+      Copy this record into Notes and fill it from your readings:
+
+      | UTC / source | Device / point | Value / quality | HMI / loads | Running policy identity / commit | Tester / operator |
+      |---|---|---|---|---|---|
+      | | | | | | |
+
+      Record the attack and retest outcomes, re-test timestamps and expected verdict
+      separately. Name any remaining exposure and its risk owner. Audit history can include earlier Weak-policy
+      writes; do not clear history or repeatedly reset to obtain a green banner.
+      A state check is not TCP proof. The optional cross-check samples the current
+      system; it does not sign this record or certify the earlier restoration.
+      Keep the readings and UTC window for Lab 2.4.
     action:
       type: check
       expect:

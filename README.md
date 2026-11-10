@@ -24,27 +24,27 @@ RangerDanger teaches network segmentation by putting students inside a working e
 
 - **Interactive topology map** at `/console`. IEC 62443 zone bands (Enterprise SL-1, DMZ SL-2, Supervisory SL-3, Field SL-2) with a live policy overlay that shows which conduits are allowed or blocked under the active firewall config. Click any node to inspect device state, open its web UI, or drop into a terminal. Drawers surface protocol details and live traffic context per node.
 - **Embedded container terminals**. xterm.js plus WebSocket exec into manifest-mapped topology nodes. No SSH client, no port forwards. Terminal state persists across navigation via a shared React context, and PTY size propagates so `stty` queries return the right values.
-- **Exercise runner** at `/exercises/[id]`. Each lab is a step-by-step walk-through with inline command blocks (one-click run), persistent per-exercise notes, and live state-reading validators that show green/red chips as students hit checkpoints. Apply Your Plan compiles selected actions on the backend; later checks compare results with the applied plan.
+- **Exercise runner** at `/exercises/[id]`. Each lab is a step-by-step walk-through with inline command blocks (one-click run), persistent per-exercise notes, and live state-reading validators that show green/red chips as students hit checkpoints. Students write a change request, author rules in containd and collect their own evidence. Apply and prepared-command shortcuts stay in optional catch-up blocks. Current-system cross-checks do not grade the written record.
 - **Process view** at `/substation`. Live feeder state from the RTAC via the OpenDSS power-flow solver. Modbus FC5/FC6 writes and DNP3 CROB attacks measurably change breaker positions, regulator taps, voltages, and load energization within ~3 seconds. Customer-service tile shows how many customers and how much critical load (hospital, fire station) is currently energized.
-- **containd NGFW integration**. ICS-aware NGFW at the conduit. Modbus function-code filtering, DNP3 protocol awareness, IT-side DPI for TLS/SNI, HTTP, RDP. The L4 source pin enforces; DPI detects and logs. Students apply policy from the lab UI; containd's full web console is iframed at `/containd/` for direct inspection of rules, audit log, and session state.
+- **containd NGFW integration**. ICS-aware NGFW at the conduit. Modbus and DNP3 decoding, IT-side DPI for TLS/SNI, HTTP, RDP. The L4 source pin enforces; DPI detects and logs. Students author and commit rules in containd; optional catch-up controls can apply a selected policy. containd's full web console is iframed at `/containd/` for direct inspection of rules, audit log, and session state.
 - **Knowledge wiki** at `/knowledge`. Curated reference for substation equipment, ICS protocols, segmentation patterns, and the lab's specific architecture. Searchable, markdown-rendered, useful both during exercises and afterward.
 - **Modbus and DNP3 simulators**. Every field device (relay, recloser, regulator, capacitor bank, RTAC) speaks Modbus TCP, DNP3 TCP, and HTTP simultaneously against shared state. Field-device controls work via any of the three protocols; the RTAC's Modbus and DNP3 outstations are read-only.
-- **PCAP capture and change-board evidence**. Capture cross-zone traffic at the firewall during attack and validation runs. `scripts/validation-report.sh` requests the backend's validation report for the currently running policy, including its probe matrix, policy proof, Hardened acceptance comparison, and PCAP evidence. It does not apply a policy.
+- **PCAP capture and change-board evidence**. Capture cross-zone traffic manually at the firewall. Retain policy identity, UTC windows, source-test observations, operator readings and PCAP for review. Students write and sign their own test record.
 - **Validation-driven exercises**. Per-lab Go validators read live simulator state, electrical readings, audit log entries, and active firewall config. Green/red feedback is per-checkpoint, no instructor-side grading required.
 
 ## Student journey
 
-Each lab builds on the previous. Your Lab 1.4 remediation plan is compiled and applied in Lab 2.2; subsequent checks test the running policy against that plan. ≈83 minutes (Guided path) for the six core labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.4), plus ~12 minutes for the optional 2.3-bonus.
+Each lab builds on the previous. Write the Lab 1.4 change request, implement it by hand in Lab 2.2, then test it and sign a record. Plan about three hours for the six core labs (US: ~170 minutes; EU: ~167 minutes), plus ~25 minutes for the optional vendor lab. These are estimates, not timed walks; allow breaks and extra time for optional depth. See [workshop timings](docs/workshop-overview.md#the-exercises).
 
 | Step | Lab | What you do |
 |---|---|---|
 | 1 | **1.2 Baseline** | Capture cross-zone traffic at the firewall. Build a flow inventory. Probe for latent exposure that passive monitoring missed. |
 | 2 | **1.3 Requirements** | Translate findings into a zone-pair rule grid. Pick BLOCK / RESTRICT / ALLOW per direction. Anchor the design to operational requirements. |
-| 3 | **1.4 Plan** | Choose which findings to fix first under a finite labor budget. Per-role utilization updates in real time as you pick actions. |
-| 4 | **2.2 Implement** | Compile and apply your Lab 1.4 plan. Review the generated rules in containd and verify the running policy against your plan. |
+| 3 | **1.4 Plan** | Agree scope under a finite labor budget. Write the rule changes, window, acceptance tests, rollback and risk owners in a change request. |
+| 4 | **2.2 Implement** | Export the running rules, stage approved removals and replacements, review the full diff, commit once and read back. Retest named sources. |
 | 5 | **2.3 Harden** | Stress-test against a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser — the canonical distribution-substation attack vector. Watch the process view as voltages drop, breakers open, downstream loads de-energize. Re-test under the hardened policy. Optional Modbus FC5/FC6 sidebars cover the same defense pattern. |
 | 5b | **2.3-bonus** | Optional kill-chain exercise: vendor RDP/VNC pivot from enterprise to vendor to field. Demonstrates both the perimeter rule and defense-in-depth. |
-| 6 | **2.4 Validate** | Capture PCAP under the hardened policy. Assemble change-board evidence. Confirm attacks fail and authorized flows still work. |
+| 6 | **2.4 Validate** | Write the test plan, run source tests without control writes, read the boundary capture, check operations and sign go/no-go. |
 
 ## v0.2.3 environments
 

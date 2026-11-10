@@ -1099,7 +1099,7 @@
   ],
   "label": "hardened",
   "packageId": "eu-iec104-substation",
-  "revision": 7,
+  "revision": 8,
   "policyHash": "1d9c61d773fc94c0c3c4d08f43ab1130054ac8fb6c5f8b63f83905064627eb7c",
   "expectations": [
     {

@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from lab_commands_capture import decode
+
 ROOT = Path(__file__).resolve().parents[2]
 EU = "eu-iec104-substation"
 # Resolve via PATH: a bare "bash" on Windows hits System32ash.exe (WSL)
@@ -15,10 +17,10 @@ EU = "eu-iec104-substation"
 BASH = shutil.which("bash") or "bash"
 
 
-def request(api, path, body=None):
+def request(api, path, body=None, *, timeout=40):
     data = None if body is None else json.dumps(body).encode()
     req = Request(api + path, data=data, headers={"Content-Type": "application/json"})
-    with urlopen(req, timeout=40) as response:
+    with urlopen(req, timeout=timeout) as response:
         return json.load(response)
 
 
@@ -91,14 +93,6 @@ class EUAdapter:
         self.helper("management", node, endpoint, path.as_posix())
         return json.loads(path.read_text())
 
-    def decode(self, directory, container, path):
-        result = subprocess.run(
-            ["docker", "exec", container, "timeout", "5", "tcpdump", "-nn", "-r", path],
-            text=True, capture_output=True, timeout=10)
-        (directory / "capture.stdout").write_text(result.stdout)
-        (directory / "capture.stderr").write_text(result.stderr)
-        return len(result.stdout.splitlines()) if result.returncode == 0 else 0
-
     def execute(self, gate, row, oracle, directory, timeout, positive=False, control=False):
         if row["prompt"] == "cli":
             # containd CLI commands have no Run button: students type them in
@@ -113,28 +107,22 @@ class EUAdapter:
             initial = self.management(device, "/api/state", directory, phase + "-before")
             before = self.management(device, "/api/audit?after=0", directory, phase + "-audit-before")
         if oracle["intent"] == "capture":
-            subprocess.run(["docker", "exec", row["container"], "rm", "-f", oracle["file"]],
-                           check=True, timeout=10)
-            self.helper("traffic")
+            raise ValueError("captures must use the shared scenario lifecycle")
         response = request(self.api, f'/api/workshop/nodes/{row["node"]}/exec',
-                           {"command": row["command"], "timeout_sec": max(timeout, 25)})
+                           {"command": row["command"], "timeout_sec": max(timeout, 25)},
+                           timeout=max(timeout, 25) + 15)
         out, err, rc = response["stdout"], response["stderr"], response["exit_code"]
         (directory / (phase + ".stdout")).write_text(out)
         (directory / (phase + ".stderr")).write_text(err)
         (directory / (phase + "-exec.json")).write_text(json.dumps(response, indent=2))
         frames = None
-        if oracle["intent"] == "capture":
-            frames = self.decode(directory, row["container"], oracle["file"])
-        passed = gate.verdict(effective, rc, out, err, control=control, frames=frames)
-        # Unlike legacy US timed captures, the rotating EU capture must finish.
-        if oracle["intent"] == "capture":
-            passed = passed and rc == 0
+        passed = gate.verdict(effective, rc, out, err, control=control)
         if not positive:
             passed = passed and semantic(oracle.get("semantic"), out)
         if oracle.get("semantic") == "pcap-filter":
             # Empty matching output is meaningful only against a decodable,
             # nonempty capture from this run, not a missing or corrupt file.
-            passed = passed and self.decode(
+            passed = passed and decode(
                 directory, "rangerdanger-firewall", "/data/captures/baseline.pcap") > 0
         if device:
             allowed = positive or oracle["intent"] != "deny"

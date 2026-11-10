@@ -21,7 +21,7 @@ describe("splitDescription", () => {
 
   it("omits metadata for EU decisions, incomplete decisions and interactive widgets", () => {
     const segments = splitDescription(
-      ':::track-picker\n:::\n:::decision id=eu correct="secret-answer"\nWhich port?\n',
+      ':::notes-panel from=planning\n:::\n:::decision id=eu correct="secret-answer"\nWhich port?\n',
     );
     expect(JSON.stringify(segments)).toContain("Which port?");
     expect(JSON.stringify(segments)).not.toMatch(/secret-answer|correct=|:::/);

@@ -2,7 +2,7 @@ id: eu-vendor-rdp-compromise
 order: 2.3-bonus
 name: Vendor Remote Access Compromise (Bonus)
 summary: Prove enterprise remote-access exposure, pivot from the vendor terminal, then retest both hops independently.
-estimated_minutes: 12
+estimated_minutes: 25
 validator: eu-vendor-rdp-compromise
 description: Walk the same two-hop vendor compromise as the US workshop. Prove RDP/VNC reachability from enterprise,
   represent the compromised foothold in the vendor terminal and issue the prescribed Modbus write. Restore service,
@@ -27,6 +27,8 @@ steps:
   expected_config: weak
   node: kali-1
   description: |
+    **Time budget:** ~25 minutes (estimate; optional depth takes extra time).
+
     Optional bonus, weak active. From **Kali** prove the first hop:
 
         nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4
@@ -141,18 +143,15 @@ steps:
     - device: rmu-1
       command: reset
 - id: apply-hardened-policy
-  title: Apply hardened policy
+  title: "Review and commit the two boundaries"
   expected_config: hardened
   description: |
-    Apply Your Plan to test the choices from Lab 1.4, or Apply Hardened for the
-    full reference. The reference closes **enterprise→vendor RDP/3389 and VNC/5900** and **vendor→field Modbus/502**. Either boundary breaks the chain. The engineering exception remains named eng-ws→PLC web only, not vendor field control.
-
-    :::plan-coverage title="Your plan vs the vendor chain"
-    :::
-
-    :::hint Check the compiled policy
-    The six operational conduits must survive. A deferred vendor field closure can leave hop two open in a generated plan even though the reference closes it. Organizational broker work is planning-only, not a deployed login control.
-    :::
+    Reuse the reviewed Lab 2.2 policy and the Lab 1.4 change request. Inspect
+    both boundaries in containd. If either differs from the approved scope,
+    export the running rules, stage the removals and replacements together,
+    review the full diff and first-match order, commit once and read back.
+    Record the running identity and commit time. Preserve management access.
+    The optional current-system check reads the policy without replacing it.
 
     | Chain link | Owning action | Selected / deferred |
     |---|---|---|
@@ -160,10 +159,19 @@ steps:
     | Vendor→field Modbus/502 | Block vendor → field access | deny / allow |
     | Vendor→RTU/PLC engineering paths | Restrict vendor → station engineering access | narrowed / Weak scope |
 
-    Test the first two independently. **Pin field access to the RTU** owns
-    station-source field attempts, not the vendor hop. Detection and planning selections do
-    not change either hop. A saved plan is not active until applied.
-    Apply the policy before using Execute Step. Execute Step checks the active policy without replacing it; its recorded identity must match, and an applied plan must retain matching provenance.
+    Either of the first two closures breaks a new two-hop chain. Test them
+    independently; a blocked first hop does not test the second boundary.
+    **Pin field access to the RTU** owns station-source attempts, not the
+    vendor hop. Preserve the six operational conduits. The engineering
+    exception remains named eng-ws→PLC web only, not vendor field control.
+    A ZTNA broker selection is planning-only; it deploys no login control.
+    The L4 source pin enforces; DPI detects and logs.
+
+    :::hint Optional catch-up — for less technical students or teams behind schedule
+    This replaces typing rules. It does not replace your own observations, operator check or sign-off.
+    Apply Your Plan for the approved Lab 1.4 scope. Apply Hardened only for
+    the full reference. Read back the running rules before retesting.
+    :::
   action:
     type: check
     expect:
@@ -225,28 +233,37 @@ steps:
       rmu_normal: true
       supply_present: true
 - id: validate
-  title: Validate
+  title: "Sign the two-boundary test and restoration record"
   expected_config: hardened
   description: |
-    Run Validate with the intended plan active and RMU/OLTC state restored.
-    Completion evidence falls into the same three categories as the US bonus,
-    using the EU devices:
+    Keep the reviewed policy active. Write a two-boundary test record in Notes.
+    Use the actual source, tuple, UTC time and observed result for each hop.
+    Record the expected result from your approved change request before comparing.
 
-    1. **Plan verdicts** — the strict active matrix must match each hop's plan
-       verdict: enterprise→vendor remote access and vendor→field Modbus. A
-       screenshot of a rule is not enough.
-    2. **Restored operation** — RMU1 closed / RMU2 open and the OLTC in
-       remote/auto.
-    3. **Policy identity** — the running policy matches an accepted non-weak plan.
+    | Boundary | Source / destination / port | Expected | Observed TCP / device result | UTC / evidence file |
+    |---|---|---|---|---|
+    | Enterprise → vendor RDP/VNC | | | | |
+    | Vendor → field | | | | |
 
-    Keep policy identity, UTC bounds and device source attribution with this
-    lab's evidence. The bonus is optional: Lab 2.4 builds its evidence package
-    from the core labs and never asks for these records.
+    A refused connection counts as reached, not denied. A timeout needs capture
+    and baseline evidence to explain its cause. Keep the vendor source attribution;
+    the existing vendor terminal is not evidence of a successful new login.
 
-    PASS checks only the current sampled plan verdicts (both hops), RMU baseline positions and OLTC remote/auto mode. It does not certify a completed interactive login/pivot or earlier successful FC6 attack, absence of all foreign operations, fresh CC visibility, feeder supply or DPI enforcement; preserve those separately. Step-level continuity checks are not all part of this bonus completion validator.
+    Confirm RMU1 closed, RMU2 open, breaker closed, OLTC remote/auto and fresh
+    section supply. Check fresh valid CC points separately.
+    Record the restored values, UTC time and running policy identity. Name any
+    open boundary, exception and risk owner. Sign the record as tester and
+    operator; ask the change owner to accept or reject the remaining risk.
+
+    The optional current-system cross-check samples current policy and recovery
+    state. It does not sign this record, prove an earlier login/pivot or certify
+    all restoration actions. Keep those observations separately. This bonus is
+    optional; Lab 2.4 does not require its records.
 
     :::hint Residual risk
-    Neither L4 boundary proves vendor identity security. Record MFA, just-in-time approval and session recording as organizational follow-up, not as infrastructure deployed by this exercise.
+    Neither boundary proves vendor identity security. Record MFA, just-in-time
+    approval and session recording as organizational follow-up, not controls
+    deployed by this exercise.
     :::
   action:
     type: check

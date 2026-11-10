@@ -40,9 +40,9 @@ run_case() {
   jq -e -L "$oracle" --slurpfile golden "$golden" \
     'include "plan-gate"; plan_applied($golden[0])' "$receipts/apply.json"
   python3 "$SCRIPT_DIR/lib/containd_readiness.py" --backend-receipt <"$receipts/apply.json"
-  curl -fsS --max-time 90 -X POST "$API/api/firewall/validation-report" >"$receipts/report.json"
+  curl -fsS --max-time 90 -X POST "$API/api/workshop/probe-matrix" >"$receipts/matrix.json"
   jq -e -L "$oracle" --slurpfile golden "$golden" \
-    'include "plan-gate"; plan_report($golden[0])' "$receipts/report.json"
+    'include "plan-gate"; plan_matrix($golden[0])' "$receipts/matrix.json"
 }
 
 run_case "$catalog" "$base/rd01"

@@ -72,9 +72,9 @@ describe("PolicyStatusBanner", () => {
   it.each([US_PACKAGE, EU_PACKAGE])("uses $id's labels and the shared policy-actions instruction", (pkg) => {
     expect(banner(pkg, "weak")).toBe("Currently running Weak Baseline Cross-zone attacks succeed under this policy.");
     expect(banner(pkg, "improved")).toBe("Currently running Hardened Segmentation The reference segmentation policy for this range.");
-    expect(banner(pkg, "improved", "weak")).toContain("Click Reset to Weak in the policy-actions panel below");
+    expect(banner(pkg, "improved", "weak")).toContain("use Reset to Weak below");
     expect(banner(pkg, "weak", "hardened")).toContain("Hardened Segmentation (reference or your custom policy)");
-    expect(banner(pkg, "weak", "hardened")).toContain("Click Apply Hardened (canned reference) or Apply Your Plan");
+    expect(banner(pkg, "weak", "hardened")).toContain("Author, review, commit and read back in containd");
     expect(banner(pkg, "weak", "improved")).not.toContain("Network Console");
     expect(banner(pkg, "custom", "weak")).toContain("expects the Weak Baseline");
   });

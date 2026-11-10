@@ -15,7 +15,7 @@ import (
 
 func TestUSValidationMatrixUsesPlanProof(t *testing.T) {
 	gen := usGeneration(nil)
-	got, err := usRecipe.resolveValidation(gen)
+	got, err := referenceProof(gen, "")
 	if err != nil || len(got) != 21 {
 		t.Fatalf("matrix: %d %v", len(got), err)
 	}
@@ -23,10 +23,6 @@ func TestUSValidationMatrixUsesPlanProof(t *testing.T) {
 		if got[i].ID != proof.ID || got[i].Expected != string(proof.Expect) {
 			t.Fatalf("row %d: %+v", i, got[i])
 		}
-	}
-	hosts, network, err := usRecipe.resolveCapture(gen)
-	if err != nil || strings.Join(hosts, " ") != "10.40.40.20 10.40.40.21 10.40.40.22 10.40.40.23" || strings.Join(network, ".") != "10.40.40" {
-		t.Fatalf("capture %q %q %v", hosts, network, err)
 	}
 }
 

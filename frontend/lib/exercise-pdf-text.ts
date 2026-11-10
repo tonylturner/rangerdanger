@@ -71,8 +71,6 @@ export function splitDescription(text: string): Segment[] {
           ...splitDescription(segment.body),
           { type: "prose", value: `Choices: ${segment.options.join(" / ")}\n\nYour answer: __________` },
         ];
-      case "trackOnly":
-        return splitDescription(segment.body);
       // Interactive widgets have no printable answer or state. Never print
       // their directive attributes as a substitute.
       default:

@@ -16,39 +16,6 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
-func TestPartialPlanProofVersusAcceptance(t *testing.T) {
-	gen := usGeneration(nil)
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	matrix, err := resolveProof(gen, compiled.Expectations, "", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows := []validationRow{}
-	for _, probe := range matrix {
-		rows = append(rows, validationRow{validationProbe: probe, Actual: probe.PlanExpected, Pass: true})
-	}
-	proof, acceptance := judgeValidation(rows, true, "hash", true, true)
-	if !proof.Pass || acceptance.Pass || len(acceptance.PreventionGaps) == 0 || len(proof.Rows) != 21 {
-		t.Fatalf("proof %+v acceptance %+v", proof, acceptance)
-	}
-	proof, acceptance = judgeValidation(rows, false, "hash", true, true)
-	if proof.Applicable || proof.Pass || len(proof.Rows) != 0 || acceptance.Pass {
-		t.Fatal("manual policy received plan proof")
-	}
-	proof, _ = judgeValidation(rows, true, "hash", false, true)
-	if proof.Pass {
-		t.Fatal("unstable plan passed")
-	}
-	rows[0].Actual = "skipped"
-	proof, acceptance = judgeValidation(rows, true, "hash", true, true)
-	if proof.Pass || acceptance.Pass || proof.Skipped != 1 || acceptance.Skipped != 1 {
-		t.Fatal("untested row passed")
-	}
-}
-
 func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 	gen := usGeneration(nil)
 	var data []byte
@@ -105,7 +72,7 @@ func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 	data, _ = os.ReadFile(filepath.Join(s.cfg.LabDefinitionsPath, gen.Package.Policies["improved"]))
 	s.lastAppliedHash, _ = containd.FirewallHashFromBytes(data)
 	s.policySource = "manual-custom"
-	if check := s.policyJudgment(context.Background(), gen); check.Status != "pass" || !strings.Contains(check.Detail, "not an applied plan") {
+	if check := s.policyJudgment(context.Background(), gen); check.Status != "pass" || !strings.Contains(check.Detail, "full reference (no change request saved)") {
 		t.Fatal(check)
 	}
 }
@@ -119,7 +86,7 @@ func TestEUPartialPlanValidators(t *testing.T) {
 		}
 		for _, slot := range euWorkshopSlots[1:] {
 			ev := passingEUWorkshop(t, slot)
-			ev.isPlan = true
+			ev.target = "applied plan"
 			ev.foreignBreakerAllowed = true
 			for _, e := range compiled.Expectations {
 				if e.From == "kali-1" && e.To == "rtu-1" && e.Port == 2404 {
@@ -134,39 +101,11 @@ func TestEUPartialPlanValidators(t *testing.T) {
 			for _, probe := range matrix {
 				ev.negative = append(ev.negative, validationRow{validationProbe: probe, Actual: probe.Expected, Pass: true})
 			}
-			ev.report.PlanProof = proofResult{Applicable: true, Pass: true, HashStable: true, PolicyHash: ev.policyHash}
-			ev.report.Acceptance.Pass = false // independent Hardened acceptance can fail
 			assertEUChecks(t, slot, ev, true)
 			if len(ev.negative) > 0 {
 				ev.negative[0].Actual = "skipped"
 				ev.negative[0].Pass = false
 				assertEUChecks(t, slot, ev, false)
-			}
-		}
-	}
-}
-
-func TestPlanConduitDeniesFollowSelectedRules(t *testing.T) {
-	gen := euGeneration(t, nil, nil)
-	rows, err := conduitDenyMatrix(gen, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct {
-		ids   []string
-		fewer bool
-	}{{nil, true}, {[]string{"block-enterprise-to-field"}, true}} {
-		compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, tc.ids)
-		if err != nil {
-			t.Fatal(err)
-		}
-		filtered, err := planDenyFilter(rows, &compiled, gen.Package)
-		if err != nil || len(filtered) >= len(rows) {
-			t.Fatalf("not filtered: %d/%d %v", len(filtered), len(rows), err)
-		}
-		for _, row := range filtered {
-			if row.source == "10.10.10.50" && row.port == 2404 {
-				t.Fatal("deferred station closure still requires a DENY event")
 			}
 		}
 	}
@@ -301,18 +240,11 @@ func TestUSRegisteredValidatorsJudgeRulesNotLabels(t *testing.T) {
 		s.policySource, s.lastAppliedHash, s.activeConfig = tc.source, hash, "custom"
 		s.policyChangedAt = time.Now().Add(-time.Minute).UTC()
 		s.planProvenance = &planProvenance{PolicyHash: hash}
-		s.lastValidationReport = &retainedValidationReport{Hash: hash, Markdown: "fixture", RangeStart: gen.StartedAt, PolicyAt: s.policyChangedAt, StartedAt: s.policyChangedAt.Add(time.Second), FinishedAt: s.policyChangedAt.Add(2 * time.Second), Acceptance: acceptanceResult{Pass: tc.source != "plan"}, PlanProof: proofResult{Applicable: tc.source == "plan", Pass: true, HashStable: true, PolicyHash: hash}}
 		for _, slot := range []string{"us-firewall-implementation", "us-hardening-configurations", "us-vendor-rdp-compromise", "us-validation-evidence"} {
 			checks := scenarioValidators[slot].run(t.Context(), s, validatorInput{state: substationState(healthyOpts()), gen: gen, activeConfig: "custom"})
 			target := findCheckMatching(t, checks, "Running policy matches")
 			if (target.Status == "pass") != tc.want {
 				t.Fatalf("%s/%s: %+v", tc.name, slot, checks)
-			}
-			if slot == "us-validation-evidence" && tc.want {
-				retained := findCheckMatching(t, checks, "Retained PASS")
-				if retained.Status != "pass" {
-					t.Fatalf("%s: %+v", tc.name, retained)
-				}
 			}
 		}
 	}
@@ -326,8 +258,8 @@ func TestUSAuditAgainstPlanRatherThanForeignSourceLabel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.appliedPlan, s.policySource = &compiled, "plan"
-	if check := s.usAuditJudgment(gen, entries); check.Status != "pass" || !strings.Contains(check.Detail, "deferred exposures") {
+	s.appliedPlan, s.policySource, s.planProvenance = &compiled, "plan", &planProvenance{}
+	if check := s.usAuditJudgment(t.Context(), gen, entries); check.Status != "pass" || !strings.Contains(check.Detail, "deferred exposures") {
 		t.Fatal(check)
 	}
 	compiled, err = labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
@@ -335,11 +267,11 @@ func TestUSAuditAgainstPlanRatherThanForeignSourceLabel(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.appliedPlan = &compiled
-	if check := s.usAuditJudgment(gen, entries); check.Status != "warn" {
+	if check := s.usAuditJudgment(t.Context(), gen, entries); check.Status != "warn" {
 		t.Fatal(check)
 	}
 	s.policySource = "manual-custom"
-	if check := s.usAuditJudgment(gen, entries); check.Status != "warn" {
+	if check := s.usAuditJudgment(t.Context(), gen, entries); check.Status != "warn" {
 		t.Fatal(check)
 	}
 }

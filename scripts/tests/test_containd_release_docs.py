@@ -100,7 +100,7 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         self.assertIn("Default row describe the candidate", proof)
         eu = ROOT / "lab-definitions/packages/eu-iec104-substation"
         text = (eu / "scenarios/eu-firewall-implementation.yml").read_text()
-        self.assertIn("RangerDanger's step **Validate**", text)
+        self.assertIn("It does not test running traffic", text)
         self.assertIn("JSON **Validate** only checks editor text without staging", text)
         for relative in ("knowledge/eu-ics-dpi.md", "scenarios/eu-validation-evidence.yml"):
             text = (eu / relative).read_text()

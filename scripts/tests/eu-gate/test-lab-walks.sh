@@ -125,18 +125,18 @@ walk_bad() {
   CALLS="$CALLS walk-failed:$1"
   return 1
 }
-eu_api_get() {
-  CALLS="$CALLS GET:$1"
+eu_api_post() {
+  CALLS="$CALLS POST:$1"
   HTTP_STATUS=200
   API_BODY='{"outcome":"FAIL"}'
 }
 t_run eu_lab_gate eu-vendor-rdp-compromise walk_bad improved prepare_ok
 t_expect_eq "$T_STATUS" 1 "incomplete student walk fails"
 t_expect_eq "$CALLS" \
-  " reset policy:weak validate:FAIL:eu-vendor-rdp-compromise walk-failed:eu-vendor-rdp-compromise GET:/api/scenarios/eu-vendor-rdp-compromise/validate policy:weak reset" \
+  " reset policy:weak validate:FAIL:eu-vendor-rdp-compromise walk-failed:eu-vendor-rdp-compromise POST:/api/scenarios/eu-vendor-rdp-compromise/validate policy:weak reset" \
   "failed walk keeps evidence and restores weak policy and reset without claiming PASS"
 
-# The validation-evidence scenario starts hardened; its student check/report
+# The validation-evidence scenario starts hardened; its student check/continuity
 # walk must not run under the weak FAIL pre-state.
 CALLS=""
 eu_apply_named() { CALLS="$CALLS policy:$1"; }
@@ -144,13 +144,13 @@ eu_lab_step() { CALLS="$CALLS step:$2"; }
 eu_api_post() {
   CALLS="$CALLS POST:$1"
   HTTP_STATUS=200
-  API_BODY='{"summary":{"result":"PASS","skipped":0}}'
+  return 99 # this continuity walk must not invoke an automation matrix
 }
 t_run eu_lab_validation_walk eu-validation-evidence
 t_expect_eq "$T_STATUS" 0 "validation evidence walk establishes its hardened pre-state"
 t_expect_eq "$CALLS" \
-  " policy:improved step:confirm-hardened-config-is-active step:generate-the-validation-report POST:/api/firewall/validation-report step:reflection-what-did-your-plan-close" \
-  "hardened policy is active before the served checks and report"
+  " policy:improved step:write-test-plan step:confirm-hardened-config-is-active step:run-source-tests step:read-boundary-capture step:check-operator-health step:sign-test-record" \
+  "hardened policy is active before the served checks and continuity"
 
 # Package curriculum binding supplies the action catalog; scenario prompts
 # remain authored decisions, rather than duplicating catalog definitions.
@@ -209,8 +209,9 @@ t_expect_out "vendor FC6 RMU1 OPEN is attributed to vendor-jump 10.20.20.10" \
 # shellcheck source-path=SCRIPTDIR source=../../lib/eu-policy.sh
 . "$T_REPO/scripts/lib/eu-policy.sh"
 VALIDATION='{"outcome":"PASS","checks":[{"status":"pass"},{"status":"fail"}]}'
-eu_api_get() {
-  CALLS="$CALLS GET:$1"
+eu_api_post() {
+  CALLS="$CALLS POST:$1"
+  HTTP_STATUS="${VALIDATION_STATUS:-200}"
   API_BODY="$VALIDATION"
   printf '%s\n' "$1"
 }
@@ -223,7 +224,11 @@ VALIDATION='{"outcome":"PASS","checks":[{"status":"pass"}]}'
 t_run eu_validate_scenario PASS eu-validation-evidence
 t_expect_fails 0 "every check passing is accepted for the named scenario"
 t_expect_out "/api/scenarios/eu-validation-evidence/validate" \
-  "validator GET targets the explicitly named served scenario"
+  "validator POST targets the explicitly named served scenario"
+VALIDATION_STATUS=500
+t_run eu_validate_scenario PASS eu-validation-evidence
+t_expect_fails 1 "non-200 cannot pass with a valid PASS body"
+VALIDATION_STATUS=200
 t_run eu_validate_scenario PASS
 t_expect_fails 1 "validator rejects an omitted scenario"
 

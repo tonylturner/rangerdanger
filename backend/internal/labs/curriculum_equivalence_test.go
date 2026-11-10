@@ -17,10 +17,14 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// containd 0.1.39 configuration-CLI and review navigation, and breaker
 	// lockout telemetry in the EU acceptance inventory, and the EU portal's
 	// valid/quality-flag wording (without changing protocol acceptance), and
-	// catalog titles instead of action IDs in implementation prose.
+	// catalog titles instead of action IDs in implementation prose, and the
+	// single-path rule-authoring / optional catch-up directive cutover, and
+	// hand-authored change-request implementation with single-commit cutover,
+	// and firewall-native DENY event correlation in both dynamic retest lessons
+	// without requiring the later Lab 2.4 boundary capture.
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "d293e78dba6f52c4bc85e518c237d27950ffbb188031b03a3329835c8b98e6e4",
-		"eu-iec104-substation": "05023057ced0dc60058c46ed657b824c2fc6201f7539dee6519cadce693c2944",
+		"us-dnp3-substation":   "7c469fa6b1e96e47753c61016d3353d5b7ff4553777b52a96f4e585e4e028124",
+		"eu-iec104-substation": "518d260d9d4e15ae8f5922780c3d037a73e671ecd24c6237cbd84e7207288ced",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

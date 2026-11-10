@@ -113,11 +113,11 @@ func (s *Server) euRTULog(ctx context.Context, gen *lifecycle.Generation, harden
 }
 
 func euNoForeignBreaker(ev euWorkshopEvidence) ValidationCheck {
-	if ev.isPlan && ev.foreignBreakerAllowed {
-		return checkPass("Foreign breaker command exposure", "the applied plan permits Kali → RTU TCP/2404; a foreign breaker command can reach the RTU as the visible consequence. Hardened would deny this connection; restoration, GI and supply checks still apply")
+	if ev.foreignBreakerAllowed {
+		return checkPass("Foreign breaker command exposure", ev.target+" permits Kali → RTU TCP/2404; a foreign breaker command can reach the RTU as the visible consequence. Hardened would deny this connection; restoration, GI and supply checks still apply")
 	}
 	const name = "No foreign breaker operation since hardening (L4 only)"
-	fail := func(reason string) ValidationCheck { return checkFail(name, reason) }
+	fail := func(reason string) ValidationCheck { return checkFail(name, ev.target+": "+reason) }
 	if ev.logErr != nil || ev.auditErr != nil || ev.identityErr != nil || ev.ccIP == "" || ev.rtuIP == "" || !insideEvidenceWindow(ev.hardeningSince, ev.start, ev.policyAt) || !insideEvidenceWindow(ev.operationEnd, ev.policyAt, ev.now) {
 		return fail(fmt.Sprintf("missing identity, policy boundary, RTU log or breaker audit: %v; %v; %v", ev.identityErr, ev.logErr, ev.auditErr))
 	}
@@ -150,7 +150,7 @@ func euNoForeignBreaker(ev euWorkshopEvidence) ValidationCheck {
 			return fail("accepted breaker Modbus operation from a non-RTU peer after hardening")
 		}
 	}
-	return checkPass(name, fmt.Sprintf("continuous current-container RTU log evidence contains no accepted non-CC breaker execute since hardening through %s; continuous current-generation breaker audit contains no accepted foreign Modbus open/close through that cutoff. No DPI or denied-command decoding certified", ev.operationEnd.Format(time.RFC3339Nano)))
+	return checkPass(name, ev.target+": "+fmt.Sprintf("continuous current-container RTU log evidence contains no accepted non-CC breaker execute since hardening through %s; continuous current-generation breaker audit contains no accepted foreign Modbus open/close through that cutoff. No DPI or denied-command decoding certified", ev.operationEnd.Format(time.RFC3339Nano)))
 }
 
 func euRTUPeers(log, ccIP string, start, end time.Time) error {

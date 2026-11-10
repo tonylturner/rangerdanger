@@ -7,14 +7,12 @@ const euPackageID = "eu-iec104-substation"
 // and device truth; its canary is Kali's IEC 104 connect to the RTU. Its comparison
 // covers only the cross-zone relationships in its package policies.
 var euRecipe = &packageRecipe{
-	testSuite:         true,
-	simDevices:        map[string]string{"breaker": "breaker-1", "f2-breaker": "f2-breaker", "rmu-1": "rmu-1", "rmu-2": "rmu-2", "oltc-1": "oltc-1", "gps": "gps-1"},
-	commandExecutor:   (*Server).executeSimCommand,
-	sessionCuts:       map[string]sessionCutSpec{"cc-rtu": {sourceNetwork: "control_centre_net", targetNetwork: "station_net", transport: "tcp"}},
-	resetTruth:        resetEUTruth,
-	check:             (*Server).executeEUCheck,
-	report:            euReport,
-	validationCapture: captureSpec{nodes: []string{"breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1"}, network: "field_net"},
+	testSuite:       true,
+	simDevices:      map[string]string{"breaker": "breaker-1", "f2-breaker": "f2-breaker", "rmu-1": "rmu-1", "rmu-2": "rmu-2", "oltc-1": "oltc-1", "gps": "gps-1"},
+	commandExecutor: (*Server).executeSimCommand,
+	sessionCuts:     map[string]sessionCutSpec{"cc-rtu": {sourceNetwork: "control_centre_net", targetNetwork: "station_net", transport: "tcp"}},
+	resetTruth:      resetEUTruth,
+	check:           (*Server).executeEUCheck,
 	traffic: []trafficTarget{
 		{"eng-ws-1", "plc-1", "station_net", "curl -sf --max-time 3 http://%s:8080/login > /dev/null", "eng-ws→PLC maintenance GET"},
 		{"kali-1", "historian-1", "ops_dmz_net", "curl -sf --max-time 3 http://%s:8080/api/points > /dev/null", "enterprise→historian read"},

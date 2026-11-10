@@ -28,8 +28,8 @@ describe("US Apply Your Plan content", () => {
           expect(text).toContain("**Export plan record**");
           for (const row of plan.rules) expect(text).toContain(row.rule.id);
         } else {
-          expect(text).toContain("Plan verdict");
-          expect(text).toContain("Hardened verdict");
+          expect(text).toContain("Expected result");
+          expect(text).toContain("Hardened reference");
           for (const row of plan.expectations.filter((r) => r.category === (phase === "positive" ? "authorized" : "unauthorized"))) {
             expect(text).toContain(`${row.id}:`);
           }
@@ -38,9 +38,9 @@ describe("US Apply Your Plan content", () => {
     }
   });
 
-  it("pins revision three's 8+13 proof universe and partial-plan gaps", () => {
+  it("pins revision four's 8+13 proof universe and partial-plan gaps", () => {
     for (const plan of US_PLANS) {
-      expect(plan.revision).toBe(3);
+      expect(plan.revision).toBe(4);
       expect(plan.expectations.filter((r) => r.category === "authorized")).toHaveLength(8);
       expect(plan.expectations.filter((r) => r.category === "unauthorized")).toHaveLength(13);
     }
@@ -49,9 +49,6 @@ describe("US Apply Your Plan content", () => {
     expect(partial.expectations.filter((r) => r.planVerdict !== r.hardenedVerdict).map((r) => r.id))
       .toEqual(Array.from({ length: 11 }, (_, i) => `U${i + 1}`));
     const text = scenario("validation-evidence").steps.map((s) => s.description).join("\n");
-    for (const required of ["Plan proof", "Hardened acceptance", "8/8", "13/13", "0 skipped", "hash", "capture", "healthy HMI"]) {
-      expect(text).toContain(required);
-    }
     expect(text).not.toMatch(/11\/11|12\/12|nineteen probes/);
   });
 

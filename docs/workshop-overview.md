@@ -35,10 +35,10 @@ traffic. Students walk through:
 
 ## The exercises
 
-Each exercise is one YAML file in `lab-definitions/scenarios/` and
+Each exercise is one YAML file in its package’s scenarios directory (US: `lab-definitions/scenarios/`) and
 runs in the in-app exercise runner - students get inline terminals,
 auto-run buttons for CLI commands, and validators that check the
-substation state, captured PCAPs, and applied firewall policy.
+current substation state and running firewall policy. Students interpret the PCAP and sign the test record themselves.
 
 Lab numbering follows the **DefendICS workshop deck** (sections 1.x and 2.x).
 
@@ -47,23 +47,41 @@ The three planning labs (1.2 / 1.3 / 1.4) are deliberately separate
 
 - **1.2 = OBSERVE.** Capture cross-zone traffic, run targeted probes, produce findings - what's actually present in the baseline?
 - **1.3 = DECIDE design.** Turn findings into design verdicts (BLOCK / RESTRICT / ALLOW / BLOCK and LOG) and a resourcing-readiness reality check.
-- **1.4 = DECIDE implementation.** Pick remediation actions under a labor + per-role budget; the design verdicts drive coverage; readiness reshapes role caps, effort and action eligibility. Use default budget compares against the unconstrained model.
+- **1.4 = AGREE the change.** Choose scope under a labor and per-role budget, then write the window, rule changes, acceptance tests, rollback and residual-risk owners in a change request. The coverage panel compares selected work with requirements; it does not test the firewall.
 
-Each step's student input persists in browser localStorage and downstream labs render it via inline `:::findings-panel` and `:::plan-coverage` panels - see [`docs/lab-authoring.md`](lab-authoring.md) for the fence vocabulary.
+Each step's student input persists in browser localStorage and downstream labs render it via inline `:::findings-panel`, `:::notes-panel` and `:::plan-coverage` panels - see [`docs/lab-authoring.md`](lab-authoring.md) for the fence vocabulary.
 
-Times below are the **Guided-path golden-path** estimates (the in-app card chip and step-1 "Time budget" callout) - Advanced-track hints and optional bonus activities run longer. They match the `estimated_minutes` field in each scenario YAML.
+Times are **estimates for the manual work, not timed walks**. The card chip and step-1 callout match each scenario. Optional depth and instructor PCAP Analysis take extra time; catch-up shortcuts do not replace observations or sign-off. Budget breaks separately. Both packages use the same activity design.
+
+### US package
 
 | Lab | ID | Name | Time | What it teaches |
 |---|---|---|---|---|
-| 1.2 | `baseline-assessment` | Baseline Traffic Analysis | ~20 min | Capture cross-zone traffic + identify the critical conduits operations depend on. Step 6 commits five passive-observation findings; step 7 runs active probes that reveal latent exposure passive monitoring missed. |
-| 1.3 | `segmentation-requirements` | Segmentation Requirements & Policy Design | ~10 min | Translate Lab 1.2 findings into design verdicts (BLOCK / RESTRICT / ALLOW / BLOCK and LOG) per risk category, then commit a resourcing-readiness reality check (OT engineering capacity, firewall admin skills, vendor change windows, risk-acceptance authority). Closes with concrete success criteria for the hardened state. |
-| 1.4 | `remediation-planning` | Remediation Planning Under Constraint | ~12 min | A finite labor budget with per-role capacity caps forces tradeoffs between firewall changes, protocol controls, and architecture work. The design verdicts from 1.3 drive requirement badges and coverage; readiness adjusts role caps and effort and excludes blocked actions from draft coverage and Apply Your Plan without deleting saved choices. Use default budget restores the unconstrained model; already-applied provenance is unchanged. Apply Your Plan in Lab 2.2 compiles and applies eligible selections; deferred controls leave their Weak exposures open. Saving selections alone does not apply policy. |
-| 2.2 | `firewall-implementation` | Firewall Policy Implementation | ~22 min | Review the compiled rules and Apply Your Plan, or choose Apply Hardened for the reference policy. Advanced-track manual policies are judged against Hardened; validation separates applied-plan proof from Hardened acceptance. |
-| 2.3 | `hardening-configurations` | Protocol-Hardened Configurations | ~12 min | Stress-test the policy against a DNP3 Direct Operate injection against the recloser (the canonical distribution-substation attack vector). The L4 source pin enforces; DPI detects and logs. Students verify enforcement by device state (auto-reclose still enabled), not by policy labels. Optional Modbus FC5/FC6 sidebar attacks are closed by the same source pin. |
-| 2.3-bonus | `vendor-rdp-compromise` | Vendor Remote Access Compromise *(optional)* | ~12 min | RDP/VNC pivot from enterprise → vendor → field. Hardening blocks both links of the kill chain (perimeter + second hop). Optional, time permitting. |
-| 2.4 | `validation-evidence` | Testing & Validation | ~7 min | Generate a change-board validation report in one click (positive/negative test matrix + PCAP evidence, the same backend report exposed by `scripts/validation-report.sh`), read it like a reviewer, and reflect on residual risk. The report is a TCP reachability matrix - no row sends a control write - so it complements Lab 2.3's device-state check rather than replacing it. The `:::plan-coverage` panel surfaces, in real time, which Lab 1.3 requirements your Lab 1.4 plan addressed vs deferred. The by-hand evidence-assembly steps remain available as optional Advanced hints. |
+| 1.2 | `baseline-assessment` | Baseline Traffic Analysis | ~20 min | Capture cross-zone traffic, identify required conduits and probe for latent exposure. |
+| 1.3 | `segmentation-requirements` | Segmentation Requirements & Policy Design | ~10 min | Turn findings into source/zone requirements and check staffing and risk-acceptance readiness. |
+| 1.4 | `remediation-planning` | Remediation Planning Under Constraint | ~30 min | Agree scope under the labor budget. Write a change request with ordered rules, window, acceptance tests, rollback, risk owners and approvals. |
+| 2.2 | `firewall-implementation` | Firewall Policy Implementation | ~45 min | Author the approved request in containd: pre-change export, stage removals and replacements together, full diff, one rule-change commit, readback and named-source retest. Logging has a separate reviewed commit. Apply stays optional catch-up. |
+| 2.3 | `hardening-configurations` | Protocol-Hardened Configurations | ~25 min | Run the attack and retest, restore operation, read device/CC values and record UTC time and policy identity. The L4 source pin enforces; DPI detects and logs. Monitoring is not a BLOCK control. |
+| 2.3-bonus | `vendor-rdp-compromise` | Vendor Remote Access Compromise (optional) | ~25 min | Review both boundaries in containd, retest each hop independently, retain source attribution and sign the restored-state record. |
+| 2.4 | `validation-evidence` | Testing & Validation | ~40 min | Write a test plan; baseline the policy and start one boundary capture; test named sources without control writes; read interface-attributed packets; check operator health; sign go/no-go. Current-state checks do not grade this hand record. |
 
-Total ≈ 83 min for the 6 core labs (Guided path), +12 min for the bonus.
+Total ≈ 170 min for the 6 core US labs, +25 min for the optional bonus (estimates).
+
+### EU package
+
+The plant differs: IEC 104 CC/RTU points, RTU field polling and PLC→OLTC regulation replace the US DNP3/RTAC examples. Production-poller positives use fresh points and captured native traffic; no extra clients are installed.
+
+| Lab | ID | Name | Time |
+|---|---|---|---|
+| 1.2 | `eu-baseline-assessment` | Baseline Traffic Analysis | ~15 min |
+| 1.3 | `eu-segmentation-requirements` | Segmentation Requirements & Policy Design | ~12 min |
+| 1.4 | `eu-remediation-planning` | Remediation Planning Under Constraint | ~30 min |
+| 2.2 | `eu-firewall-implementation` | Firewall Policy Implementation | ~45 min |
+| 2.3 | `eu-hardening-configurations` | Protocol-Hardened Configurations | ~25 min |
+| 2.3-bonus | `eu-vendor-rdp-compromise` | Vendor Remote Access Compromise (optional) | ~25 min |
+| 2.4 | `eu-validation-evidence` | Testing & Validation | ~40 min |
+
+Total ≈ 167 min for the 6 core EU labs, +25 min for the optional bonus (estimates).
 
 ## What's simulated
 

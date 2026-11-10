@@ -204,7 +204,7 @@
       {
         "id": "weak-vs-hardened",
         "title": "Weak vs Hardened Firewall Policy",
-        "sha256": "9e1d3406e8ffc31ec3cc99793335c1c1bd49902faad0c6adc5aa86e81def5bd1"
+        "sha256": "f02b9c2998261f185228cfc7deb890c03f13ea8735b946c21718a9ed5c23a42c"
       },
       {
         "id": "traffic-matrix",
@@ -214,7 +214,7 @@
       {
         "id": "plan-coverage-pipeline",
         "title": "The Plan Coverage Pipeline (1.3 → 1.4 → 2.2 → 2.3 → 2.4)",
-        "sha256": "67396df4eaa5763e87f0387e63a26507da4957ecb390c56508bf3a8856381963"
+        "sha256": "82203f6abd20ced40e4cef7648b4639721e0f6e8c02af272d902b23ab989f0c4"
       },
       {
         "id": "live-dpi-events-strip",
@@ -224,7 +224,7 @@
       {
         "id": "how-containd-enforces-policy",
         "title": "How containd Enforces Policy (Kernel-Level View)",
-        "sha256": "3908c4f885a33bb76aa0168bf8c8a653bebd59182bb15c2cbd055d46f031971b"
+        "sha256": "9c5fd6ec6df203d1c82ce45aa5bc679c81568b5154ae87e463640fc42d7b9464"
       }
     ],
     "id": "internals"
@@ -248,7 +248,7 @@
       {
         "id": "change-management-firewall-rules",
         "title": "Change Management for Substation Firewall Rules",
-        "sha256": "e5f4deded5b0e92a675c8037bb7cac82ebcb02715696c4e364d27f035047d696"
+        "sha256": "c12f2f04c9d4af2db76873c7aadd9e744738f46b1f0fd6c69a2d932c41e8b7d3"
       },
       {
         "id": "outage-costs-saidi-saifi",

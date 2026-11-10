@@ -71,7 +71,7 @@ type ScenarioYAML struct {
 	// chip on the exercise card. Optional; 0/absent renders no chip.
 	EstimatedMinutes int `yaml:"estimated_minutes,omitempty"`
 	// Validator names the registered Go validator behind
-	// GET /api/scenarios/:id/validate. Empty means the scenario has no
+	// POST /api/scenarios/:id/validate. Empty means the scenario has no
 	// validation result.
 	Validator string `yaml:"validator,omitempty"`
 }

@@ -70,14 +70,7 @@ RELEASE_HEADERS = {
 
 # Reviewed applied-plan headers replace reference-only promises. Keep exact snapshots.
 HEADER_EXCEPTIONS = {
-    "firewall-implementation": (
-        'You have identified the required flows, designed your requirements, and planned '
-        'which remediations to execute. Now you implement. You will replace the permissive '
-        'weak baseline on the containd NGFW with a least-privilege policy - applying it with '
-        'one click on the Guided track, or authoring the rules yourself on the Advanced '
-        'track. The applied plan defines which unauthorized cross-zone paths close or remain '
-        'open, while critical substation operations continue without interruption.\n'
-    ),
+    "firewall-implementation": 'You have identified the required flows, designed your requirements, and planned which remediations to execute. Now you implement. You will replace the permissive weak baseline on the containd NGFW with a least-privilege policy - authoring and committing rules in containd. Implement your approved Lab 1.4 change request. Preserve required operations and test the named sources.\n',
     "hardening-configurations": (
         'Stress-test the policy you built in Lab 2.2 against the canonical '
         'distribution-substation attack: a DNP3 Direct Operate (FC05) injection from Kali '
@@ -89,20 +82,11 @@ HEADER_EXCEPTIONS = {
         'enforcement by device state, not by policy labels. Optional Modbus FC5/FC6 cases '
         'follow the same owning action.\n'
     ),
-    "remediation-planning": (
-        'You have findings from the baseline assessment but not unlimited time, people, or '
-        'political capital. Pick which remediations to execute this quarter - knowing some '
-        "attack paths stay open because you can't fix everything at once. Apply Your Plan "
-        'compiles your selections. Deferred controls leave their Weak exposures open.\n'
-    ),
+    "remediation-planning": 'Write a change request for the substation firewall. Use the findings, required conduits and available roles to agree what to change now. Name an owner for every deferred exposure.\n',
     "validation-evidence": (
-        'After applying your plan or the Hardened reference in Lab 2.2 and stress-testing it '
-        'in Lab 2.3, this exercise builds the formal evidence package: positive tests '
-        'confirming authorized flows still work, tests comparing unauthorized flows with the '
-        'applied plan and Hardened, and PCAP evidence from the firewall. You generate it in '
-        'one click against the policy you have active - then read it like a reviewer would. '
-        'This is the validation step required before any segmentation change goes to '
-        'production.\n'
+        'Test the approved firewall change without control writes. Build a test plan, '
+        'collect source and boundary evidence, check operations and sign a go/no-go '
+        'record. These are sampled observations, not universal or regulatory proof.\n'
     ),
     "vendor-rdp-compromise": (
         'Optional companion to Lab 2.3. Phished vendor credentials let an attacker RDP/VNC '
@@ -147,9 +131,9 @@ class ErrataContracts(unittest.TestCase):
     def test_workshop_notes_are_short_and_at_the_action(self):
         expected = {
             "firewall-implementation": {
-                4: ("**Apply Your Plan**", "without replacing it", "Deferred rules retain"),
-                7: ("13 unauthorized TCP rows", "Connection refused means", "prevention gap", "running hash"),
-                8: ("does not support shell redirection", "CLI JSON-file edit/import exercise is deferred", "action IDs", "policy hash")},
+                4: ("**Apply Your Plan**", "replacements and removals together", "Deferred rules retain"),
+                7: ("named sources", "Connection refused means", "prevention gap", "running identity"),
+                8: ("does not support shell redirection", "pre-change export", "change ID", "running identity")},
             "hardening-configurations": {
                 3: ("Apply Your Plan", "without replacing it", "**Block enterprise → field direct access**"),
                 4: ("With it deferred, the command still lands", "Detection selections do not close it", "device evidence"),
@@ -158,8 +142,8 @@ class ErrataContracts(unittest.TestCase):
                 4: ("Apply Your Plan", "without replacing it", "| Restrict enterprise → vendor remote access |"),
                 5: ("Deferred means reachable", "Restore auto-reclose", "A refused connection counts as reached")},
             "validation-evidence": {
-                0: ("Do not replace a partial plan", "A saved browser plan is not an applied plan"),
-                1: ("authorized **8/8**", "**13/13**", "0 skipped", "Validate Exercise does not replace report evidence")},
+                1: ("Do not replace a partial plan", "A saved browser plan is not an applied plan"),
+                5: ("Validate Exercise does not replace your test evidence",)},
         }
         for name, locations in expected.items():
             for index, phrases in locations.items():
@@ -181,13 +165,10 @@ class ErrataContracts(unittest.TestCase):
         for phrase in ("auto-reclose still enabled", "auto-reclose becomes disabled", "device evidence",
                        "Detection selections do not close it", "This command alone does not trip the recloser"):
             self.assertIn(phrase, hardening)
-        report = " ".join(scenario("validation-evidence")["steps"][1]["description"].split())
-        for phrase in ("21-row TCP matrix", "not DNP3 function-code rejection", "Plan proof",
-                       "Hardened acceptance", "Validate Exercise does not replace report evidence",
-                       "recorded plan hash before and after probing", "partial plan can pass plan proof",
-                       "Keep the report, UTC window, policy hash and PCAP", "healthy HMI separately",
+        tests = " ".join(scenario("validation-evidence")["steps"][2]["description"].split())
+        for phrase in ("not command authorization",
                        "These two management ports stay allowed for every plan"):
-            self.assertIn(phrase, report)
+            self.assertIn(phrase, tests)
         apply = " ".join(scenario("hardening-configurations")["steps"][3]["description"].split())
         self.assertIn("**Pin field-device access to RTAC source IP** owns non-RTAC OT→field attempts, "
                       "not Kali's enterprise path", apply)
@@ -204,7 +185,7 @@ class ErrataContracts(unittest.TestCase):
                           " ".join(text.split()))
         text = " ".join(scenario("firewall-implementation")["steps"][8]["description"].split())
         self.assertIn("does not support shell redirection", text)
-        self.assertIn("CLI JSON-file edit/import exercise is deferred", text)
+        self.assertIn("re-stage its previous rules, review the full diff, commit, read back and retest operations", text)
         self.assertIn("Browser export is optional; the copied CLI JSON is your evidence.", text)
 
     def test_rejection_and_historical_audit_details_are_in_rendered_steps(self):
@@ -236,7 +217,6 @@ class ErrataContracts(unittest.TestCase):
                 self.assertNotRegex(path.read_text(), grading)
         text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
         self.assertIn("**Not covered by automated tests:**", text)
-        self.assertIn("Trust the report, not the banner.", text)
         self.assertIn("Browser export/download is optional; the copied CLI JSON is your evidence.",
                       text)
 
@@ -310,8 +290,8 @@ class ErrataContracts(unittest.TestCase):
         for stale in ("Selections in earlier labs rewrite", "plan rewrites the steps",
                       "lab adapts to which actions"):
             self.assertNotIn(stale, readme)
-        self.assertIn("Lab 1.4 remediation plan is compiled and applied in Lab 2.2", readme)
-        self.assertIn("verify the running policy against your plan", readme)
+        self.assertIn("Write the Lab 1.4 change request, implement it by hand in Lab 2.2", readme)
+        self.assertIn("Retest named sources", readme)
         self.assertNotIn("#updating-to-v0136", readme)
         self.assertNotIn("docker compose -f docker-compose.release.yml down &&", quickstart)
         self.assertNotIn("stage-ssd-repo-update.sh", ssd)

@@ -1177,7 +1177,7 @@
   ],
   "label": "partial",
   "packageId": "eu-iec104-substation",
-  "revision": 7,
+  "revision": 8,
   "policyHash": "fad5e8ced7d4d285139765a39309bf05d03385b019fb8730e666e663437ec1f6",
   "expectations": [
     {

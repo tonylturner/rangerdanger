@@ -20,10 +20,13 @@ class PackageGuardTests(unittest.TestCase):
         return root
 
     def test_all_packages_and_zero_command_scenarios_are_pinned(self):
+        # Three new typed show-events reads per package; no coverage removed.
+        minimums = {"us-dnp3-substation": 86, "eu-iec104-substation": 44}
         for package_id in extract.packages():
             with self.subTest(package=package_id):
                 data = json.loads(extract.expectations_path(ROOT, package_id).read_text())
                 self.assertEqual(extract.check_package(ROOT, package_id), data["minimum_executed"])
+                self.assertEqual(data["minimum_executed"], minimums[package_id])
 
     def test_explicitly_pinned_all_prose_package_is_valid(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -80,7 +83,7 @@ class PackageGuardTests(unittest.TestCase):
         text = ("From the host:\n    curl localhost\n"
                 "From cc-1:\n:::hint More\n    wget reconnect\n:::\n"
                 ":::decision id=x\n    nmap not-a-command\n:::\n"
-                ":::technical\nOn the RTU:\n    iec104cmd station gi\n:::\n")
+                ":::hint Optional catch-up — for less technical students or teams behind schedule\nOn the RTU:\n    iec104cmd station gi\n:::\n")
         rows = description_commands(text)
         self.assertEqual([(r[0], r[2]) for r in rows], [
             ("curl localhost", "host"), ("wget reconnect", "cc-1"),

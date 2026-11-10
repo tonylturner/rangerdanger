@@ -1,4 +1,4 @@
-Labs 1.3 and 1.4 record design verdicts and action selections. **Apply Your Plan** sends those action IDs, the package ID and revision to the backend. The backend compiles one policy, rule table and expected TCP matrix. A saved selection alone is not running state.
+Labs 1.3 and 1.4 record requirements and an approved change request. Lab 2.2 teaches manual rule authoring. Optional catch-up **Apply Your Plan** sends eligible action IDs, package ID and revision to compile and apply a policy. A saved selection alone is not running state.
 
 ### Readiness and labor budget
 
@@ -12,19 +12,19 @@ Enforceable actions change L4 reachability. These are `restrict-enterprise-to-ve
 
 Detection-only actions are `modbus-dpi`, `dnp3-dpi` and `improve-logging`. They change no TCP verdict. **The L4 source pin enforces; DPI detects and logs.** All other actions are planning-only. They emit no firewall change and deploy no sensor or broker.
 
-An empty, planning-only or partial plan is valid. Budget overrun is a warning only. A deferred enforceable action retains its Weak exposure. Required RTAC, HMI and NTP operations remain in every plan. The full enforceable and detection selection equals Hardened.
+An empty, planning-only or partial selection can be saved. With no effective selection, a manual-policy check uses the full Hardened reference; it does not approve leaving Weak in place. Budget overrun is a warning only. A deferred enforceable action retains its Weak exposure. Required RTAC, HMI and NTP operations remain in every plan. The full enforceable and detection selection equals Hardened.
 
 ### From selections to running state
 
 `:::decision` records an answer. `:::findings-panel` displays earlier answers. `:::plan-coverage` compares selections with requirements; it does not probe the firewall. The implementation rule table and tests come from the backend compiler, not the coverage panel.
 
-Apply Your Plan imports the compiled configuration and records package revision, action IDs and policy hash. Download **Export compiled config** and its companion **Export plan record**, which contains the package ID, revision, label, action IDs and policy hash. Check `GET /api/firewall/active` to confirm what is running. A named-policy apply or running-hash change clears plan provenance. Manual and named policies are judged against Hardened.
+Apply Your Plan imports the compiled configuration and records package revision, action IDs and policy hash. Download **Export compiled config** and its companion **Export plan record**, which contains the package ID, revision, label, action IDs and policy hash. Check `GET /api/firewall/active` to confirm what is running. A named-policy apply or running-hash change clears plan provenance. Checks use the applied plan first, otherwise the saved change request, otherwise the full Hardened reference. An empty effective selection sends no request. Weak-identical manual policies still fail.
 
-Lab 2.3 uses the applied plan's expected results. Deferring `block-enterprise-to-field` leaves the Kali command path open. In the bonus lab, `restrict-enterprise-to-vendor` owns RDP/VNC and `block-vendor-to-field` owns the field hop. Test each link independently, then restore normal operations for every plan.
+Lab 2.3 compares the attempt with the approved scope. Deferring `block-enterprise-to-field` leaves the Kali command path open. In the bonus lab, `restrict-enterprise-to-vendor` owns RDP/VNC and `block-vendor-to-field` owns the field hop. Test each link independently, then restore normal operations for every plan.
 
-### Two report results
+### Hand test record
 
-Lab 2.4 tests all 21 TCP tuples. Plan proof checks this plan with 0 skipped and a stable plan hash. Hardened acceptance requires authorized 8/8 and unauthorized denied 13/13, 0 skipped, capture and stable hash. Confirm a healthy HMI separately. A partial plan can pass plan proof while showing prevention gaps against Hardened. Neither result proves command authorization on an allowed session.
+Lab 2.4 starts with the approved requirements and change request. Write source-specific positive and negative tests, collect interface-attributed boundary packets and fresh operator readings, then sign the test record. Current-system cross-checks do not grade that record. A partial scope leaves named exposures for the risk owner; a successful TCP test does not establish command authorization.
 
 ### Reset boundaries
 

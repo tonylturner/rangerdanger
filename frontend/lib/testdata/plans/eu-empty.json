@@ -1217,7 +1217,7 @@
   ],
   "label": "weak",
   "packageId": "eu-iec104-substation",
-  "revision": 7,
+  "revision": 8,
   "policyHash": "6820ac97489b6fcc0978dc11039610c292bcd53eb7a7941c7e9f8d17ef315db8",
   "expectations": [
     {

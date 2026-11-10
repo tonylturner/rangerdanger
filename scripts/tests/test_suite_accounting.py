@@ -70,7 +70,7 @@ class SuiteAccountingTests(unittest.TestCase):
                 "passed": True,
                 "reset_ok": True,
             })
-        self.assertEqual(total, 40)
+        self.assertEqual(total, 43)
         suite = {
             "scenarios": scenarios,
             "total_tests": total,

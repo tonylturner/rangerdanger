@@ -31,12 +31,12 @@ The exercises follow a deliberate sequence:
 
 1. Run attacks against the **weak baseline** and successfully compromise field devices from the enterprise zone
 2. Observe the impact on the simulated power system via the HMI
-3. Apply Your Plan or the **hardened policy**
+3. Author the reviewed change in containd; optional catch-up can apply the selected or full reference policy
 4. Repeat the same tests. Selected closures deny; deferred paths remain reachable
-5. Inspect the firewall logs to see the blocked connection attempts
+5. Compare source attempts with the boundary capture and retain the operating readings
 
 This direct comparison builds intuition for why segmentation matters and exactly which rules provide the protection.
 
 ### Partial plans
 
-Apply Your Plan compiles selected actions. Deferring an enforceable action retains its Weak exposure. An empty or planning-only plan is valid and leaves Weak exposures open; budget overrun is a warning only. Required operational flows remain. Plan proof checks that plan, while Hardened acceptance requires 8/8 authorized and 13/13 unauthorized denied, zero skipped, stable hash, capture and healthy HMI. Keep both results and the package revision, action IDs and policy hash.
+Optional catch-up Apply Your Plan compiles selected actions. Deferring an enforceable action retains its Weak exposure. A planning-only selection changes no reachability; budget overrun is a warning only. Required operational flows remain. An empty effective selection is no change request, so manual-policy checks use the full reference. Checks otherwise use the applied plan first, then the saved request. Keep the package revision, action IDs and policy hash with the running export, UTC window, source-test results, PCAP and signed operator record. A current-state result does not accept residual risk or certify that hand record.

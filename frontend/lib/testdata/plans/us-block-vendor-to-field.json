@@ -920,7 +920,7 @@
   ],
   "label": "partial",
   "packageId": "us-dnp3-substation",
-  "revision": 3,
+  "revision": 4,
   "policyHash": "412e353969809bb15cabba8730251b900940668d4e41a4ab1ba9296436a9a295",
   "expectations": [
     {

@@ -309,7 +309,7 @@ func TestFirewallStepLabelsFollowThePackage(t *testing.T) {
 
 func TestEURecipeEnginesResolveAndReachTheirRoutes(t *testing.T) {
 	gen := euGeneration(t, containd.NewClient(closedURL(t)), nil)
-	matrix, err := euRecipe.resolveValidation(gen)
+	matrix, err := referenceProof(gen, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,10 +326,6 @@ func TestEURecipeEnginesResolveAndReachTheirRoutes(t *testing.T) {
 	}
 	if allows != 10 || denies != 27 {
 		t.Fatalf("matrix=%d allow, %d deny", allows, denies)
-	}
-	hosts, network, err := euRecipe.resolveCapture(gen)
-	if err != nil || len(hosts) != 5 || strings.Join(network, ".") != "10.40.40" {
-		t.Fatalf("capture=%v %v %v", hosts, network, err)
 	}
 	traffic, err := euRecipe.resolveTraffic(gen)
 	if err != nil || len(traffic) != 3 {
@@ -352,7 +348,7 @@ func TestEURecipeEnginesResolveAndReachTheirRoutes(t *testing.T) {
 		handler gin.HandlerFunc
 		code    int
 	}{
-		{"/api/firewall/validation-report", s.handleValidationReport, http.StatusBadGateway},
+		{"/api/workshop/probe-matrix", s.handleProbeMatrix, http.StatusBadGateway},
 		{"/api/traffic/generate", s.handleTrafficGenerate, http.StatusServiceUnavailable},
 	} {
 		rec := callRoute(s, route.handler, http.MethodPost, route.path, route.path, "")

@@ -2,7 +2,8 @@
 """Reviewed YAML command inventory and its live execution/oracle adapter.
 
 No Docker calls during extraction, pinning, validation, or unit tests.
---execute is the only live entry point; the shell gate owns policy changes.
+Live execution helpers are imported by lab_commands_smoke.py, which owns
+policy, capture sequencing and cleanup for both packages.
 """
 import argparse
 import json
@@ -114,7 +115,7 @@ def verdict(oracle, rc, stdout, stderr, *, control=False, frames=None):
         return False
     intent = oracle["intent"]
     if intent == "capture":
-        return rc in (0, 124, 130, 143) and frames is not None and frames > 0
+        return rc in (0, 130) and frames is not None and frames > 0
     if intent == "deny":
         # nmap returns zero even for filtered ports; its semantic output
         # (not its return code) is the denial oracle. A refusal means the
@@ -237,6 +238,8 @@ def run_staged_shell(argv, row, timeout):
 
 def execute_command(row, oracle, directory, timeout, positive=False, control=False):
     """Keep separate stdout/stderr files even on a timeout or exec failure."""
+    if oracle["intent"] == "capture":
+        raise ValueError("captures must use the shared scenario lifecycle")
     directory.mkdir(parents=True, exist_ok=True)
     stem = directory / ("control" if positive else "command")
     if positive:
@@ -256,15 +259,6 @@ def execute_command(row, oracle, directory, timeout, positive=False, control=Fal
     stem.with_suffix(".stdout").write_text(out)
     stem.with_suffix(".stderr").write_text(err)
     frames = None
-    if oracle["intent"] == "capture":
-        # tcpdump ships in the firewall; tshark is not guaranteed there.
-        # Decoding with tcpdump -r validates PCAP rather than trusting stat().
-        decoded = subprocess.run(
-            ["docker", "exec", row["container"], "timeout", "5", "tcpdump",
-             "-nn", "-r", oracle["file"]], capture_output=True, text=True, timeout=10)
-        (directory / "capture.stdout").write_text(decoded.stdout)
-        (directory / "capture.stderr").write_text(decoded.stderr)
-        frames = len(decoded.stdout.splitlines()) if decoded.returncode == 0 else 0
     passed = verdict(oracle, rc, out, err, control=control, frames=frames)
     if oracle["intent"] == "cli" and oracle.get("file"):
         exported = subprocess.run(
@@ -364,11 +358,6 @@ def main():
     parser.add_argument("--matrix", action="store_true")
     parser.add_argument("--guard", action="store_true", help="validate every package offline")
     parser.add_argument("--package", default=US)
-    parser.add_argument("--execute", type=int, metavar="ROW")
-    parser.add_argument("--positive-control", action="store_true")
-    parser.add_argument("--control-passed", action="store_true")
-    parser.add_argument("--output", type=Path)
-    parser.add_argument("--timeout", type=int, default=10)
     args = parser.parse_args()
     if args.target in packages(args.root):
         args.package, args.target = args.target, ""
@@ -400,23 +389,7 @@ def main():
         expectations.write_text(json.dumps(data, indent=2) + "\n")
         return
     minimum = validate_inventory(rows, data, args.target, args.root, args.package)
-    if args.execute is not None:
-        if args.package != US:
-            raise ValueError("use lab-commands-smoke.sh <package> or lab-commands-smoke.ps1 -Package <package> for the reviewed EU lifecycle")
-        if args.output is None:
-            raise ValueError("--execute needs --output")
-        row = rows[args.execute]
-        if row["action"] != "RUN":
-            raise ValueError("cannot execute a skipped row")
-        oracle = data["commands"][key(row)]["oracle"]
-        if oracle.get("file"):
-            # Never accept a stale capture/export as this run's evidence.
-            subprocess.run(["docker", "exec", row["container"], "rm", "-f",
-                            oracle["file"]], check=True, timeout=10)
-        passed = execute(row, oracle, args.output, args.timeout,
-                         args.positive_control, args.control_passed)
-        sys.exit(0 if passed else 1)
-    elif args.matrix:
+    if args.matrix:
         for idx, row in enumerate(rows):
             oracle = data["commands"][key(row)].get("oracle") or {}
             intent = oracle.get("intent", "skip")

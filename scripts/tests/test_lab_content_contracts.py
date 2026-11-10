@@ -314,7 +314,10 @@ class ActionContracts(unittest.TestCase):
                 self.assertEqual(steps[0]["action"],
                                  {"type": "check", "expect": {"firewall_config": "improved"}})
                 self.assertEqual(steps[0].get("expected_config"), "hardened")
-                self.assertIn("without replacing it", steps[0]["description"])
+                if name == "firewall-implementation":
+                    self.assertIn("Implement your approved Lab 1.4 change request", steps[0]["description"])
+                else:
+                    self.assertIn("without replacing it", steps[0]["description"])
 
     def test_eu_policy_phases_are_non_mutating_checks(self):
         package = ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios"
@@ -336,9 +339,8 @@ class ActionContracts(unittest.TestCase):
                     r"(?i)Execute Step.{0,100}(?:applies|loads|replaces)",
                 )
                 if step_id != "implement-rules":
-                    self.assertIn("Execute Step checks the active policy without replacing it", step["description"])
-                    self.assertIn("recorded identity must match", step["description"])
-                    self.assertIn("applied plan must retain matching provenance", step["description"])
+                    for phrase in ("without replacing it", "running identity", "full diff", "read back"):
+                        self.assertIn(phrase, step["description"])
 
     def test_planning_keeps_decision_ui_and_manual_completion(self):
         doc = scenario("remediation-planning")
@@ -350,6 +352,21 @@ class ActionContracts(unittest.TestCase):
         self.assertNotRegex(step["description"], r"`[a-z]+-[a-z-]+`")
         self.assertNotIn("Selection order does not set rule order", step["description"])
 
+    def test_change_request_deliverable_matches_in_both_packages(self):
+        us = scenario("remediation-planning")
+        eu = yaml.safe_load((ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios/eu-remediation-planning.yml").read_text())
+        self.assertEqual(us["steps"][-1]["description"], eu["steps"][-1]["description"])
+        for doc in (us, eu):
+            text = "\n".join(step["description"] for step in doc["steps"])
+            self.assertNotIn("Apply Your Plan", text)
+            self.assertIn("change-request scope", text)
+            for field in ("Change ID", "Findings and approved scope", "Rule changes", "Order | Source host/zone",
+                          "Roles and labor hours", "Dependencies", "Maintenance window", "Pre-change running export",
+                          "review full diff", "single commit", "Positive acceptance tests", "Negative acceptance tests",
+                          "Abort / rollback triggers", "Rollback owner", "Restore steps", "named risk owner",
+                          "Requester:", "Implementer:", "OT reviewer", "Security reviewer", "Approver"):
+                self.assertIn(field, doc["steps"][-1]["description"])
+
     def test_frozen_runner_action_accounting(self):
         # evaluateTestStep auto-passes missing actions and decisions only.
         expected = {
@@ -358,7 +375,7 @@ class ActionContracts(unittest.TestCase):
             "hardening-configurations": (0, 0, 6),
             "remediation-planning": (3, 1, 0),
             "segmentation-requirements": (3, 0, 0),
-            "validation-evidence": (1, 0, 2),
+            "validation-evidence": (4, 0, 2),
             "vendor-rdp-compromise": (1, 0, 6),
         }
         auto_total = 0
@@ -368,34 +385,41 @@ class ActionContracts(unittest.TestCase):
             decision = sum(s.get("action", {}).get("type") == "decision" for s in steps)
             self.assertEqual((manual, decision, len(steps) - manual - decision), counts)
             auto_total += manual + decision
-        self.assertEqual(auto_total, 18)
+        self.assertEqual(auto_total, 21)
 
 
 class TimingContracts(unittest.TestCase):
-    # Guided golden-path estimates from the rc.3 student walkthrough QA.
+    # Estimates for the manual activity; these are not measured walkthroughs.
     MINUTES = {
         "baseline-assessment": 20,
         "segmentation-requirements": 10,
-        "remediation-planning": 12,
-        "firewall-implementation": 22,
-        "hardening-configurations": 12,
-        "vendor-rdp-compromise": 12,
-        "validation-evidence": 7,
+        "remediation-planning": 30,
+        "firewall-implementation": 45,
+        "hardening-configurations": 25,
+        "vendor-rdp-compromise": 25,
+        "validation-evidence": 40,
     }
 
     def test_card_chip_time_budget_and_overview_agree(self):
         overview = (ROOT / "docs/workshop-overview.md").read_text()
-        for name, minutes in self.MINUTES.items():
-            doc = scenario(name)
-            with self.subTest(scenario=name):
-                self.assertEqual(doc["estimated_minutes"], minutes)
-                budgets = re.findall(r"\*\*Time budget:\*\* ~(\d+) minutes", doc["steps"][0]["description"])
-                self.assertEqual(budgets, [str(minutes)])
-                self.assertRegex(overview, rf"\| `{name}` \| [^|]+ \| ~{minutes} min \|")
-        core = sum(m for n, m in self.MINUTES.items() if n != "vendor-rdp-compromise")
-        self.assertEqual(core, 83)
-        self.assertIn(f"Total ≈ {core} min for the 6 core labs (Guided path), "
-                      f"+{self.MINUTES['vendor-rdp-compromise']} min for the bonus.", overview)
+        for eu, total in ((False, 170), (True, 167)):
+            minutes_by_lab = dict(self.MINUTES)
+            if eu:
+                minutes_by_lab.update({"baseline-assessment": 15, "segmentation-requirements": 12})
+            for name, minutes in minutes_by_lab.items():
+                scenario_id = ("eu-" if eu else "") + name
+                path = (ROOT / "lab-definitions/packages/eu-iec104-substation/scenarios" if eu else SCENARIOS)
+                doc = yaml.safe_load((path / (scenario_id + ".yml")).read_text())
+                with self.subTest(scenario=scenario_id):
+                    self.assertEqual(doc["estimated_minutes"], minutes)
+                    budgets = re.findall(r"\*\*Time budget:\*\* ~(\d+) minutes", doc["steps"][0]["description"])
+                    self.assertEqual(budgets, [str(minutes)])
+                    self.assertRegex(overview, rf"\| `{scenario_id}` \| [^|]+ \| ~{minutes} min \|")
+                    self.assertIn("estimate", doc["steps"][0]["description"])
+            self.assertEqual(sum(m for n, m in minutes_by_lab.items() if n != "vendor-rdp-compromise"), total)
+            label = "EU" if eu else "US"
+            self.assertIn(f"Total ≈ {total} min for the 6 core {label} labs, +25 min for the optional bonus (estimates).", overview)
+        self.assertIn("not timed walks", overview)
 
 
 if __name__ == "__main__":

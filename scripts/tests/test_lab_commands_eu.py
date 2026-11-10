@@ -7,7 +7,7 @@ import sys
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -23,14 +23,15 @@ class EUOracleTests(unittest.TestCase):
         rows = [r for r in worker.extract(package_id=eu.EU)
                 if r["command"].startswith("nmap ")]
         data = json.loads((ROOT / "scripts/lab-commands-expectations-eu-iec104-substation.json").read_text())
-        self.assertEqual(len(rows), 12)
+        self.assertEqual(len(rows), 14)
         for row in rows:
             with self.subTest(command=worker.gate.key(row)):
-                self.assertRegex(row["command"], r"^nmap -Pn -p [\d,]+ \S+ --max-retries 1 -T4$")
+                self.assertRegex(row["command"], r"^nmap -Pn (?:-sT )?-p [\d,]+ \S+ --max-retries 1 -T4$")
                 oracle = data["commands"][worker.gate.key(row)]["oracle"]
                 down = "Note: Host seems down\nNmap done: 0 hosts up"
                 self.assertFalse(worker.gate.verdict(oracle, 0, down, "", control=True))
-                ports = row["command"].split()[3].split(",")
+                args = row["command"].split()
+                ports = args[args.index("-p") + 1].split(",")
                 def output(state):
                     return "\n".join(f"{port}/tcp {state}" for port in ports)
                 denied = oracle["intent"] == "deny"
@@ -174,6 +175,23 @@ class EUOracleTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_canary_accepts_only_open_or_connect_timeout_not_refusal_or_exec_failure(self):
+        for package in (worker.US, eu.EU):
+            for rc, stderr, allowed, passed in (
+                    (0, "", True, True), (124, "", False, True),
+                    (1, "Connection refused", False, False),
+                    (127, "command not found", False, False),
+                    (124, "permission denied", False, False)):
+                with self.subTest(package=package, rc=rc), tempfile.TemporaryDirectory() as directory:
+                    lifecycle = worker.Lifecycle(package, "http://fixture", directory)
+                    with patch.object(worker.subprocess, "run", return_value=
+                                      subprocess.CompletedProcess([], rc, "", stderr)):
+                        if passed:
+                            lifecycle.canary(allowed)
+                        else:
+                            with self.assertRaisesRegex(ValueError, "not a deny"):
+                                lifecycle.canary(allowed)
+
     def run_fixture(self, mode):
         row = next(r for r in worker.extract(package_id=eu.EU)
                    if r["scenario"] == "eu-vendor-rdp-compromise" and r["step"] == 6
@@ -188,13 +206,14 @@ class LifecycleTests(unittest.TestCase):
                 patch.object(worker, "extract", return_value=[row]), \
                 patch.object(worker.gate, "validate_inventory", return_value=1), \
                 patch.object(worker, "preflight"), \
-                patch.object(worker, "Lifecycle", return_value=lifecycle), redirect_stdout(io.StringIO()):
-            if mode in ("throw", "cleanup-fail"):
-                with self.assertRaisesRegex(ValueError, "tool failed|cleanup failed"):
-                    worker.run(eu.EU, "", "http://fixture", directory, 5)
-            else:
-                rc = worker.run(eu.EU, "", "http://fixture", directory, 5)
-                self.assertEqual(rc, 0 if mode == "pass" else 1)
+                patch.object(worker, "Lifecycle", return_value=lifecycle), \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors:
+            rc = worker.run(eu.EU, "", "http://fixture", directory, 5)
+            self.assertEqual(rc, 0 if mode == "pass" else 1)
+            if mode in ("throw", "control-fail"):
+                self.assertIn("FAIL: " + worker.gate.key(row), errors.getvalue())
+            if mode == "cleanup-fail":
+                self.assertIn("FAIL lifecycle cleanup", errors.getvalue())
             summary = json.loads((Path(directory) / "summary.json").read_text())
         self.assertEqual(lifecycle.policy.call_args.args, ("weak",))
         # Reset-before-policy is essential: reset itself applies Weak.
@@ -210,7 +229,8 @@ class LifecycleTests(unittest.TestCase):
                 lifecycle, summary = self.run_fixture(mode)
                 if mode == "control-fail":
                     self.assertEqual(lifecycle.execute.call_count, 1)
-                    self.assertEqual(summary["unverified"], 1)
+                    self.assertEqual(summary["unverified"], 0)
+                    self.assertEqual(summary["failed"], 1)
 
     def test_us_named_apply_requires_its_own_receipt_before_readback_or_canary(self):
         for state in ("protecting", "degraded", "pending", "failed", "missing"):

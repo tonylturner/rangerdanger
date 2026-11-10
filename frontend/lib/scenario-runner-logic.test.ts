@@ -34,8 +34,8 @@ describe("scenario runner logic", () => {
 
   it("injects proof expectations for phase 5 instead of conditional browser tests", () => {
     const description = injectDynamicContent("original", "phase-5-validate-allowed-traffic", US_PLANS[0], US_CURRICULUM);
-    expect(description).toContain("Plan verdict");
-    expect(description).toContain("Hardened verdict");
+    expect(description).toContain("Expected result");
+    expect(description).toContain("Hardened reference");
     expect(description).toContain("TCP/502");
   });
 

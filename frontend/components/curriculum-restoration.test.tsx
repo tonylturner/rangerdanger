@@ -4,11 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ReactNode } from "react";
 import { CurriculumScopeProvider, scopeOf } from "../lib/curriculum-scope";
 import { US_CURRICULUM } from "../lib/curriculum-storage.test-util";
-import { curriculumKey, decisionName, FIREWALL_TRACK, readCurriculum, writeCurriculum } from "../lib/curriculum-storage";
+import { decisionName, readCurriculum, writeCurriculum } from "../lib/curriculum-storage";
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { US_PACKAGE } from "../lib/operator-fixtures.test-util";
 import { saveRemediationPlan } from "../lib/remediation-plan";
-import { useFirewallTrack } from "../lib/use-firewall-track";
 import { DecisionBlock, FindingsPanel } from "./scenario-description-blocks";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 
@@ -35,11 +34,6 @@ afterEach(() => {
 
 function mount(children: ReactNode) {
   return render(wrap(children));
-}
-
-function TrackChoice() {
-  const { track, setTrack } = useFirewallTrack();
-  return <button data-track={track} onClick={() => setTrack(track === "technical" ? "guided" : "technical")}>{track}</button>;
 }
 
 describe("curriculum restoration", () => {
@@ -108,22 +102,5 @@ describe("curriculum restoration", () => {
     expect(output(mounted)).toContain("No remediation plan on file");
     mounted.rerender(wrap(banner(US_CURRICULUM.roles.planning)));
     expect(mounted.container.innerHTML).toBe("");
-  });
-
-  it("restores the saved track and synchronizes both tabs and scopes", () => {
-    writeCurriculum(scope, FIREWALL_TRACK, "technical");
-    const choices = <><TrackChoice /><TrackChoice /></>;
-    const mounted = mount(choices);
-    const tracks = () => [...mounted.container.querySelectorAll("button")].map((button) => button.getAttribute("data-track"));
-    expect(tracks()).toEqual(["technical", "technical"]);
-    fireEvent.click(mounted.container.querySelector("button")!);
-    expect(tracks()).toEqual(["guided", "guided"]);
-    window.localStorage.setItem(curriculumKey(scope, FIREWALL_TRACK), "technical");
-    const event = new Event("storage");
-    Object.defineProperty(event, "key", { value: curriculumKey(scope, FIREWALL_TRACK) });
-    fireEvent(window, event);
-    expect(tracks()).toEqual(["technical", "technical"]);
-    mounted.rerender(wrap(choices, pkg.revision + 1));
-    expect(tracks()).toEqual(["guided", "guided"]);
   });
 });

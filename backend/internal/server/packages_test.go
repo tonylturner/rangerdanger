@@ -159,10 +159,10 @@ func TestScenarioRoutesServeActivePackageOnly(t *testing.T) {
 	}
 	for _, request := range []struct{ method, path string }{
 		{http.MethodGet, "/api/scenarios/other-lab"},
-		{http.MethodGet, "/api/scenarios/other-lab/validate"},
+		{http.MethodPost, "/api/scenarios/other-lab/validate"},
 		{http.MethodPost, "/api/scenarios/other-lab/steps/0/execute"},
-		{http.MethodGet, "/api/scenarios/missing/validate"},
-		{http.MethodGet, "/api/scenarios/active-unvalidated/validate"},
+		{http.MethodPost, "/api/scenarios/missing/validate"},
+		{http.MethodPost, "/api/scenarios/active-unvalidated/validate"},
 		// The write routes are gone.
 		{http.MethodPost, "/api/scenarios"},
 		{http.MethodPost, "/api/labs/templates"},
@@ -229,7 +229,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 
 	info, ok := catalog.Info(config.DefaultPackage)
 	wantInfo := labs.PackageInfo{
-		ID: "us-dnp3-substation", Title: "US distribution substation (DNP3)", Revision: 3,
+		ID: "us-dnp3-substation", Title: "US distribution substation (DNP3)", Revision: 4,
 		Capabilities: []string{"process.electrical", "policy.containd", "audit.device-control", "capture.firewall"},
 		OperatorView: "us-dnp3-substation",
 	}
@@ -240,7 +240,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 	for _, pkg := range catalog.Packages {
 		if pkg.ID == euPackageID {
 			euListed = true
-			if pkg.Revision != 7 || pkg.Curriculum == nil || len(pkg.Curriculum.Roles) != 7 {
+			if pkg.Revision != 8 || pkg.Curriculum == nil || len(pkg.Curriculum.Roles) != 7 {
 				t.Fatal("EU revision / curriculum binding missing")
 			}
 			for role, id := range pkg.Curriculum.Roles {
@@ -311,7 +311,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 			"restore-service", "apply-hardened-policy", "re-attempt-the-pivot", "validate",
 		}},
 		"validation-evidence": {"2.4", "us-validation-evidence", []string{
-			"confirm-hardened-config-is-active", "generate-the-validation-report", "reflection-what-did-your-plan-close",
+			"write-test-plan", "confirm-hardened-config-is-active", "run-source-tests", "read-boundary-capture", "check-operator-health", "sign-test-record",
 		}},
 	}
 
@@ -360,7 +360,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 		"eu-hardening-configurations":  {"2.3", "eu-hardening-configurations", []string{"verify-normal-operations", "attack-iec104-breaker-open", "restore-the-substation", "apply-the-hardened-policy", "re-test-the-attack-under-the-hardened-policy", "validate"}},
 		"eu-remediation-planning":      {"1.4", "", []string{"review-the-findings-you-captured", "understand-the-team-budget", "choose-your-remediation-plan", "reflect-what-are-you-accepting"}},
 		"eu-segmentation-requirements": {"1.3", "", []string{"translate-findings-into-design-requirements", "resourcing-reality-check", "define-success-criteria-for-segmentation"}},
-		"eu-validation-evidence":       {"2.4", "eu-validation-evidence", []string{"confirm-hardened-config-is-active", "generate-the-validation-report", "reflection-what-did-your-plan-close"}},
+		"eu-validation-evidence":       {"2.4", "eu-validation-evidence", []string{"write-test-plan", "confirm-hardened-config-is-active", "run-source-tests", "read-boundary-capture", "check-operator-health", "sign-test-record"}},
 		"eu-vendor-rdp-compromise":     {"2.3-bonus", "eu-vendor-rdp-compromise", []string{"confirm-the-lateral-path-is-open", "pivot-via-rdp-or-vnc", "use-the-vendor-foothold-to-attack-field-devices", "restore-service", "apply-hardened-policy", "re-attempt-the-pivot", "validate"}},
 	}
 	if len(euScenarios) != len(wantEU) {
@@ -452,7 +452,7 @@ func TestEUWorkshopStepParity(t *testing.T) {
 			if usDecisions != euDecisions {
 				t.Errorf("decision activity count changed: US %d EU %d", usDecisions, euDecisions)
 			}
-			for _, directive := range []string{":::generate-traffic-button", ":::track-picker", ":::validation-report"} {
+			for _, directive := range []string{":::generate-traffic-button"} {
 				before, after := 0, 0
 				for _, step := range us.Steps {
 					before += strings.Count(step.Description, directive)
@@ -476,8 +476,8 @@ func TestEUWorkshopStepParity(t *testing.T) {
 					t.Errorf("step %d = %s want %s", i, after.ID, wantID)
 				}
 				for _, fence := range []string{":::guided", ":::technical"} {
-					if strings.Contains(before.Description, fence) != strings.Contains(after.Description, fence) {
-						t.Errorf("%s lost %s split", after.ID, fence)
+					if strings.Contains(before.Description, fence) || strings.Contains(after.Description, fence) {
+						t.Errorf("%s retains retired %s directive", after.ID, fence)
 					}
 				}
 				// D1: attack and retest steps run real wire commands in both

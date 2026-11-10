@@ -16,6 +16,7 @@ import sys
 import time
 
 from containd_readiness import require_backend_protection
+from lab_commands_capture import Capture
 from lab_commands_eu import EU, EUAdapter, request
 from lab_commands_inventory import ROOT, US, extract, packages
 
@@ -37,10 +38,12 @@ class Lifecycle:
             result = subprocess.run(
                 ["docker", "exec", "rangerdanger-kali", "timeout", "1", "bash", "-c",
                  f"exec 3<>/dev/tcp/10.30.30.20/{port}"], timeout=5,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            # Docker/tool failures must never masquerade as dataplane denial.
-            if result.returncode not in (0, 1, 124):
-                raise ValueError(f"canary tool/exec failure: rc={result.returncode}")
+                text=True, capture_output=True)
+            # Only the inner connect deadline is denial. A refusal (rc=1)
+            # reached the host; shell/Docker failures are not policy evidence.
+            if result.returncode not in (0, 124) or gate.BAD_OUTPUT.search(
+                    result.stdout + result.stderr):
+                raise ValueError(f"canary failure (not a deny): rc={result.returncode}: {result.stderr}")
             if (result.returncode == 0) == allowed:
                 return
             if time.monotonic() >= deadline:
@@ -99,6 +102,16 @@ def run(package_id, target, api, directory, timeout):
     executed = passed = skipped = 0
     current = ""
     failed = False
+    capture = None
+    capture_rows = 0
+    controls = {}
+
+    def positive_control(index, row, oracle):
+        lifecycle.policy("weak")
+        if not lifecycle.execute(row, oracle, directory / str(index), timeout, positive=True):
+            raise ValueError("Weak positive control failed")
+        controls[index] = True
+
     try:
         lifecycle.reset()
         for index, row in enumerate(rows):
@@ -107,47 +120,100 @@ def run(package_id, target, api, directory, timeout):
                 skipped += 1
                 print(f'SKIP {gate.key(row)}: {contract["reason"]}')
                 continue
+            executed += 1
             oracle = contract["oracle"]
-            control = False
             destination = directory / str(index)
-            if oracle["intent"] == "deny":
-                # A fresh device reset precedes policy apply, never follows it.
+            try:
+                if capture:
+                    if row["scenario"] != capture.row["scenario"]:
+                        raise ValueError("capture has no reader in its scenario")
+                    if Path(capture.oracle["file"]).name in row["command"]:
+                        passed += int(capture.finish(wait=capture_rows == 0))
+                        capture.cleanup()
+                        capture = None
+                    else:
+                        capture.require_running()
+                if oracle["intent"] == "capture":
+                    if capture:
+                        raise ValueError("overlapping captures are not permitted")
+                    # Establish Weak controls BEFORE the evidence window. Never
+                    # change policy mid-capture to manufacture control traffic.
+                    for later in range(index + 1, len(rows)):
+                        source = rows[later]
+                        if source["scenario"] != row["scenario"]:
+                            break
+                        source_oracle = data["commands"][gate.key(source)].get("oracle") or {}
+                        if source["action"] == "RUN" and source_oracle.get("intent") == "deny":
+                            try:
+                                positive_control(later, source, source_oracle)
+                            except Exception as exc:
+                                print(f'FAIL positive control: {gate.key(source)}: {exc}', file=sys.stderr)
+                                raise
+                    current = ""  # controls may have applied Weak
+                control = controls.get(index, False)
+                if oracle["intent"] == "deny" and not control:
+                    if capture:
+                        raise ValueError("missing pre-capture positive control")
+                    if oracle.get("eu_device"):
+                        lifecycle.reset()
+                    positive_control(index, row, oracle)
+                    current, control = "weak", True
                 if oracle.get("eu_device"):
                     lifecycle.reset()
-                lifecycle.policy("weak")
-                current = "weak"
-                if not lifecycle.execute(row, oracle, destination, timeout, positive=True):
-                    failed = True
-                    continue
-                control = True
-            if oracle.get("eu_device"):
-                lifecycle.reset()
-                current = ""
-            policy = oracle.get("policy", row["policy"])
-            if current != policy:
-                lifecycle.policy(policy)
-                current = policy
-            executed += 1
-            if lifecycle.execute(row, oracle, destination, timeout, control=control):
-                passed += 1
-            else:
+                    current = ""
+                policy = oracle.get("policy", row["policy"])
+                if current != policy:
+                    if capture:
+                        raise ValueError("policy changes are not allowed inside a capture window")
+                    lifecycle.policy(policy)
+                    current = policy
+                if oracle["intent"] == "capture":
+                    capture = Capture(gate, row, oracle, destination)
+                    capture_rows = 0
+                    capture.start()
+                else:
+                    result = lifecycle.execute(row, oracle, destination, timeout, control=control)
+                    if capture:
+                        capture.require_running()
+                        capture_rows += 1
+                    passed += int(result)
+                    failed = failed or not result
+            except Exception as exc:
+                # Includes socket/HTTP timeouts and subprocess/tool errors.
+                # Never lose the row's diagnostic to finally's summary output.
+                print(f'FAIL: {gate.key(row)}: {type(exc).__name__}: {exc}', file=sys.stderr)
+                for remaining in rows[index + 1:]:
+                    print(f'NOT RUN after failure: {gate.key(remaining)}', file=sys.stderr)
                 failed = True
+                break
+        if capture:
+            print(f'FAIL: {gate.key(capture.row)}: capture did not reach its reader', file=sys.stderr)
+            failed = True
+    except Exception as exc:
+        print(f'FAIL lifecycle: {type(exc).__name__}: {exc}', file=sys.stderr)
+        failed = True
     finally:
-        # Cleanup errors propagate, never downgrade to a successful summary.
-        cleanup_passed = False
+        cleanup_passed = True
+        if capture:
+            try:
+                capture.cleanup()
+            except Exception as exc:
+                print(f'FAIL capture cleanup: {gate.key(capture.row)}: {exc}', file=sys.stderr)
+                cleanup_passed = False
         try:
             try:
                 lifecycle.reset()
             finally:
                 lifecycle.policy("weak")
-            cleanup_passed = True
-        finally:
-            summary = dict(executed=executed, passed=passed, failed=executed - passed,
-                           skipped=skipped, unverified=minimum - executed, minimum=minimum,
-                           cleanup_passed=cleanup_passed)
-            (directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-            print(" ".join(f"{k}={v}" for k, v in summary.items()))
-    return int(failed or executed != minimum or passed != minimum)
+        except Exception as exc:
+            print(f'FAIL lifecycle cleanup: {exc}', file=sys.stderr)
+            cleanup_passed = False
+        summary = dict(executed=executed, passed=passed, failed=executed - passed,
+                       skipped=skipped, unverified=minimum - executed, minimum=minimum,
+                       cleanup_passed=cleanup_passed)
+        (directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+        print(" ".join(f"{k}={v}" for k, v in summary.items()))
+    return int(failed or not cleanup_passed or executed != minimum or passed != minimum)
 
 
 def main():
@@ -163,8 +229,8 @@ def main():
     api = os.environ.get("RANGERDANGER_API", "http://localhost:8088").rstrip("/")
     try:
         return run(args.package, args.target, api, args.output, args.timeout)
-    except (ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
-        print(f"lab command smoke: {exc}", file=sys.stderr)
+    except Exception as exc:
+        print(f"FAIL lab command smoke: {exc}", file=sys.stderr)
         return 1
 
 

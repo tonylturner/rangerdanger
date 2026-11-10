@@ -11,7 +11,6 @@ import { loadProgress, loadValidation } from "../lib/scenario-runner-storage";
 import { ScenarioRunner } from "./scenario-runner";
 
 vi.mock("../lib/use-compiled-plan", () => ({ useCompiledPlan: () => ({}) }));
-vi.mock("../lib/use-firewall-track", () => ({ useFirewallTrack: () => ({ track: "guided", setTrack: vi.fn() }) }));
 vi.mock("../lib/operator-queries", () => ({
   useOperatorView: () => ({ status: "loading" }), usePackagePolicies: () => undefined,
 }));
@@ -86,7 +85,7 @@ function expectProgress(tree: ReturnType<typeof mount>, packageId: string) {
   });
 }
 async function validate(tree: ReturnType<typeof mount>, outcome: "PASS" | "FAIL") {
-  fireEvent.click(tree.getByRole("button", { name: "Validate Exercise" }));
+  fireEvent.click(tree.getByRole("button", { name: "Cross-check the current system" }));
   await waitFor(() => expect(tree.container.textContent).toContain(`Last validation: ${outcome}`));
   expect(tree.container.textContent).toContain("Historical result, not proof of current lab state or step completion.");
 }
@@ -138,7 +137,7 @@ describe.each(packageIds)("runner persistence in %s", (packageId) => {
     const tree = mount(packageId);
     markAndSkip(tree);
     await validate(tree, "PASS");
-    fireEvent.click(tree.getByRole("button", { name: "Validate Exercise" }));
+    fireEvent.click(tree.getByRole("button", { name: "Cross-check the current system" }));
     await waitFor(() => expect(tree.getByRole("alert").textContent).toContain("Validation request failed"));
     tree.refresh();
     expectProgress(tree, packageId);
