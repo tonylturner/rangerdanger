@@ -75,9 +75,7 @@ const NOTES_PANEL_OPEN_RE = /^:::notes-panel(?:\s+(.+))?$/;
 // :::generate-traffic-button
 // :::
 // Renders the "Generate Traffic" button inline at the YAML position
-// where the directive sits. Without this, the legacy text-trigger
-// fallback in scenario-runner.tsx renders the button at the bottom
-// of the step body; the directive lets a lab author drop the button
+// where the directive sits. The directive lets a lab author drop the button
 // at the natural reading point - i.e. exactly where the lab text
 // says to start traffic generation. Body ignored.
 const GENERATE_TRAFFIC_BTN_RE = /^:::generate-traffic-button(?:\s+(.+))?$/;

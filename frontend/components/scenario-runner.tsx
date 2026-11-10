@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { refreshPolicyQueries } from "../lib/policy-apply";
 import {
@@ -13,9 +12,6 @@ import {
   resetWorkshop,
   startTrafficGeneration,
   getTrafficStatus,
-  startPcapCapture,
-  getPcapStatus,
-  getPcapDownloadUrl,
   type Scenario,
   type ValidationResult,
   type StepExecutionResult,
@@ -46,9 +42,6 @@ import { usFeederPolling } from "../lib/operator-view";
 import { RunnerOperatorStatus } from "./runner-operator-status";
 import {
   showsValidateButton,
-  deviceLabel,
-  isSegmentationStep,
-  isBaselineStep,
 } from "../lib/scenario-runner-logic";
 import {
   DescriptionSegments,
@@ -125,7 +118,6 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const resizingRef = useRef(false);
   const resizeStartRef = useRef({ y: 0, h: 0 });
   const [generatingTraffic, setGeneratingTraffic] = useState(false);
-  const [capturing, setCapturing] = useState(false);
 
   // Panel resize handlers
   const onResizeStart = useCallback((e: React.MouseEvent) => {
@@ -248,29 +240,6 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     }
   };
 
-  const handleStartCapture = async (durationSec = 60, name = "baseline") => {
-    setCapturing(true);
-    setCmdLog((prev) => [`[CAPTURE] Starting ${durationSec}s packet capture on firewall...`, ...prev].slice(0, 100));
-    try {
-      await startPcapCapture(durationSec, name);
-      setCmdLog((prev) => [`[CAPTURE] Recording on all firewall interfaces`, ...prev].slice(0, 100));
-      const pollId = setInterval(async () => {
-        try {
-          const status = await getPcapStatus();
-          if (!status.capturing) {
-            clearInterval(pollId);
-            setCapturing(false);
-            const url = getPcapDownloadUrl();
-            setCmdLog((prev) => [`[CAPTURE] Complete - download at ${url}`, ...prev].slice(0, 100));
-          }
-        } catch { clearInterval(pollId); setCapturing(false); }
-      }, 3000);
-    } catch (e) {
-      setCmdLog((prev) => [logLineFor(e, "Capture failed: "), ...prev].slice(0, 100));
-      setCapturing(false);
-    }
-  };
-
   const changeRequest = () => {
     const plan = hasPolicyActions ? loadRemediationPlan(scope) : null;
     return plan?.selectedActionIds.length ? { packageId: scope.packageId, revision: scope.revision, actionIds: plan.selectedActionIds } : undefined;
@@ -322,7 +291,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       const impact = res.process_impact || res.detail || "";
       const succeeded = res.result === "executed" || res.result === "success";
       const label = succeeded ? "SUCCEEDED" : "BLOCKED";
-      const msg = `[${label}] ${deviceLabel(device)} - ${command}: ${impact}`;
+      const msg = `[${label}] ${NODE_LABELS[`${device}-1`] || device} - ${command}: ${impact}`;
       setCmdLog((prev) => [msg, ...prev].slice(0, 20));
       setTimeout(refreshLive, 500);
     } catch (e) {
@@ -561,39 +530,6 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 handleGenerateTraffic={handleGenerateTraffic}
                 generatingTraffic={generatingTraffic}
               />
-            )}
-
-            {/* Quick action buttons for traffic/capture steps */}
-            {step?.description && (step.description.includes("traffic/generate") || step.description.includes("representative traffic")) && (
-              <div className="mt-2">
-                <button
-                  onClick={() => handleGenerateTraffic(45)}
-                  disabled={generatingTraffic}
-                  className="rounded-sm border border-sky-800/60 bg-sky-950/40 px-3 py-1.5 text-[10px] font-medium text-sky-400 hover:bg-sky-900/50 disabled:opacity-50"
-                >
-                  {generatingTraffic ? "Generating Traffic..." : "Generate Traffic (45s)"}
-                </button>
-              </div>
-            )}
-            {step?.description && (step.description.includes("pcap/start") || step.description.includes("packet capture")) && !step.description.includes("representative traffic") && (
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  onClick={() => handleStartCapture(60, "baseline")}
-                  disabled={capturing}
-                  className="rounded-sm border border-amber-800/60 bg-amber-950/40 px-3 py-1.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
-                >
-                  {capturing ? "Capturing..." : "Start 60s Capture"}
-                </button>
-                {!capturing && (
-                  <a
-                    href={getPcapDownloadUrl()}
-                    className="text-[10px] text-slate-500 hover:text-sky-400"
-                    download
-                  >
-                    Download Last Capture
-                  </a>
-                )}
-              </div>
             )}
 
             {/* Decision panel - only for steps with action.type === "decision" */}

@@ -266,7 +266,7 @@ describe("authored description → Run → node exec", () => {
       status: "started", duration_sec: 45, run_id: "fixture", started_at: "2026-11-04T00:00:00Z",
     });
     vi.spyOn(globalThis, "setInterval").mockReturnValue(0 as unknown as ReturnType<typeof setInterval>);
-    const authored = { ...scenario, steps: [{ ...scenario.steps[0], description: "Generate representative traffic." }] };
+    const authored = { ...scenario, steps: [{ ...scenario.steps[0], description: "Generate representative traffic.\n:::generate-traffic-button\n:::" }] };
     const tree = renderStep(authored, "first", binding);
     try {
       fireEvent.click(tree.getByRole("button", { name: "Generate Traffic (45s)" }));
