@@ -4,8 +4,8 @@ How to get RangerDanger onto N student laptops in a room with bad
 Wi-Fi, and how to push patches between sessions without forcing every
 student to re-import the full 6 GB image bundle.
 
-This is the v0.2.3 package-based operator runbook. Tagged examples require
-published v0.2.3 images. PowerShell setup supports the same packages on
+This is the v0.3.0 package-based operator runbook. Tagged examples require
+published v0.3.0 images. PowerShell setup supports the same packages on
 Docker Desktop WSL2 with a physical local-drive checkout, and installs the
 release's WSL2 kernel only when its feature probe finds the current kernel
 missing required support. It rejects UNC,
@@ -70,7 +70,7 @@ archive.
 On a machine with internet, from the repo root:
 
 ```sh
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.3
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.3.0
 ```
 
 The positional version selects the first-party image tags through Compose
@@ -232,14 +232,14 @@ containd has drifted since that stage. To include the current `latest` image
 in a delta, force it with:
 
 ```sh
-./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.3 v0.2.2 v0.2.3 \
+./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.3.0 v0.2.3 v0.3.0 \
   --include-upstream --include containd
 ```
 
-The containd floor remains 0.1.41; v0.2.3 was tested on 0.1.42. The flags
+The containd floor remains 0.1.41; v0.3.0 was tested on 0.1.42. The flags
 above force the current mutable `latest` into the delta when you want the
 bundle to carry it, since the helper cannot detect whether containd has
-drifted since the previous stage. The v0.2.2 → v0.2.3 update itself does not
+drifted since the previous stage. The v0.2.3 → v0.3.0 update itself does not
 require a containd migration backup.
 
 Before distributing, record the digest you intend to ship with
@@ -253,7 +253,7 @@ under the same mutable `latest` tag:
 
 ```sh
 for arch in amd64 arm64; do
-  docker load -i "/Volumes/WORKSHOP_SSD/delta-v0.2.3/delta-${arch}.tar"
+  docker load -i "/Volumes/WORKSHOP_SSD/delta-v0.3.0/delta-${arch}.tar"
   docker image inspect ghcr.io/tonylturner/containd:latest \
     --format 'ID={{.Id}} OS={{.Os}} ARCH={{.Architecture}} REPO_DIGESTS={{json .RepoDigests}}'
 done
@@ -272,12 +272,12 @@ Keep all databases, journals, users and captures, not just a config export.
 The stored schema migrates one-way to 0.1.10, which containd 0.1.36 and earlier
 cannot read.
 
-For v0.2.0 → v0.2.3, a fresh full
+For v0.2.0 → v0.3.0, a fresh full
 storage backup is still required before updating containd. containd 0.1.41
 migrates firewall `config.db` one-way; 0.1.40 cannot read the migrated store.
 Rollback requires the full pre-upgrade firewall data backup and matching old
 image and RangerDanger release, even if schema 0.1.10 was already in use. Follow the
-[current upgrade backup guidance](quickstart.md#upgrading-to-v023), based on
+[current upgrade backup guidance](quickstart.md#upgrading-to-v030), based on
 containd's [update checklist](https://github.com/tonylturner/containd/blob/main/docs/mkdocs/update-policy.md#operator-update-checklist); keep the matching old image and repo
 until the update is verified. The generated delta apply recipe stops the lab
 and snapshots the complete installed tree, including both package stores.
@@ -319,15 +319,15 @@ is not Windows runtime acceptance.
   `curl` and `python3` on the student's machine.
 
 The source release must carry the platform/package Compose metadata. A
-v0.1.x SSD baseline lacks it: stage a full v0.2.3 bundle for that migration.
+v0.1.x SSD baseline lacks it: stage a full v0.3.0 bundle for that migration.
 Later package-aware releases can use:
 
 ```sh
-./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.3 v0.2.2 v0.2.3
+./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.3.0 v0.2.3 v0.3.0
 ```
 
-The release workflow promotes images whose inputs are unchanged from v0.2.2
-and builds the changed inputs. A v0.2.2 → v0.2.3 SSD delta carries only the
+The release workflow promotes images whose inputs are unchanged from v0.2.3
+and builds the changed inputs. A v0.2.3 → v0.3.0 SSD delta carries only the
 images this release rebuilt, plus the repository archive. A fresh full bundle
 is simpler. Include containd separately
 with the flags in Pattern 3 if the delta should also carry the current `latest`.
