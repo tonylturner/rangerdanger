@@ -185,6 +185,33 @@ describe.each(packageIds)("runner persistence in %s", (packageId) => {
 });
 
 describe("runner working context", () => {
+  it.each(packageIds)("only auto-completes a successful probe in %s", async (packageId) => {
+    const activity: Scenario = {
+      ...scenario,
+      steps: [{ ...scenario.steps[0], action: { type: "probe" } }, ...scenario.steps.slice(1)],
+    };
+    const response: api.StepExecutionResult = {
+      step_index: 0, step_title: "First instruction", action_type: "probe", success: false,
+      results: [
+        { action: "Required conduit", success: true, detail: "Matches judging target" },
+        { action: "Requested closure", success: false, detail: "Does not match judging target" },
+      ],
+      timestamp: "2026-11-10T12:00:00Z",
+    };
+    const execute = vi.spyOn(api, "executeScenarioStep")
+      .mockResolvedValueOnce(response)
+      .mockResolvedValueOnce({ ...response, success: true, results: response.results.map((row) => ({ ...row, success: true })) });
+    const tree = mount(packageId, activity);
+    fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
+    await waitFor(() => expect(tree.container.textContent).toContain("Does not match judging target"));
+    expect(loadProgress(scope(packageId), activity).completedStepIds).toEqual([]);
+    expect(tree.getByRole("heading", { name: "Step 1: First instruction" })).toBeTruthy();
+    fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
+    await waitFor(() => expect(tree.getByRole("heading", { name: "Step 2: Second instruction" })).toBeTruthy());
+    expect(loadProgress(scope(packageId), activity).completedStepIds).toEqual(["first"]);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
   it("restores the selected step even when it is already complete", () => {
     const tree = mount(packageIds[0]);
     markAndSkip(tree);
