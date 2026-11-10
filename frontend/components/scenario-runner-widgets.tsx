@@ -1,6 +1,9 @@
 "use client";
 
 import { type Scenario } from "../lib/api";
+import { activePolicyWording } from "../lib/policy-wording";
+import { usePackagePolicies } from "../lib/operator-queries";
+import { CopyButton } from "./copy-button";
 
 // Quick command buttons contextual to the current step
 export function QuickCommands({
@@ -76,14 +79,14 @@ function QCmd({ label, onClick, variant }: { label: string; onClick: () => void;
   );
 }
 
-export function MiniStatus({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
+export function MiniStatus({ label, value, ok, warning = false }: { label: string; value: string; ok?: boolean; warning?: boolean }) {
   return (
     <div className={`rounded border px-2 py-1.5 ${
-      ok === false ? "border-red-800 bg-red-950/30" : ok === true ? "border-green-800/50 bg-slate-900/50" : "border-slate-800 bg-slate-900/50"
+      warning ? "border-amber-800 bg-amber-950/30" : ok === false ? "border-red-800 bg-red-950/30" : ok === true ? "border-green-800/50 bg-slate-900/50" : "border-slate-800 bg-slate-900/50"
     }`}>
       <div className="text-[9px] font-medium uppercase tracking-wider text-slate-500">{label}</div>
       <div className={`text-sm font-bold ${
-        ok === false ? "text-red-400" : ok === true ? "text-green-400" : "text-slate-400"
+        warning ? "text-amber-300" : ok === false ? "text-red-400" : ok === true ? "text-green-400" : "text-slate-400"
       }`}>
         {value}
       </div>
@@ -99,20 +102,26 @@ export function ExerciseSummary({
   skippedStepIds,
   notes,
   activeConfig,
+  policySource,
+  appliedPlan,
 }: {
   scenario: Scenario;
   completedStepIds: Set<string>;
   skippedStepIds: Set<string>;
   notes: string;
   activeConfig: string | null;
+  policySource?: import("../lib/api").PolicySource;
+  appliedPlan?: import("../lib/api").PlanProvenance;
 }) {
+  const policies = usePackagePolicies();
+  const policyLabel = activeConfig ? activePolicyWording(activeConfig, policies, policySource, appliedPlan).label : "unknown";
   const completionPct = Math.round((completedStepIds.size / scenario.steps.length) * 100);
   const timestamp = new Date().toLocaleString();
 
   const summaryText = [
     `Lab ${scenario.order}: ${scenario.name}`,
     `Steps marked complete: ${completedStepIds.size}/${scenario.steps.length} (${completionPct}%)`,
-    `Firewall Config: ${activeConfig || "unknown"}`,
+    `Firewall Config: ${policyLabel}`,
     `Date: ${timestamp}`,
     "",
     ...scenario.steps.map((s, i) => {
@@ -128,12 +137,7 @@ export function ExerciseSummary({
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-white">Exercise Summary</h3>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => navigator.clipboard?.writeText(summaryText)}
-              className="rounded-sm border border-slate-700 bg-slate-800/50 px-3 py-1 text-[10px] text-slate-400 hover:text-slate-200"
-            >
-              Copy to Clipboard
-            </button>
+            <CopyButton text={summaryText} label="Copy to Clipboard" />
           </div>
         </div>
 
@@ -146,8 +150,8 @@ export function ExerciseSummary({
           </div>
           <div className="rounded-sm border border-slate-800 bg-slate-950 p-3">
             <div className="text-[9px] uppercase tracking-wider text-slate-600">Firewall Config</div>
-            <div className={`text-lg font-bold ${activeConfig === "improved" ? "text-green-400" : "text-red-400"}`}>
-              {activeConfig || "-"}
+            <div className={`text-lg font-bold ${activeConfig === "improved" ? "text-green-400" : activeConfig === "weak" ? "text-red-400" : "text-slate-300"}`}>
+              {policyLabel}
             </div>
           </div>
           <div className="rounded-sm border border-slate-800 bg-slate-950 p-3">
@@ -182,7 +186,7 @@ export function ExerciseSummary({
           {notes && (
             <div className="rounded-sm border border-slate-800 bg-slate-950/50 p-3 mt-2">
               <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Exercise Notes</div>
-              <div className="text-xs text-slate-400 whitespace-pre-line">{notes}</div>
+              <div className="text-xs font-mono text-slate-300 whitespace-pre-wrap">{notes}</div>
             </div>
           )}
         </div>

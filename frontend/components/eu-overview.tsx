@@ -31,6 +31,7 @@ function useEuStatus() {
   return {
     ws: ws.data,
     firewallPolicy,
+    activeConfig,
     waiting: isRangeNotReady(ws.error),
     operator: operator.data,
     operatorDown: !!operator.error && !isRangeNotReady(operator.error),
@@ -45,7 +46,7 @@ export function DeviceComms({ state, unavailable = false }: { state: OperatorSta
   </section>;
 }
 export function EuDashboard({ title }: { title: string }) {
-  const { ws, firewallPolicy, waiting, operator, operatorDown } = useEuStatus();
+  const { ws, firewallPolicy, activeConfig, waiting, operator, operatorDown } = useEuStatus();
   const summary = operator ? telemetrySummary(operator.points) : null;
   const cc = ws?.control_centre;
   return (
@@ -73,7 +74,7 @@ export function EuDashboard({ title }: { title: string }) {
         <DashboardStatusCard
           label="Firewall Policy"
           value={waiting ? "WAITING" : firewallPolicy}
-          ok={waiting || !ws ? undefined : isHardened(ws.firewall_config)}
+          ok={waiting || !activeConfig || activeConfig === "custom" ? undefined : isHardened(activeConfig)}
         />
         <DashboardStatusCard
           label="Scenarios"
@@ -94,7 +95,7 @@ export function EuDashboard({ title }: { title: string }) {
             desc="Operator one-line, point quality, select-before-operate, journal"
             color="orange"
           />
-          <QuickLink href="/console" title="Network Console" desc="Topology visualization with firewall policy overlays" color="purple" />
+          <QuickLink href="/console" title="Network Map" desc="Topology visualization with firewall policy overlays" color="purple" />
         </div>
       </div>
     </main>

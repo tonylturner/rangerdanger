@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import type { OperatorState } from "../lib/operator-api";
+import type { OperatorJournal, OperatorState } from "../lib/operator-api";
 import { LINK_STATE_TEXT, formatPointValue, pointCondition, telemetrySummary, telemetryText } from "../lib/operator-format";
-import { useNow, useOperatorState } from "../lib/operator-queries";
+import { useNow, useOperatorJournal, useOperatorState } from "../lib/operator-queries";
+import { runnerGiStatus, RUNNER_GI_EVIDENCE_WINDOW_MS } from "../lib/runner-gi-status";
 import { EU_OPERATOR_VIEW, isView, operatorViewProblem, type OperatorViewResolution } from "../lib/operator-view";
 import { errorMessage } from "../lib/utils";
 import { isRangeNotReady } from "../lib/range";
 import { MiniStatus } from "./scenario-runner-widgets";
 
-export function ControlCentreMiniStatus({ state, waiting }: { state: OperatorState | undefined; waiting: boolean }) {
+export function ControlCentreMiniStatus({ state, waiting, journal, now }: { state: OperatorState | undefined; waiting: boolean; journal?: OperatorJournal; now?: number }) {
   if (!state) {
     return (
       <div className="grid grid-cols-2 gap-2">
@@ -22,10 +23,11 @@ export function ControlCentreMiniStatus({ state, waiting }: { state: OperatorSta
   const summary = telemetrySummary(state.points);
   const position = state.points.find((p) => p.id === "feeder-breaker-position");
   const positionStale = position ? pointCondition(position) !== "good" : true;
+  const gi = runnerGiStatus(state, journal, now ?? Date.parse(state.rendered_at));
   return (
     <div className="grid grid-cols-2 gap-2">
       <MiniStatus label="IEC 104 Link" value={LINK_STATE_TEXT[state.link.state]} ok={state.link.state === "started"} />
-      <MiniStatus label="Interrogation" value={state.link.gi.last_complete_at !== null ? "GI complete" : state.link.gi.state.toUpperCase()} ok={state.link.gi.last_complete_at !== null} />
+      <MiniStatus label="Interrogation" value={gi.value} ok={gi.fresh ? true : undefined} warning={!gi.fresh} />
       <MiniStatus label="Telemetry" value={telemetryText(summary)} ok={summary.total > 0 && summary.good === summary.total} />
       <MiniStatus
         label="Breaker (as reported)"
@@ -39,16 +41,18 @@ export function ControlCentreMiniStatus({ state, waiting }: { state: OperatorSta
 function EuStatus() {
   const query = useOperatorState(3000);
   const now = useNow(1000);
+  const journal = useOperatorJournal(3000);
   return (
     <>
       <div className="flex items-baseline justify-between">
         <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Control Centre Status</div>
-        <Link href="/substation" className="text-[10px] text-sky-400 hover:text-sky-300">
+        <Link href="/substation" target="_blank" rel="noopener noreferrer" className="text-[10px] text-sky-400 hover:text-sky-300">
           Open the Control Centre →
         </Link>
       </div>
       {query.error && <p role="alert" className="text-xs text-amber-300">Operator API unavailable: {errorMessage(query.error)}. {query.data ? `Cached snapshot · ${Math.max(0, Math.floor((now - query.dataUpdatedAt) / 1000))} s since last API answer; not live.` : "No operator snapshot."}</p>}
-      <ControlCentreMiniStatus state={query.data} waiting={!query.data && isRangeNotReady(query.error)} />
+      <ControlCentreMiniStatus state={query.data} waiting={!query.data && isRangeNotReady(query.error)} journal={query.error || journal.error ? undefined : journal.data} now={now} />
+      <p className="text-[11px] text-slate-400">GI evidence window: {RUNNER_GI_EVIDENCE_WINDOW_MS / 60000} minutes. If amber, press Interrogate station in the Control Centre. Execute Step checks the retained evidence and attempt boundary.</p>
     </>
   );
 }

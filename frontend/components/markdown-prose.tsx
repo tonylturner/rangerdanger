@@ -3,13 +3,13 @@
 import React from "react";
 import Markdown from "marked-react";
 import Link from "next/link";
+import { CopyButton } from "./copy-button";
 
 // Dark-themed markdown renderer for exercise step descriptions and hint
 // bodies. Styled to match the slate theme used throughout the app.
 //
 // Custom overrides:
-//   - Links: internal paths (starting with /) route through Next.js Link
-//     so the exercise runner stays a SPA. External links open in a new tab.
+//   - Links open a second tab so the exercise and its terminal stay mounted.
 //   - Code spans (single backticks) get amber mono styling to match our
 //     command block aesthetic. They do NOT get Run/Copy buttons - that's
 //     reserved for block-level tool commands detected by splitDescription
@@ -61,6 +61,8 @@ const renderer = keyedRenderer({
         <Link
           key={this.elementId}
           href={href}
+          target="_blank"
+          rel="noopener noreferrer"
           className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2"
         >
           {text}
@@ -98,12 +100,10 @@ const renderer = keyedRenderer({
     // anything. Fenced code here is for multi-line snippets authors want
     // to display without a Run button (e.g., sample output).
     return (
-      <pre
-        key={this.elementId}
-        className="my-2 overflow-x-auto rounded-sm border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-300"
-      >
-        <code>{code}</code>
-      </pre>
+      <div key={this.elementId} className="my-2 rounded-sm border border-slate-700 bg-slate-950 px-3 py-2">
+        <CopyButton text={typeof code === "string" ? code : React.Children.toArray(code).join("")} />
+        <pre className="overflow-x-auto font-mono text-[11px] text-amber-300"><code>{code}</code></pre>
+      </div>
     );
   },
 

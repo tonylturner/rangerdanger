@@ -25,6 +25,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { PlanReadinessExclusions } from "./plan-readiness-exclusions";
 import { DecisionPanel } from "./decision-panel";
 import { MarkdownProse } from "./markdown-prose";
+import { CopyButton } from "./copy-button";
 import { NotesPanel } from "./notes-panel";
 import { CATCH_UP_TITLE } from "../lib/catch-up";
 import {
@@ -64,17 +65,18 @@ type CommandBlockProps = {
   // copyOnly = a host-side or interactive/GUI command: copy button only,
   // no Run, no badge - run it in the indicated terminal.
   copyOnly?: boolean;
+  interactive?: boolean;
 };
 
-export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly, sourceNode }: CommandBlockProps) {
+export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly, sourceNode, interactive }: CommandBlockProps) {
   const runnable = cli || copyOnly ? null : onRun;
   return (
     <div className="group relative rounded-sm border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
-      <span className="block whitespace-pre-wrap break-all pb-7 sm:pb-0 sm:pr-28">
+      <span className="block whitespace-pre-wrap break-all">
         {cli && <span className="select-none text-sky-700">CLI · </span>}
         {cmd}
       </span>
-      <div className="absolute bottom-1.5 right-2 flex items-center gap-1.5 sm:bottom-auto sm:top-1.5">
+      <div className="mt-1 flex flex-wrap items-center justify-end gap-1.5">
         {cli && (
           <span className="select-none rounded-sm border border-sky-800/60 bg-sky-950/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-sky-400">
             containd cli
@@ -89,13 +91,11 @@ export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly, sour
             {runningId === runId ? "Running..." : "Run"}
           </button>
         )}
-        <button
-          onClick={() => navigator.clipboard?.writeText(cmd)}
-          className="text-[9px] text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-slate-400"
-        >
-          copy
-        </button>
+        <CopyButton text={cmd} label="copy" quiet />
       </div>
+      {interactive && <p className="mt-2 font-sans text-xs text-slate-300">
+        Long-running: paste into the {sourceNode || "target node"} terminal and leave it running.
+      </p>}
     </div>
   );
 }
@@ -324,7 +324,7 @@ export function FindingsPanel({ sourceScenario, sourceScenarioOrder, title, item
         </div>
       ) : (
         <div className="text-[11px] text-slate-500 italic">
-          You haven&apos;t recorded findings in <a
+          You haven&apos;t recorded findings in <a target="_blank" rel="noopener noreferrer"
             href={`/exercises/${sourceScenario}`}
             className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
           >{sourceScenarioOrder ? `Lab ${sourceScenarioOrder}` : "the earlier lab"}</a> yet - your design verdicts below will be made without that context.
@@ -354,7 +354,7 @@ export function PlanCoveragePanel({ title }: { title: string }) {
   if (!hasPlan && coverage.length === 0) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-500 italic">
-        No remediation plan recorded yet. Visit <Link
+        No remediation plan recorded yet. Visit <Link target="_blank" rel="noopener noreferrer"
           href={`/exercises/${scope.curriculum?.roles.planning}`}
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
         >Lab 1.4 (Remediation Planning)</Link> to select actions and your plan coverage will appear here.
@@ -434,7 +434,7 @@ export function PlanCoveragePanel({ title }: { title: string }) {
         })}
       </div>
       <div className="mt-2 text-[10px] text-slate-500 italic">
-        Current selection coverage only, not firewall proof. Change selections in your <Link
+        Current selection coverage only, not firewall proof. Change selections in your <Link target="_blank" rel="noopener noreferrer"
           href={`/exercises/${scope.curriculum?.roles.planning}`}
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
         >Lab 1.4 plan</Link>.
@@ -540,6 +540,7 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
                   sourceNode={seg.sourceNode}
                   cli={seg.cli}
                   copyOnly={seg.copyOnly}
+                  interactive={seg.interactive}
                 />
               );
             }
@@ -594,6 +595,10 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
             }
             return null;
           })}
+          {/\bApply Your Plan\b/.test(body) && <a href="#catch-up-controls" onClick={() => {
+            const controls = document.getElementById("catch-up-controls");
+            if (controls instanceof HTMLDetailsElement) controls.open = true;
+          }} className="inline-block text-xs text-sky-300 underline">Jump to policy controls</a>}
         </div>
       )}
     </div>
@@ -612,6 +617,7 @@ export function DescriptionSegments({
   handleAutoRun,
   handleGenerateTraffic,
   generatingTraffic,
+  targetNode,
 }: {
   scenarioId: string;
   currentStep: number;
@@ -624,6 +630,7 @@ export function DescriptionSegments({
   handleAutoRun: (cmd: string, runId: string, stepDesc: string, sourceNode?: string) => Promise<void>;
   handleGenerateTraffic: (durationSec?: number) => Promise<void>;
   generatingTraffic: boolean;
+  targetNode?: string;
 }) {
   const scope = useCurriculumScope();
   const { scenarios } = useActiveCurriculum();
@@ -636,7 +643,7 @@ export function DescriptionSegments({
               const effectiveDesc = scope.curriculum && dynamicPlan
                 ? injectDynamicContent(step.description, stepId, dynamicPlan, scope.curriculum, Object.keys(scope.curriculum.roles).find((role) => scope.curriculum?.roles[role] === scenarioId))
                 : step.description;
-              const segments = splitDescription(effectiveDesc);
+              const segments = splitDescription(effectiveDesc, targetNode);
               let bodyCmdIdx = 0;
               let hintIdx = 0;
               const runHandler = exerciseNodes.length > 0
@@ -717,8 +724,9 @@ export function DescriptionSegments({
                             disabled={generatingTraffic}
                             className="rounded-sm border border-sky-700 bg-sky-950/50 px-4 py-2 text-xs font-medium text-sky-300 hover:bg-sky-900/60 disabled:opacity-50"
                           >
-                            {generatingTraffic ? "Generating Traffic…" : "Generate Traffic (45s)"}
+                            {generatingTraffic ? "Generating Traffic…" : "Generate scenario traffic"}
                           </button>
+                          <p className="mt-1 text-xs text-slate-400">Runs for 45 seconds. Start it again immediately before capturing if it has finished.</p>
                         </div>
                       );
                     }
@@ -743,6 +751,7 @@ export function DescriptionSegments({
                         sourceNode={seg.sourceNode}
                         cli={seg.cli}
                         copyOnly={seg.copyOnly}
+                        interactive={seg.interactive}
                       />
                     );
                   })}
