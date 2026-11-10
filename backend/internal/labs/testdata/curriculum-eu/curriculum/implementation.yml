@@ -13,6 +13,3 @@ phases:
     {{tests}}
 noPlan: |+
   Build a [plan](/exercises/{{planRole}}).
-
-tests: []
-negativeEmpty: No selected exposure closures to test yet.

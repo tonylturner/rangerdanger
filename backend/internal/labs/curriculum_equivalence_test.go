@@ -22,10 +22,11 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// hand-authored change-request implementation with single-commit cutover,
 	// and firewall-native DENY event correlation in both dynamic retest lessons
 	// without requiring the later Lab 2.4 boundary capture, and worked rule
-	// authoring plus source-restricted RESTRICT coverage.
+	// authoring plus source-restricted RESTRICT coverage, and removal of
+	// unrendered tests/negativeEmpty fields.
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "671e13758343e7f1eaf3a2f15e4647110db76d188318aa4880541ce4e821a0b1",
-		"eu-iec104-substation": "b05fff70375e20106dfa0dff1c62cc7086e6e850dc4c3d8dd4e4d982957151c0",
+		"us-dnp3-substation":   "c6dc6c752b597d01ac0cec6b40e914cadef30394265b65fec8822af364d2e20b",
+		"eu-iec104-substation": "343e990e036615663813e6d8492a80ee865dd84a999d1f5119db98013592a343",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

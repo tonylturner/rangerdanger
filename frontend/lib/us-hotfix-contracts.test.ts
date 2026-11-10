@@ -38,9 +38,8 @@ describe("US compiled-plan presentation", () => {
     expect(text).toContain("dnp3poll -a 1 -t 3s 10.40.40.20:20000");
     expect(text).not.toContain("-t 1");
     expect(text).not.toContain("${ip:");
-    const supplemental = US_CURRICULUM.tests.map((t) => t.text).join("\n");
-    expect(supplemental).toContain("curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool");
-    expect(supplemental).toContain("TCP reachability alone is not operational proof");
+    expect(US_CURRICULUM).not.toHaveProperty("tests");
+    expect(US_CURRICULUM).not.toHaveProperty("negativeEmpty");
     // SSH evidence lives in the validation scenario, not the compiled matrix.
     const validation = readFileSync(resolve(__dirname, "../../lab-definitions/scenarios/validation-evidence.yml"), "utf8");
     expect(validation).toContain("rangerdanger@10.30.30.20");

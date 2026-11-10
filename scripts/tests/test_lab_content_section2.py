@@ -246,6 +246,8 @@ class RuleAuthoringContracts(unittest.TestCase):
         ):
             package_dir = ROOT / "lab-definitions/packages" / package
             curriculum = read_curriculum(package_dir)
+            self.assertNotIn("tests", curriculum)
+            self.assertNotIn("negativeEmpty", curriculum)
             binding = yaml.safe_load((package_dir / "package.yml").read_text())["curriculum"]
             doc = yaml.safe_load(scenario_path.read_text())
             steps = {step["id"]: step["description"] for step in doc["steps"]}
@@ -278,9 +280,9 @@ class RuleAuthoringContracts(unittest.TestCase):
                 positive = steps["test-positive"]
                 self.assertIn("Operator-authorized operational demonstration", positive)
                 self.assertIn("not\nacceptance reads", positive)
-                demonstration = "\n".join(test["text"] for test in curriculum["tests"])
-                self.assertIn("obtain operator approval", demonstration)
-                self.assertIn("not an acceptance read", demonstration)
+                demonstration = curriculum["phases"]["positive"]
+                self.assertIn("Obtain operator approval first", demonstration)
+                self.assertIn("not\nacceptance reads", demonstration)
 
     def test_custom_policy_authoring_checks_remote_access_after_commit(self):
         weak = json.loads((ROOT / "lab-definitions/firewall/substation-weak.json").read_text())

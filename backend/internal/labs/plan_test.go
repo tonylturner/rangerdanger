@@ -242,7 +242,6 @@ func TestPlanDoesNotReadDisplayFields(t *testing.T) {
 	want := mustCompilePlan(t, pkg, nil)
 	pkg.Curriculum.Groups = nil
 	pkg.Curriculum.PlanningOnly = nil
-	pkg.Curriculum.Tests = nil
 	if got := mustCompilePlan(t, pkg, nil); !reflect.DeepEqual(got, want) {
 		t.Fatal("display fields influence shared plan compilation")
 	}
