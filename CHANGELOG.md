@@ -39,6 +39,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reports OK while the capture keeps running.
 - The status card shows the GI age. A correct custom policy is no longer
   shown as a problem.
+- `setup.sh` reports a missing option value instead of crashing on an
+  unbound variable. Both installers say to pass the folder when
+  `--from-tarballs`/`-FromTarballs` gets an image file.
+- The SSD bundle README says to copy the whole folder.
 
 ## [v0.2.4] - 2026-11-10
 
