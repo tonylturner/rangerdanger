@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,109 +13,104 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
-func probeTestPolicy(defaultAction string) []byte {
-	return []byte(fmt.Sprintf(`{"firewall":{"defaultAction":%q,"rules":[]}}`, defaultAction))
-}
-
-func useProbePolicy(t testing.TB, s *Server, document []byte) {
+func compileProbePlan(t testing.TB, gen *lifecycle.Generation, ids []string) labs.CompiledPlan {
 	t.Helper()
-	firewall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/config" {
-			http.NotFound(w, r)
-			return
-		}
-		_, _ = w.Write(document)
-	}))
-	t.Cleanup(firewall.Close)
-
-	fake := s.rng.(*fakeRange)
-	previous := fake.gen
-	fake.gen = lifecycle.NewGeneration(previous.ID, previous.Package, previous.Manifest, containd.NewClient(firewall.URL), previous.StartedAt)
+	plan, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan
 }
 
-func TestProbeSuccessFollowsRunningPolicy(t *testing.T) {
-	s := activePackageServer(nil)
-	gen := s.rng.(*fakeRange).gen
-	weak, err := os.ReadFile(filepath.Join(repoRoot(), "lab-definitions/firewall/substation-weak.json"))
+func useAppliedProbePlan(t testing.TB, s *Server, plan labs.CompiledPlan) {
+	t.Helper()
+	hash, err := containd.FirewallHashFromBytes(plan.Config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	partial, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-ot"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if partial.Label != "partial" {
-		t.Fatalf("partial plan label = %q", partial.Label)
-	}
-	deferredAllow := false
-	for _, rule := range partial.Rules {
-		deferredAllow = deferredAllow || rule.Origin.Kind == "deferred" &&
-			rule.Origin.Action == "block-enterprise-to-field" && rule.Rule.Action == "ALLOW"
-	}
-	if !deferredAllow {
-		t.Fatal("partial plan does not retain the deferred enterprise-to-field allow")
-	}
-	actionIDs := make([]string, 0, len(gen.Package.Curriculum.Catalog))
-	for _, action := range gen.Package.Curriculum.Catalog {
-		actionIDs = append(actionIDs, action.ID)
-	}
-	hardened, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, actionIDs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if hardened.Label != "hardened" {
-		t.Fatalf("full plan label = %q", hardened.Label)
-	}
+	s.policySource, s.appliedPlan = "plan", &plan
+	s.planProvenance = &planProvenance{PolicyHash: hash}
+	s.lastAppliedHash = hash
+}
 
-	tests := []struct {
-		name       string
-		policy     []byte
-		source     string
-		host       string
-		port       int
-		rc         int
-		wantDetail string
-	}{
-		{
-			name:   "Weak",
-			policy: weak,
-			source: "kali-1", host: "10.40.40.20", port: 502, rc: 0,
-			wantDetail: "expected reachable by running policy, observed reachable",
-		},
-		{
-			name:   "partial plan preserves deferred allow",
-			policy: partial.Config,
-			source: "kali-1", host: "10.40.40.20", port: 502, rc: 0,
-			wantDetail: "expected reachable by running policy, observed reachable",
-		},
-		{
-			name:   "Hardened",
-			policy: hardened.Config,
-			source: "kali-1", host: "10.40.40.20", port: 502, rc: 124,
-			wantDetail: "expected blocked by running policy, observed blocked (timeout 3 s)",
-		},
-		{
-			name:   "bridged route bypasses firewall evaluation",
-			policy: probeTestPolicy("DENY"),
-			source: "relay-1", host: "10.40.40.20", port: 502, rc: 0,
-			wantDetail: "expected reachable by running policy, observed reachable",
-		},
+func TestProbeSuccessFollowsJudgingTarget(t *testing.T) {
+	for _, pkg := range []string{usPackageID, euPackageID} {
+		t.Run(pkg, func(t *testing.T) {
+			// The running policy is deliberately unavailable: it cannot be the oracle.
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Errorf("probe read running policy: %s", r.URL.Path)
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			}))
+			defer upstream.Close()
+			gen := usGeneration(containd.NewClient(upstream.URL))
+			if pkg == euPackageID {
+				gen = euGeneration(t, containd.NewClient(upstream.URL), nil)
+			}
+			var all []string
+			for _, action := range gen.Package.Curriculum.Catalog {
+				all = append(all, action.ID)
+			}
+			allow := compileProbePlan(t, gen, nil)
+			deny := compileProbePlan(t, gen, all)
+			step := labs.ScenarioStep{Node: "kali-1", Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.40.40.20", Port: 502}}}}
+			for _, tc := range []struct {
+				name, target, verdict string
+				request, applied      *labs.CompiledPlan
+				rc                    int
+				stderr                string
+				pass                  bool
+			}{
+				{name: "Weak exposure fails reference", target: "full reference (no change request saved)", verdict: "DENY", rc: 0},
+				{name: "reference timeout passes", target: "full reference (no change request saved)", verdict: "DENY", rc: 124, pass: true},
+				{name: "refusal fails deny", target: "full reference (no change request saved)", verdict: "DENY", rc: 1, stderr: "Connection refused"},
+				{name: "saved empty request allows deferred path", request: &allow, target: "your 1.4 change request (0 actions)", verdict: "ALLOW", pass: true},
+				{name: "saved full request denies exposure", request: &deny, target: fmt.Sprintf("your 1.4 change request (%d actions)", len(all)), verdict: "DENY"},
+				{name: "applied empty plan supersedes full request", request: &deny, applied: &allow, target: "applied plan", verdict: "ALLOW", pass: true},
+				{name: "applied full plan supersedes empty request", request: &allow, applied: &deny, target: "applied plan", verdict: "DENY"},
+				{name: "applied full plan timeout passes", applied: &deny, target: "applied plan", verdict: "DENY", rc: 124, pass: true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					s := rangeServer(gen, "weak")
+					s.policySource = "manual-custom"
+					ctx := t.Context()
+					if tc.request != nil {
+						ctx = context.WithValue(ctx, changeRequestKey{}, compiledChangeRequest{*tc.request})
+					}
+					if tc.applied != nil {
+						useAppliedProbePlan(t, s, *tc.applied)
+					}
+					s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
+						return "", tc.stderr, tc.rc, nil
+					}
+					rows := s.executeProbe(ctx, gen, step)
+					observed := "reachable"
+					if tc.rc == 124 {
+						observed = "blocked"
+					}
+					want := fmt.Sprintf("expected %s by %s, observed %s", tc.verdict, tc.target, observed)
+					if len(rows) != 1 || rows[0].Success != tc.pass || !strings.HasPrefix(rows[0].Detail, want) {
+						t.Fatalf("rows=%+v; want success=%t and %q", rows, tc.pass, want)
+					}
+				})
+			}
+		})
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			useProbePolicy(t, s, tt.policy)
-			s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
-				return "", "", tt.rc, nil
+}
+
+func TestProbeBridgedRouteRemainsReachable(t *testing.T) {
+	for _, pkg := range []string{usPackageID, euPackageID} {
+		t.Run(pkg, func(t *testing.T) {
+			gen := usGeneration(nil)
+			source := "relay-1"
+			if pkg == euPackageID {
+				gen, source = euGeneration(t, nil, nil), "rmu-1"
 			}
-			step := labs.ScenarioStep{
-				Node: tt.source,
-				Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{
-					{Host: tt.host, Port: tt.port},
-				}},
-			}
-			rows := s.executeProbe(context.Background(), s.rng.(*fakeRange).gen, step)
-			if len(rows) != 1 || !rows[0].Success || rows[0].Detail != tt.wantDetail {
-				t.Fatalf("rows = %+v, want success with detail %q", rows, tt.wantDetail)
+			s := rangeServer(gen, "weak")
+			s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) { return "", "", 0, nil }
+			step := labs.ScenarioStep{Node: source, Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.40.40.20", Port: 502}}}}
+			rows := s.executeProbe(t.Context(), gen, step)
+			if len(rows) != 1 || !rows[0].Success || !strings.Contains(rows[0].Detail, "expected ALLOW by full reference") {
+				t.Fatal(rows)
 			}
 		})
 	}
@@ -125,17 +118,45 @@ func TestProbeSuccessFollowsRunningPolicy(t *testing.T) {
 
 func TestProbeUnresolvableTargetFailsWithoutExecution(t *testing.T) {
 	s := activePackageServer(nil)
-	useProbePolicy(t, s, probeTestPolicy("ALLOW"))
 	s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
 		t.Fatal("probe executed for a target outside the topology")
 		return "", "", 0, nil
 	}
-	step := labs.ScenarioStep{
-		Node:   "kali-1",
-		Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.40.40.99", Port: 502}}},
+	step := labs.ScenarioStep{Node: "kali-1", Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.40.40.99", Port: 502}}}}
+	rows := s.executeProbe(t.Context(), s.rng.(*fakeRange).gen, step)
+	if len(rows) != 1 || rows[0].Success || !strings.Contains(rows[0].Detail, "cannot resolve policy tuple") || !strings.Contains(rows[0].Detail, "full reference") {
+		t.Fatal(rows)
 	}
-	rows := s.executeProbe(context.Background(), s.rng.(*fakeRange).gen, step)
-	if len(rows) != 1 || rows[0].Success || !strings.Contains(rows[0].Detail, "cannot resolve policy tuple") {
-		t.Fatalf("rows = %+v", rows)
+}
+
+func TestProbeUnavailableJudgingTargetFailsEveryRow(t *testing.T) {
+	for _, malformed := range []bool{false, true} {
+		t.Run(fmt.Sprint(malformed), func(t *testing.T) {
+			gen := usGeneration(nil)
+			s := rangeServer(gen, "weak")
+			if malformed {
+				plan := compileProbePlan(t, gen, nil)
+				useAppliedProbePlan(t, s, plan)
+				s.appliedPlan.Config = []byte(`{}`)
+			} else {
+				gen.Package.Curriculum = nil
+			}
+			s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
+				t.Error("probe ran without a judging target")
+				return "", "", 0, nil
+			}
+			step := labs.ScenarioStep{Node: "kali-1", Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{
+				{Host: "10.40.40.20", Port: 502, Note: "first"}, {Host: "10.40.40.21", Port: 502, Note: "second"},
+			}}}
+			rows := s.executeProbe(t.Context(), gen, step)
+			if len(rows) != 2 {
+				t.Fatal(rows)
+			}
+			for i, row := range rows {
+				if row.Success || !strings.Contains(row.Detail, "judging target") || !strings.HasPrefix(row.Detail, step.Action.Targets[i].Note+": ") {
+					t.Fatal(row)
+				}
+			}
+		})
 	}
 }

@@ -1,12 +1,34 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
 )
+
+func TestWorkshopExecTimeoutIsVisibleToRun(t *testing.T) {
+	s := newTestServer(t, "http://127.0.0.1:1")
+	want := fmt.Errorf("command timed out: %w; the process is still running in the container; Run did not stop it. Check it in the node terminal before running it again", context.DeadlineExceeded)
+	s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
+		return "partial output", "", -1, want
+	}
+	rec := callRoute(s, s.handleWorkshopExec, "POST", "/api/workshop/nodes/:nodeId/exec", "/api/workshop/nodes/kali-1/exec", `{"command":"tcpdump -i any"}`)
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusGatewayTimeout || body["error"] != want.Error() {
+		t.Fatalf("Run must receive the timeout and process state in error: %d %v", rec.Code, body)
+	}
+	if _, ok := body["exit_code"]; ok {
+		t.Fatal("timeout must not look like a completed exec")
+	}
+}
 
 // TestIsAllowedCommand documents the EXISTING behavior of the
 // command-allowlist filter on /api/workshop/nodes/:nodeId/exec.

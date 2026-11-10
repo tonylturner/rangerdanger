@@ -100,7 +100,7 @@ func conduitWindow(ev conduitEvidence) (time.Time, ValidationCheck) {
 		return time.Time{}, checkFail(name, "missing evidence: "+detail+"; press Interrogate station in the Control Centre and validate again")
 	}
 	if ev.stateErr != nil || ev.journalErr != nil || ev.state == nil || ev.journal == nil {
-		return fail(fmt.Sprintf("CC state/journal unavailable: %v; %v", ev.stateErr, ev.journalErr))
+		return fail(evidenceDetail("CC state/journal unavailable", ev.stateErr, ev.journalErr))
 	}
 	if ev.state.Schema != 3 || ev.state.CacheEpoch == "" || ev.state.CacheEpoch != ev.journal.CacheEpoch || ev.state.Link.State != "started" || ev.state.Link.ConnectionSeq == 0 {
 		return fail("schema-3 state and journal must share a live CC cache epoch")
@@ -189,7 +189,7 @@ func euStationPointDelivered(ev conduitEvidence, identity labs.IEC104Point, poin
 func conduitPLC(ev conduitEvidence, start time.Time) ValidationCheck {
 	name := "PLC Modbus request completed and solved"
 	if start.IsZero() || ev.auditErr != nil || ev.deviceErr != nil || ev.identityErr != nil || ev.audit == nil || ev.device == nil || ev.state == nil {
-		return checkFail(name, fmt.Sprintf("missing evidence: attempt, OLTC audit/state or PLC identity unavailable: %v; %v; %v", ev.auditErr, ev.deviceErr, ev.identityErr))
+		return checkFail(name, evidenceDetail("missing evidence: attempt, OLTC audit/state or PLC identity unavailable; check Control Centre and device status, then repeat the attempt", ev.auditErr, ev.deviceErr, ev.identityErr))
 	}
 	if ev.audit.Generation != ev.device.Generation {
 		return checkFail(name, "missing evidence: OLTC generation changed; repeat the attempt")
@@ -241,7 +241,7 @@ func absConduit(n int) int {
 func conduitFeed(ev conduitEvidence, start time.Time) ValidationCheck {
 	name := "Advancing CC-to-historian ingest"
 	if start.IsZero() || ev.historyErr != nil || ev.history == nil || ev.state == nil || ev.history.Point != "oltc-1-tap" {
-		return checkFail(name, fmt.Sprintf("missing evidence: current-attempt OLTC history unavailable: %v", ev.historyErr))
+		return checkFail(name, evidenceDetail("missing evidence: current-attempt OLTC history unavailable; check historian status and repeat the attempt", ev.historyErr))
 	}
 	for _, segment := range ev.history.Segments {
 		if segment.CacheEpoch != ev.state.CacheEpoch {

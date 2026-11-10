@@ -171,7 +171,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	}
 	finalHash, finalErr := gen.Containd().GetFirewallHash(ctx)
 	if ev.policyErr == nil && (finalErr != nil || finalHash != hash) {
-		ev.policyErr = fmt.Errorf("running policy changed or became unavailable during collection: %v", finalErr)
+		ev.policyErr = fmt.Errorf("%s", evidenceDetail("running policy changed or became unavailable during collection; repeat validation", finalErr))
 	}
 	ev.now = time.Now().UTC()
 	s.activeConfigMu.RLock()
@@ -185,12 +185,14 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 func euWorkshopPolicy(ev euWorkshopEvidence, weak bool) ValidationCheck {
 	ok := ev.policyErr == nil && ev.policy == "weak"
 	detail := "running weak baseline"
+	expected := "Weak baseline"
 	if !weak {
 		ok = ev.policyErr == nil && (ev.policy == "improved" || ev.policy == "custom") && insideEvidenceWindow(ev.policyAt, ev.start, ev.now)
 		detail = "recorded non-weak running policy; judged against " + ev.target
+		expected = "non-Weak"
 	}
 	if !ok {
-		return checkFail("Running policy identity", fmt.Sprintf("%s: active %q; changed %s; %v", ev.target, ev.policy, ev.policyAt.Format(time.RFC3339Nano), ev.policyErr))
+		return checkFail("Running policy identity", evidenceDetail(fmt.Sprintf("%s: active %q; changed %s; expected %s policy identity within this exercise; check the running policy and repeat validation", ev.target, ev.policy, ev.policyAt.Format(time.RFC3339Nano), expected), ev.policyErr))
 	}
 	return checkPass("Running policy identity", detail)
 }
@@ -198,7 +200,7 @@ func euWorkshopPolicy(ev euWorkshopEvidence, weak bool) ValidationCheck {
 func euWorkshopDeviceCheck(ev euWorkshopEvidence, node, name string, test func(*euWorkshopDevice) bool) ValidationCheck {
 	state := ev.devices[node]
 	if ev.deviceErrors[node] != nil || state == nil {
-		return checkFail(name, fmt.Sprintf("missing device truth: %v", ev.deviceErrors[node]))
+		return checkFail(name, evidenceDetail("missing device truth for "+node+"; check the device service and repeat validation", ev.deviceErrors[node]))
 	}
 	if !test(state) {
 		return checkFail(name, "device is not in the required restored state")
@@ -209,7 +211,11 @@ func euWorkshopDeviceCheck(ev euWorkshopEvidence, node, name string, test func(*
 func euWorkshopSupply(ev euWorkshopEvidence) ValidationCheck {
 	present, err := euSupply(ev.process, ev.now)
 	if ev.processErr != nil || err != nil || !present {
-		return checkFail("Feeder supply present", fmt.Sprintf("fresh supply on bus20/S1/S2/S3 not established: %v; %v", ev.processErr, err))
+		detail := "fresh supply on bus20/S1/S2/S3 not established; check process status and restore the feeder before validating again"
+		if ev.processErr == nil && err == nil && !present {
+			detail = "supply absent on one or more of bus20/S1/S2/S3; restore the breaker and RMU baseline positions, then validate again"
+		}
+		return checkFail("Feeder supply present", evidenceDetail(detail, ev.processErr, err))
 	}
 	return checkPass("Feeder supply present", "fresh process solve ≤3 s: bus20/S1/S2/S3 live with positive voltage")
 }
@@ -219,7 +225,7 @@ func euWorkshopSupply(ev euWorkshopEvidence) ValidationCheck {
 func euWorkshopNegative(ev euWorkshopEvidence) ValidationCheck {
 	const name = "Active TCP matrix matches judging target"
 	if ev.negativeErr != nil || ev.negativeExpected == 0 || len(ev.negative) != ev.negativeExpected {
-		return checkFail(name, ev.target+": "+fmt.Sprintf("incomplete negative probe matrix: %d/%d; %v", len(ev.negative), ev.negativeExpected, ev.negativeErr))
+		return checkFail(name, evidenceDetail(ev.target+": "+fmt.Sprintf("incomplete negative probe matrix: %d/%d; check range services and repeat validation", len(ev.negative), ev.negativeExpected), ev.negativeErr))
 	}
 	for _, row := range ev.negative {
 		if row.Actual == "skipped" || row.Actual != row.Expected || !row.Pass || row.ProbeError != "" {

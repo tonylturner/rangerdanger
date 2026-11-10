@@ -170,8 +170,8 @@ func TestSuiteCCPreparationCancellation(t *testing.T) {
 func TestSuiteCCChecksKeepOriginalExpectations(t *testing.T) {
 	s, gen, posts, _ := suiteCCFixture(t, "evicted")
 	results := s.executeSuiteCheck(t.Context(), gen, map[string]any{"cc_link_fresh": true, "breaker_closed": false})
-	if len(results) != 2 || results[0].Action != "breaker_closed" || results[0].Success ||
-		results[1].Action != "cc_link_fresh" || !results[1].Success || posts.Load() != 1 {
+	if len(results) != 2 || results[0].Action != "Breaker closed" || results[0].Success ||
+		results[1].Action != "CC link, GI and station delivery" || !results[1].Success || posts.Load() != 1 {
 		t.Fatalf("original expectations lost: %+v posts=%d", results, posts.Load())
 	}
 }
@@ -181,7 +181,7 @@ func TestSuiteCCFailedPreparationIsFailedStep(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 550*time.Millisecond)
 	defer cancel()
 	results := s.executeSuiteCheck(ctx, gen, map[string]any{"cc_link_fresh": true})
-	if len(results) != 1 || results[0].Success || results[0].Action != "cc_link_fresh" ||
+	if len(results) != 1 || results[0].Success || results[0].Action != "CC link, GI and station delivery" ||
 		!strings.Contains(results[0].Detail, "no retained matched GI start/completion") || posts.Load() != 1 {
 		t.Fatalf("result=%+v GI posts=%d", results, posts.Load())
 	}
