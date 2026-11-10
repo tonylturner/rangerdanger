@@ -67,10 +67,14 @@ func TestEvaluateTestStep(t *testing.T) {
 			wantDetail:     "weak baseline",
 		},
 		{
-			name:         "check with one failing result fails",
-			action:       &labs.StepAction{Type: "check", Expect: map[string]any{"breaker_closed": true}},
-			checkResults: []StepActionResult{{Success: true}, {Success: false}},
-			wantDetail:   "2 checks, all pass: false",
+			name:   "check with one failing result fails",
+			action: &labs.StepAction{Type: "check", Expect: map[string]any{"breaker_closed": true}},
+			checkResults: []StepActionResult{
+				{Action: "breaker_closed", Success: true},
+				{Action: "cc_link_fresh", Detail: "no matched GI"},
+				{Action: "supply_present", Detail: "stale solve"},
+			},
+			wantDetail: "3 checks, all pass: false; cc_link_fresh: no matched GI; supply_present: stale solve",
 		},
 		{
 			name:         "probe all targets pass",
