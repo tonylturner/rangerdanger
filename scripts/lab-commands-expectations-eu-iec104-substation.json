@@ -7,7 +7,7 @@
     },
     "eu-firewall-implementation": {
       "RUN": 11,
-      "SKIP": 1
+      "SKIP": 11
     },
     "eu-hardening-configurations": {
       "RUN": 3,
@@ -488,10 +488,10 @@
       },
       "reason": null
     },
-    "eu-validation-evidence|4|tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 502' -T fields -E header=y -e frame.number -e frame.time_epoch -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags|1": {
+    "eu-validation-evidence|4|tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 502' -T fields -E header=y -e frame.number -e frame.time_utc -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags|1": {
       "oracle": {
         "intent": "read",
-        "match": "(?m)^\\d+\\t\\d+\\.\\d+\\t[1-9]\\d*\\t10\\.10\\.10\\.50\\t\\d+\\t10\\.40\\.40\\.20\\t502\\t0x[0-9a-f]+$"
+        "match": "(?m)^\\d+\\t\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+Z\\t[1-9]\\d*\\t10\\.10\\.10\\.50\\t\\d+\\t10\\.40\\.40\\.20\\t502\\t0x[0-9a-f]+$"
       },
       "reason": null,
       "container": "rangerdanger-eng-ws",
@@ -612,6 +612,96 @@
         "intent": "read",
         "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=\\S+)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
       }
+    },
+    "eu-firewall-implementation|4|delete firewall rule weak-iec104-exposure|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "eu-firewall-implementation|4|delete firewall rule weak-rtu-modbus|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "eu-firewall-implementation|4|delete firewall rule weak-foreign-field-modbus|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "eu-firewall-implementation|4|delete firewall rule weak-historian-ingest|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "eu-firewall-implementation|4|delete firewall rule weak-historian-read|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "eu-firewall-implementation|4|delete firewall rule weak-enterprise-vendor-remote|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "eu-firewall-implementation|4|delete firewall rule weak-vendor-station-web|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "eu-firewall-implementation|5|add firewall rule control-centre-to-rtu-iec104 ALLOW lan4 lan1|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "eu-firewall-implementation|5|set firewall rule control-centre-to-rtu-iec104 --sources 10.60.60.20/32 --destinations 10.30.30.20/32 --protocols tcp:2404|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
+    },
+    "eu-firewall-implementation|5|move firewall rule control-centre-to-rtu-iec104 top|1": {
+      "oracle": null,
+      "reason": "Reviewed manual candidate edit; applies only to the approved scope, stages with the other replacements, and must never mutate the live smoke policy.",
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP"
     }
   }
 }

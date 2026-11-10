@@ -234,6 +234,9 @@ class ReaderBoundaryTests(unittest.TestCase):
                 lines = result.stdout.splitlines()
                 self.assertEqual(len(lines), 3)
                 self.assertIn("sll.ifindex", lines[0])
+                self.assertIn("frame.time_utc", lines[0])
+                self.assertEqual([line.split("\t")[1] for line in lines[1:]],
+                                 ["2023-11-14T22:13:20.123456000Z"] * 2)
                 self.assertEqual([line.split("\t")[2] for line in lines[1:]], ["7", "11"])
                 self.assertTrue(worker.gate.verdict(oracle, 0, result.stdout, result.stderr))
                 self.assertFalse(worker.gate.verdict(oracle, 0, lines[0], ""))

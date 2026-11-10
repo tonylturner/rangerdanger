@@ -25,6 +25,16 @@ steps:
     expected_config: weak
     node: kali-1
     description: |
+      Before proceeding, save your Lab 2.2 running export and Notes. **Reset to
+      Weak** replaces your Lab 2.2 policy, including hand-written rules; it does
+      not preserve them for automatic restoration. Use Reset to Weak for this
+      lesson's initial demonstration only. After restoring the plant, use
+      **Apply Your Plan** with your saved Lab 1.4 request to return to the
+      approved scope before the retest. This is the normal route back, not a
+      catch-up exercise. It regenerates the approved scope, not your exact
+      hand-written IDs or unrelated edits. An empty selection loads Weak; if
+      you have no saved request, use the full Hardened reference instead.
+
       **Time budget:** ~25 minutes (estimate). This is an optional
       bonus lab.
 
@@ -266,12 +276,20 @@ steps:
     title: "Review and commit the two boundaries"
     expected_config: hardened
     description: |
+      Use **Apply Your Plan** now to regenerate your saved, approved Lab 1.4
+      scope after the Weak demonstration. Read back the running rules and
+      record the running identity and commit time before retesting. Without a
+      saved request, use **Apply Hardened** for the full reference. Neither
+      route replaces your observations, operator checks or sign-off. If you
+      choose to re-author the policy manually instead, follow the Lab 2.2
+      procedure below rather than mixing manual and automatic changes.
+
       Reuse the reviewed Lab 2.2 policy and the Lab 1.4 change request. Inspect
       both boundaries in containd. If either differs from the approved scope,
       export the running rules, stage the removals and replacements together,
       review the full diff and first-match order, commit once and read back.
       Record the running identity and commit time. Preserve management access.
-      The optional current-system check reads the policy without replacing it.
+      The **Cross-check the current system** reads the policy without replacing it.
 
       | Chain link | Owning action | Selected / deferred |
       |---|---|---|
@@ -286,11 +304,13 @@ steps:
       A ZTNA broker selection is planning-only; it deploys no login control.
       The L4 source pin enforces; DPI detects and logs.
 
-      :::hint Optional catch-up — for less technical students or teams behind schedule
-      This replaces typing rules. It does not replace your own observations, operator check or sign-off.
-      Apply Your Plan for the approved Lab 1.4 scope. Apply Hardened only for
-      the full reference. Read back the running rules before retesting.
+      :::hint Scope is not a policy backup
+      Apply Your Plan compiles the saved selection; it does not import the
+      hand-written Lab 2.2 export. Compare source pins, required conduits and
+      deferred paths with that record. If the scope is wrong, stop before retesting
+      and correct the saved request or return to reviewed manual entry.
       :::
+
     action:
       type: check
       expect:
@@ -342,7 +362,7 @@ steps:
       links stay open and the chain still works end to end.
       :::
 
-      Restore auto-reclose and normal feeder state before Validate for every plan.
+      Restore auto-reclose and normal feeder state before **Cross-check the current system** for every plan.
       Record any deferred boundary as a remaining exposure with a risk owner.
     action:
       type: check
@@ -377,7 +397,7 @@ steps:
       open boundary, exception and risk owner. Sign the record as tester and
       operator; ask the change owner to accept or reject the remaining risk.
 
-      The optional current-system cross-check samples current policy and recovery
+      The **Cross-check the current system** samples current policy and recovery
       state. It does not sign this record, prove an earlier login/pivot or certify
       all restoration actions. Keep those observations separately. This bonus is
       optional; Lab 2.4 does not require its records.

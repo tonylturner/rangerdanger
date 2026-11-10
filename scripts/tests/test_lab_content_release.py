@@ -143,7 +143,7 @@ class ErrataContracts(unittest.TestCase):
                 5: ("Deferred means reachable", "Restore auto-reclose", "A refused connection counts as reached")},
             "validation-evidence": {
                 1: ("Do not replace a partial plan", "A saved browser plan is not an applied plan"),
-                5: ("Validate Exercise does not replace your test evidence",)},
+                5: ("**Cross-check the current system** does not replace your test evidence",)},
         }
         for name, locations in expected.items():
             for index, phrases in locations.items():
@@ -194,7 +194,7 @@ class ErrataContracts(unittest.TestCase):
             self.assertIn(phrase, hardening)
         vendor = " ".join(scenario("vendor-rdp-compromise")["steps"][5]["description"].split())
         self.assertIn("Record the result, not an assumed successful login", vendor)
-        self.assertIn("Restore auto-reclose and normal feeder state before Validate for every plan", vendor)
+        self.assertIn("Restore auto-reclose and normal feeder state before **Cross-check the current system** for every plan", vendor)
         text = " ".join(scenario("hardening-configurations")["steps"][5]["description"].split())
         for phrase in ("Audit history can include earlier Weak-policy writes", "re-test timestamps",
                        "do not clear history", "A state check is not TCP proof", "expected verdict"):

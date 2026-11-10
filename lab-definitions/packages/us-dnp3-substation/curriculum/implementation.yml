@@ -14,6 +14,29 @@ phases:
     Rule IDs do not set priority. Review configured order and shadow warnings before commit.
     Keep RTAC field exceptions before `deny-ot-to-field-direct`.
 
+    ### Worked rule: RTAC → field Modbus
+
+    On **Firewall Rules**, choose **Create rule** below the table. Set ID
+    `rtac-to-field-modbus`, action ALLOW, source zone `lan1`, destination zone
+    `lan2`, source `10.30.30.20/32`, protocol TCP and port 502. Stage it, then
+    use **Move to… → top** to put the exception before broader field denies.
+    From the fw-1 configuration CLI, the equivalent is (choose UI or CLI):
+
+        add firewall rule rtac-to-field-modbus ALLOW lan1 lan2
+        set firewall rule rtac-to-field-modbus --sources 10.30.30.20/32 --protocols tcp:502 --log true
+        move firewall rule rtac-to-field-modbus top
+
+    If the ID already exists, use `set` rather than creating it again. Repeat
+    for the other required rules and their actual ports and pins. Create the
+    logged diagnostic denies for selected closures; Weak does not contain them.
+    Use the rule reference below for their zone, port and action fields.
+    Never commit the temporarily broad `add` result before applying its pins.
+
+    If only part of a Weak bundle closes, replace it with the required
+    exceptions and a separate allow for the explicitly deferred sources or
+    services. Keep that deferred allow before overlapping denies; do not
+    retain the original broad rule and accidentally keep the closed paths open.
+
     Before the single commit, verify the required operational rules:
     `rtac-to-field-modbus`, `rtac-to-field-dnp3` and `rtac-to-field-http`
     allow source `10.30.30.20/32` on TCP 502, 20000 and 8080 respectively.
@@ -73,7 +96,6 @@ phases:
         }
     :::
 
-
     :::hint Optional catch-up — for less technical students or teams behind schedule
     This replaces typing rules. It does not replace your own observations, operator check or sign-off.
     Use **Apply Your Plan** only if you want the saved selection entered for you.
@@ -109,7 +131,6 @@ phases:
         curl -sf http://10.30.30.10:1881 --connect-timeout 3
 
     This check must work for every plan. It is not routed firewall proof.
-
 
     ### Expected results
 
@@ -153,10 +174,10 @@ phases:
 
     Selected means timeout; deferred means reachable. These samples do not
     replace your test plan. Write the actual results, including unexpected ones,
-    in Notes for Lab 2.4. An optional system cross-check is not your test record.
+    in Notes for Lab 2.4. **Cross-check the current system** is not your test record.
     :::
 
-    For every negative row, correlate the named host's connect timeout with a
+    For logged-rule negatives, correlate the named host's connect timeout with a
     fw-1 DENY event in the same UTC window. In the
     fw-1 containd configuration CLI (type `containd cli` if in Linux), type:
 
@@ -165,6 +186,10 @@ phases:
     Match `KIND=firewall.rule.hit`, `action=DENY`, `proto=tcp`, `port=<p>` and
     `ruleId=<rule>` to that row's real SRC host:port, DST and UTC time. Record
     its event ID and matching ruleId, not merely the presence of any deny.
+    For this phase, prove at least one selected logged-rule deny with timeout
+    and its correlated event. Default-drop rows (for example Enterprise→vendor
+    RDP/VNC) have no rule-hit event; record them separately and use the Lab 2.4
+    capture procedure for attribution. Never change policy to manufacture an event.
     A rule without logging or a default drop can deny without an event:
     absence of an event is not proof of an allow. An event alone does not
     prove the application is unaffected; keep the operator observations.

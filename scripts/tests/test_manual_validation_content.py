@@ -147,7 +147,8 @@ class ManualValidationContentTests(unittest.TestCase):
                 core = apply["description"].split(HINT)[0]
                 for field in ("full diff", "read back", "commit once"):
                     self.assertIn(field, core)
-                self.assertNotIn("Apply Your Plan", core)
+                self.assertTrue(core.startswith("Use **Apply Your Plan** now"))
+                self.assertNotIn(":::hint Optional catch-up", apply["description"])
                 if name == "vendor-rdp-compromise":
                     for field in ("Enterprise → vendor", "Vendor → field", "tester", "operator", "change owner"):
                         self.assertIn(field, end["description"])
