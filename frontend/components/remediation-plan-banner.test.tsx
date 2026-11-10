@@ -24,6 +24,7 @@ describe("RemediationPlanBanner planning link", () => {
       </CurriculumScopeProvider>,
     );
 
+    expect(screen.getByRole("link", { name: "Remediation Planning" }).getAttribute("target")).toBe("_blank");
     expect(screen.getByRole("link", { name: "Remediation Planning" }).getAttribute("href"))
       .toBe(`/exercises/${curriculum.roles.planning}`);
   });
@@ -37,6 +38,7 @@ describe("RemediationPlanBanner planning link", () => {
       </CurriculumScopeProvider>,
     );
 
+    expect(screen.getByRole("link", { name: "Remediation Planning" }).getAttribute("target")).toBe("_blank");
     expect(screen.getByRole("link", { name: "Remediation Planning" }).getAttribute("href"))
       .toBe("/exercises/replacement-planning");
   });

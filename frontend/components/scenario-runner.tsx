@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { refreshPolicyQueries } from "../lib/policy-apply";
 import {
   validateScenario,
-  applyFirewallConfig,
   sendSubstationCommand,
   executeScenarioStep,
   execOnNode,
@@ -23,9 +22,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { loadRemediationPlan, saveEmptyRemediationPlanIfMissing } from "../lib/remediation-plan";
-import { CatchUp } from "./catch-up";
 import { useCompiledPlan } from "../lib/use-compiled-plan";
-import { ApplyPlanButton } from "./apply-plan-button";
 import { CompiledPlanSummary } from "./compiled-plan-summary";
 import {
   clearProgress,
@@ -33,6 +30,7 @@ import {
   loadValidation,
   saveProgress,
   saveValidation,
+  initialStepIndex,
 } from "../lib/scenario-runner-storage";
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import { isRangeNotReady, logLineFor } from "../lib/range";
@@ -52,6 +50,8 @@ import {
   QuickCommands,
 } from "./scenario-runner-widgets";
 import { CommandAuditPanels, StepNavigator, TerminalPanel } from "./scenario-runner-panels";
+import { splitDescription } from "../lib/scenario-description";
+import { PolicyCatchUpControls } from "./policy-catch-up-controls";
 
 type RunnerProps = {
   scenario: Scenario;
@@ -63,7 +63,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const scope = useCurriculumScope();
   const queryClient = useQueryClient();
   const [saved] = useState(() => loadProgress(scope, scenario));
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(() => initialStepIndex(scenario, saved));
   const [completedStepIds, setCompletedStepIds] = useState<Set<string>>(() => new Set(saved.completedStepIds));
   const [skippedStepIds, setSkippedStepIds] = useState<Set<string>>(() => new Set(saved.skippedStepIds));
   const [notes, setNotes] = useState<string>(saved.notes);
@@ -112,12 +112,17 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const draft = useCompiledPlan(scope, hasPolicyActions);
   const draftPlan = hasPolicyActions && !draft.isError ? draft.data ?? null : null;
   const [showTerminalPanel, setShowTerminalPanel] = useState(false);
+  const [terminalOpened, setTerminalOpened] = useState(false);
   const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
   const [panelMode, setPanelMode] = useState<"terminal" | "ui">("terminal");
   const [panelHeight, setPanelHeight] = useState(300);
   const resizingRef = useRef(false);
   const resizeStartRef = useRef({ y: 0, h: 0 });
   const [generatingTraffic, setGeneratingTraffic] = useState(false);
+  const trafficPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => () => {
+    if (trafficPollRef.current !== null) clearInterval(trafficPollRef.current);
+  }, []);
 
   // Panel resize handlers
   const onResizeStart = useCallback((e: React.MouseEvent) => {
@@ -141,8 +146,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
   // Persist to curriculum storage on change
   useEffect(() => {
-    saveProgress(scope, scenario.id, { completedStepIds: [...completedStepIds], skippedStepIds: [...skippedStepIds], notes, cmdLog });
-  }, [scope, completedStepIds, skippedStepIds, notes, cmdLog, scenario.id]);
+    saveProgress(scope, scenario.id, { completedStepIds: [...completedStepIds], skippedStepIds: [...skippedStepIds], notes, cmdLog, currentStepId: scenario.steps[currentStep]?.id });
+  }, [scope, completedStepIds, skippedStepIds, notes, cmdLog, scenario, currentStep]);
 
   const resetProgress = () => {
     if (!window.confirm("Reset all exercise progress? This clears completed/skipped steps, notes, and command log. The last validation remains as a historical result.")) return;
@@ -196,7 +201,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   };
 
   const handleLabReset = async () => {
-    if (!window.confirm("Reset the lab environment? This restores the weak baseline firewall config and resets all field device state.")) return;
+    if (!window.confirm("Reset the lab environment? This deletes captures, replaces any hand-written firewall policy with the Weak baseline, and resets all field device state. Save your evidence and export your policy first.")) return;
     setResettingLab(true);
     setCmdLog((prev) => [`[RESET] Restoring lab to default state...`, ...prev].slice(0, 100));
     try {
@@ -224,15 +229,21 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       await startTrafficGeneration(durationSec);
       setCmdLog((prev) => [`[TRAFFIC] Generation started - ${durationSec}s of package-defined scenario flows`, ...prev].slice(0, 100));
       // Poll for completion
-      const pollId = setInterval(async () => {
+      trafficPollRef.current = setInterval(async () => {
         try {
           const status = await getTrafficStatus();
           if (!status.generating) {
-            clearInterval(pollId);
+            if (trafficPollRef.current !== null) clearInterval(trafficPollRef.current);
+            trafficPollRef.current = null;
             setGeneratingTraffic(false);
             setCmdLog((prev) => [`[TRAFFIC] Complete - ${status.flows_generated || 0} flows generated`, ...prev].slice(0, 100));
           }
-        } catch { clearInterval(pollId); setGeneratingTraffic(false); }
+        } catch (e) {
+          if (trafficPollRef.current !== null) clearInterval(trafficPollRef.current);
+          trafficPollRef.current = null;
+          setGeneratingTraffic(false);
+          setCmdLog((prev) => [logLineFor(e, "Traffic status unavailable; generation outcome unknown: "), ...prev].slice(0, 100));
+        }
       }, 3000);
     } catch (e) {
       setCmdLog((prev) => [logLineFor(e, "Traffic generation failed: "), ...prev].slice(0, 100));
@@ -269,8 +280,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       // Log results
       for (const r of result.results) {
         const label = r.success ? "SUCCEEDED" : "NOT MET";
-        const msg = `[${label}] ${r.action}: ${r.impact || r.detail}`;
-        setCmdLog((prev) => [msg, ...prev].slice(0, 20));
+        const msg = `[${label}] Step ${idx + 1}: ${scenario.steps[idx]?.title} — ${r.action}: ${r.impact || r.detail}`;
+        setCmdLog((prev) => [msg, ...prev].slice(0, 100));
       }
 
       if (result.success) {
@@ -279,7 +290,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
       setTimeout(refreshLive, 500);
     } catch (e) {
-      setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 20));
+      setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 100));
     } finally {
       setExecuting(false);
     }
@@ -292,10 +303,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       const succeeded = res.result === "executed" || res.result === "success";
       const label = succeeded ? "SUCCEEDED" : "BLOCKED";
       const msg = `[${label}] ${NODE_LABELS[`${device}-1`] || device} - ${command}: ${impact}`;
-      setCmdLog((prev) => [msg, ...prev].slice(0, 20));
+      setCmdLog((prev) => [msg, ...prev].slice(0, 100));
       setTimeout(refreshLive, 500);
     } catch (e) {
-      setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 20));
+      setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 100));
     }
   };
 
@@ -329,6 +340,17 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const hasAction = !!step?.action && step.action.type !== "decision" && step.action.type !== "manual";
   const stepDone = step !== undefined && completedStepIds.has(step.id);
   const showValidate = showsValidateButton(scenario, binding);
+  const terminalTarget = step?.node
+    || (step?.description ? splitDescription(step.description).flatMap((seg) => seg.type === "cmd" && seg.sourceNode && seg.sourceNode !== "host" ? [seg.sourceNode] : [])[0] : undefined)
+    || inferNodeFromDescription(step?.description || "", binding)
+    || exerciseNodes[0];
+  const toggleTerminal = () => {
+    if (!terminalOpened) {
+      if (terminalTarget && exerciseNodes.includes(terminalTarget)) setActiveTerminalNode(terminalTarget);
+      setTerminalOpened(true);
+    }
+    setShowTerminalPanel(!showTerminalPanel);
+  };
 
   // Operational assessments
   const bkrClosed = elec?.breaker_closed ?? false;
@@ -367,7 +389,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => setShowTerminalPanel(!showTerminalPanel)}
+                  onClick={toggleTerminal}
                   aria-label={showTerminalPanel ? "Hide terminal" : "Show terminal"}
                   className={`inline-flex items-center justify-center rounded border px-3 py-1.5 text-xs transition-all ${
                     showTerminalPanel
@@ -378,7 +400,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   <TerminalIcon className="h-4 w-4" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{showTerminalPanel ? "Hide terminal" : "Show terminal"}</TooltipContent>
+              <TooltipContent>{showTerminalPanel ? `Hide terminal · ${NODE_LABELS[activeTerminalNode] || activeTerminalNode}` : `Show terminal · ${NODE_LABELS[terminalOpened ? activeTerminalNode : terminalTarget] || terminalTarget}`}</TooltipContent>
             </Tooltip>
           )}
           <Tooltip>
@@ -449,6 +471,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           skippedStepIds={skippedStepIds}
           notes={notes}
           activeConfig={activeConfig}
+          policySource={policySource || undefined}
+          appliedPlan={appliedPlan}
         />
       )}
 
@@ -477,13 +501,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     Skip Step
                   </button>
                 )}
-                {hasAction && !stepDone && (
+                {hasAction && (
                   <button
                     onClick={() => handleExecuteStep(currentStep)}
                     disabled={executing}
                     className="rounded-sm border border-amber-700 bg-amber-950/40 px-3 py-1 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
                   >
-                    {executing ? "Executing..." : "Execute Step"}
+                    {executing ? "Executing..." : stepDone ? "Run again" : "Execute Step"}
                   </button>
                 )}
                 {!stepDone && (
@@ -529,6 +553,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 handleAutoRun={handleAutoRun}
                 handleGenerateTraffic={handleGenerateTraffic}
                 generatingTraffic={generatingTraffic}
+                targetNode={step.node || inferNodeFromDescription(step.description, binding) || binding?.nodeMap[scenario.id]?.primary || exerciseNodes[0]}
               />
             )}
 
@@ -539,15 +564,16 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
             {/* Shared notes - persists across all steps */}
             <div className="mt-3">
-              <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+              <label htmlFor="exercise-notes" className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">
                 Exercise Notes
               </label>
               <textarea
+                id="exercise-notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Document your findings, observations, or answers here. Notes persist across all steps."
-                className="w-full rounded-sm border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300 placeholder-slate-700 focus:border-sky-700 focus:outline-hidden resize-y min-h-[60px]"
-                rows={3}
+                className="w-full rounded-sm border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-300 placeholder-slate-400 focus:border-sky-700 focus:outline-hidden resize-y min-h-[200px]"
+                rows={10}
               />
             </div>
           </div>
@@ -560,7 +586,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 : "border-red-700 bg-red-950/40"
             }`}>
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Execution Result - {stepResult.action_type}
+                Execution Result — Step {stepResult.step_index + 1}: {stepResult.step_title} — {stepResult.action_type}
               </div>
               <div className="space-y-1">
                 {stepResult.results.map((r, i) => (
@@ -587,33 +613,14 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   hidden in the planning labs (1.2 / 1.3 / 1.4) since
                   their steps don't actually drive policy state. */}
               {hasPolicyActions && (
-                <CatchUp>
-                  <div className="flex flex-wrap gap-2">
-                    {/* Apply Hardened: load the canned reference. */}
-                    {activeConfig !== "improved" && (
-                      <button
-                        onClick={async () => { await applyFirewallConfig("improved"); void refreshLive(); }}
-                        className="rounded-sm border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50"
-                      >
-                        Apply Hardened
-                      </button>
-                    )}
-                    <ApplyPlanButton key={`${scope.packageId}:${scope.revision}`} plan={draftPlan} onApplied={() => { void refreshPolicyQueries(queryClient); }} />
-                    {draft.error && <p role="alert" className="text-xs text-red-400">{draft.error.message}</p>}
-                    {/* Reset to Weak: available from any non-weak
-                        state so students can re-attempt an exercise
-                        from the baseline regardless of how they
-                        landed on the current policy. */}
-                    {activeConfig !== "weak" && activeConfig && (
-                      <button
-                        onClick={async () => { await applyFirewallConfig("weak"); void refreshLive(); }}
-                        className="rounded-sm border border-rose-800 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-900/50"
-                      >
-                        Reset to Weak
-                      </button>
-                    )}
-                  </div>
-                </CatchUp>
+                <PolicyCatchUpControls
+                  key={`${scope.packageId}:${scope.revision}`}
+                  activeConfig={activeConfig}
+                  policySource={policySource}
+                  plan={draftPlan}
+                  error={draft.error?.message}
+                  onApplied={() => { void refreshPolicyQueries(queryClient); void refreshLive(); }}
+                />
               )}
 
               {/* Operational status: the US feeder from the RTAC, or the
@@ -728,7 +735,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       </div>}
 
       {/* ── Node Terminal/UI Panel ─────────────────────────────── */}
-      {showTerminalPanel && exerciseNodes.length > 0 && !showSummary && (
+      {terminalOpened && exerciseNodes.length > 0 && (
+        <div hidden={!showTerminalPanel || showSummary}>
         <TerminalPanel
           exerciseNodes={exerciseNodes}
           activeTerminalNode={activeTerminalNode}
@@ -739,6 +747,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           setPanelHeight={setPanelHeight}
           onResizeStart={onResizeStart}
         />
+        </div>
       )}
     </div>
   );

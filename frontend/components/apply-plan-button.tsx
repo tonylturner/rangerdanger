@@ -4,13 +4,20 @@ import { useState } from "react";
 import { ApiError, applyPlan, type CompiledPlan } from "../lib/api";
 import { planLabel } from "../lib/policy-wording";
 
-export function ApplyPlanButton({ plan, onApplied }: { plan: CompiledPlan | null; onApplied: () => void }) {
+export function ApplyPlanButton({ plan, onApplied, beforeApply, disabled = false, onBusyChange }: {
+  plan: CompiledPlan | null;
+  onApplied: () => void;
+  beforeApply?: () => boolean;
+  disabled?: boolean;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const apply = async () => {
-    if (!plan) return;
+    if (!plan || busy || disabled || (beforeApply && !beforeApply())) return;
     setBusy(true);
+    onBusyChange?.(true);
     setMessage("");
     setWarnings([]);
     try {
@@ -23,10 +30,11 @@ export function ApplyPlanButton({ plan, onApplied }: { plan: CompiledPlan | null
       if (e instanceof ApiError) setWarnings(e.warnings);
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
   return <div className="text-xs">
-    <button disabled={!plan || busy} aria-busy={busy} title={!plan ? "Waiting for the backend to compile your plan" : undefined} onClick={apply}
+    <button disabled={!plan || busy || disabled} aria-busy={busy} title={!plan ? "Waiting for the backend to compile your plan" : undefined} onClick={apply}
       className="rounded-sm border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-900/50 disabled:opacity-50">
       {busy ? "Applying…" : "Apply Your Plan"}{plan ? ` — ${planLabel(plan.label)}` : ""}
     </button>

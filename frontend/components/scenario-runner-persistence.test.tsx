@@ -7,7 +7,7 @@ import * as api from "../lib/api";
 import type { PackageSummary, Scenario, ValidationResult } from "../lib/api";
 import { CurriculumScopeProvider } from "../lib/curriculum-scope";
 import { memoryStorage } from "../lib/memory-storage.test-util";
-import { loadProgress, loadValidation } from "../lib/scenario-runner-storage";
+import { loadProgress, loadValidation, saveProgress } from "../lib/scenario-runner-storage";
 import { ScenarioRunner } from "./scenario-runner";
 
 vi.mock("../lib/use-compiled-plan", () => ({ useCompiledPlan: () => ({}) }));
@@ -20,7 +20,14 @@ vi.mock("../lib/live-queries", async (importOriginal) => ({
   useSubstationAudit: () => ({}), useRefreshLive: () => vi.fn(),
 }));
 vi.mock("./runner-operator-status", () => ({ RunnerOperatorStatus: () => null }));
-vi.mock("./terminal-context", () => ({ SharedTerminalPanel: () => null }));
+const sessions = vi.hoisted(() => ({ mounted: 0, closed: 0 }));
+vi.mock("./terminal-context", async () => {
+  const { useEffect } = await import("react");
+  return { SharedTerminalPanel: ({ activeNode }: { activeNode: string }) => {
+    useEffect(() => { sessions.mounted++; return () => { sessions.closed++; }; }, []);
+    return <div data-testid="live-terminal">{activeNode}</div>;
+  } };
+});
 vi.mock("./ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
   TooltipTrigger: ({ children }: { children: ReactNode }) => children,
@@ -56,7 +63,7 @@ afterEach(() => {
   else Reflect.deleteProperty(window, "localStorage");
 });
 
-function mount(initialPackage: string) {
+function mount(initialPackage: string, activity = scenario) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   clients.push(client);
   let packageId = initialPackage, generation = 0;
@@ -64,7 +71,7 @@ function mount(initialPackage: string) {
     const pkg: PackageSummary = { id: packageId, revision: 1, title: packageId, active: true, operator_view: "", policies: [] };
     return <QueryClientProvider client={client}><CurriculumScopeProvider pkg={pkg}>
       {/* Match the package/revision/exercise key used by the exercise page. */}
-      <ScenarioRunner key={`${packageId}:1:${scenario.id}:${generation}`} scenario={scenario} onExit={() => {}} />
+      <ScenarioRunner key={`${packageId}:1:${scenario.id}:${generation}`} scenario={activity} onExit={() => {}} />
     </CurriculumScopeProvider></QueryClientProvider>;
   };
   const tree = render(content());
@@ -152,7 +159,7 @@ describe.each(packageIds)("runner persistence in %s", (packageId) => {
     fireEvent.click(tree.getByRole("button", { name: "Reset Progress" }));
     tree.refresh();
     expect(tree.container.textContent).toContain("0/3 steps marked complete");
-    expect(loadProgress(scope(packageId), scenario)).toEqual({ completedStepIds: [], skippedStepIds: [], notes: "", cmdLog: [] });
+    expect(loadProgress(scope(packageId), scenario)).toEqual({ completedStepIds: [], skippedStepIds: [], notes: "", cmdLog: [], currentStepId: "first" });
     expect(tree.container.textContent).toContain("Last validation: FAIL");
   });
 
@@ -174,5 +181,72 @@ describe.each(packageIds)("runner persistence in %s", (packageId) => {
     tree.switchPackage(other);
     expect(tree.container.textContent).toContain("Last validation: FAIL");
     expect(loadProgress(scope(other), scenario)).toMatchObject({ completedStepIds: ["second"], skippedStepIds: ["first"] });
+  });
+});
+
+describe("runner working context", () => {
+  it("restores the selected step even when it is already complete", () => {
+    const tree = mount(packageIds[0]);
+    markAndSkip(tree);
+    fireEvent.click(tree.getByRole("button", { name: /First instruction/ }));
+    tree.refresh();
+    expect(tree.getByRole("heading", { name: "Step 1: First instruction" })).toBeTruthy();
+    expect(loadProgress(scope(packageIds[0]), scenario).currentStepId).toBe("first");
+  });
+
+  it("opens the first incomplete step for existing progress without a saved position", () => {
+    saveProgress(scope(packageIds[0]), scenario.id, { completedStepIds: ["first"], skippedStepIds: [], notes: "keep", cmdLog: [] });
+    const tree = mount(packageIds[0]);
+    expect(tree.getByRole("heading", { name: "Step 2: Second instruction" })).toBeTruthy();
+  });
+
+  it("can run a completed restoration again without erasing notes or command evidence", async () => {
+    const activity: Scenario = { ...scenario, steps: [{ ...scenario.steps[0], action: { type: "check" } }, ...scenario.steps.slice(1)] };
+    const execute = vi.spyOn(api, "executeScenarioStep").mockResolvedValue({
+      step_index: 0, step_title: "First instruction", action_type: "check", success: true,
+      results: [{ action: "restore", success: true, detail: "Restored" }], timestamp: "2026-11-01T12:00:00Z",
+    });
+    saveProgress(scope(packageIds[0]), scenario.id, { completedStepIds: [], skippedStepIds: [], notes: "Evidence", cmdLog: Array.from({ length: 100 }, (_, i) => `old ${i}`) });
+    const tree = mount(packageIds[0], activity);
+    fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
+    await waitFor(() => expect(tree.getByRole("heading", { name: "Step 2: Second instruction" })).toBeTruthy());
+    expect(tree.container.textContent).toContain("Execution Result — Step 1: First instruction");
+    fireEvent.click(tree.getByRole("button", { name: /First instruction/ }));
+    fireEvent.click(tree.getByRole("button", { name: "Run again" }));
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    const progress = loadProgress(scope(packageIds[0]), activity);
+    expect(progress.notes).toBe("Evidence");
+    expect(progress.completedStepIds).toEqual(["first"]);
+    expect(progress.cmdLog).toHaveLength(100);
+  });
+
+  it("keeps the named terminal mounted through Hide, Summary and UI switches", () => {
+    const activity = { ...scenario, nodes: ["kali-1", "fw-1"], steps: [{ ...scenario.steps[0], node: "fw-1" }, ...scenario.steps.slice(1)] };
+    const before = { ...sessions };
+    const tree = mount(packageIds[0], activity);
+    fireEvent.click(tree.getByRole("button", { name: "Show terminal" }));
+    expect(tree.getByTestId("live-terminal").textContent).toBe("fw-1");
+    fireEvent.click(tree.getByRole("button", { name: "UI" }));
+    expect(tree.getByTestId("live-terminal").closest("[hidden]")).not.toBeNull();
+    fireEvent.click(tree.getByRole("button", { name: "Terminal" }));
+    fireEvent.click(tree.getByRole("button", { name: "Hide terminal" }));
+    fireEvent.click(tree.getByRole("button", { name: "Mark Complete" }));
+    fireEvent.click(tree.getByRole("button", { name: "View Summary" }));
+    expect(tree.getByTestId("live-terminal").closest("[hidden]")).not.toBeNull();
+    fireEvent.click(tree.getByRole("button", { name: "Back to Exercise" }));
+    fireEvent.click(tree.getByRole("button", { name: "Show terminal" }));
+    expect(tree.getByTestId("live-terminal").textContent).toBe("fw-1");
+    expect(sessions.mounted - before.mounted).toBe(1);
+    expect(sessions.closed - before.closed).toBe(0);
+  });
+
+  it("describes capture deletion and hand-written policy loss before Reset Lab", () => {
+    const confirm = vi.mocked(window.confirm).mockReturnValue(false);
+    const reset = vi.spyOn(api, "resetWorkshop");
+    const tree = mount(packageIds[0]);
+    fireEvent.click(tree.getByRole("button", { name: "Reset Lab" }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("deletes captures"));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("hand-written firewall policy"));
+    expect(reset).not.toHaveBeenCalled();
   });
 });
