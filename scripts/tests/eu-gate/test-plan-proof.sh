@@ -117,7 +117,8 @@ golden="$ROOT/frontend/lib/testdata/plans/eu-full.json"
 for verdict in allow deny; do
   make_matrix "$golden" | jq --slurpfile golden "$golden" --arg verdict "$verdict" '
     ($golden[0].expectations | map(.hardenedVerdict) | index($verdict)) as $i
-    | .rows[$i] |= (.observed="reset" | .ruleId="manual-reset")
+    | .rows[$i] |= (.observed="reset" | .ruleId="manual-reset"
+        | .error="blocked by RESET (manual-reset): the timeout test cannot prove it; use DENY")
   ' >"$TMP_DIR/reset-matrix.json"
   t_run jq -e -L "$ROOT/scripts/tests/fixtures" --slurpfile golden "$golden" '
     include "plan-gate";
@@ -138,7 +139,7 @@ t_run jq -e -L "$ROOT/scripts/tests/fixtures" --slurpfile golden "$golden" \
 t_expect_eq "$T_STATUS" 0 "ordinary running rule IDs do not change binary golden proof"
 
 BREAK_AT=full
-MUTATION='if has("rows") then .rows[0] |= (.observed="reset" | .ruleId="manual-reset") else . end'
+MUTATION='if has("rows") then .rows[0] |= (.observed="reset" | .ruleId="manual-reset" | .error="blocked by RESET (manual-reset): the timeout test cannot prove it; use DENY") else . end'
 run_plan_gate
 t_expect_eq "$T_STATUS" 1 "G28 never passes a recorded RESET"
 t_expect_out '"resetFailures"' "G28 reports RESET separately from prevention gaps"
@@ -188,6 +189,8 @@ for BREAK_AT in full partial; do
     'if has("rows") then .rows[0] |= (.observed="reset" | .ruleId=42) else . end' \
     'if has("rows") then .rows=[] else . end' \
     'if has("rows") then .rows[0].error="exec failed" else . end' \
+    'if has("rows") then .rows[0] |= (.observed="reset" | .ruleId="manual-reset" | .error="") else . end' \
+    'if has("rows") then .rows[0] |= (.observed="reset" | .ruleId="manual-reset" | .error="blocked by RESET (different-rule): the timeout test cannot prove it; use DENY") else . end' \
     'if has("rows") then .rows |= reverse else . end' \
     'if has("rows") then .rows[0].observed="invalid" else . end' \
     'if has("rows") then .rows += [.rows[0]] else . end' \

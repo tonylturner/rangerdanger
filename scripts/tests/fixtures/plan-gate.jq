@@ -64,9 +64,12 @@ def plan_matrix_recorded($golden):
     and ($ids | length > 0 and length == (unique | length))
     and (.rows | type == "array") and [.rows[].id] == $ids
     and all(.rows[];
-      (.observed == "allow" or .observed == "deny" or .observed == "reset") and .error == ""
+      (.observed == "allow" or .observed == "deny" or .observed == "reset")
       and (if has("ruleId") then (.ruleId | type == "string") else true end)
-      and (if .observed == "reset" then (.ruleId | type == "string" and length > 0) else true end));
+      and (if .observed == "reset" then
+        (.ruleId | type == "string" and length > 0)
+        and .error == "blocked by RESET (\(.ruleId)): the timeout test cannot prove it; use DENY"
+      else .error == "" end));
 
 def plan_matrix($golden):
   plan_matrix_recorded($golden)

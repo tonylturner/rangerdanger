@@ -20,6 +20,8 @@ promoted from the previous release.
   Probes, validators and the probe matrix report
   "blocked by RESET (rule id): the timeout test cannot prove it; use DENY".
   A RESET path never passes a required closure.
+- Gate plan proofs record a RESET row, with its rule ID, separately from
+  open prevention gaps.
 - Simulated RTAC commands are not forwarded when RESET matches. The
   workshop canary expects a connection refusal under RESET.
 - Zone summaries and the network views label RESET-only pairs RESET and
