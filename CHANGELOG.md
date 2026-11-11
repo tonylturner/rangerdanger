@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.5] - 2026-11-11
+
+EU lab UX pass, containd change-safety teaching in both packages, the Network
+Map inspector fix and workshop-suite, audit and conformance fixes.
+All 20 first-party images are rebuilt from refreshed bases with
+`[rebuild-all]` and no image promotion.
+Tested on containd 0.1.42 (`latest`); the minimum remains 0.1.41.
+No firewall-data migration is required from v0.2.4. This release moves
+`latest`.
+
 ### Changed
 
 - Labs 2.2–2.4 (EU and US) show how to write a rule by hand: the Weak rule
@@ -17,8 +27,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reset.
 - Lab 1.2 defines GI, tells students to press Interrogate station before the
   link checks, and adds a short glossary.
-- Labs 2.3 and bonus say that Reset to Weak replaces the hand-written 2.2
-  policy; Apply Your Plan is the route back.
+- Labs 2.2–2.4 and bonus (EU and US) teach containd's change-safety tools:
+  `commit confirmed <seconds>` then `confirm` (without it, containd restores
+  the previous running config at the deadline), a saved backup file from
+  `create backup` and `download backup` that `import config` stages, and a
+  one-level `rollback` that restores the 2.2 policy after Reset to Weak.
+  Apply Your Plan is catch-up only.
+- EU Labs 1.2, 2.2 and 2.4 open each step with a short "Do this" list;
+  background moved into expandable hints. The phase text has one source.
 - Probe steps judge each row against the policy the step declares: the Weak
   baseline for baseline demonstrations, your change request (or the full
   reference) for validation. A mismatch no longer completes the step.
@@ -46,6 +62,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Network Map: a node's Terminal and UI viewer stays visible in the
   inspector. The node details scroll on their own, and the UI and Terminal
   buttons show as selected only when that viewer is open.
+- The firewall status shows a named policy again when the running config
+  returns to it, for example after a containd `rollback` or an expired
+  `commit confirmed`.
+- Workshop-suite firewall canaries tell reachability, drops and unavailable
+  probes apart, and check custom policies against the committed config.
+- EU process fault actions (inject and clear) appear in the device and
+  process audit. Upstream redirects are returned, not followed.
+- IEC 104: a Control Centre recovers status that was lost while the RTU send
+  queue was full, instead of waiting for the next periodic GI.
+- Go toolchain 1.26.11 for GO-2026-6859 (`net/http`). Frontend `npm audit`
+  reports 0.
+- The default Python test run never touches a live range; the live FUXA
+  seed test runs only on request. `stage-ssd-delta.sh` no longer fails
+  with SIGPIPE when reading its manifest.
 
 ## [v0.2.4] - 2026-11-10
 
@@ -3716,7 +3746,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.5...HEAD
+[v0.2.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.5
 [v0.2.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.4
 [v0.2.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.3
 [v0.2.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.2

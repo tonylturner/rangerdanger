@@ -286,7 +286,7 @@ class ErrataContracts(unittest.TestCase):
         text = path.read_text()
         for phrase in ("How to update", "PowerShell", "full image release",
                        "All 16 first-party images", "`latest` moves", "SSD",
-                       "quickstart.md#upgrading-to-v024", "workshop-ssd.md#delta-staging"):
+                       "quickstart.md#upgrading-to-v025", "workshop-ssd.md#delta-staging"):
             self.assertIn(phrase, text)
         for stale in ("existing v0.1.35 images", "no pull, no rebuild",
                       "Do not run `./setup.sh --version v0.1.36`", "./scripts/apply-repo-update.sh"):
@@ -308,23 +308,23 @@ class ErrataContracts(unittest.TestCase):
 
     def test_release_update_uses_standard_setup_and_delta_paths(self):
         quickstart = " ".join((ROOT / "docs/quickstart.md").read_text().split())
-        for phrase in ("git fetch origin tag v0.2.4", "git checkout --detach v0.2.4",
-                       "./setup.sh --version v0.2.4 --package us-dnp3-substation",
-                       "v0.2.3 → v0.2.4", "does not require a firewall-data migration",
+        for phrase in ("git fetch origin tag v0.2.5", "git checkout --detach v0.2.5",
+                       "./setup.sh --version v0.2.5 --package us-dnp3-substation",
+                       "v0.2.4 → v0.2.5", "does not require a firewall-data migration",
                        "A direct upgrade from v0.2.0 or older data",
                        "eu-iec104-substation", "PowerShell", "v0.2.2 Windows fix was validated",
                        "workshop reset", "DELTA-README.md", "carries the full first-party image set",
                        "All 20 first-party images are rebuilt from refreshed bases",
-                       "v0.2.4 kernel asset only if the probe finds them missing"):
+                       "v0.2.5 kernel asset only if the probe finds them missing"):
             self.assertIn(phrase, quickstart)
         ssd = " ".join((ROOT / "docs/workshop-ssd.md").read_text().split())
-        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.4",
-                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.4 v0.2.3 v0.2.4",
+        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.5",
+                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.5 v0.2.4 v0.2.5",
                        "v0.1.x SSD baseline lacks it", "package Compose metadata",
                        "rebuilds all 20 first-party images from refreshed bases",
                        "none are reused from the previous release", "compares registry manifest digests",
                        "carries the full first-party image set",
-                       "v0.2.0 → v0.2.4", "does not require a containd migration backup"):
+                       "v0.2.0 → v0.2.5", "does not require a containd migration backup"):
             self.assertIn(phrase, ssd)
         readme = (ROOT / "README.md").read_text()
         self.assertNotIn("> [!IMPORTANT]", readme)
