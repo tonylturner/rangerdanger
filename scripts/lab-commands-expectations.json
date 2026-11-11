@@ -37,12 +37,12 @@
       "SKIP": 0
     },
     "firewall-implementation": {
-      "RUN": 24,
-      "SKIP": 9
+      "RUN": 25,
+      "SKIP": 13
     },
     "hardening-configurations": {
       "RUN": 16,
-      "SKIP": 0
+      "SKIP": 1
     },
     "remediation-planning": {
       "RUN": 0,
@@ -58,10 +58,10 @@
     },
     "vendor-rdp-compromise": {
       "RUN": 7,
-      "SKIP": 3
+      "SKIP": 4
     }
   },
-  "minimum_executed": 86,
+  "minimum_executed": 87,
   "commands": {
     "baseline-assessment|3|tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'|1": {
       "container": "rangerdanger-firewall",
@@ -443,15 +443,6 @@
         "match": "(?i)(?:diff|no changes|firewall|candidate)"
       },
       "reason": null
-    },
-    "firewall-implementation|5|commit|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "hardened",
-      "prompt": "cli",
-      "entry": "",
-      "action": "SKIP",
-      "oracle": null,
-      "reason": "Manual mutation; commit Phase 2 removals and Phase 3 operational replacements together after complete candidate review."
     },
     "firewall-implementation|5|mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20|1": {
       "container": "rangerdanger-kali",
@@ -1258,6 +1249,81 @@
       "prompt": "cli",
       "entry": "",
       "action": "SKIP"
+    },
+    "firewall-implementation|5|commit confirmed 60|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual commit-confirmed cut-in; must not activate or start a rollback timer on the shared smoke policy."
+    },
+    "firewall-implementation|5|confirm|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual confirmation after management and operational checks; must not retain changes to the shared smoke policy."
+    },
+    "firewall-implementation|9|import config /data/lab-2.2-policy.json|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual backup import from a file saved on fw-1; must not replace the shared staged candidate."
+    },
+    "hardening-configurations|4|rollback|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual one-level recovery of the student policy after Reset to Weak; must not restore a different shared smoke policy."
+    },
+    "vendor-rdp-compromise|5|rollback|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual one-level recovery of the student policy after Reset to Weak; must not restore a different shared smoke policy."
+    },
+    "firewall-implementation|9|create backup lab-2.2 redacted CONFIRM|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual immediate backup creation after confirming the student policy; must not change the shared appliance backup store during smoke."
+    },
+    "firewall-implementation|9|show backups|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?s)(?:\\[\\s*\\]|\"id\"\\s*:\\s*\"[^\"]+\".*\"createdAt\"\\s*:.*\"redacted\"\\s*:)"
+      },
+      "reason": null
+    },
+    "firewall-implementation|9|download backup <id> /data/lab-2.2-policy.json|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual download using the student-selected backup id; writes a private persistent file and must never write files on the shared smoke appliance."
     }
   }
 }

@@ -76,7 +76,7 @@ class TerminalContracts(unittest.TestCase):
     def test_named_manual_sources_are_available_in_order(self):
         expected = {
             "baseline-assessment": ["fw-1", "eng-ws-1", "kali-1", "rtac-1"],
-            "hardening-configurations": ["kali-1", "rtac-1"],
+            "hardening-configurations": ["kali-1", "rtac-1", "fw-1"],
             "firewall-implementation": ["fw-1", "kali-1", "eng-ws-1", "rtac-1", "vendor-jump-1"],
             "validation-evidence": ["kali-1", "vendor-jump-1", "eng-ws-1", "rtac-1",
                                     "fw-1", "historian-1"],
@@ -339,7 +339,7 @@ class ActionContracts(unittest.TestCase):
                     r"(?i)Execute Step.{0,100}(?:applies|loads|replaces)",
                 )
                 if step_id != "implement-rules":
-                    for phrase in ("without replacing it", "running identity", "full diff", "read back"):
+                    for phrase in ("without replacing it", "running identity", "full diff", "Read back"):
                         self.assertIn(phrase, step["description"])
 
     def test_planning_keeps_decision_ui_and_manual_completion(self):

@@ -21,6 +21,67 @@ def lesson(name, eu):
 
 
 class ManualValidationContentTests(unittest.TestCase):
+    def test_change_safety_and_backup_in_both_packages(self):
+        for eu in (False, True):
+            implementation = lesson("firewall-implementation", eu)
+            rules = next(s["description"] for s in implementation["steps"]
+                         if s["id"] in ("implement-rules", "phase-3-create-minimal-required-rules"))
+            backup = next(s["description"] for s in implementation["steps"]
+                          if s["id"] == "export-your-policy")
+            for phrase in ("commit confirmed 60", "Commit-confirmed", "confirm",
+                           "previous running config at the deadline", "management",
+                           "operational conduits", "rollback", "one level only",
+                           "rollback targets", "do not confirm"):
+                self.assertIn(phrase, " ".join(rules.split()))
+            self.assertLess(rules.index("commit confirmed 60"), rules.index("    confirm"))
+            self.assertLess(rules.index("Check management access"), rules.index("    confirm"))
+            for phrase in ("restorable", "evidence", "import config /data/lab-2.2-policy.json",
+                           "local/SSH", "not web CLI",
+                           "Import stages only", "commit to activate", "confirm"):
+                self.assertIn(phrase, " ".join(backup.split()))
+            for name in ("hardening-configurations", "vendor-rdp-compromise"):
+                steps = lesson(name, eu)["steps"]
+                intro = " ".join(steps[0]["description"].split())
+                for phrase in ("one level only", "no other commit came after Reset to Weak",
+                               "import your Lab 2.2 backup", "catch-up"):
+                    self.assertIn(phrase, intro)
+                restore = next(s["description"] for s in steps
+                               if s["id"] in ("apply-hardened-policy", "apply-the-hardened-policy"))
+                self.assertIn("    rollback", restore)
+                self.assertIn("`import config /data/lab-2.2-policy.json`", restore)
+                self.assertIn("A second rollback does not go", restore)
+                for step in steps:
+                    self.assertNotIn("not preserve them for automatic restoration", step["description"])
+                    self.assertNotIn("normal route back", step["description"])
+            for name in ("remediation-planning", "validation-evidence"):
+                text = " ".join(s["description"] for s in lesson(name, eu)["steps"])
+                for phrase in ("confirm", "rollback", "import", "management"):
+                    self.assertIn(phrase, text)
+                self.assertNotIn("re-stage the previous rules", text)
+                self.assertNotIn("do not assume an import command exists", text)
+
+    def test_backup_file_procedure_is_identical_and_complete_in_both_packages(self):
+        bodies = []
+        for eu in (False, True):
+            text = next(s["description"] for s in lesson("firewall-implementation", eu)["steps"]
+                        if s["id"] == "export-your-policy")
+            body = text.split("After `confirm`,", 1)[1].split("In Notes,", 1)[0].strip()
+            bodies.append(body)
+            for phrase in ("create backup lab-2.2 redacted CONFIRM", "show backups",
+                           "Replace `<id>`", "download backup <id> /data/lab-2.2-policy.json",
+                           "takes effect immediately", "lab config has no secrets",
+                           "refuses to overwrite", "stored backup survive **Reset to Weak**",
+                           "persistent data volume", "mode 0600"):
+                self.assertIn(phrase, " ".join(body.split()))
+            commands = ["export config", "create backup lab-2.2 redacted CONFIRM",
+                        "show backups", "download backup <id> /data/lab-2.2-policy.json",
+                        "import config /data/lab-2.2-policy.json"]
+            positions = [body.index("    " + command) for command in commands]
+            self.assertEqual(positions, sorted(positions))
+            self.assertNotIn("save the JSON file on", body)
+            self.assertNotIn("heredoc", body)
+        self.assertEqual(*bodies)
+
     def test_deny_correlation_is_taught_in_static_dynamic_retest_and_both_capture_steps(self):
         from scripts.lib.lab_commands_inventory import extract
         for eu, package in ((False, "us-dnp3-substation"), (True, "eu-iec104-substation")):
@@ -146,10 +207,12 @@ class ManualValidationContentTests(unittest.TestCase):
                 self.assertNotRegex(text, r"(?i)plan proof|validation.report|21-row matrix")
                 apply = next(s for s in steps if s["id"] in ("apply-the-hardened-policy", "apply-hardened-policy"))
                 core = apply["description"].split(HINT)[0]
-                for field in ("full diff", "read back", "commit once"):
+                for field in ("full diff", "Read back", "commit confirmed <seconds>", "rollback",
+                              "one level only", "no other", "import", "confirm"):
                     self.assertIn(field, core)
-                self.assertTrue(core.startswith("Use **Apply Your Plan** now"))
-                self.assertNotIn(":::hint Optional catch-up", apply["description"])
+                self.assertTrue(core.startswith("Restore your own Lab 2.2 policy"))
+                self.assertIn(HINT, apply["description"])
+                self.assertNotIn("Apply Your Plan", core)
                 if name == "vendor-rdp-compromise":
                     for field in ("Enterprise → vendor", "Vendor → field", "tester", "operator", "change owner"):
                         self.assertIn(field, end["description"])
