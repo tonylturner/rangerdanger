@@ -56,8 +56,8 @@ func ensureHardenedPrecondition(step labs.ScenarioStep, active string, apply fun
 }
 
 // waitForFirewallPolicy waits for containd's running firewall document to
-// match the just-committed policy, then checks the dataplane canary for canned
-// policies. The backend's activeConfig flips at commit time, so neither it nor
+// match the just-committed policy, then checks the dataplane canary.
+// The backend's activeConfig flips at commit time, so neither it nor
 // the config hash alone establishes that the running dataplane is reconciled.
 func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Generation) error {
 	s.activeConfigMu.RLock()
@@ -92,9 +92,6 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Gener
 		return fmt.Errorf("dataplane never reconciled to %s: %w", active, err)
 	}
 	canary := recipe.canary
-	if active != canary.allowUnder && active != canary.denyUnder {
-		return nil
-	}
 	from, err := nodeService(gen, canary.fromNode)
 	if err != nil {
 		return fmt.Errorf("dataplane never reconciled to %s: resolve canary source: %w", active, err)
@@ -104,36 +101,69 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Gener
 		return fmt.Errorf("dataplane never reconciled to %s: resolve canary target: %w", active, err)
 	}
 	label := fmt.Sprintf("%s→%s:%d", canary.label, target, canary.port)
+	expected, err := s.firewallCanaryExpectation(ctx, gen, active, canary, target)
+	if err != nil {
+		return fmt.Errorf("dataplane never reconciled to %s: canary %s expectation unavailable: %w", active, label, err)
+	}
 	if s.execInContainer == nil {
 		return fmt.Errorf("dataplane never reconciled to %s: canary %s cannot run without container exec", active, label)
 	}
 
-	wantAllow := active == canary.allowUnder
 	var lastProbeErr error
-	lastVerdict := "unknown"
+	lastVerdict := "skipped"
 	for {
 		if !time.Now().Before(deadline) {
 			return firewallCanaryTimeout(active, label, lastVerdict, lastProbeErr, budget)
 		}
-		probeCtx, cancel := context.WithDeadline(ctx, deadline)
-		_, _, rc, probeErr := s.execInContainer(probeCtx, from.Container, []string{
-			"timeout", "1", "bash", "-c", fmt.Sprintf("exec 3<>/dev/tcp/%s/%d", target, canary.port),
-		}, 2)
+		probeCtx, cancel := context.WithTimeout(ctx, min(time.Until(deadline), euProbeExecLimit))
+		stdout, stderr, rc, probeErr := s.execInContainer(probeCtx, from.Container, []string{
+			"sh", "-c", euTCPCommand, "probe", target, fmt.Sprint(canary.port),
+		}, int(euProbeExecLimit/time.Second))
+		verdict, detail := classifyStrictTCP(stdout, stderr, rc, probeErr)
+		lastProbeErr = nil
+		if err := probeCtx.Err(); err != nil {
+			verdict, lastProbeErr = "skipped", err
+		} else if detail != "" {
+			lastProbeErr = fmt.Errorf("%s", detail)
+		}
 		cancel()
-		lastProbeErr = probeErr
-		if probeErr == nil {
-			lastVerdict = "deny"
-			if rc == 0 {
-				lastVerdict = "allow"
-			}
-			if (wantAllow && rc == 0) || (!wantAllow && rc != 0) {
-				return nil
-			}
+		lastVerdict = verdict
+		if verdict == expected {
+			return nil
 		}
 		if !sleepWithinFirewallBudget(ctx, deadline, firewallCanaryPollInterval) {
 			return firewallCanaryTimeout(active, label, lastVerdict, lastProbeErr, budget)
 		}
 	}
+}
+
+func (s *Server) firewallCanaryExpectation(ctx context.Context, gen *lifecycle.Generation, active string, canary canaryProbe, target string) (string, error) {
+	switch active {
+	case canary.allowUnder:
+		return string(labs.VerdictAllow), nil
+	case canary.denyUnder:
+		return string(labs.VerdictDeny), nil
+	}
+	// Custom policies use the same judging target and tuple evaluator as
+	// scenario probes, never the running policy as its own oracle. A single
+	// canary checks this tuple only; plans with the same verdict are not
+	// distinguishable here and still need the full policy/probe checks.
+	judging, err := s.probeJudgingTarget(ctx, gen, labs.ScenarioStep{})
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", judging.detail, err)
+	}
+	policy, err := readEvaluatedFirewall(judging.plan.Config)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", judging.detail, err)
+	}
+	route, err := labs.ResolveProbeTuple(gen.Package.Template, canary.fromNode, target, canary.port)
+	if err != nil {
+		return "", err
+	}
+	if route.Bridged {
+		return string(labs.VerdictAllow), nil
+	}
+	return string(labs.Evaluate(policy.Rules, policy.DefaultAction, route.Tuple)), nil
 }
 
 func firewallHashTimeout(budget time.Duration, lastErr error) error {
