@@ -118,8 +118,9 @@ def verdict(oracle, rc, stdout, stderr, *, control=False, frames=None):
         return rc in (0, 130) and frames is not None and frames > 0
     if intent == "deny":
         # nmap returns zero even for filtered ports; its semantic output
-        # (not its return code) is the denial oracle. A refusal means the
-        # packet reached the host, and "no route" is not firewall evidence.
+        # (not its return code) is the denial oracle. Refusal is an answer
+        # from a closed host listener or a firewall RESET, not a DENY drop.
+        # "No route" is not firewall evidence either.
         if NON_DENIAL_OUTPUT.search(combined):
             return False
         allowed_rc = (0, 1, 2, 124, 143) if oracle.get("zero_rc_denial") else (1, 2, 124, 143)

@@ -14,6 +14,7 @@ type Verdict string
 const (
 	VerdictAllow Verdict = "allow"
 	VerdictDeny  Verdict = "deny"
+	VerdictReset Verdict = "reset"
 )
 
 // PlanTuple contains only the wire-visible fields used by L4 policy.
@@ -33,11 +34,17 @@ type PlanRoute struct {
 	Bridged       bool
 }
 
-// Evaluate applies ordered first-match policy to a routed tuple. Empty selector
+// Decision records the terminal first match; fallthrough has no RuleID.
+type Decision struct {
+	Verdict Verdict
+	RuleID  string
+}
+
+// Decide applies ordered first-match policy to a routed tuple. Empty selector
 // lists match anything. Monitor rules and non-terminal effects do not grant or
 // deny L4 admission. RATE_LIMIT can drop excess packets; this finite model does
 // not predict throughput. Other ICS and logging do not affect this L4 verdict.
-func Evaluate(rules []PlanRule, defaultAction string, tuple PlanTuple) Verdict {
+func Decide(rules []PlanRule, defaultAction string, tuple PlanTuple) Decision {
 	for _, rule := range rules {
 		if rule.Action == "RATE_LIMIT" || rule.Action == "TAG" ||
 			rule.ICS != nil && rule.ICS.Mode == "monitor" {
@@ -50,12 +57,15 @@ func Evaluate(rules []PlanRule, defaultAction string, tuple PlanTuple) Verdict {
 			!planProtocolMatches(rule.Protocols, tuple.Protocol, tuple.Port) {
 			continue
 		}
-		return planVerdict(rule.Action)
+		return Decision{Verdict: planVerdict(rule.Action), RuleID: rule.ID}
 	}
-	return planVerdict(defaultAction)
+	return Decision{Verdict: planVerdict(defaultAction)}
 }
 
 func planVerdict(action string) Verdict {
+	if action == "RESET" {
+		return VerdictReset
+	}
 	if action == "ALLOW" {
 		return VerdictAllow
 	}
@@ -200,8 +210,13 @@ func ResolvePlanTuple(pkg Package, proof PlanProof) (PlanRoute, error) {
 }
 
 func evaluatePlanRoute(rules []PlanRule, defaultAction string, route PlanRoute) Verdict {
+	return DecideRoute(rules, defaultAction, route).Verdict
+}
+
+// DecideRoute preserves bridged reachability without inventing a firewall match.
+func DecideRoute(rules []PlanRule, defaultAction string, route PlanRoute) Decision {
 	if route.Bridged {
-		return VerdictAllow
+		return Decision{Verdict: VerdictAllow}
 	}
-	return Evaluate(rules, defaultAction, route.Tuple)
+	return Decide(rules, defaultAction, route.Tuple)
 }

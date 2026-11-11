@@ -21,6 +21,23 @@ def lesson(name, eu):
 
 
 class ManualValidationContentTests(unittest.TestCase):
+    def test_required_closures_teach_deny_not_reset_in_all_four_lessons(self):
+        canonical = ('Use DENY for every required closure. A RESET rule answers with a TCP reset, '
+                     'so the host test shows "Connection refused" and cannot prove the drop; '
+                     'the validator reports it as blocked by RESET.')
+        for eu in (False, True):
+            for name in ("firewall-implementation", "validation-evidence"):
+                with self.subTest(eu=eu, lesson=name):
+                    descriptions = [s["description"] for s in lesson(name, eu)["steps"]]
+                    self.assertTrue(any(canonical in text for text in descriptions))
+            package = "eu-iec104-substation" if eu else "us-dnp3-substation"
+            dynamic = read_curriculum(ROOT / "lab-definitions/packages" / package)
+            self.assertIn("firewall RESET rule", dynamic["phases"]["negative"])
+            decision = lesson("segmentation-requirements", eu)
+            text = "\n".join(s["description"] for s in decision["steps"])
+            self.assertIn("options=TIMEOUT,CONNECTION_REFUSED,OPEN correct=TIMEOUT", text)
+            self.assertIn("host (nothing listening) or a firewall RESET rule", text)
+
     def test_change_safety_and_backup_in_both_packages(self):
         for eu in (False, True):
             implementation = lesson("firewall-implementation", eu)

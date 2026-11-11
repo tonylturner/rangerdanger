@@ -336,8 +336,7 @@ steps:
           nmap -Pn -p 3389,5900 10.20.20.10
 
       **Restrict enterprise → vendor remote access** selected means both ports
-      time out or show filtered. Deferred means reachable. A refused connection counts as reached,
-      not denied. Record the result, not an assumed successful login.
+      time out or show filtered. Deferred means reachable. Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop. Record the result, not an assumed successful login.
 
       Retest hop two independently from the vendor-jump terminal:
 
@@ -397,7 +396,7 @@ steps:
       | Enterprise → vendor RDP/VNC | | | | |
       | Vendor → field | | | | |
 
-      A refused connection counts as reached, not denied. A timeout needs capture
+      Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop. A timeout needs capture
       and baseline evidence to explain its cause. Keep the vendor source attribution;
       the existing vendor terminal is not evidence of a successful new login.
 

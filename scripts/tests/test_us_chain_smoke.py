@@ -476,6 +476,13 @@ class CoordinatorTests(unittest.TestCase):
 
 
 class OracleTests(unittest.TestCase):
+    def test_reset_refusal_cannot_prove_deny_even_after_full_timeout_budget(self):
+        # No policy attribution from stderr: RESET and closed listeners share it.
+        result = completed([], "Result: FAILED: dial tcp 10.40.40.20:20000: "
+                           "connect: connection refused\n", rc=2)
+        with self.assertRaisesRegex(M.GateError, "refusal"):
+            M.operate_result(result, 3.1, True)
+
     def test_operate_success_requires_single_success_result_and_successful_process(self):
         M.operate_result(completed([], "Result: SUCCESS\n"), 0.1, False)
         for out, err, rc in (

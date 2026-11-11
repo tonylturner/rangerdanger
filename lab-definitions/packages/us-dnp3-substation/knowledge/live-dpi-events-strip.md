@@ -20,10 +20,7 @@ before its `since` boundary are excluded. Rows within the window can still
 predate your latest probe. Check each timestamp, tuple and rule ID against
 your probe boundary and saved policy, not just the label beside the stream.
 
-The API returns `since`, `historyTruncated` and `engineError`, but the drawer
-does not display that metadata. An incomplete history or engine read error
-can therefore leave a partial or empty strip without an on-screen warning.
-Preserve the API response when completeness matters.
+The expanded drawer shows **Event history is truncated; this is not a complete record.** when `historyTruncated` is true, and **DPI engine error:** with the error details when `engineError` is present. The API also returns `since`; preserve the response when completeness matters.
 
 **The L4 source pin enforces; DPI detects and logs.** In Lab 2.3, use connectivity tests and device-state observations to prove the hardened policy's result. Do not treat a protocol event as proof that a command was blocked.
 

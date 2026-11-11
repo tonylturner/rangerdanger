@@ -37,6 +37,7 @@ t_run source_definitions --list
 PLAN="$T_OUT"
 t_expect_eq "$T_STATUS" 0 "--list exits successfully without preflight"
 t_expect_out "EU IEC104 gate plan" "--list retains the gate plan"
+t_expect_out "G19 Improved: Kali solver and untrusted historian ingest unavailable (not drop proof)" "--list does not overclaim G19 firewall denial"
 t_expect_out "G20 eu-baseline-assessment validator" "--list includes the baseline validator walk"
 t_expect_out "G21 eu-firewall-implementation validator" "--list includes the firewall implementation walk"
 t_expect_out "G22 eu-hardening-configurations validator" "--list includes the hardening walk"

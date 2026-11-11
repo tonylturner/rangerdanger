@@ -101,23 +101,20 @@ func commandRoute(gen *lifecycle.Generation, device, command, source string) (la
 	return labs.ResolvePlanTuple(gen.Package, labs.PlanProof{From: from, To: to, Network: "field_net", Port: port})
 }
 
-func (s *Server) commandVerdict(ctx context.Context, gen *lifecycle.Generation, device, command, source string) (labs.Verdict, error) {
+func (s *Server) commandVerdict(ctx context.Context, gen *lifecycle.Generation, device, command, source string) (labs.Decision, error) {
 	route, err := commandRoute(gen, device, command, source)
 	if err != nil {
-		return "", err
+		return labs.Decision{}, err
 	}
-	data, err := gen.Containd().GetConfigDocument(ctx)
+	policy, stable, err := s.runningPolicy(ctx, gen)
 	if err != nil {
-		return "", err
+		return labs.Decision{}, err
 	}
-	policy, err := readEvaluatedFirewall(data)
-	if err != nil {
-		return "", err
+	decision := labs.DecideRoute(policy.Rules, policy.DefaultAction, route)
+	if err := stable(); err != nil {
+		return labs.Decision{}, err
 	}
-	if route.Bridged {
-		return labs.VerdictAllow, nil
-	}
-	return labs.Evaluate(policy.Rules, policy.DefaultAction, route.Tuple), nil
+	return decision, nil
 }
 
 // policyJudgment replaces label-only claims with evaluation of the running
@@ -178,10 +175,8 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 		if err != nil {
 			return fail(err)
 		}
-		verdict := labs.VerdictAllow
-		if !route.Bridged {
-			verdict = labs.Evaluate(policy.Rules, policy.DefaultAction, route.Tuple)
-		}
+		decision := labs.DecideRoute(policy.Rules, policy.DefaultAction, route)
+		verdict := decision.Verdict
 		if verdict != expectation.PlanVerdict {
 			mismatchCount++
 			if len(mismatches) < mismatchLimit {
@@ -196,6 +191,9 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 				ownership := "required conduit"
 				if len(owners) > 0 {
 					ownership = strings.Join(owners, ", ")
+				}
+				if verdict == labs.VerdictReset {
+					ownership += "; " + resetDetail(decision)
 				}
 				mismatches = append(mismatches, fmt.Sprintf("%s -> %s:%d (%s): running %s; judging target %s (Hardened %s)", expectation.From, expectation.To, expectation.Port, ownership, verdict, expectation.PlanVerdict, expectation.HardenedVerdict))
 			}
@@ -229,7 +227,7 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 }
 
 // usAuditJudgment calls a command unauthorized only if its judging target
-// denies the tuple. A deferred exposure is a visible consequence, not a proof
+// does not admit the tuple. A deferred exposure is a visible consequence, not a proof
 // failure. This is an advisory retained audit, not an absence certificate.
 func (s *Server) usAuditJudgment(ctx context.Context, gen *lifecycle.Generation, entries []map[string]any) ValidationCheck {
 	const name = "Audit: commands against judging target"
@@ -255,11 +253,9 @@ func (s *Server) usAuditJudgment(ctx context.Context, gen *lifecycle.Generation,
 		if err != nil {
 			return fail("cannot classify retained command: " + err.Error())
 		}
-		verdict := labs.VerdictAllow
-		if !route.Bridged {
-			verdict = labs.Evaluate(policy.Rules, policy.DefaultAction, route.Tuple)
-		}
-		if verdict == labs.VerdictDeny {
+		decision := labs.DecideRoute(policy.Rules, policy.DefaultAction, route)
+		verdict := decision.Verdict
+		if verdict != labs.VerdictAllow {
 			denied++
 		} else {
 			exposed++

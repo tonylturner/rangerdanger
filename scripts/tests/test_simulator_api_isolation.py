@@ -212,6 +212,14 @@ class ProbeTests(unittest.TestCase):
                 row["http_status"] = status
                 self.assertFalse(g3.check_rows([self.row], [row], "10.10.10.50")[0]["passed"])
 
+    def test_reset_refusal_does_not_satisfy_drop_or_allow(self):
+        # A RESET reply and a closed listener have the same raw observation.
+        for expected in ("D", "A"):
+            target = dict(self.row, expected=expected)
+            checked = g3.check_rows([target], [observed(target, "refused")], "10.10.10.50")[0]
+            self.assertIsNone(checked["observed"])
+            self.assertFalse(checked["passed"])
+
     def test_evidence_rejects_partial_duplicate_reordered_wrong_source(self):
         other = dict(self.row, id="other")
         expected = [self.row, other]

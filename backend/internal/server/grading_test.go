@@ -284,6 +284,13 @@ func TestChangeRequestEUActiveMatrixAndAudit(t *testing.T) {
 	if ev.negativeErr != nil || len(ev.negative) != len(matrix) || ev.target != "your 1.4 change request (1 actions)" || !ev.foreignBreakerAllowed {
 		t.Fatalf("collector did not use request: %+v", ev)
 	}
+	running, err := readEvaluatedFirewall(compiled.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range matrix {
+		matrix[i].Decision = labs.DecideRoute(running.Rules, running.DefaultAction, matrix[i].Route)
+	}
 	for i, row := range ev.negative {
 		if !reflect.DeepEqual(row.validationProbe, matrix[i]) {
 			t.Fatalf("probe %d = %+v, want %+v", i, row.validationProbe, matrix[i])
@@ -315,6 +322,9 @@ func TestChangeRequestEUActiveMatrixAndAudit(t *testing.T) {
 	wantAutomation, err := resolveProof(gen, reference, "", true)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for i := range wantAutomation {
+		wantAutomation[i].Decision = labs.DecideRoute(running.Rules, running.DefaultAction, wantAutomation[i].Route)
 	}
 	byID := map[string]validationProbe{}
 	for _, probe := range wantAutomation {

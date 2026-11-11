@@ -107,7 +107,7 @@
       {
         "id": "default-deny",
         "title": "Default-Deny: Implicit vs Explicit Across Firewalls",
-        "sha256": "27a70e17e5aaaa25e2ac87a03a5f66aa915fe5a2f53793baf1f07d0679d98add"
+        "sha256": "496564999b1b5e1fdfd4196ba4423d816609a29127e8ca7627af1cdb92369898"
       },
       {
         "id": "vendor-remote-access",
@@ -219,7 +219,7 @@
       {
         "id": "live-dpi-events-strip",
         "title": "Reading the Live DPI Events Strip",
-        "sha256": "70a6bd66d9d7a2a5c94e7bd221c48adf7276bacdc4192d381b3d9bdccd27bcd5"
+        "sha256": "26b18006a4cbd17bf113f35f36a6cd71e5ac65fd7faf93be028fac3b461156f2"
       },
       {
         "id": "how-containd-enforces-policy",

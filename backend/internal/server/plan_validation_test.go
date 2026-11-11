@@ -36,7 +36,7 @@ func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 		data = compiled.Config
 		hash, _ := containd.FirewallHashFromBytes(data)
 		s.activeConfig, s.policySource, s.lastAppliedHash = "custom", "plan", hash
-		s.planProvenance = &planProvenance{PolicyHash: hash}
+		s.planProvenance = &planProvenance{PolicyHash: hash, PackageID: gen.Package.ID, Revision: gen.Package.Revision}
 		s.appliedPlan = &compiled
 		for _, tc := range []struct{ source, action string }{{"10.10.10.50", "block-enterprise-to-field"}, {"10.20.20.10", "block-vendor-to-field"}, {"10.30.30.40", "pin-rtac-to-field"}, {"operator", ""}, {"rtac-sim", ""}} {
 			want := labs.VerdictAllow
@@ -46,8 +46,8 @@ func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 				}
 			}
 			verdict, err := s.commandVerdict(context.Background(), gen, "recloser", "open", tc.source)
-			if err != nil || verdict != want {
-				t.Fatalf("%v %s: %s want %s, %v", ids, tc.source, verdict, want, err)
+			if err != nil || verdict.Verdict != want {
+				t.Fatalf("%v %s: %s want %s, %v", ids, tc.source, verdict.Verdict, want, err)
 			}
 			if want == labs.VerdictDeny {
 				result := s.executeRTACCommand(context.Background(), gen, usRecipe, "recloser", "open", tc.source, nil)
@@ -187,6 +187,7 @@ func TestUSExecutorAllowsDeferredExposure(t *testing.T) {
 			}
 		}
 	}
+	s.lastAppliedHash, _ = containd.FirewallHashFromBytes(compiled.Config)
 	result := s.executeRTACCommand(t.Context(), gen, usRecipe, "recloser", "open", "10.10.10.50", nil)
 	if !result.Success || result.Blocked || calls != 1 {
 		t.Fatalf("allow result %+v calls %d", result, calls)
@@ -195,7 +196,7 @@ func TestUSExecutorAllowsDeferredExposure(t *testing.T) {
 
 func TestRunningNewConnectionDoesNotMatchEstablishedReturn(t *testing.T) {
 	policy, err := readEvaluatedFirewall([]byte(`{"firewall":{"defaultAction":"DENY","rules":[{"id":"return","state":["ESTABLISHED","RELATED"],"action":"ALLOW"}]}}`))
-	if err != nil || labs.Evaluate(policy.Rules, policy.DefaultAction, labs.PlanTuple{}) != labs.VerdictDeny {
+	if err != nil || labs.Decide(policy.Rules, policy.DefaultAction, labs.PlanTuple{}).Verdict != labs.VerdictDeny {
 		t.Fatalf("%+v %v", policy, err)
 	}
 }
@@ -239,7 +240,7 @@ func TestUSRegisteredValidatorsJudgeRulesNotLabels(t *testing.T) {
 		hash, _ := containd.FirewallHashFromBytes(data)
 		s.policySource, s.lastAppliedHash, s.activeConfig = tc.source, hash, "custom"
 		s.policyChangedAt = time.Now().Add(-time.Minute).UTC()
-		s.planProvenance = &planProvenance{PolicyHash: hash}
+		s.planProvenance = &planProvenance{PolicyHash: hash, PackageID: gen.Package.ID, Revision: gen.Package.Revision}
 		for _, slot := range []string{"us-firewall-implementation", "us-hardening-configurations", "us-vendor-rdp-compromise", "us-validation-evidence"} {
 			checks := scenarioValidators[slot].run(t.Context(), s, validatorInput{state: substationState(healthyOpts()), gen: gen, activeConfig: "custom"})
 			target := findCheckMatching(t, checks, "Running policy matches")

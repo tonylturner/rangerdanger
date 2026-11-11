@@ -24,10 +24,11 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// without requiring the later Lab 2.4 boundary capture, and worked rule
 	// authoring plus source-restricted RESTRICT coverage, and removal of
 	// unrendered tests/negativeEmpty fields, and single-source EU phase prose
-	// with action-first instructions and expandable reference depth.
+	// with action-first instructions and expandable reference depth, and explicit
+	// DENY/drop closure guidance distinct from RESET responses.
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "b9771dfd7a3e0dd4feede52a46e10472a64136cbaea57fefee397f409aff9078",
-		"eu-iec104-substation": "385e07537f13f5e1bef09234fc4cd612f493ec0d4d74ca257885659dcafe728a",
+		"us-dnp3-substation":   "c40f6e6ed9f97a1047a625e746e30c647e82f710dce89ea6c94400d9825cbfad",
+		"eu-iec104-substation": "8322ef6a847425acebc11ae09851fb70c68d5c0a90b9a21d346320ce1bb9d5fa",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

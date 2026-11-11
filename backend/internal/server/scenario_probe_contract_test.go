@@ -98,6 +98,7 @@ func TestProbeExecuteStepJudgingTargetAndResponse(t *testing.T) {
 					if tc.request != nil {
 						body = string(mustJSON(t, map[string]any{"changeRequest": tc.request}))
 					}
+					gen = installProbePolicy(t, s, gen)
 					rec := callRoute(s, s.handleExecuteStep, http.MethodPost, "/api/scenarios/:id/steps/:stepIdx/execute", "/api/scenarios/probe-contract/steps/0/execute", body)
 					var response StepExecutionResult
 					if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &response) != nil ||
@@ -189,6 +190,7 @@ func TestSuiteProbeJudgesDeclaredWeakBaseline(t *testing.T) {
 									if err != nil || changed {
 										t.Fatalf("baseline precondition changed: %t %v", changed, err)
 									}
+									gen = installProbePolicy(t, s, gen)
 									ctx := context.WithValue(t.Context(), changeRequestKey{}, compiledChangeRequest{full})
 									result := evaluateTestStep(i, step, stepExecutors{
 										probe: func(step labs.ScenarioStep) []StepActionResult {
@@ -250,6 +252,7 @@ func TestProbeWeakUsesPackagedReference(t *testing.T) {
 			step := labs.ScenarioStep{ExpectedConfig: "weak", Node: "kali-1", Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.40.40.20", Port: 502}}}}
 			for _, rc := range []int{0, 124} {
 				s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) { return "", "", rc, nil }
+				gen = installProbePolicy(t, s, gen)
 				rows := s.executeProbe(t.Context(), gen, step)
 				if len(rows) != 1 || rows[0].Success != (rc == 124) || !strings.Contains(rows[0].Detail, "expected blocked by the Weak baseline") {
 					t.Fatal(rows)
@@ -308,7 +311,11 @@ func TestScenarioProbeRealBashConnectDiagnostics(t *testing.T) {
 				t.Fatal(ctx.Err())
 			}
 			verdict, detail := classifyScenarioProbe(stdout.String(), stderr.String(), rc, err)
-			if verdict != "reachable" || refuse && !strings.Contains(detail, "connection refused") {
+			want := "connected"
+			if refuse {
+				want = "refused"
+			}
+			if verdict != want || refuse && !strings.Contains(detail, "connection refused") {
 				t.Fatalf("real bash output misclassified: %q %q rc=%d err=%v: %s %s", stdout.String(), stderr.String(), rc, err, verdict, detail)
 			}
 		})

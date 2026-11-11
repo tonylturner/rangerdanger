@@ -41,3 +41,5 @@ Three checks that catch most default-deny misconfigurations:
 ### What containd Does
 
 containd's policy schema has a top-level `defaultAction` field on the firewall object. In every shipped configuration - including the deliberately-weak `substation-weak.json` - this is set to `"DENY"`. The weak baseline is "permissive" only because it adds broad cross-zone ALLOW rules above the default. Weak and Hardened both use default DENY. Hardened removes or narrows broad allows, preserves operational exceptions, and includes explicit denies in listed order. The first matching enforcing terminal rule decides; monitor rules never decide. Keep the RTAC field exceptions before `deny-ot-to-field-direct`. Rule IDs do not set priority.
+
+Use DENY for required lab closures. Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop. A timeout alone does not identify the cause; check the running rules and boundary capture. The validator reports a matching RESET rule as blocked by RESET, not a passing closure.

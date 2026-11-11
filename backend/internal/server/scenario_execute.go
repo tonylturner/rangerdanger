@@ -162,8 +162,12 @@ func (s *Server) executeRTACCommand(ctx context.Context, gen *lifecycle.Generati
 	if err != nil {
 		return StepActionResult{Action: fmt.Sprintf("%s/%s from %s", device, command, source), Detail: "Cannot evaluate running policy: " + err.Error()}
 	}
-	if verdict == labs.VerdictDeny {
-		return StepActionResult{Action: fmt.Sprintf("%s/%s from %s", device, command, source), Blocked: true, Detail: "BLOCKED by running L4 policy for this source → device tuple"}
+	if verdict.Verdict != labs.VerdictAllow {
+		detail := "BLOCKED by running L4 policy for this source → device tuple"
+		if verdict.Verdict == labs.VerdictReset {
+			detail = resetDetail(verdict)
+		}
+		return StepActionResult{Action: fmt.Sprintf("%s/%s from %s", device, command, source), Blocked: true, Detail: detail}
 	}
 
 	payload := map[string]any{

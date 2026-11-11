@@ -339,7 +339,7 @@ function ActionChip({ action }: { action: string }) {
   const cls =
     action === "ALLOW"
       ? "text-green-400 border-green-800/40"
-      : action === "DENY"
+      : action === "DENY" || action === "RESET"
       ? "text-red-400 border-red-800/40"
       : "text-yellow-400 border-yellow-800/40";
   return (
@@ -351,7 +351,7 @@ function ActionChip({ action }: { action: string }) {
 
 // Only actual firewall rule hits carry packet verdicts. A configured
 // shadow action and an IDS alert are observations, not denied packets.
-function eventVerdict(e: NetworkEvent): "ALLOW" | "DENY" | null {
+function eventVerdict(e: NetworkEvent): "ALLOW" | "DENY" | "RESET" | null {
   if (e.kind !== "firewall.rule.hit") return null;
   return e.attributes?.action ?? null;
 }
@@ -411,10 +411,10 @@ function LiveEvents({
 
   const events = data?.events ?? [];
   const unavailable = data?.source === "unavailable";
-  const denyCount = events.filter((e) => eventVerdict(e) === "DENY").length;
+  const blockedCount = events.filter((e) => ["DENY", "RESET"].includes(eventVerdict(e) ?? "")).length;
   // Per-kind counts give operators a quick sense of what's flowing:
   // many rule.hit ALLOW + zero ids = normal RTAC chatter; ids > 0 or
-  // rule.hit DENY > 0 means something is being noticed.
+  // rule.hit DENY/RESET > 0 means something is being noticed.
   const ruleCount = events.filter((e) => eventCategory(e) === "rule").length;
   const dpiCount = events.filter((e) => ["dpi", "monitor"].includes(eventCategory(e))).length;
   const idsCount = events.filter((e) => eventCategory(e) === "ids").length;
@@ -430,7 +430,7 @@ function LiveEvents({
           Live Firewall Events · {activePolicyLabel}
           {events.length > 0 && (
             <span className="rounded-sm bg-slate-800/60 px-1.5 py-0.5 text-slate-400 normal-case tracking-normal">
-              {ruleCount} rule · {dpiCount} dpi · {idsCount} ids · {denyCount} deny
+              {ruleCount} rule · {dpiCount} dpi · {idsCount} ids · {blockedCount} blocked
             </span>
           )}
         </span>
@@ -477,11 +477,11 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
   const port = e.dstPort ?? null;
   const proto = e.protocol || e.transport || "";
 
-  // Row tone is dominated by DENY (red) since that's the highest-value
+  // Row tone is dominated by DENY/RESET (red) since that's the highest-value
   // signal for the operator. ALLOWs use the standard slate background;
   // anomaly events are toned amber so they stand out without screaming.
   const rowTone =
-    verdict === "DENY"
+    verdict === "DENY" || verdict === "RESET"
       ? "border-red-900/40 bg-red-950/15"
       : category === "ids"
       ? "border-amber-900/40 bg-amber-950/10"

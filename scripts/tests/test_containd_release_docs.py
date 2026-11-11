@@ -9,32 +9,32 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ContaindReleaseDocsTests(unittest.TestCase):
-    def test_current_install_and_staging_commands_select_v025(self):
+    def test_current_install_and_staging_commands_select_v026(self):
         for path in ("README.md", "docs/quickstart.md", "docs/workshop-ssd.md"):
             text = (ROOT / path).read_text()
             with self.subTest(path=path):
-                self.assertIn("v0.2.5", text)
-                self.assertIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.5", text)
-                self.assertNotIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.4", text)
+                self.assertIn("v0.2.6", text)
+                self.assertIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.6", text)
+                self.assertNotIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.5", text)
                 self.assertNotRegex(text, r"(?:--version|-Version) v0\.2\.0\b")
                 self.assertNotIn("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0", text)
         for path in ("README.md", "docs/quickstart.md"):
             text = (ROOT / path).read_text()
             with self.subTest(path=path):
-                self.assertIn("./setup.sh --version v0.2.5", text)
-                self.assertIn(r".\setup.ps1 -Version v0.2.5", text)
-                self.assertNotIn("./setup.sh --version v0.2.4", text)
-                self.assertNotIn(r".\setup.ps1 -Version v0.2.4", text)
+                self.assertIn("./setup.sh --version v0.2.6", text)
+                self.assertIn(r".\setup.ps1 -Version v0.2.6", text)
+                self.assertNotIn("./setup.sh --version v0.2.5", text)
+                self.assertNotIn(r".\setup.ps1 -Version v0.2.5", text)
         for path in ("README.md", "docs/v0.1.36-hotfix.md"):
-            self.assertIn("quickstart.md#upgrading-to-v025", (ROOT / path).read_text())
+            self.assertIn("quickstart.md#upgrading-to-v026", (ROOT / path).read_text())
 
-    def test_v025_upgrade_from_v024_has_no_migration_but_older_backup_still_applies(self):
+    def test_v026_upgrade_from_v025_has_no_migration_but_older_backup_still_applies(self):
         text = " ".join((ROOT / "docs/quickstart.md").read_text().split())
         current, history = text.split("## Upgrading to v0.2.0", 1)
-        for phrase in ("## Upgrading to v0.2.5", "v0.2.4 → v0.2.5",
+        for phrase in ("## Upgrading to v0.2.6", "v0.2.5 → v0.2.6",
                        "does not require a firewall-data migration",
-                       "same no-migration guidance applies to v0.2.3, v0.2.2 and v0.2.1",
-                       "git fetch origin tag v0.2.5", "git checkout --detach v0.2.5",
+                       "same no-migration guidance applies to v0.2.4, v0.2.3, v0.2.2 and v0.2.1",
+                       "git fetch origin tag v0.2.6", "git checkout --detach v0.2.6",
                        "A direct upgrade from v0.2.0 or older data not yet migrated",
                        "requires containd 0.1.41 or later", "containd:latest",
                        "tested on 0.1.42",
@@ -44,12 +44,16 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                        "main/docs/mkdocs/update-policy.md",
                        "main/docs/mkdocs/config-format.md",
                        "./scripts/dev-down.sh", r".\scripts\dev-down.ps1",
-                       "All 20 first-party images are rebuilt from refreshed bases",
-                       "with `[rebuild-all]`; none are reused from the previous release",
-                       "SSD delta carries the full first-party image set",
-                       "Budget disk space and image-import time accordingly",
-                       "a fresh full SSD bundle is simpler"):
+                       "Changed first-party images are rebuilt for v0.2.6",
+                       "images with unchanged inputs can be promoted from the previous release",
+                       "This is not a full image refresh",
+                       "v0.2.5 → v0.2.6 SSD delta carries changed images plus the repository archive",
+                       "compares registry manifest digests, not just changed repository files",
+                       "check its summary for the actual image set and size"):
             self.assertIn(phrase, current)
+        self.assertNotIn("[rebuild-all]", current)
+        self.assertNotIn("All 20 first-party images are rebuilt", current)
+        self.assertNotIn("carries the full first-party image set", current)
         for phrase in ("v0.1.x", "rebuilt all 20 first-party images",
                        "minimum was 0.1.37", "one-way to 0.1.10",
                        "matching complete pre-upgrade storage"):
@@ -58,12 +62,12 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         self.assertNotIn("git checkout --detach v0.2.0", text)
         self.assertNotIn("the tag carries `[rebuild-all]`", text)
 
-    def test_v025_upgrade_keeps_matching_browser_progress(self):
+    def test_v026_upgrade_keeps_matching_browser_progress(self):
         text = " ".join((ROOT / "docs/quickstart.md").read_text().split())
         patch, _ = text.split("**Upgrading from v0.2.3 or older:**", 1)
-        for phrase in ("US curriculum revision 4 and EU revision 8 are unchanged from v0.2.4",
+        for phrase in ("US curriculum revision 4 and EU revision 8 are unchanged from v0.2.5",
                        "same browser and portal address",
-                       "v0.2.5 reuses saved browser records",
+                       "v0.2.6 reuses saved browser records",
                        "lab progress, notes, decisions and plans",
                        "Progress is stored by package, revision and exercise ID",
                        "Completed/skipped marks are kept only for step IDs still present",
@@ -77,8 +81,8 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         self.assertNotIn("write a new Lab 1.4 change request", patch)
         self.assertNotIn("API callers must also update", patch)
         readme = " ".join((ROOT / "README.md").read_text().split())
-        for phrase in ("US revision 4 and EU revision 8 are unchanged from v0.2.4",
-                       "v0.2.5 reuses saved browser records",
+        for phrase in ("US revision 4 and EU revision 8 are unchanged from v0.2.5",
+                       "v0.2.6 reuses saved browser records",
                        "same browser and portal address",
                        "Completion marks follow matching step IDs, not changed wording"):
             self.assertIn(phrase, readme)
@@ -97,27 +101,29 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                        "`POST /api/firewall/validation-report` endpoint is removed"):
             self.assertIn(phrase, older)
 
-    def test_v025_delta_examples_describe_full_rebuild_and_optional_containd(self):
+    def test_v026_delta_examples_describe_changed_images_and_optional_containd(self):
         text = (ROOT / "docs/workshop-ssd.md").read_text()
         with_containd = (
-            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.5 v0.2.4 v0.2.5 \\\n"
+            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.6 v0.2.5 v0.2.6 \\\n"
             "  --include-upstream --include containd"
         )
         self.assertEqual(text.count(with_containd), 1)
         self.assertEqual(text.count(
-            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.5 v0.2.4 v0.2.5"
+            "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.6 v0.2.5 v0.2.6"
         ), 2)
-        self.assertIn("v0.2.0 → v0.2.5, a fresh full\nstorage backup is still required", text)
-        for phrase in ("rebuilds all 20 first-party images from refreshed bases",
-                       "`[rebuild-all]`", "none are reused from the previous release",
+        self.assertIn("v0.2.0 → v0.2.6, a fresh full\nstorage backup is still required", text)
+        for phrase in ("v0.2.6 rebuilds changed first-party images",
+                       "promoted from the previous release",
+                       "This is not a full image refresh",
                        "compares registry manifest digests",
-                       "delta carries the full\nfirst-party image set",
-                       "Budget disk space and image-import time accordingly",
+                       "v0.2.5 → v0.2.6 delta carries changed images plus the repository archive",
+                       "not automatically the full first-party image set",
+                       "for the actual image set and size before distributing it",
                        "Unchanged upstream images are not automatically included"):
             self.assertIn(phrase, text)
-        self.assertNotIn("promotes images whose inputs are unchanged", text)
-        self.assertNotIn("carries only the images this release rebuilt", text)
-        self.assertIn("A fresh full bundle\nis simpler.", text)
+        self.assertNotIn("[rebuild-all]", text)
+        self.assertNotIn("rebuilds all 20 first-party images", text)
+        self.assertNotIn("carries the full\nfirst-party image set", text)
         self.assertNotIn("This is a future-version example", text)
 
     def test_local_cli_guidance_uses_exit_and_separates_candidate_status(self):
@@ -266,8 +272,12 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                                "last policy change", "5,000", "50 rows",
                                "no age expiry", "not process restarts",
                                "`since`", "`historyTruncated`", "`engineError`",
-                               "does not display that metadata"):
+                               "The expanded drawer shows **Event history is truncated; this is not a complete record.** when `historyTruncated` is true",
+                               "**DPI engine error:** with the error details when `engineError` is present",
+                               "preserve the response when completeness matters"):
                     self.assertIn(phrase, text)
+                self.assertNotIn("does not display that metadata", text)
+                self.assertNotIn("without an on-screen warning", text)
         text = (ROOT / "lab-definitions/packages/us-dnp3-substation/knowledge/"
                        "live-dpi-events-strip.md").read_text()
         for phrase in ("timestamp, tuple and rule ID",

@@ -20,10 +20,18 @@ import (
 func firewallWaitTestServer(t *testing.T, pkg, active string, hashMatches bool) *Server {
 	t.Helper()
 
-	wantedFirewall := map[string]any{"defaultAction": "DENY", "rules": []any{}}
+	action := "DENY"
+	if active == "weak" {
+		action = "ALLOW"
+	}
+	wantedFirewall := map[string]any{"defaultAction": action, "rules": []any{}}
 	observedFirewall := wantedFirewall
 	if !hashMatches {
-		observedFirewall = map[string]any{"defaultAction": "ALLOW", "rules": []any{}}
+		other := "ALLOW"
+		if action == other {
+			other = "DENY"
+		}
+		observedFirewall = map[string]any{"defaultAction": other, "rules": []any{}}
 	}
 	return firewallWaitPolicyTestServer(t, pkg, active, wantedFirewall, observedFirewall)
 }
@@ -123,7 +131,7 @@ func TestWaitForFirewallPolicyCanaryTimeout(t *testing.T) {
 	calls := scriptedFirewallCanary(t, s, []canaryObservation{{rc: 0}})
 	started := time.Now()
 	err := s.waitForFirewallPolicy(context.Background(), s.rng.(*fakeRange).gen)
-	if err == nil || !strings.Contains(err.Error(), "still allow") {
+	if err == nil || !strings.Contains(err.Error(), "still connected") {
 		t.Fatalf("waitForFirewallPolicy() error = %v, want still-allow timeout", err)
 	}
 	if *calls == 0 {
@@ -284,14 +292,14 @@ func TestWaitForFirewallPolicyUnavailableCanaryExpectation(t *testing.T) {
 
 func TestFirewallCanaryExpectationBridged(t *testing.T) {
 	canary := canaryProbe{fromNode: "relay-1", toNode: "recloser-1", network: "field_net", port: 502}
-	got, err := firewallCanaryExpectation(usGeneration(nil), "custom", canary, "10.40.40.21",
+	got, err := firewallCanaryExpectation(usGeneration(nil), canary, "10.40.40.21",
 		[]byte(`{"firewall":{"defaultAction":"DENY","rules":[]}}`))
 	if err != nil || got != "allow" {
 		t.Fatalf("bridged canary expectation=%q err=%v, want allow", got, err)
 	}
 }
 
-func TestWaitForFirewallPolicyCanaryUsesHashVerifiedSnapshot(t *testing.T) {
+func TestWaitForFirewallPolicyCanaryRejectsChangedSnapshot(t *testing.T) {
 	committed := []byte(`{"firewall":{"defaultAction":"ALLOW","rules":[]}}`)
 	var reads atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -316,11 +324,11 @@ func TestWaitForFirewallPolicyCanaryUsesHashVerifiedSnapshot(t *testing.T) {
 	// No curriculum is needed for reconciliation of a committed manual policy.
 	s.rng.(*fakeRange).gen.Package.Curriculum = nil
 	calls := scriptedFirewallCanary(t, s, []canaryObservation{{rc: 0}})
-	if err := s.waitForFirewallPolicy(t.Context(), s.rng.(*fakeRange).gen); err != nil {
-		t.Fatal(err)
+	if err := s.waitForFirewallPolicy(t.Context(), s.rng.(*fakeRange).gen); err == nil || !strings.Contains(err.Error(), "policy changed") {
+		t.Fatalf("accepted observation across a running-policy change: %v", err)
 	}
-	if *calls != 1 || reads.Load() != 1 {
-		t.Fatalf("calls=%d config reads=%d, want one hash-verified snapshot", *calls, reads.Load())
+	if *calls != 1 || reads.Load() != 2 {
+		t.Fatalf("calls=%d config reads=%d, want snapshot and final identity check", *calls, reads.Load())
 	}
 }
 

@@ -29,22 +29,17 @@ func useAppliedProbePlan(t testing.TB, s *Server, plan labs.CompiledPlan) {
 		t.Fatal(err)
 	}
 	s.policySource, s.appliedPlan = "plan", &plan
-	s.planProvenance = &planProvenance{PolicyHash: hash}
+	gen := s.rng.(*fakeRange).gen
+	s.planProvenance = &planProvenance{PolicyHash: hash, PackageID: gen.Package.ID, Revision: gen.Package.Revision}
 	s.lastAppliedHash = hash
 }
 
 func TestProbeSuccessFollowsJudgingTarget(t *testing.T) {
 	for _, pkg := range []string{usPackageID, euPackageID} {
 		t.Run(pkg, func(t *testing.T) {
-			// The running policy is deliberately unavailable: it cannot be the oracle.
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				t.Errorf("probe read running policy: %s", r.URL.Path)
-				http.Error(w, "unavailable", http.StatusServiceUnavailable)
-			}))
-			defer upstream.Close()
-			gen := usGeneration(containd.NewClient(upstream.URL))
+			gen := usGeneration(nil)
 			if pkg == euPackageID {
-				gen = euGeneration(t, containd.NewClient(upstream.URL), nil)
+				gen = euGeneration(t, nil, nil)
 			}
 			var all []string
 			for _, action := range gen.Package.Curriculum.Catalog {
@@ -82,6 +77,7 @@ func TestProbeSuccessFollowsJudgingTarget(t *testing.T) {
 					s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
 						return "", tc.stderr, tc.rc, nil
 					}
+					gen = installProbePolicy(t, s, gen)
 					rows := s.executeProbe(ctx, gen, step)
 					observed := "reachable"
 					if tc.rc == 124 {
@@ -108,6 +104,7 @@ func TestProbeBridgedRouteRemainsReachable(t *testing.T) {
 			s := rangeServer(gen, "weak")
 			s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) { return "", "", 0, nil }
 			step := labs.ScenarioStep{Node: source, Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.40.40.20", Port: 502}}}}
+			gen = installProbePolicy(t, s, gen)
 			rows := s.executeProbe(t.Context(), gen, step)
 			if len(rows) != 1 || !rows[0].Success || !strings.Contains(rows[0].Detail, "expected ALLOW by full reference") {
 				t.Fatal(rows)
@@ -123,7 +120,8 @@ func TestProbeUnresolvableTargetFailsWithoutExecution(t *testing.T) {
 		return "", "", 0, nil
 	}
 	step := labs.ScenarioStep{Node: "kali-1", Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.40.40.99", Port: 502}}}}
-	rows := s.executeProbe(t.Context(), s.rng.(*fakeRange).gen, step)
+	gen := installProbePolicy(t, s, s.rng.(*fakeRange).gen)
+	rows := s.executeProbe(t.Context(), gen, step)
 	if len(rows) != 1 || rows[0].Success || !strings.Contains(rows[0].Detail, "cannot resolve policy tuple") || !strings.Contains(rows[0].Detail, "full reference") {
 		t.Fatal(rows)
 	}
@@ -159,4 +157,33 @@ func TestProbeUnavailableJudgingTargetFailsEveryRow(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Supply independent running authority for tests that exercise judging targets.
+func installProbePolicy(t testing.TB, s *Server, gen *lifecycle.Generation) *lifecycle.Generation {
+	t.Helper()
+	data := []byte(`{"firewall":{"defaultAction":"ALLOW","rules":[]}}`)
+	if s.policySource == "plan" && s.appliedPlan != nil {
+		data = s.appliedPlan.Config
+	}
+	return installRunningProbePolicy(t, s, gen, data)
+}
+
+func installRunningProbePolicy(t testing.TB, s *Server, gen *lifecycle.Generation, data []byte) *lifecycle.Generation {
+	t.Helper()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/api/v1/config" {
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+		}
+		w.Write(data)
+	}))
+	t.Cleanup(upstream.Close)
+	var err error
+	s.lastAppliedHash, err = containd.FirewallHashFromBytes(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := lifecycle.NewGeneration(gen.ID, gen.Package, gen.Manifest, containd.NewClient(upstream.URL), gen.StartedAt)
+	s.rng.(*fakeRange).gen = next
+	return next
 }

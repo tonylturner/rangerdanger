@@ -62,7 +62,8 @@ esac`
 
 // strictTCPProbe is shared by automation diagnostics and validators. Only a successful
 // connect, explicit refusal, or the probe's own connect timeout is measurable.
-// Exec errors, signals, bad arguments and missing tools remain untested.
+// Exec errors, signals and missing tools leave transport untested. A known
+// running RESET still fails the closure proof regardless of transport evidence.
 func (s *Server) strictTCPProbe(ctx context.Context, cli *client.Client, p validationProbe) validationRow {
 	row := validationRow{validationProbe: p, Actual: "skipped"}
 	port, err := strconv.Atoi(p.Port)
@@ -73,9 +74,13 @@ func (s *Server) strictTCPProbe(ctx context.Context, cli *client.Client, p valid
 	probeCtx, cancel := context.WithTimeout(ctx, euProbeExecLimit)
 	defer cancel()
 	stdout, stderr, rc, execErr := strictProbeExec(probeCtx, cli, p.Src, []string{"sh", "-c", euTCPCommand, "probe", p.Dst, p.Port})
-	row.Actual, row.ProbeError = classifyStrictTCP(stdout, stderr, rc, execErr)
+	observation, detail := classifyStrictTCP(stdout, stderr, rc, execErr)
 	if probeCtx.Err() != nil {
-		row.Actual, row.ProbeError = "skipped", probeCtx.Err().Error()
+		observation, detail = "skipped", probeCtx.Err().Error()
+	}
+	row.Actual, row.ProbeError = reconcileTCP(observation, p.Decision)
+	if row.ProbeError == "" {
+		row.ProbeError = detail
 	}
 	row.Pass = row.Actual == p.Expected
 	return row
@@ -86,16 +91,16 @@ func classifyStrictTCP(stdout, stderr string, rc int, err error) (string, string
 		return "skipped", fmt.Sprintf("container exec: %v", err)
 	}
 	if rc == 0 {
-		return "allow", ""
+		return "connected", ""
 	}
-	// Containd drops rather than rejects: refusal proves the destination was
-	// reached, even without a listener. Only a connect timeout counts as deny.
+	// Refusal is an answer from either a closed listener or a firewall RESET.
+	// Attribution requires the same tuple in the verified running policy.
 	if rc == 1 && strings.Contains(stderr, "Connection refused") {
-		return "allow", ""
+		return "refused", ""
 	}
 	// 124 is timeout(1)'s own budget, not a Docker/context timeout.
 	if rc == 124 || rc == 1 && (strings.Contains(stderr, "Connection timed out") || strings.Contains(stderr, "timed out")) {
-		return "deny", ""
+		return "timeout", ""
 	}
 	return "skipped", fmt.Sprintf("probe tool exit %d: %s", rc, strings.TrimSpace(stderr+"\n"+stdout))
 }
@@ -151,14 +156,19 @@ func runEUProbeMatrix(ctx context.Context, matrix []validationProbe, probe euPro
 			for i := worker; i < len(matrix); i += euProbeConcurrency {
 				p := matrix[i]
 				if ctx.Err() != nil {
-					rows[i] = validationRow{validationProbe: p, Actual: "skipped", ProbeError: ctx.Err().Error()}
+					actual, detail := reconcileTCP("skipped", p.Decision)
+					if detail == "" {
+						detail = ctx.Err().Error()
+					}
+					rows[i] = validationRow{validationProbe: p, Actual: actual, ProbeError: detail}
 					continue
 				}
 				row := probe(ctx, p)
+				// Retry only a measured timeout on an authorized path, never RESET.
 				if p.Category == "authorized" && row.Actual == "deny" && ctx.Err() == nil {
 					row = probe(ctx, p)
 				}
-				if ctx.Err() != nil {
+				if ctx.Err() != nil && row.Actual != "reset" {
 					row.Actual, row.Pass, row.ProbeError = "skipped", false, ctx.Err().Error()
 				}
 				rows[i] = row

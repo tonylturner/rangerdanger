@@ -357,6 +357,20 @@ curl() {
                                  sum(row["category"] == "unauthorized" and row["planVerdict"] == row["hardenedVerdict"]
                                      for row in golden["expectations"]))
 
+    def test_us_plan_gate_reports_reset_separately_and_restores(self):
+        for selection in ("full", "partial"):
+            # The backend's real RESET row carries its explanation in error.
+            result = self.run_plan_gate(selection, lambda a, r: r["rows"][0].update(
+                observed="reset", ruleId="manual-reset",
+                error="blocked by RESET (manual-reset): the timeout test cannot prove it; use DENY"))
+            self.assertNotEqual(result.returncode, 0)
+            # run_plan_gate also asserts cleanup; the measured evidence names
+            # RESET without silently treating it as a skipped probe or gap.
+            self.assertIn('"resetFailures": [', result.stdout)
+            self.assertIn('"ruleId": "manual-reset"', result.stdout)
+            self.assertIn('"observed": "reset"', result.stdout)
+            self.assertIn('"skipped": 0', result.stdout)
+
     def test_plan_steps_fail_closed_and_restore_weak(self):
         mutations = [
             lambda a, r: a.update(warnings=["fixture warning"]),
@@ -368,6 +382,7 @@ curl() {
             lambda a, r: r.update(policyHash=""),
             lambda a, r: r.update(policyStable=False),
             lambda a, r: r["rows"][0].update(observed="untested"),
+            lambda a, r: r["rows"][0].update(observed="reset"),
             lambda a, r: r.update(rows=[]),
             lambda a, r: r["rows"][0].update(error="exec failed"),
             lambda a, r: r["rows"].reverse(),

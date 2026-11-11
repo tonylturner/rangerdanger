@@ -100,9 +100,9 @@ export function getFlowAuthorization(
   );
 
   if (!rule) return unknown;
-  if (rule.action === "DENY") {
-    const detail = rule.rule_details?.[0] || `${srcZone} → ${dstZone}: DENY`;
-    return { state: "denied", text: `Denied by zone-pair summary — ${detail}` };
+  if (rule.action === "DENY" || rule.action === "RESET") {
+    const detail = rule.rule_details?.[0] || `${srcZone} → ${dstZone}: ${rule.action}`;
+    return { state: "denied", text: `Denied by zone-pair summary (${rule.action}) — ${detail}` };
   }
   return { state: "unknown", text: `Authorization unknown — ${rule.action} zone-pair summary, not an endpoint/port evaluation. ${rule.rule_details.join("; ")}` };
 }
@@ -148,9 +148,8 @@ export function getZonePolicyInfo(
   }
 
   // Aggregate action
-  const hasAllow = relevantRules.some((r) => r.action === "ALLOW");
-  const hasDeny = relevantRules.some((r) => r.action === "DENY");
-  const action = relevantRules.some((r) => r.action === "MIXED") || (hasAllow && hasDeny) ? "MIXED" : hasDeny ? "DENY" : "ALLOW";
+  const actions = new Set(relevantRules.map((r) => r.action));
+  const action = actions.size > 1 || actions.has("MIXED") ? "MIXED" : relevantRules[0].action;
 
   // Detect over-permissive: any allow rule whose detail starts with
   // "WEAK:" - that's the lab definition's convention for "this rule
@@ -159,11 +158,11 @@ export function getZonePolicyInfo(
   // should read visually as warnings.
   const overPermissive = relevantRules.some(
     (r) =>
-      r.action !== "DENY" &&
+      (r.action === "ALLOW" || r.action === "MIXED") &&
       r.rule_details.some((d) => d.trim().toUpperCase().startsWith("WEAK:")),
   );
   const permissiveness: Permissiveness =
-    action === "DENY" ? "blocked" : action === "MIXED" ? "unknown" : overPermissive ? "over" : "allowed";
+    (action === "DENY" || action === "RESET") ? "blocked" : action === "MIXED" ? "unknown" : overPermissive ? "over" : "allowed";
 
   // Structured details for tooltip
   const details = relevantRules.map((r) => {
@@ -185,6 +184,8 @@ export function getZonePolicyInfo(
   let label: string;
   if (action === "DENY") {
     label = "BLOCKED";
+  } else if (action === "RESET") {
+    label = "RESET";
   } else if (action === "MIXED") {
     label = "MIXED · authorization unknown";
   } else if (protos.length === 0) {

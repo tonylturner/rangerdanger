@@ -8,6 +8,11 @@ the lab UI uses), then probes a positive+negative traffic matrix from
 inside the lab containers to confirm the dataplane enforces what the
 policy says.
 
+Binary mapping for the named ALLOW/DENY-only policies applied here:
+allow = TCP connect succeeds or fast RST answers; deny = SYN timeout.
+Refusal alone can be a closed host listener or firewall RESET; this matrix
+does not judge arbitrary manual RESET rules or prove their DENY closure.
+
 The probe itself runs INSIDE the Linux containers via docker exec --
 the PowerShell side is just the host-side driver, so policy semantics
 are identical to the .sh version.

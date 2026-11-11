@@ -218,7 +218,7 @@ func TestPlanMonitorEmissionAndEvaluation(t *testing.T) {
 	for _, action := range []string{"ALLOW", "DENY"} {
 		rules := []PlanRule{{ID: "observe", Action: action, ICS: &PlanICS{Mode: "monitor"}}}
 		for _, fallback := range []string{"ALLOW", "DENY"} {
-			if got := Evaluate(rules, fallback, PlanTuple{}); got != planVerdict(fallback) {
+			if got := Decide(rules, fallback, PlanTuple{}).Verdict; got != planVerdict(fallback) {
 				t.Fatalf("monitor %s changed default %s to %s", action, fallback, got)
 			}
 		}

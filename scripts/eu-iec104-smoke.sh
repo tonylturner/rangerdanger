@@ -160,7 +160,7 @@ EU IEC104 gate plan (no Docker or backend access):
   G16 OLTC manual/auto, load raise, source limit and negative settle
   G17 Real PLC scan-thread freeze; responsive Modbus, heartbeat stale and recovery
   G18 Historian CC outage gap, schema-3 snapshots and ingest isolation
-  G19 Improved denies Kali solver and historian ingest
+  G19 Improved: Kali solver and untrusted historian ingest unavailable (not drop proof)
   G20 eu-baseline-assessment validator: weak baseline, traffic capture and student walk
   G21 eu-firewall-implementation validator: weak-to-improved conduit and policy walk
   G22 eu-hardening-configurations validator: IEC104 wire attack, restore, harden and retest

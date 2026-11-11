@@ -6,6 +6,38 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.6] - 2026-11-11
+
+Patch release correcting RESET results and closure evidence in the labs.
+Tested on containd 0.1.42 (`latest`); the minimum remains 0.1.41.
+No firewall-data migration is required from v0.2.5. This release moves
+`latest`. Changed images are rebuilt; images with unchanged inputs can be
+promoted from the previous release.
+
+### Fixed
+
+- A matching containd RESET rule is now a separate result, not "reached".
+  Probes, validators and the probe matrix report
+  "blocked by RESET (rule id): the timeout test cannot prove it; use DENY".
+  A RESET path never passes a required closure.
+- Gate plan proofs record a RESET row, with its rule ID, separately from
+  open prevention gaps.
+- Simulated RTAC commands are not forwarded when RESET matches. The
+  workshop canary expects a connection refusal under RESET.
+- Zone summaries and the network views label RESET-only pairs RESET and
+  show them as blocked.
+- G19 reports a refusal as "unavailable", not "denied".
+- The FUXA discovery test no longer depends on the outer module name.
+
+### Changed
+
+- Labs 2.2 and 2.4 in both US and EU say to use DENY for every required
+  closure and explain why RESET cannot be proven by the timeout test.
+  Guidance that said a refusal proves the host was reached now names both
+  possible causes: a closed host listener or a firewall RESET rule.
+- Knowledge articles describe the event-history and DPI-engine warnings
+  shown in the expanded event drawer.
+
 ## [v0.2.5] - 2026-11-11
 
 EU lab UX pass, containd change-safety teaching in both packages, the Network
@@ -3746,7 +3778,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.6...HEAD
+[v0.2.6]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.6
 [v0.2.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.5
 [v0.2.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.4
 [v0.2.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.3

@@ -28,7 +28,7 @@ func TestEUCanaryResolvesFromTheManifest(t *testing.T) {
 	if ip, err := nodeIP(gen, euRecipe.canary.toNode, euRecipe.canary.network); err != nil || ip != "10.30.30.20" || euRecipe.canary.port != 2404 {
 		t.Errorf("canary target = %s:%d, %v; want the RTU's IEC 104 port", ip, euRecipe.canary.port, err)
 	}
-	for _, name := range []string{euRecipe.canary.allowUnder, euRecipe.canary.denyUnder} {
+	for _, name := range []string{"weak", "improved"} {
 		if _, ok := gen.Package.Policies[name]; !ok {
 			t.Errorf("canary policy %q is not an EU package policy", name)
 		}

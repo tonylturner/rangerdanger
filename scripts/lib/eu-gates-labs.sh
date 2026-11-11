@@ -25,8 +25,10 @@ eu_lab_exec_denied() {
   printf 'RESULT %s\n' "$API_BODY"
   if [ "$HTTP_STATUS" != 200 ] || ! printf '%s' "$API_BODY" | jq -e '
     (.stdout | type == "string") and (.stderr | type == "string")
-    and (.exit_code | type == "number" and . != 0)' >/dev/null; then
-    fail "$node student command expected denial (nonzero exit): HTTP $HTTP_STATUS $API_BODY"
+    and .exit_code == 2 and .stdout == ""
+    and (.stderr | test("connect failed:.*dial tcp.*(i/o timeout|context deadline exceeded)"))
+    and (.stderr | test("connection refused|no route|network is unreachable"; "i") | not)' >/dev/null; then
+    fail "$node student command expected DENY connect timeout (not RESET/refusal): HTTP $HTTP_STATUS $API_BODY"
     return 1
   fi
 }

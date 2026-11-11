@@ -176,7 +176,7 @@ steps:
     :::decision id=deny-test-outcome options=TIMEOUT,CONNECTION_REFUSED,OPEN correct=TIMEOUT
     What result shows a denied test path?
     :::why
-    A filtered path times out. A refusal means the destination was reached and rejected the connection; it is not the expected deny result.
+    A DENY/drop path times out. Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop.
     :::
 
     :::decision id=source-pin-enforcement options=L4_SOURCE_PIN,DPI,LOGGING correct=L4_SOURCE_PIN
