@@ -258,6 +258,16 @@ and resolved by `go get`:
 - **`GO-2025-4134`, `GO-2025-4135`** - `golang.org/x/crypto`
   v0.44.0 → v0.50.0.
 
+## Resolved by Go toolchain bump (2026-11-11)
+
+**`1.26.10 -> 1.26.11`** clears `GO-2026-6859`, an HTTP/1 server crash caused
+by a `MaxBytesReader` header race in the standard-library `net/http` package
+(fixed in Go 1.26.11). All four Go modules now pin `toolchain go1.26.11`; every
+Go builder image uses the digest-locked `golang:1.26.11` /
+`golang:1.26.11-alpine` image. Multi-platform index digests:
+`golang:1.26.11` `sha256:7af425da11f4fc1a9308eb704369e3f6d1c44e35bac0f874a59ade3f20fdc07e`,
+`golang:1.26.11-alpine` `sha256:ae52b5bc6ed045a9ed26ab03dc19327a802a9cc9aa8b27ed57f5c6b60579b0bb`.
+
 ## Resolved by Go toolchain bump (2026-10-25)
 
 **`1.26.9 -> 1.26.10`** clears `GO-2026-6809` in the standard-library
@@ -345,8 +355,8 @@ see [the 2026-10-25 cutover](#resolved-by-go-toolchain-bump-2026-10-25).
 Dockerfile bases were also bumped at the time (`golang:1.25` /
 `golang:1.25-alpine`, from `1.24`). The v0.1.30 notes described a move
 to `golang:1.27` / `golang:1.27-alpine`; that is historical, not the current
-build-stage contract. Current Go builders use `1.26.10` / `1.26.10-alpine`,
-as recorded in the 2026-10-25 cutover above.
+build-stage contract. Current Go builders use `1.26.11` / `1.26.11-alpine`,
+as recorded in the 2026-11-11 cutover above.
 
 ## Adding a new exception
 
