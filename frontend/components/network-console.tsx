@@ -410,8 +410,8 @@ export function NetworkConsole() {
       </div>
 
       {inspectorNode && (
-        <aside className="fixed right-0 top-0 z-40 h-full w-full max-w-md border-l border-slate-800 bg-slate-900/95 px-5 py-6 shadow-2xl backdrop-blur-sm">
-          <div className="flex items-center justify-between">
+        <aside aria-label="Node inspector" className="fixed right-0 top-0 z-40 flex h-dvh w-full max-w-md flex-col overflow-hidden border-l border-slate-800 bg-slate-900/95 px-5 py-6 shadow-2xl backdrop-blur-sm">
+          <div className="flex shrink-0 items-center justify-between">
             <div>
               <p
                 className="text-xs font-semibold uppercase tracking-[0.25em]"
@@ -427,7 +427,46 @@ export function NetworkConsole() {
             </Button>
           </div>
 
-          <div className="mt-4 space-y-3 text-sm text-slate-200">
+          <div className="mt-4 flex shrink-0 gap-3">
+            <Button
+              className="flex-1"
+              variant={!showTerminal && iframeUrl ? "default" : "outline"}
+              aria-pressed={!showTerminal && !!iframeUrl}
+              disabled={!inspectorNode.data?.ui_path && !inspectorNode.data?.external_ui_url}
+              onClick={() => {
+                if (inspectorNode.data?.ui_path || inspectorNode.data?.external_ui_url) {
+                  setIframeUrl(inspectorNode.data.ui_path || inspectorNode.data.external_ui_url);
+                  setShowTerminal(false);
+                }
+              }}
+            >
+              {inspectorNode.data?.ui_path || inspectorNode.data?.external_ui_url ? "UI" : "No UI"}
+            </Button>
+            <Button
+              className="flex-1"
+              variant={showTerminal ? "default" : "outline"}
+              aria-pressed={showTerminal}
+              onClick={() => {
+                setShowTerminal(true);
+                setIframeUrl(null);
+                openSharedTerminal(inspectorNode.id);
+              }}
+            >
+              Terminal
+            </Button>
+            {inspectorNode.data?.external_ui_url && (
+              <Button
+                variant="outline"
+                className="px-3"
+                onClick={() => window.open(inspectorNode.data.external_ui_url, "_blank")}
+                title="Open in new tab"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+
+          <div aria-label="Node details" tabIndex={0} className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-slate-200">
             <InfoRow label="Type" value={nodeTypeLabel(inspectorNode.data?.nodeType || inspectorNode.type || "unknown")} />
             <InfoRow label="Status" value={inspectorNode.data?.status || "unknown"} />
 
@@ -500,50 +539,14 @@ export function NetworkConsole() {
             />
           </div>
 
-          <div className="mt-6 flex gap-3">
-            <Button
-              className="flex-1"
-              variant={!showTerminal ? "default" : "outline"}
-              disabled={!inspectorNode.data?.ui_path && !inspectorNode.data?.external_ui_url}
-              onClick={() => {
-                if (inspectorNode.data?.ui_path || inspectorNode.data?.external_ui_url) {
-                  setIframeUrl(inspectorNode.data.ui_path || inspectorNode.data.external_ui_url);
-                  setShowTerminal(false);
-                }
-              }}
-            >
-              {inspectorNode.data?.ui_path || inspectorNode.data?.external_ui_url ? "UI" : "No UI"}
-            </Button>
-            <Button
-              className="flex-1"
-              variant={showTerminal ? "default" : "outline"}
-              onClick={() => {
-                setShowTerminal(true);
-                setIframeUrl(null);
-                openSharedTerminal(inspectorNode.id);
-              }}
-            >
-              Terminal
-            </Button>
-            {inspectorNode.data?.external_ui_url && (
-              <Button
-                variant="outline"
-                className="px-3"
-                onClick={() => window.open(inspectorNode.data.external_ui_url, "_blank")}
-                title="Open in new tab"
-              >
-                <ExternalLink className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-
-          <div className="mt-6 h-[320px] overflow-hidden rounded-xl border border-slate-800 bg-black relative">
+          {/* Only active viewers reserve space; idle details get the remaining height. */}
+          <div aria-label="Node viewer" className={`relative mt-4 overflow-hidden rounded-xl border border-slate-800 bg-black ${showTerminal || iframeUrl ? "min-h-[240px] flex-[2]" : "flex-none py-3"}`}>
             {/* Shared terminals - state tracked across pages */}
             {showTerminal && (
               <SharedTerminalPanel
                 nodes={[inspectorNode.id]}
                 activeNode={inspectorNode.id}
-                height={320}
+                height="100%"
               />
             )}
             {showTerminal && activeTerminals.has(inspectorNode.id) && (
@@ -586,7 +589,7 @@ export function NetworkConsole() {
                 </Button>
               </div>
             ) : !showTerminal && !iframeUrl ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-500">
+              <div className="flex items-center justify-center text-sm text-slate-500">
                 Select UI or Terminal to view here.
               </div>
             ) : null}

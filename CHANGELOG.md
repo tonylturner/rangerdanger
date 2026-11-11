@@ -43,6 +43,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unbound variable. Both installers say to pass the folder when
   `--from-tarballs`/`-FromTarballs` gets an image file.
 - The SSD bundle README says to copy the whole folder.
+- Network Map: a node's Terminal and UI viewer stays visible in the
+  inspector. The node details scroll on their own, and the UI and Terminal
+  buttons show as selected only when that viewer is open.
 
 ## [v0.2.4] - 2026-11-10
 

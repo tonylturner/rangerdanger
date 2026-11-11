@@ -65,7 +65,7 @@ export function SharedTerminalPanel({
   nodes: string[];
   activeNode: string;
   onSelectNode?: (nodeId: string) => void;
-  height?: number;
+  height?: React.CSSProperties["height"];
 }) {
   const { openTerminals, open } = useTerminals();
 
