@@ -4,6 +4,9 @@ Usage: python3 scripts/tests/test_fuxa_seed_boot.py rdfuxa-seed-x
 Optional real-RTAC check (no live service replacement):
     python3 scripts/tests/test_fuxa_seed_boot.py rdfuxa-seed-x \
         --live-client-image <local image with python3>
+
+The real-RTAC check explicitly runs live_fuxa_seed.py against its temporary
+runtime; default unittest discovery never runs that live acceptance test.
 """
 from __future__ import annotations
 
@@ -307,7 +310,7 @@ def check_live(image: str, client_image: str):
             "--name", client_name, "--network", f"container:{runtime_name}",
             "--env", "FUXA_LIVE_URL=http://127.0.0.1:1882",
             "--entrypoint", "python3", client_image, "-c", runner,
-        ], input=Path(__file__).with_name("test_fuxa_seed_live.py").read_text(),
+        ], input=Path(__file__).with_name("live_fuxa_seed.py").read_text(),
             text=True, check=True, timeout=40)
         print("PASS: rebuilt isolated FUXA viewer received six fresh real RTAC values")
     finally:

@@ -1,7 +1,12 @@
 """Read-only acceptance through the same REST/Socket.IO path as FUXA's viewer.
 
-Defaults to the live portal; skips only when the FUXA service is absent.
-FUXA_LIVE_URL can point at an isolated acceptance container instead.
+Explicit opt-in only; excluded from default unittest discovery:
+    python3 -m unittest scripts.tests.live_fuxa_seed
+    python3 scripts/tests/live_fuxa_seed.py
+
+Defaults to the live portal; skips only when the US range is absent.
+FUXA_LIVE_URL can point at an isolated acceptance container instead:
+    FUXA_LIVE_URL=http://127.0.0.1:1882 python3 -m unittest scripts.tests.live_fuxa_seed
 """
 from __future__ import annotations
 
