@@ -21,14 +21,20 @@ class USWalkContracts(unittest.TestCase):
         deletes = [r for r in rows if r["command"].startswith("delete firewall rule ")]
         self.assertEqual(len(deletes), 5)
         self.assertTrue(all(r["step"] == 4 for r in deletes))
-        self.assertEqual([r["step"] for r in rows if r["command"] == "commit"], [5])
+        self.assertEqual(
+            [(r["command"], r["step"]) for r in rows
+             if re.match(r"^(?:commit|confirm)\b", r["command"])],
+            [("commit confirmed 60", 5), ("confirm", 5)])
         self.assertNotIn("mbpoll ", phase2)
         self.assertIn("Do not commit yet.", phase2)
         self.assertIn("same shared candidate", phase2)
         self.assertIn("ot-to-field-broad", phase2)
         self.assertIn("replacements and removals together", phase3)
-        self.assertLess(phase3.index("Before the single commit"), phase3.index("\n    commit"))
-        self.assertLess(phase3.index("\n    commit"), phase3.index("mbpoll "))
+        self.assertLess(phase3.index("Before the single commit"),
+                        phase3.index("\n    commit confirmed 60\n"))
+        self.assertLess(phase3.index("\n    commit confirmed 60\n"),
+                        phase3.index("\n    confirm\n"))
+        self.assertLess(phase3.index("\n    confirm\n"), phase3.index("mbpoll "))
 
         rules = policy("improved")["rules"]
         by_id = {r["id"]: r for r in rules}

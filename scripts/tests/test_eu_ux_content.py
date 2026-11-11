@@ -48,7 +48,7 @@ class LearningContracts(unittest.TestCase):
                     checked += 1
         self.assertEqual(checked, 10)
 
-    def test_weak_demonstrations_warn_before_reset_and_prescribe_plan_return(self):
+    def test_weak_demonstrations_warn_before_reset_and_restore_via_rollback_or_backup_with_plan_catch_up_only(self):
         for base, manifest, _ in self.packages():
             prefix = "eu-" if manifest["id"].startswith("eu-") else ""
             for name in ("hardening-configurations", "vendor-rdp-compromise"):
@@ -56,16 +56,51 @@ class LearningContracts(unittest.TestCase):
                                       f"{prefix}{name}.yml").read_text())
                 first = " ".join(doc["steps"][0]["description"].split())
                 with self.subTest(scenario=doc["id"]):
-                    for phrase in ("**Reset to Weak** replaces your Lab 2.2 policy",
-                                   "hand-written rules", "**Apply Your Plan**",
-                                   "normal route back", "empty selection loads Weak"):
+                    for phrase in (
+                            "Before proceeding, save your confirmed Lab 2.2 running export and Notes.",
+                            "Use **Reset to Weak** for this lesson's initial demonstration only.",
+                            "It replaces the running policy, but `rollback` can restore your Lab 2.2 policy",
+                            "one level only, and only while no other commit came after Reset to Weak.",
+                            "Do not apply another policy or commit edits in between.",
+                            "If that previous-running slot has changed, import your Lab 2.2 backup and commit it",
+                            "**Apply Your Plan** is catch-up for students without their own policy, "
+                            "not restoration of hand-written rules.",
+                            "An empty selection loads Weak; without a saved request, "
+                            "use the full Hardened reference instead."):
                         self.assertIn(phrase, first)
+                    self.assertLess(first.index("Before proceeding, save"),
+                                    first.index("Use **Reset to Weak**"))
                     apply = next(step["description"] for step in doc["steps"]
                                  if step["id"] in ("apply-the-hardened-policy",
                                                    "apply-hardened-policy"))
-                    self.assertTrue(apply.startswith("Use **Apply Your Plan** now"))
-                    self.assertNotIn(":::hint Optional catch-up", apply)
-                    self.assertIn("read back", apply)
+                    self.assertTrue(apply.startswith(
+                        "Restore your own Lab 2.2 policy after restoring the plant."))
+                    self.assertRegex(apply, r"\n    rollback\n")
+                    recovery, hint = apply.split(":::hint Optional catch-up", 1)
+                    recovery = " ".join(recovery.split())
+                    for phrase in (
+                            "Only if no other commit came after **Reset to Weak**",
+                            "This restores the previous running config immediately; it is one level only.",
+                            "A second rollback does not go further back.",
+                            "do not accidentally commit it.",
+                            "If another commit came after Reset to Weak, use "
+                            "`import config /data/lab-2.2-policy.json`",
+                            "stage the saved Lab 2.2 backup.",
+                            "Review the full diff and commit to activate it.",
+                            "`commit confirmed <seconds>`, check management and required operational "
+                            "conduits, then `confirm` before the deadline.",
+                            "Read back the running rules and record the running identity and UTC time."):
+                        self.assertIn(phrase, recovery)
+                    hint = " ".join(hint.split())
+                    for phrase in (
+                            "For students without their own Lab 2.2 policy, **Apply Your Plan**",
+                            "it does not import hand-written rules.",
+                            "An empty selection loads Weak.",
+                            "Without a saved request, use **Apply Hardened** for the full reference.",
+                            "Read back the running rules and record the identity and UTC time.",
+                            "Do not use it before rollback: another commit replaces the "
+                            "previous-running slot needed to recover your own policy."):
+                        self.assertIn(phrase, hint)
 
     def test_capture_marker_keeps_reviewed_capture_lifecycle(self):
         from scripts.lib.lab_commands_inventory import extract
