@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -174,6 +175,35 @@ docker_bounded 1 exec -i example cat <<< 'policy body'
 ''')
         self.assertEqual(result.returncode, 7, result)
         self.assertEqual(result.stdout, "policy body\n")
+
+    def test_sleep_function_cannot_shorten_watchdog_budget(self):
+        for sleep_status in (0, 1):
+            for docker_status in (0, 7):
+                with self.subTest(sleep_status=sleep_status, docker_status=docker_status):
+                    result = self.run_shell(f'''
+sleep() {{ return {sleep_status}; }}
+docker() {{ exec python3 -c 'import sys, time; time.sleep(0.5); print("completed"); print("diagnostic", file=sys.stderr); sys.exit({docker_status})'; }}
+docker_bounded 2 inspect example
+''')
+                    self.assertEqual(result.returncode, docker_status, result)
+                    self.assertEqual(result.stdout, "completed\n")
+                    self.assertEqual(result.stderr, "diagnostic\n")
+
+    def test_sleep_function_cannot_disable_real_timeout(self):
+        for sleep_status in (0, 1):
+            with self.subTest(sleep_status=sleep_status):
+                started = time.monotonic()
+                result = self.run_shell(f'''
+sleep() {{ return {sleep_status}; }}
+docker() {{ exec python3 -c 'import time; time.sleep(30)'; }}
+docker_bounded 1 inspect example
+''')
+                elapsed = time.monotonic() - started
+                self.assertEqual(result.returncode, 124, result)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("timed out after 1 seconds: docker inspect example", result.stderr)
+                self.assertGreaterEqual(elapsed, 1)
+                self.assertLess(elapsed, 5)
 
     def test_gate_rejects_swallowed_timeout_and_skips_later_gates(self):
         result = self.run_shell(f'''

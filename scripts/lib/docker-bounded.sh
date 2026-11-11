@@ -55,7 +55,8 @@ docker_bounded() { # <seconds> <docker args...>
                 kill -KILL "$child" 2>/dev/null
                 break
             fi
-            sleep 0.1
+            # Caller sleep functions must not shorten the watchdog's wall-time budget.
+            command sleep 0.1
             remaining=$((remaining - 1))
         done
     ) >/dev/null 2>&1 &
