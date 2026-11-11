@@ -78,6 +78,13 @@ func (r *RTU) send(conn connection, m iec.Message) {
 		h := m.GetHeader()
 		_, peer := endpointText(conn.RemoteAddr())
 		r.printf("send failed conn=%d peer=%s type=%d cot=%d error=%v", conn.ID(), peer, h.Type, h.Cause, err)
+		if errors.Is(err, iec.ErrQueueFull) {
+			// Shared reporting baselines advance even on failed admission.
+			// Status points have no cyclic refresh, so this recipient now has
+			// a hole that only a new connection's GI can reliably repair.
+			// Never wait under the model lock or replay an ambiguous command.
+			conn.RequestClose()
+		}
 	}
 }
 

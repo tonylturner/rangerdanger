@@ -314,11 +314,14 @@ for round in 2 3 4 5; do
   reconnect_total=$((reconnect_total + queued))
 done
 if [ "$reconnect_total" -ge 10 ] \
-  && probe wait 40 "link(s)=='started' and s['link']['gi']['state']=='complete' and all_good(s)" >/dev/null; then
+  && probe wait 40 "link(s)=='started' and s['link']['gi']['state']=='complete' and all_good(s)" >"$OUT/cc-state-after-freezes.json"; then
   pass "CC: recovered after five freezes and $reconnect_total queued reconnects (more than the eight-entry list)"
 else
   fail "CC: repeated-freeze recovery/stress ($reconnect_total queued reconnects)"
 fi
+# Preserve failed admissions as well as the final cache: an omitted status
+# report can leave a started link stale while cyclic measurements keep flowing.
+docker logs "$RTU" >"$OUT/rtu-after-freezes.log" 2>&1
 docker logs "$CC2" >"$OUT/cc-reconnect-driver.log" 2>&1
 docker rm -f "$CC2" >/dev/null
 
