@@ -55,12 +55,26 @@ phases:
     From the fw-1 configuration CLI, commit replacements and removals together:
 
         show diff
-        commit
+        commit confirmed 60
 
-    Or use **Commit** on **Configuration** after the same review. Make ONE commit
-    for this rule change. Read back with `show running-config` and record its
-    identity and UTC time before testing. Confirm the operational exceptions and
-    removal of the approved broad allows in the running rules, not just the candidate.
+    Or use **Commit-confirmed** on **Configuration** after review and set the
+    seconds field to the agreed test window. `60` is an example: agree enough
+    time for management and operational checks before starting. Make ONE commit
+    for this rule change. Read back with `show running-config`; record the
+    running identity, UTC time and confirmation deadline. Check management access
+    through the portal and the required operational conduits before confirming.
+    From the fw-1 configuration CLI, retain the change only after those checks pass:
+
+        confirm
+
+    Or use **Confirm** while the deadline is pending. Without `confirm`, containd
+    restores the previous running config at the deadline. If a rollback trigger
+    occurs, stop testing, notify the operator and do not confirm. The rollback
+    owner checks the restored running identity and retests operations. For an
+    immediate return, use `rollback` (UI **Recovery → Rollback**). Rollback is one
+    level only: it restores the previous running config, not an arbitrary history.
+    The UI rollback keeps the newer staged candidate; do not commit it accidentally.
+    Reserved management protection refuses unsafe changes and rollback targets.
     From Kali, test the enterprise-to-field boundary:
 
         mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20
@@ -68,15 +82,14 @@ phases:
     Expect timeout if that closure is selected; expect a response if deferred.
     From Kali, also use `nmap -Pn -p 3389,5900 10.20.20.10` to test remote access.
     Expect `filtered` for the selected restriction, not for an approved deferral.
-    Check required operations next. If a rollback trigger occurs, stop testing.
-    Re-stage the previous rules from your pre-change export, review the complete
-    diff, commit and read back. Retest operations before resuming the change.
-    The export is a record to work from, not an import or restore command.
+    Check required operations before confirming. Verify the operational exceptions
+    and removal of approved broad allows in the running rules, not just the candidate.
+    Keep the pre-change export as a restorable backup and evidence reference.
 
     The L4 source pin enforces; DPI detects and logs.
 
     :::hint Policy evidence at the containd CLI
-    In the configuration CLI, `export config` prints redacted running JSON; it does not create a file:
+    In the configuration CLI, `export config` prints redacted running JSON for a restorable backup and evidence; it does not create a file:
 
         export config
 

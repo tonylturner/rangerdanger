@@ -26,8 +26,8 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// unrendered tests/negativeEmpty fields, and single-source EU phase prose
 	// with action-first instructions and expandable reference depth.
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "c6dc6c752b597d01ac0cec6b40e914cadef30394265b65fec8822af364d2e20b",
-		"eu-iec104-substation": "aa19ecaf83a5b3e0c1716d306229037d51122471a1f4297bd592146b456e927a",
+		"us-dnp3-substation":   "b9771dfd7a3e0dd4feede52a46e10472a64136cbaea57fefee397f409aff9078",
+		"eu-iec104-substation": "385e07537f13f5e1bef09234fc4cd612f493ec0d4d74ca257885659dcafe728a",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

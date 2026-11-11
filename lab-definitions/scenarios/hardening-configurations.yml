@@ -18,6 +18,7 @@ description: >
 nodes:
   - kali-1
   - rtac-1
+  - fw-1
 tags:
   - dpi
   - dnp3
@@ -30,15 +31,16 @@ steps:
     expected_config: weak
     node: rtac-1
     description: |
-      Before proceeding, save your Lab 2.2 running export and Notes. **Reset to
-      Weak** replaces your Lab 2.2 policy, including hand-written rules; it does
-      not preserve them for automatic restoration. Use Reset to Weak for this
-      lesson's initial demonstration only. After restoring the plant, use
-      **Apply Your Plan** with your saved Lab 1.4 request to return to the
-      approved scope before the retest. This is the normal route back, not a
-      catch-up exercise. It regenerates the approved scope, not your exact
-      hand-written IDs or unrelated edits. An empty selection loads Weak; if
-      you have no saved request, use the full Hardened reference instead.
+      Before proceeding, save your confirmed Lab 2.2 running export and Notes.
+      Use **Reset to Weak** for this lesson's initial demonstration only. It replaces
+      the running policy, but `rollback` can restore your Lab 2.2 policy after the
+      plant is restored: one level only, and only while no other commit came after
+      Reset to Weak. Do not apply another policy or commit edits in between.
+      If that previous-running slot has changed, import your Lab 2.2 backup and
+      commit it using the reviewed Lab 2.2 change-safety procedure.
+      **Apply Your Plan** is catch-up for students without their own policy,
+      not restoration of hand-written rules. An empty selection loads Weak;
+      without a saved request, use the full Hardened reference instead.
 
       Confirm the substation is healthy under the weak baseline:
 
@@ -223,9 +225,10 @@ steps:
     expected_config: weak
     description: |
       Use the Supervisory Control tab in the [Feeder HMI](/substation)
-      to reset the lab state, or click **Reset Lab** below. This
+      to restore the devices, or select **Execute Step** on **Restore the substation**. This
       restores every device touched by the primary attack and any
-      optional bonus attacks you ran:
+      optional bonus attacks you ran. Do not use **Reset Lab** here: another
+      Weak apply would replace the previous-running slot needed for rollback.
 
       - Relay: clear fault, unlock, close substation breaker
       - Regulator: set to Auto, tap to 0
@@ -266,21 +269,22 @@ steps:
     title: "Confirm the reviewed boundary before retesting"
     expected_config: hardened
     description: |
-      Use **Apply Your Plan** now to regenerate your saved, approved Lab 1.4
-      scope after the Weak demonstration. Read back the running rules and
-      record the running identity and commit time before retesting. Without a
-      saved request, use **Apply Hardened** for the full reference. Neither
-      route replaces your observations, operator checks or sign-off. If you
-      choose to re-author the policy manually instead, follow the Lab 2.2
-      procedure below rather than mixing manual and automatic changes.
+      Restore your own Lab 2.2 policy after restoring the plant. Only if no other
+      commit came after **Reset to Weak**, from the fw-1 configuration CLI use:
 
-      Use the reviewed rules from Lab 2.2. Compare the running policy with your
-      Lab 1.4 change request. If it differs, export the running rules first.
-      Stage the approved removals and replacements together in containd. Review
-      the full diff and first-match order, commit once, then read back the rules.
-      Keep the management path and required operating conduits. Record the
-      commit time and running identity. Do not widen the approved scope just
-      to obtain a green result. Without a saved request, use the full Hardened reference.
+          rollback
+
+      Or use **Recovery → Rollback** in the UI. This restores the previous running
+      config immediately; it is one level only. A second rollback does not go
+      further back. UI rollback keeps the newer staged candidate: inspect the diff
+      and do not accidentally commit it. If another commit came after Reset to
+      Weak, import your saved Lab 2.2 JSON instead (browser upload, or local/SSH
+      `import config <file>` in the fw-1 CLI), review the full diff and commit to
+      activate it. Follow Lab 2.2: `commit confirmed <seconds>`, check management
+      and required operational conduits, then `confirm` before the deadline.
+      Read back the running rules and record the running identity and UTC time.
+      Compare source pins, required conduits and deferred paths with your Lab 1.4
+      change request before retesting. Do not widen scope to obtain a green result.
       The **Cross-check the current system** reads the policy without replacing it.
 
       **Block enterprise → field direct access** owns Kali→field Modbus/DNP3.
@@ -293,11 +297,14 @@ steps:
 
       The L4 source pin enforces; DPI detects and logs.
 
-      :::hint Scope is not a policy backup
-      Apply Your Plan compiles the saved selection; it does not import the
-      hand-written Lab 2.2 export. Compare source pins, required conduits and
-      deferred paths with that record. If the scope is wrong, stop before retesting
-      and correct the saved request or return to reviewed manual entry.
+      :::hint Optional catch-up — for less technical students or teams behind schedule
+      For students without their own Lab 2.2 policy, **Apply Your Plan** compiles the
+      saved, approved Lab 1.4 selection; it does not import hand-written rules.
+      An empty selection loads Weak. Without a saved request, use **Apply Hardened**
+      for the full reference. Read back the running rules and record the identity
+      and UTC time. This replaces typing rules, not observations, operator checks
+      or sign-off. Do not use it before rollback: another commit replaces the
+      previous-running slot needed to recover your own policy.
       :::
 
     action:
@@ -381,7 +388,8 @@ steps:
       Supervisory Control: enable auto-reclose, close the recloser and breaker,
       clear fault/lockout, and return the regulator to auto and tap zero.
       Do not Reset Lab to improve the evidence: it reapplies Weak. If reset is
-      needed for recovery, reapply the intended plan and collect a new window.
+      needed for recovery, restore the intended policy using rollback or import
+      as above and collect a new window.
     action:
       type: check
       run:

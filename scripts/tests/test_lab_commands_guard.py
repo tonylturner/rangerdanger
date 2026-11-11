@@ -20,8 +20,8 @@ class PackageGuardTests(unittest.TestCase):
         return root
 
     def test_all_packages_and_zero_command_scenarios_are_pinned(self):
-        # Three new typed show-events reads per package; no coverage removed.
-        minimums = {"us-dnp3-substation": 86, "eu-iec104-substation": 44}
+        # EU now has an explicit show-diff read; change-safety mutations stay SKIP.
+        minimums = {"us-dnp3-substation": 86, "eu-iec104-substation": 45}
         for package_id in extract.packages():
             with self.subTest(package=package_id):
                 data = json.loads(extract.expectations_path(ROOT, package_id).read_text())
@@ -66,6 +66,25 @@ class PackageGuardTests(unittest.TestCase):
         rows[0]["command"] += " changed"
         with self.assertRaisesRegex(ValueError, "command inventory changed"):
             extract.validate_inventory(rows, data)
+
+    def test_change_safety_commands_never_run_against_shared_policy(self):
+        for package in ("us-dnp3-substation", "eu-iec104-substation"):
+            rows = extract.extract(package_id=package)
+            data = json.loads(extract.expectations_path(ROOT, package).read_text())
+            mutations = [r for r in rows if r["command"].split()[0]
+                         in ("commit", "confirm", "rollback", "import")]
+            self.assertEqual({r["command"].split()[0] for r in mutations},
+                             {"commit", "confirm", "rollback", "import"})
+            for row in mutations:
+                with self.subTest(package=package, command=row["command"]):
+                    self.assertEqual((row["action"], row["node"], row["prompt"]),
+                                     ("SKIP", "fw-1", "cli"))
+                    contract = data["commands"][extract.key(row)]
+                    self.assertTrue(contract["reason"])
+                    contract["action"] = "RUN"
+                    with self.assertRaisesRegex(ValueError, "action changed"):
+                        extract.validate_inventory(rows, data, package_id=package)
+                    contract["action"] = "SKIP"
 
     def test_missing_review_or_stale_dispatch_is_rejected(self):
         for field, value, message in (

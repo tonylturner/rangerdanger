@@ -389,8 +389,13 @@ steps:
       :::
 
       If an abort criterion was met, stop, notify the operator and use the approved
-      rollback: re-stage the previous rules from the saved export, review the full
-      diff, commit, read back and retest. Record who authorized the restoration.
+      rollback: withhold `confirm` if a commit-confirmed deadline is pending, or use
+      `rollback` for the previous running config (one level only). If that slot no
+      longer holds the intended policy, import the saved JSON backup via browser
+      upload or local/SSH `import config <file>` in fw-1. Import stages only: review
+      the full diff, use `commit confirmed <seconds>`, check management and required
+      operations, then `confirm`. Read back and retest the restored policy. Record
+      who authorized restoration; management protection refuses unsafe targets.
       The **Cross-check the current system** samples plant state. It does not
       grade these observations or authorize the change.
     action:
