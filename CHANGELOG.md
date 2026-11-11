@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.2.5] - 2026-11-11
+
+EU lab UX pass and Network Map inspector fix, with shared US lab improvements.
+All 20 first-party images are rebuilt from refreshed bases with
+`[rebuild-all]` and no image promotion.
+Tested on containd 0.1.42 (`latest`); the minimum remains 0.1.41.
+No firewall-data migration is required from v0.2.4. This release moves
+`latest`.
+
 ### Changed
 
 - Labs 2.2–2.4 (EU and US) show how to write a rule by hand: the Weak rule
@@ -3716,7 +3725,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.5...HEAD
+[v0.2.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.5
 [v0.2.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.4
 [v0.2.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.3
 [v0.2.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.2
