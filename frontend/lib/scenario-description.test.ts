@@ -83,7 +83,10 @@ describe("splitDescription — command blocks", () => {
     expect(cmds[0].value).toBe("show running-config");
   });
 
-  it.each(["commit", "commit confirmed 60", "confirm", "rollback", "import config /data/lab-2.2-policy.json"])(
+  it.each([
+    "commit", "commit confirmed 60", "confirm", "rollback", "import config /data/lab-2.2-policy.json",
+    "create backup lab-2.2 redacted CONFIRM", "download backup <id> /data/lab-2.2-policy.json",
+  ])(
     "keeps change-safety command %s on the copy-only appliance CLI path",
     (command) => {
       const segs = splitDescription(`From the fw-1 terminal:\n\n    ${command}`);

@@ -37,8 +37,8 @@
       "SKIP": 0
     },
     "firewall-implementation": {
-      "RUN": 24,
-      "SKIP": 11
+      "RUN": 25,
+      "SKIP": 13
     },
     "hardening-configurations": {
       "RUN": 16,
@@ -61,7 +61,7 @@
       "SKIP": 4
     }
   },
-  "minimum_executed": 86,
+  "minimum_executed": 87,
   "commands": {
     "baseline-assessment|3|tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'|1": {
       "container": "rangerdanger-firewall",
@@ -1294,6 +1294,36 @@
       "action": "SKIP",
       "oracle": null,
       "reason": "Manual one-level recovery of the student policy after Reset to Weak; must not restore a different shared smoke policy."
+    },
+    "firewall-implementation|9|create backup lab-2.2 redacted CONFIRM|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual immediate backup creation after confirming the student policy; must not change the shared appliance backup store during smoke."
+    },
+    "firewall-implementation|9|show backups|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?s)(?:\\[\\s*\\]|\"id\"\\s*:\\s*\"[^\"]+\".*\"createdAt\"\\s*:.*\"redacted\"\\s*:)"
+      },
+      "reason": null
+    },
+    "firewall-implementation|9|download backup <id> /data/lab-2.2-policy.json|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual download using the student-selected backup id; writes a private persistent file and must never write files on the shared smoke appliance."
     }
   }
 }

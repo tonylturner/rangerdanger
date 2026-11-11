@@ -173,9 +173,10 @@ steps:
     config immediately; it is one level only. A second rollback does not go
     further back. UI rollback keeps the newer staged candidate: inspect the diff
     and do not accidentally commit it. If another commit came after Reset to
-    Weak, import your saved Lab 2.2 JSON instead (browser upload, or local/SSH
-    `import config <file>` in the fw-1 CLI), review the full diff and commit to
-    activate it. Follow Lab 2.2: `commit confirmed <seconds>`, check management
+    Weak, use `import config /data/lab-2.2-policy.json` from the fw-1 CLI to
+    stage the saved Lab 2.2 backup. Browser import of your downloaded JSON is the
+    alternative. Review the full diff and commit to activate it. Follow Lab 2.2:
+    `commit confirmed <seconds>`, check management
     and required operational conduits, then `confirm` before the deadline.
     Read back the running rules and record the running identity and UTC time.
     Compare source pins, required conduits and deferred paths with your Lab 1.4

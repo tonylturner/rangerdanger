@@ -6,8 +6,8 @@
       "SKIP": 0
     },
     "eu-firewall-implementation": {
-      "RUN": 12,
-      "SKIP": 14
+      "RUN": 14,
+      "SKIP": 16
     },
     "eu-hardening-configurations": {
       "RUN": 3,
@@ -30,7 +30,7 @@
       "SKIP": 2
     }
   },
-  "minimum_executed": 45,
+  "minimum_executed": 47,
   "commands": {
     "eu-baseline-assessment|3|tcpdump -i any -nn 'not host 127.0.0.1' -G 12 -W 1 -w /data/captures/baseline.pcap|1": {
       "container": "rangerdanger-firewall",
@@ -759,6 +759,48 @@
       "action": "SKIP",
       "oracle": null,
       "reason": "Manual one-level recovery of the student policy after Reset to Weak; must not restore a different shared smoke policy."
+    },
+    "eu-firewall-implementation|9|export config|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:"
+      },
+      "reason": null
+    },
+    "eu-firewall-implementation|9|create backup lab-2.2 redacted CONFIRM|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual immediate backup creation after confirming the student policy; must not change the shared appliance backup store during smoke."
+    },
+    "eu-firewall-implementation|9|show backups|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?s)(?:\\[\\s*\\]|\"id\"\\s*:\\s*\"[^\"]+\".*\"createdAt\"\\s*:.*\"redacted\"\\s*:)"
+      },
+      "reason": null
+    },
+    "eu-firewall-implementation|9|download backup <id> /data/lab-2.2-policy.json|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual download using the student-selected backup id; writes a private persistent file and must never write files on the shared smoke appliance."
     }
   }
 }

@@ -141,7 +141,7 @@ def extract(root=ROOT, target="", package_id=US):
                 prompt = "cli" if kind == "cli" or (node == "fw-1" and not entry) else "shell"
                 skip = (kind == "copy" or node == "host" or
                         re.search(r"/api/firewall/apply|^docker |^ssh\b", command) or
-                        re.match(r"^(?:add|move|import|delete|set|commit|confirm|rollback|vi)\b", command))
+                        re.match(r"^(?:add|move|import|delete|set|commit|confirm|rollback|create|download|vi)\b", command))
                 rows.append(dict(
                     package=package_id, scenario=scenario, step=idx, step_id=step["id"],
                     title=step["title"], policy=step.get("expected_config") or "weak",
