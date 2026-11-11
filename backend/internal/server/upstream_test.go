@@ -6,9 +6,56 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestCallUpstreamReturnsRedirectWithoutFollowing(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		for _, status := range []int{301, 302, 303, 307, 308} {
+			t.Run(fmt.Sprintf("%s/%d", method, status), func(t *testing.T) {
+				var targetCalls atomic.Int32
+				target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					targetCalls.Add(1)
+					_, _ = w.Write([]byte(`{"followed":true}`))
+				}))
+				defer target.Close()
+				const answer = `{"reason":"service moved"}`
+				source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Location", target.URL)
+					w.WriteHeader(status)
+					_, _ = w.Write([]byte(answer))
+				}))
+				defer source.Close()
+				var body []byte
+				if method == http.MethodPost {
+					body = []byte(`{"action":"fault_s1"}`)
+				}
+				got, data, err := callUpstream(context.Background(), method, source.URL, body, time.Second)
+				if err != nil || got != status || string(data) != answer || targetCalls.Load() != 0 {
+					t.Fatalf("callUpstream = %d %s, %v; target calls = %d", got, data, err, targetCalls.Load())
+				}
+			})
+		}
+	}
+}
+
+func TestFetchUpstreamObjectRejectsRedirect(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "/target")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+		_, _ = w.Write([]byte(`{"reason":"moved"}`))
+	}))
+	defer srv.Close()
+	_, err := fetchUpstreamObject(context.Background(), "process", srv.URL)
+	var upstreamErr *upstreamError
+	if !errors.As(err, &upstreamErr) || upstreamErr.status != http.StatusTemporaryRedirect ||
+		!strings.Contains(string(upstreamErr.body), `"reason":"moved"`) {
+		t.Fatalf("fetchUpstreamObject error = %v, want upstream 307 and its body", err)
+	}
+}
 
 type timeoutError struct{}
 

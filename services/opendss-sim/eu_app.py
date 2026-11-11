@@ -64,11 +64,29 @@ def create_eu_app(profile_path: str) -> FastAPI:
     async def process_action(request: Request) -> JSONResponse:
         try:
             body = await request.json()
-            result = await solve_loop.action(body)
+            peer = "unknown"
+            if request.client is not None:
+                host = request.client.host
+                host = f"[{host}]" if ":" in host else host
+                peer = f"{host}:{request.client.port}"
+            # No zone map is configured for the process service; do not infer
+            # a trusted zone or actor from user-supplied headers/body fields.
+            result = await solve_loop.action(
+                body, dict(peer=peer, protocol="lab", zone="unknown"))
         except (ActionError, ValueError) as error:
             reason = str(error) if isinstance(error, ActionError) else "invalid_json"
             return JSONResponse(content={"reason": reason}, status_code=400)
         return JSONResponse(content=result)
+
+    @app.get("/api/audit")
+    def get_audit(request: Request) -> JSONResponse:
+        raw = request.query_params.get("after", "0")
+        if not raw.isascii() or not raw.isdecimal() or len(raw) > 20:
+            return JSONResponse(content={"reason": "invalid_after"}, status_code=400)
+        after = int(raw)
+        if after > (1 << 64) - 1:
+            return JSONResponse(content={"reason": "invalid_after"}, status_code=400)
+        return JSONResponse(content=state.audit_after(after))
 
     @app.get("/api/health", response_model=HealthSnapshot)
     def health() -> JSONResponse:
