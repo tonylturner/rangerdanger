@@ -65,8 +65,8 @@ docker() {
     *) return 99 ;;
   esac
 }
-# Skip only the capture warmup, not the helper's watchdog sleeps.
-sleep() { case "$1" in 0.1) command sleep "$1" ;; esac; }
+# Skip capture warmup and polling delays in the offline lifecycle fixture.
+sleep() { :; }
 window_state_cleared() {
   t_expect_eq "$CAPTURE_HOST/$CAPTURE_PATH/$CAPTURE_PID_FILE/$CAPTURE_LOG/$CAPTURE_PID/$capture_running" \
     "/////0" "$1 clears all shared capture state"

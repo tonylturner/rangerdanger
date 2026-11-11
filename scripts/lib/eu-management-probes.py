@@ -57,7 +57,12 @@ def main(manifest_path, policy):
     if manifest['package'] != 'eu-iec104-substation' or policy not in ('weak', 'improved'):
         raise ValueError('EU management gate requires an EU package and named policy')
     kali = next(s for s in manifest['services'] if s['key'] == 'kali')
-    image = subprocess.check_output(['docker', 'inspect', '-f', '{{.Image}}', kali['container']], text=True).strip()
+    # Use the same watchdog and sticky timeout log as the shell gates.
+    bounded = Path(__file__).with_name('docker-bounded.sh')
+    image = subprocess.check_output(
+        ['bash', '-c', '. "$1"; shift; docker_bounded "$@"', 'management-inspect',
+         str(bounded), '5', 'inspect', '-f', '{{.Image}}', kali['container']],
+        text=True).strip()
     zone_networks = {n['key'] for n in manifest['networks'] if n.get('zone')}
     passed = failed = 0
     for service in manifest['services']:

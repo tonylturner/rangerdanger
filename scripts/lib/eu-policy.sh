@@ -40,7 +40,7 @@ eu_revision_header() {
 }
 eu_firewall_config() {
   local output status
-  output=$(docker exec "$FW" curl -sS --max-time 15 -D /dev/stderr -w '\n%{http_code}' \
+  output=$(docker_bounded 20 exec "$FW" curl -sS --max-time 15 -D /dev/stderr -w '\n%{http_code}' \
     -H "Authorization: Bearer $FW_TOKEN" \
     http://127.0.0.1:8080/api/v1/config 2>"$TMP_DIR/fw-config.headers") || {
       printf 'containd running config read failed: %s\n' "$(cat "$TMP_DIR/fw-config.headers")" >&2
@@ -265,7 +265,7 @@ eu_check_nft_chain() {
   local label="$1" nft_dump
   # Read the whole policy table: forward dispatches to ordered/admission chains.
   # The pre-filter table is not the final policy boundary.
-  nft_dump=$(docker exec "$FW" nft list table inet containd_policy 2>"$TMP_DIR/nft.err") || {
+  nft_dump=$(docker_bounded 5 exec "$FW" nft list table inet containd_policy 2>"$TMP_DIR/nft.err") || {
     fail "$label effective nft forward chain unavailable: $(cat "$TMP_DIR/nft.err")"
     return 1
   }
@@ -353,7 +353,7 @@ eu_commit_manual_policy() {
     fail "cannot enable dataplane enforcement for manual policy $label"
     return 1
   }
-  response=$(docker exec -i "$FW" curl -sS --max-time 15 -D /dev/stderr -w '\n%{http_code}' \
+  response=$(docker_bounded 20 exec -i "$FW" curl -sS --max-time 15 -D /dev/stderr -w '\n%{http_code}' \
     -H "X-Containd-If-Revision: $revision" -X POST -H "Authorization: Bearer $FW_TOKEN" -H 'Content-Type: application/json' \
     --data-binary @- http://127.0.0.1:8080/api/v1/config/candidate \
     <"$candidate_file" 2>"$TMP_DIR/manual-candidate.err") || {
@@ -369,7 +369,7 @@ eu_commit_manual_policy() {
   revision=$(eu_revision_header "$TMP_DIR/manual-candidate.err")
   [ -n "$revision" ] || { fail "candidate response has no revision header"; return 1; }
   # Headers go through the container's stderr, not a host path inside it.
-  response=$(docker exec "$FW" curl -sS --max-time 15 -w '\n%{http_code}' -D /dev/stderr \
+  response=$(docker_bounded 20 exec "$FW" curl -sS --max-time 15 -w '\n%{http_code}' -D /dev/stderr \
     -H "X-Containd-If-Revision: $revision" \
     -X POST -H "Authorization: Bearer $FW_TOKEN" -H 'Content-Type: application/json' \
     http://127.0.0.1:8080/api/v1/config/commit 2>"$headers_file") || {
@@ -475,7 +475,7 @@ eu_make_custom_policy() {
 eu_fresh_deny_event() {
   local source_ip="$1" started_epoch="$2" budget="$3" events count i status
   for ((i = 0; i < budget; i++)); do
-    events=$(docker exec "$FW" curl -sS -w '\n%{http_code}' \
+    events=$(docker_bounded 20 exec "$FW" curl -sS -w '\n%{http_code}' \
       -H "Authorization: Bearer $FW_TOKEN" \
       'http://127.0.0.1:8080/api/v1/events?limit=500' 2>"$TMP_DIR/events.err") || {
         fail "containd event response failed: $(cat "$TMP_DIR/events.err")"

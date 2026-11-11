@@ -88,11 +88,18 @@ def docker_reader(container, token=None):
         token = message + "." + enc(hmac.new(secret, message.encode(), hashlib.sha256).digest())
 
     def read(path, remaining):
-        result = subprocess.run(
-            ["docker", "exec", container, "curl", "-sS", "--max-time", str(remaining),
-             "-w", "\n%{http_code}", "-H", "Authorization: Bearer " + token,
-             "http://127.0.0.1:8080/api/v1" + path],
-            capture_output=True, text=True, timeout=remaining, check=True)
+        try:
+            result = subprocess.run(
+                ["docker", "exec", container, "curl", "-sS", "--max-time", str(remaining),
+                 "-w", "\n%{http_code}", "-H", "Authorization: Bearer " + token,
+                 "http://127.0.0.1:8080/api/v1" + path],
+                capture_output=True, text=True, timeout=remaining, check=True)
+        except subprocess.TimeoutExpired as exc:
+            # Keep the existing remaining-budget deadline, but name the CLI
+            # without printing its authorization header (including via main).
+            raise ValueError(
+                f"Docker CLI timed out after {remaining:g} seconds: "
+                f"docker exec {container} curl GET {path}") from exc
         body, status = result.stdout.rsplit("\n", 1)
         if path == "/dataplane/protection" and status == "503":
             return None

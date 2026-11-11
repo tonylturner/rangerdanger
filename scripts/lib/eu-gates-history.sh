@@ -12,7 +12,7 @@ eu_gate_G18() {
   epoch=$(printf '%s' "$API_BODY" | jq -r '.cache_epoch')
   eu_window_start G18 || return
   cc_paused=1
-  docker pause "$CC" >/dev/null || { fail "G18 CC pause failed"; return 1; }
+  docker_bounded 15 pause "$CC" >/dev/null || { fail "G18 CC pause failed"; return 1; }
   # One push may already be in flight (contract budget 500ms). Drain it
   # before measuring the genuine ingest-silence window.
   sleep 1
@@ -30,7 +30,7 @@ eu_gate_G18() {
   else fail "G18 historian outage evidence failed ($paused to $resumed): $API_BODY"; fi
   # A valid snapshot on a read listener must not ingest, even from enterprise.
   eu_get_operator || return
-  if docker exec "$KALI" curl -sS --max-time 3 -o /dev/null -w '%{http_code}' -X POST \
+  if docker_bounded 10 exec "$KALI" curl -sS --max-time 3 -o /dev/null -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' -d "$API_BODY" http://10.70.70.40:8080/api/ingest >"$TMP_DIR/read-ingest.status"; then
     case "$(cat "$TMP_DIR/read-ingest.status")" in
       404|405) pass "G18 read listener rejects real POST /api/ingest" ;;
@@ -61,14 +61,14 @@ eu_gate_G19() {
       port=8080; path=/api/electrical; method=GET
       if [ "$ip" = 10.70.70.40 ]; then port=8081; path=/api/ingest; method=POST; fi
       if [ "$container" = "$RTU" ]; then
-        docker exec "$container" wget -T 3 -O - --post-data="$body" "http://$ip:$port$path" \
+        docker_bounded 10 exec "$container" wget -T 3 -O - --post-data="$body" "http://$ip:$port$path" \
           >"$TMP_DIR/G19-$container-$ip.out" 2>"$TMP_DIR/G19-$container-$ip.err"
         rc=$?
         if [ "$rc" = 1 ] && grep -Eq 'timed out|Connection refused' "$TMP_DIR/G19-$container-$ip.err"; then
           pass "G19 $container -> $ip:$port unavailable (wget $rc; not drop proof)"
         else fail "G19 $container -> $ip:$port not proven unavailable: wget $rc $(cat "$TMP_DIR/G19-$container-$ip.err")"; fi
       else
-        docker exec "$container" curl -sS --connect-timeout 2 --max-time 3 -X "$method" \
+        docker_bounded 10 exec "$container" curl -sS --connect-timeout 2 --max-time 3 -X "$method" \
           -H 'Content-Type: application/json' -d "$body" "http://$ip:$port$path" \
           >"$TMP_DIR/G19-$container-$ip.out" 2>"$TMP_DIR/G19-$container-$ip.err"
         rc=$?
