@@ -99,6 +99,7 @@ func TestStepActionRTACResponse(t *testing.T) {
 				}
 			}
 			s := &Server{}
+			s.lastAppliedHash, _ = containd.FirewallHashFromBytes([]byte(`{"firewall":{"defaultAction":"ALLOW","rules":[]}}`))
 			value := float64(1)
 			result := s.executeRTACCommand(t.Context(), gen, usRecipe, "recloser", "open", "operator", &value)
 			if result.Success != test.success || result.Blocked || result.Action != "recloser/open from operator" {

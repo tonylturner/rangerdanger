@@ -20,13 +20,16 @@ import (
 func TestEUVendorCollectorActiveProbesWithoutDenyLogs(t *testing.T) {
 	for _, tc := range []struct {
 		name, stderr string
+		reset        bool
 		rc           int
 		pass         bool
 	}{
-		{"custom default deny without logs", "", 124, true},
-		{"explicit refusal is a leak without logs", "Connection refused", 1, false},
-		{"tool error fails honestly", "timeout: missing tool", 127, false},
-		{"open tuple fails", "", 0, false},
+		{"custom default deny without logs", "", false, 124, true},
+		{"allowed closed-listener refusal does not prove drop", "Connection refused", false, 1, false},
+		{"tool error fails honestly", "timeout: missing tool", false, 127, false},
+		{"open tuple fails", "", false, 0, false},
+		{"RESET refusal cannot prove drop", "Connection refused", true, 1, false},
+		{"RESET coincidental timeout cannot prove drop", "", true, 124, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mu sync.Mutex
@@ -47,6 +50,9 @@ func TestEUVendorCollectorActiveProbesWithoutDenyLogs(t *testing.T) {
 			// Intentionally no log:true rules, no events endpoint and no
 			// firewall.rule.hit records of any kind.
 			policy := []byte(`{"firewall":{"defaultAction":"DENY","rules":[]}}`)
+			if tc.reset {
+				policy = []byte(resetPolicy)
+			}
 			hash, err := containd.FirewallHashFromBytes(policy)
 			if err != nil {
 				t.Fatal(err)
@@ -89,7 +95,14 @@ func TestEUVendorCollectorActiveProbesWithoutDenyLogs(t *testing.T) {
 			if tc.rc == 127 && !strings.Contains(euWorkshopNegative(collected).Detail, "probe tool exit 127") {
 				t.Fatal("lost tool failure detail")
 			}
-			if tc.rc == 1 && (collected.negative[0].Actual != "allow" || euWorkshopNegative(collected).Status != "fail") {
+			if tc.reset {
+				for _, row := range collected.negative {
+					if row.Actual != "reset" || row.Pass || row.ProbeError != wantResetDetail {
+						t.Fatal(row)
+					}
+				}
+			}
+			if tc.rc == 1 && !tc.reset && (collected.negative[0].Actual != "allow" || euWorkshopNegative(collected).Status != "fail") {
 				t.Fatal("refusal certified as denial")
 			}
 		})

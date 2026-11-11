@@ -41,7 +41,8 @@ class FuxaSeedTests(unittest.TestCase):
         self.assertEqual(loader.errors, [])
         discovered = set(test_ids(suite))
         self.assertIn(
-            __name__ + ".FuxaSeedTests.test_fresh_install_and_restart", discovered)
+            "scripts.tests.test_fuxa_seed.FuxaSeedTests.test_fresh_install_and_restart",
+            discovered)
         explicit = loader.loadTestsFromName("scripts.tests.live_fuxa_seed")
         live_ids = set(test_ids(explicit))
         self.assertEqual(live_ids, {

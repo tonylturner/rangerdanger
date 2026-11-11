@@ -52,6 +52,19 @@ for spelling in cidr bare both; do
   t_expect_eq "$T_STATUS" 0 "$spelling: empty CC allow is dropped; all other rules and settings are unchanged"
 done
 
+# RESET must never be selected as the pinned ALLOW to remove.
+jq '.firewall.rules[0].action = "RESET"' "$IMPROVED" >"$INPUT" || exit 1
+t_run eu_make_custom_policy "$INPUT" "$CC_IP" "$RTU_IP" 2404 "$OUTPUT"
+t_expect_eq "$T_STATUS" 1 "RESET is not a pinned ALLOW"
+t_expect_out "expected exactly one pinned allow, found 0" "RESET is not silently reclassified"
+# The ephemeral-grant reader also checks literal ALLOW, not non-DENY.
+jq '.firewall.rules = [{id:"reset-wide",action:"RESET",protocols:[]}]' "$IMPROVED" >"$INPUT" || exit 1
+t_run eu_policy_has_no_ephemeral_allow "$INPUT"
+t_expect_eq "$T_STATUS" 0 "RESET is not an ephemeral ALLOW grant"
+jq '.firewall.rules[0].action = "ALLOW"' "$INPUT" >"$OUTPUT" || exit 1
+t_run eu_policy_has_no_ephemeral_allow "$OUTPUT"
+t_expect_eq "$T_STATUS" 1 "the same unbounded selector with ALLOW fails"
+
 # Zero and ambiguous matches must fail, not yield a policy for commit.
 for matches in 0 2; do
   jq --argjson matches "$matches" '

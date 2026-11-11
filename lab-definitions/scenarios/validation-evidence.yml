@@ -139,8 +139,10 @@ steps:
       Open each named source terminal. Never move a test to a convenient host.
       Use a scoped TCP connect and an application READ for test-host positives.
       No control writes belong in this acceptance run. A TCP connection is not
-      command authorization; a refusal means reached, not a working application.
-      Only a connect timeout counts as a deny result. Tool/container errors are
+      command authorization.
+      Use DENY for every required closure. A RESET rule answers with a TCP reset, so the host test shows "Connection refused" and cannot prove the drop; the validator reports it as blocked by RESET.
+      Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop.
+      Only a connect timeout counts as a DENY/drop result. Tool/container errors are
       untested evidence. A timeout alone does not explain why packets were lost.
       Use the working baseline, capture and running rules together.
 
@@ -205,8 +207,7 @@ steps:
           ssh -o StrictHostKeyChecking=no rangerdanger@10.30.30.20 'hostname'
           curl -ks https://10.30.30.20/ -o /dev/null -w '%{http_code}\n'
 
-      A banner or HTTP response confirms application access. A refusal means
-      the port was reached but no service accepted it; it is not a deny.
+      A banner or HTTP response confirms application access. Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop.
       These two management ports stay allowed for every plan. They do not
       prove that the other vendor paths closed. Test the other planned boundaries separately.
       :::

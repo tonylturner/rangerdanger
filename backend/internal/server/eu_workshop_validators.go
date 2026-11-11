@@ -71,7 +71,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	isPlan := s.policySource == "plan" && s.planProvenance != nil && s.appliedPlan != nil
 	planIdentityOK := !isPlan || s.planProvenance.PolicyHash == wantHash
 	s.activeConfigMu.RUnlock()
-	hash, err := gen.Containd().GetFirewallHash(ctx)
+	running, hash, err := readRunningFirewall(ctx, gen, wantHash)
 	ev.policyErr = err
 	if targetErr != nil {
 		ev.policyErr = targetErr
@@ -119,6 +119,12 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 					ev.foreignBreakerAllowed = expectation.PlanVerdict == labs.VerdictAllow
 				}
 			}
+		}
+		if matrixErr == nil && ev.policyErr != nil {
+			matrixErr = ev.policyErr
+		}
+		if matrixErr == nil {
+			attributeProbes(matrix, running)
 		}
 		ev.negativeErr = matrixErr
 		ev.negativeExpected = len(matrix)

@@ -5,7 +5,8 @@
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CALLS="$TMP_DIR/history-calls"
 : >"$CALLS"
-BOUNDARY=denied
+BOUNDARY=unavailable
+CURL_RC=28
 ARCHIVED=0
 eu_apply_named() { :; }
 eu_window_start() { :; }
@@ -23,10 +24,11 @@ docker() {
   if printf '%s' "$payload" | jq -e '.schema == 3 and (.points | length > 0)' >/dev/null; then
     ARCHIVED=$((ARCHIVED + 1))
   fi
-  if [ "$BOUNDARY" = denied ]; then
+  if [ "$BOUNDARY" = unavailable ]; then
     case "$*" in
+      # A firewall RESET can yield the same refusal; G19 claims no drop proof.
       *wget*) printf 'Connection refused\n' >&2; return 1 ;;
-      *) return 28 ;;
+      *) return "$CURL_RC" ;;
     esac
   fi
   # Historian would reject the schema even if a faulty rule allowed this peer.
@@ -40,9 +42,15 @@ tshark() {
   esac
 }
 t_run eu_gate_G19
-t_expect_fails 0 "denied probes and real CC ingest evidence pass G19"
-t_expect_eq "$ARCHIVED" 0 "denied probes create no archive rows"
+t_expect_fails 0 "unavailable probes and real CC ingest evidence pass G19"
+t_expect_eq "$ARCHIVED" 0 "unavailable probes create no archive rows"
+t_expect_out "unavailable (wget 1; not drop proof)" "refusal is not labelled firewall denial"
+t_expect_no_out "denied" "G19 makes no DENY/drop claim"
 t_expect_eq "$(grep -c '\"schema\":0' "$CALLS")" 5 "every untrusted probe uses a non-archivable body"
+CURL_RC=7
+t_run eu_gate_G19
+t_expect_fails 0 "curl connect failure, including RESET refusal, proves only unavailability"
+t_expect_out "unavailable (curl 7; not drop proof)" "generic curl failure is not labelled dropped"
 BOUNDARY=allowed
 t_run eu_gate_G19
 t_expect_fails 5 "a reachable boundary fails (including HTTP rejection), never passes on 400"

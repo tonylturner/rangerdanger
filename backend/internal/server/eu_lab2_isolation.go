@@ -17,6 +17,8 @@ type isolationTarget struct {
 	Path string `json:"path"`
 }
 
+// Management isolation checks unreachability, not the teaching DENY/drop proof:
+// refusal counts as blocked here, deliberately unlike strict conduit validators.
 // Do not bind the teaching source: that would conceal an accidental management
 // leg. Transport failures are structured evidence; missing tools/exec, invalid
 // requests and protocol failures must not turn into a successful deny check.

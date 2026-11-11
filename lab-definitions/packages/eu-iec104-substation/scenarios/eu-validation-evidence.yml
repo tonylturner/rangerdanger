@@ -167,8 +167,10 @@ steps:
       Open each named source terminal. Never move a test to a convenient host.
       Use a scoped TCP connect and an application READ for test-host positives.
       No control writes belong in this acceptance run. A TCP connection is not
-      command authorization; a refusal means reached, not a working application.
-      Only a connect timeout counts as a deny result. Tool/container errors are
+      command authorization.
+      Use DENY for every required closure. A RESET rule answers with a TCP reset, so the host test shows "Connection refused" and cannot prove the drop; the validator reports it as blocked by RESET.
+      Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop.
+      Only a connect timeout counts as a DENY/drop result. Tool/container errors are
       untested evidence. A timeout alone does not explain why packets were lost.
       Use the working baseline, capture and running rules together.
       :::
@@ -192,8 +194,8 @@ steps:
       | gps-1 and field simulators | `nmap -Pn -sT`; use only the named source/destination in the plan | Run or terminal |
 
       For CC/RTU, an interactive connect example is `busybox pscan -cb -p 2404 -P 2404 -t 3000 10.30.30.20`.
-      Read pscan’s state: `open` or `closed` means reached; `blocked` means
-      connect timeout. An unknown state or tool error is untested, not denied.
+      Read pscan’s state: `open` means connected; `closed` means the host or a
+      firewall RESET rule answered; `blocked` means connect timeout. An unknown state or tool error is untested, not denied.
       Do not use its exit code alone.
       Use it only for a row whose actual source/destination is CC→RTU. Change
       port and destination for other approved rows; do not originate it elsewhere.
@@ -277,8 +279,8 @@ steps:
 
       `-Pn` skips host discovery. Under Hardened expect `filtered` / timeout,
       compared with an open-port Weak control. Under a partial plan compare the
-      owning action: a deferred exposure may remain reachable. Connection refused
-      is reached, never denied; a missing tool is missing evidence. Repeat from
+      owning action: a deferred exposure may remain reachable. Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop.
+      A refusal is not a DENY/drop result; a missing tool is missing evidence. Repeat from
       each named source using the intended destination and port; these samples
       cannot replace your test plan. Keep the Control Centre and process healthy while
       probing. See [port and source boundaries](/knowledge#eu-port-source-boundary).

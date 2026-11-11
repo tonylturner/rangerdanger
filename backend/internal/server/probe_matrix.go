@@ -14,6 +14,7 @@ type probeMeasurement struct {
 	ID       string `json:"id"`
 	Observed string `json:"observed"`
 	Error    string `json:"error"`
+	RuleID   string `json:"ruleId,omitempty"`
 }
 
 type probeMatrixResult struct {
@@ -67,15 +68,24 @@ func (s *Server) measureProbeMatrix(ctx context.Context, gen *lifecycle.Generati
 	if err != nil {
 		return result, err
 	}
-	hash, hashErr := gen.Containd().GetFirewallHash(ctx)
+	policy, hash, hashErr := readRunningFirewall(ctx, gen, wantHash)
+	if hashErr == nil {
+		attributeProbes(matrix, policy)
+	}
 	result.PolicyHash = hash
-	rows := runEUProbeMatrix(ctx, matrix, probe)
+	measure := probe
+	if hashErr != nil {
+		measure = func(_ context.Context, p validationProbe) validationRow {
+			return validationRow{validationProbe: p, Actual: "skipped", ProbeError: hashErr.Error()}
+		}
+	}
+	rows := runEUProbeMatrix(ctx, matrix, measure)
 	for _, row := range rows {
 		observed := row.Actual
-		if observed != "allow" && observed != "deny" {
+		if observed != "allow" && observed != "deny" && observed != "reset" {
 			observed = "untested"
 		}
-		result.Rows = append(result.Rows, probeMeasurement{row.ID, observed, row.ProbeError})
+		result.Rows = append(result.Rows, probeMeasurement{ID: row.ID, Observed: observed, Error: row.ProbeError, RuleID: row.Decision.RuleID})
 	}
 	finalHash, finalErr := gen.Containd().GetFirewallHash(ctx)
 	result.FinishedAt = time.Now().UTC()

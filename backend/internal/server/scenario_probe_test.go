@@ -56,7 +56,8 @@ func TestProbeVerdictsUseDiagnostics(t *testing.T) {
 				return tt.stdout, tt.stderr, tt.rc, tt.err
 			}
 			step := labs.ScenarioStep{Node: "kali-1", Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.40.40.20", Port: 502, Note: "Relay"}}}}
-			rows := s.executeProbe(context.Background(), s.rng.(*fakeRange).gen, step)
+			gen = installProbePolicy(t, s, gen)
+			rows := s.executeProbe(context.Background(), gen, step)
 			if len(rows) != 1 || rows[0].Success != tt.wantSuccess || rows[0].Action != "probe kali-1 → 10.40.40.20:502" || !strings.Contains(rows[0].Detail, tt.wantDetail) || !strings.HasPrefix(rows[0].Detail, "Relay: ") {
 				t.Fatalf("rows = %+v", rows)
 			}
@@ -79,7 +80,8 @@ func TestProbeMultiSourceAndOrder(t *testing.T) {
 		{From: "eng-ws-1", Host: "10.40.40.23", Port: 502},
 		{From: "rtac-1", Host: "10.40.40.20", Port: 20000},
 	}}}
-	rows := s.executeProbe(context.Background(), s.rng.(*fakeRange).gen, step)
+	gen := installProbePolicy(t, s, s.rng.(*fakeRange).gen)
+	rows := s.executeProbe(context.Background(), gen, step)
 	if len(rows) != 3 || !strings.Contains(rows[0].Action, "kali-1") || !strings.Contains(rows[1].Action, "eng-ws-1") || !strings.Contains(rows[2].Action, "rtac-1") {
 		t.Fatalf("rows = %+v", rows)
 	}
@@ -99,7 +101,8 @@ func TestProbeUnknownSourceNode(t *testing.T) {
 		return "", "", 0, nil
 	}
 	step := labs.ScenarioStep{Node: "plc-9", Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.40.40.20", Port: 502}}}}
-	rows := s.executeProbe(context.Background(), s.rng.(*fakeRange).gen, step)
+	gen := installProbePolicy(t, s, s.rng.(*fakeRange).gen)
+	rows := s.executeProbe(context.Background(), gen, step)
 	if len(rows) != 1 || rows[0].Success || !strings.Contains(rows[0].Detail, "node plc-9 is not part of package us-dnp3-substation") {
 		t.Fatalf("rows = %+v", rows)
 	}

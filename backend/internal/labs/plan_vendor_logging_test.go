@@ -140,8 +140,8 @@ func TestUSVendorOTDenyPreservesVerdicts(t *testing.T) {
 				for _, port := range []int{22, 443, 502, 1881, 8080, 20000, 12345} {
 					tuple := PlanTuple{"dmz", "lan1", "10.20.20.10", "10.30.30.20", protocol, port}
 					for _, policy := range [][]PlanRule{rules, hardened} {
-						before := Evaluate(withoutVendorOTDeny(policy), defaultAction, tuple)
-						if got := Evaluate(policy, defaultAction, tuple); got != before {
+						before := Decide(withoutVendorOTDeny(policy), defaultAction, tuple).Verdict
+						if got := Decide(policy, defaultAction, tuple).Verdict; got != before {
 							t.Errorf("%s/%d changed verdict %s -> %s", protocol, port, before, got)
 						}
 					}

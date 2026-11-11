@@ -264,3 +264,40 @@ func TestReadPolicyJSONWithRetryMissingFile(t *testing.T) {
 		t.Errorf("expected wrapped read error, got %q", err.Error())
 	}
 }
+
+func TestCompareRulesResetAndMixtures(t *testing.T) {
+	for _, actions := range [][]string{{"RESET"}, {"RESET", "ALLOW"}, {"RESET", "DENY"}, {"RESET", "RATE_LIMIT", "TAG"}} {
+		t.Run(strings.Join(actions, "/"), func(t *testing.T) {
+			rules := []any{}
+			for _, action := range actions {
+				rules = append(rules, map[string]any{"id": action, "action": action, "sourceZones": []string{"wan"}, "destZones": []string{"lan1"}})
+			}
+			data, err := json.Marshal(map[string]any{"firewall": map[string]any{"defaultAction": "DENY", "rules": rules}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var cfg fwConfigFile
+			if err := json.Unmarshal(data, &cfg); err != nil {
+				t.Fatal(err)
+			}
+			want := "RESET"
+			for _, action := range actions {
+				if action == "ALLOW" || action == "DENY" {
+					want = "MIXED"
+				}
+			}
+			found := false
+			for _, row := range compareRuleSets(usCompare, &cfg, &cfg) {
+				if row.ZonePair == usCompare.label("wan", "lan1") {
+					found = true
+					if row.WeakAction != want || row.ImprovedAction != want || row.Change != "unchanged" {
+						t.Fatal(row)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("missing zone pair")
+			}
+		})
+	}
+}

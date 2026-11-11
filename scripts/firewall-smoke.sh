@@ -7,10 +7,11 @@
 # then probes a positive+negative traffic matrix from inside the lab
 # containers to confirm the dataplane enforces what the policy says.
 #
-# Verdict mapping:
-#   allow = SYN got through the firewall (TCP connect succeeds, OR
-#           fast RST from a closed port — packet reached destination)
+# Binary mapping for the named ALLOW/DENY-only policies applied here:
+#   allow = TCP connect succeeds or fast RST answers
 #   deny  = SYN was dropped (timeout)
+# Refusal alone can be a closed host listener or firewall RESET; this matrix
+# does not judge arbitrary manual RESET rules or prove their DENY closure.
 #
 # The probe uses bash /dev/tcp where available, busybox nc otherwise.
 # Both can return rc=1 for either "refused" or "timeout"; we

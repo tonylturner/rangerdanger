@@ -470,8 +470,9 @@ export function ActiveFlowsPanel({
         : protos.length <= 3
         ? protos.join(" / ")
         : `${protos.length} flows`;
+    const blocked = r.action === "DENY" || r.action === "RESET";
     const actionColor =
-      r.action === "DENY"
+      blocked
         ? "text-red-400"
         : r.action === "MIXED"
         ? "text-amber-400"
@@ -481,13 +482,14 @@ export function ActiveFlowsPanel({
       <li key={key} className="leading-tight">
         <div className="flex items-baseline gap-1.5 text-[11px]">
           <span className={`font-bold ${actionColor}`}>
-            {r.action === "DENY" ? "✕" : r.action === "MIXED" ? "⚠" : "✓"}
+            {blocked ? "✕" : r.action === "MIXED" ? "⚠" : "✓"}
           </span>
           <span className="font-mono text-slate-500">{arrow}</span>
           <span className="text-slate-200">{humanZoneName(peerZone)}</span>
           <span className="text-slate-500">·</span>
           <span className="text-slate-300">{protoLabel}</span>
         </div>
+        {r.action === "RESET" && <p className="text-xs text-red-400">RESET</p>}
         {r.action === "MIXED" && <p className="text-xs text-amber-300">MIXED · authorization unknown</p>}
       </li>
     );

@@ -24,6 +24,10 @@ func (s *Server) executeProbe(ctx context.Context, gen *lifecycle.Generation, st
 	if err != nil {
 		return probePolicyFailures(step, judging.detail+": judging target cannot be evaluated: "+err.Error())
 	}
+	running, stable, err := s.runningPolicy(ctx, gen)
+	if err != nil {
+		return probePolicyFailures(step, "running policy unavailable: "+err.Error())
+	}
 	var workers sync.WaitGroup
 	limit := make(chan struct{}, 5)
 	for i, target := range step.Action.Targets {
@@ -32,10 +36,13 @@ func (s *Server) executeProbe(ctx context.Context, gen *lifecycle.Generation, st
 		go func() {
 			defer workers.Done()
 			defer func() { <-limit }()
-			results[i] = s.probeTarget(ctx, gen, step, target, policy, judging.detail)
+			results[i] = s.probeTarget(ctx, gen, step, target, policy, running, judging.detail)
 		}()
 	}
 	workers.Wait()
+	if err := stable(); err != nil {
+		return probePolicyFailures(step, err.Error())
+	}
 	return results
 }
 
@@ -73,7 +80,7 @@ func probePolicyFailures(step labs.ScenarioStep, detail string) []StepActionResu
 	return results
 }
 
-func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep, target labs.ProbeTarget, policy evaluatedFirewall, judgingLabel string) StepActionResult {
+func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep, target labs.ProbeTarget, policy, running evaluatedFirewall, judgingLabel string) StepActionResult {
 	source := target.From
 	if source == "" {
 		source = step.Node
@@ -98,14 +105,17 @@ func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, ste
 	container := svc.Container
 	cmd := []string{"/bin/sh", "-c", probeCommand, "_", target.Host, fmt.Sprint(target.Port)}
 	stdout, stderr, rc, err := s.execInContainer(ctx, container, cmd, 4)
-	verdict, detail := classifyScenarioProbe(stdout, stderr, rc, err)
-	if verdict == "" {
+	observation, detail := classifyScenarioProbe(stdout, stderr, rc, err)
+	decision := labs.DecideRoute(running.Rules, running.DefaultAction, route)
+	actual, reset := reconcileTCP(observation, decision)
+	if actual == "reset" {
+		row.Detail = reset
+		return row
+	}
+	if actual == "skipped" {
 		return fail(detail)
 	}
-	expectedVerdict := labs.VerdictAllow
-	if !route.Bridged {
-		expectedVerdict = labs.Evaluate(policy.Rules, policy.DefaultAction, route.Tuple)
-	}
+	expectedVerdict := labs.DecideRoute(policy.Rules, policy.DefaultAction, route).Verdict
 	expected := "blocked"
 	if expectedVerdict == labs.VerdictAllow {
 		expected = "reachable"
@@ -114,6 +124,10 @@ func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, ste
 	if step.ExpectedConfig == "weak" {
 		expectedLabel = expected
 	}
+	verdict := "blocked"
+	if actual == "allow" {
+		verdict = "reachable"
+	}
 	row.Detail = prefix + fmt.Sprintf("expected %s by %s, observed %s%s", expectedLabel, judgingLabel, verdict, detail)
 	row.Success = verdict == expected
 	return row
@@ -121,38 +135,38 @@ func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, ste
 
 func classifyScenarioProbe(stdout, stderr string, rc int, err error) (string, string) {
 	if err != nil {
-		return "", "probe failed: " + err.Error()
+		return "skipped", "probe failed: " + err.Error()
 	}
 	diagnostic := strings.ToLower(strings.TrimSpace(stdout + "\n" + stderr))
 	refused := strings.Contains(diagnostic, "connection refused")
 	timedOut := strings.Contains(diagnostic, "timed out")
 	if refused && timedOut {
-		return "", "probe error: conflicting refusal and timeout diagnostics"
+		return "skipped", "probe error: conflicting refusal and timeout diagnostics"
 	}
 	switch rc {
 	case 0:
 		if refused || timedOut {
-			return "", "probe error: successful exit conflicts with connection diagnostics"
+			return "skipped", "probe error: successful exit conflicts with connection diagnostics"
 		}
-		return "reachable", ""
+		return "connected", ""
 	case 124, 143:
 		if refused {
-			return "", "probe error: timeout exit conflicts with refusal diagnostic"
+			return "skipped", "probe error: timeout exit conflicts with refusal diagnostic"
 		}
-		return "blocked", " (timeout 3 s)"
+		return "timeout", " (timeout 3 s)"
 	case 1:
 		switch {
 		case refused:
-			return "reachable", " (connection refused)"
+			return "refused", " (connection refused)"
 		case timedOut:
-			return "blocked", " (connection timed out)"
+			return "timeout", " (connection timed out)"
 		default:
-			return "", fmt.Sprintf("probe error: exit status 1 without refusal or timeout diagnostics: %s", diagnostic)
+			return "skipped", fmt.Sprintf("probe error: exit status 1 without refusal or timeout diagnostics: %s", diagnostic)
 		}
 	default:
 		if diagnostic == "" {
-			return "", fmt.Sprintf("probe error: unexpected exit status %d", rc)
+			return "skipped", fmt.Sprintf("probe error: unexpected exit status %d", rc)
 		}
-		return "", fmt.Sprintf("probe error: unexpected exit status %d: %s", rc, diagnostic)
+		return "skipped", fmt.Sprintf("probe error: unexpected exit status %d: %s", rc, diagnostic)
 	}
 }

@@ -432,7 +432,9 @@ steps:
     :::
 
     :::hint A timeout is a specific result
-    Strict active probes count only connection timeout as denied. Connection refused means the packet reached a host; a missing tool or failed container exec is missing evidence, never a pass. A logged SYN deny cannot reveal the denied command payload.
+    Use DENY for every required closure. A RESET rule answers with a TCP reset, so the host test shows "Connection refused" and cannot prove the drop; the validator reports it as blocked by RESET.
+    Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop.
+    A missing tool or failed container exec is missing evidence, never a pass. A logged SYN deny cannot reveal the denied command payload.
     :::
 - id: test-positive
   title: Phase 5 - Validate allowed traffic
@@ -566,7 +568,7 @@ steps:
         nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4
 
     :::hint Diagnose a gap honestly
-    A deferred plan can leave a sampled path open. Correct the plan/rules or record the gap; do not label it passed because the policy is called custom or improved. Connection refused is reached, not denied.
+    A deferred plan can leave a sampled path open. Correct the plan/rules or record the gap; do not label it passed because the policy is called custom or improved. Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop.
     :::
 
     :::hint Expected results by owning action
@@ -582,8 +584,7 @@ steps:
     :::
 
     :::hint Evidence limits and deferred risk
-    Required diagnostic denies still apply to every request. Connection refused
-    means reached (allow); only connect timeout means deny. A missing tool or
+    Required diagnostic denies still apply to every request. Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop. A missing tool or
     container error is missing evidence, never a pass. Keep deferred reachable
     paths as prevention gaps with named risk owners. A timeout alone does not
     identify the cause; retain packet evidence and operator observations for

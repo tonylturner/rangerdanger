@@ -434,8 +434,9 @@ steps:
     description: |
       Test the prohibited paths in your change request from their named sources.
       Record source, destination, service, expected result, observation and UTC time.
-      A deny verdict requires a connection timeout. Connection refused means
-      reached (allow). A missing tool or container error is missing evidence, never a pass.
+      Use DENY for every required closure. A RESET rule answers with a TCP reset, so the host test shows "Connection refused" and cannot prove the drop; the validator reports it as blocked by RESET.
+      Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop.
+      A missing tool or container error is missing evidence, never a pass.
 
       | Path | Owning action | Selected / deferred |
       |---|---|---|

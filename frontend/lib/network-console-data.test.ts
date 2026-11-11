@@ -49,10 +49,22 @@ describe("getZonePolicyInfo", () => {
     expect(info.details).toHaveLength(3);
   });
 
-  it.each(["ALLOW", "DENY", "MIXED"] as const)("retains %s and wildcard destinations", (action) => {
+  it("labels a RESET-only zone as blocked, never allowed or over-permissive", () => {
+    expect(getZonePolicyInfo("station_net", rules.map((rule) => ({ ...rule, action: "RESET" })), graph.networks)).toMatchObject({
+      label: "RESET", action: "RESET", permissiveness: "blocked",
+    });
+  });
+
+  it.each(["ALLOW", "DENY", "MIXED"] as const)("keeps RESET mixed with %s distinct from a single action", (action) => {
+    expect(getZonePolicyInfo("station_net", [{ ...rules[0], action: "RESET" }, { ...rules[1], action }], graph.networks)).toMatchObject({
+      label: "MIXED · authorization unknown", action: "MIXED", permissiveness: "unknown",
+    });
+  });
+
+  it.each(["ALLOW", "DENY", "RESET", "MIXED"] as const)("retains %s and wildcard destinations", (action) => {
     expect(getZonePolicyInfo("enterprise_net", [{ ...rules[0], dest_zone: "any", action }], graph.networks)).toMatchObject({
       action,
-      permissiveness: action === "DENY" ? "blocked" : action === "MIXED" ? "unknown" : "over",
+      permissiveness: (action === "DENY" || action === "RESET") ? "blocked" : action === "MIXED" ? "unknown" : "over",
     });
   });
 });
@@ -71,8 +83,20 @@ describe("getFlowAuthorization", () => {
     });
   });
 
+  it("labels RESET authorization even when a rule description is present", () => {
+    expect(getFlowAuthorization("cc-1", "rtu-1", [{ ...rule, action: "RESET" }], eu)).toEqual({
+      state: "denied", text: "Denied by zone-pair summary (RESET) — CC /32 only",
+    });
+  });
+
+  it("keeps RESET denial evidence labelled with its action", () => {
+    expect(getFlowAuthorization("cc-1", "rtu-1", [{ ...rule, action: "RESET", rule_details: [] }], eu)).toEqual({
+      state: "denied", text: "Denied by zone-pair summary (RESET) — lan4 → lan1: RESET",
+    });
+  });
+
   it("reports denial evidence independently of liveness", () => {
-    expect(getFlowAuthorization("cc-1", "rtu-1", [{ ...rule, action: "DENY" }], eu)).toEqual({ state: "denied", text: "Denied by zone-pair summary — CC /32 only" });
+    expect(getFlowAuthorization("cc-1", "rtu-1", [{ ...rule, action: "DENY" }], eu)).toEqual({ state: "denied", text: "Denied by zone-pair summary (DENY) — CC /32 only" });
   });
 
   it.each(["station-clock", "rtu-plc-1"])("identifies %s as outside firewall scope, even without summaries", (id) => {

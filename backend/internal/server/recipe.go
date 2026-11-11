@@ -59,13 +59,12 @@ type deviceCommand struct {
 	value                 *float64
 }
 
-// canaryProbe is the TCP connect whose verdict shows the dataplane enforces
-// a canned policy: allowed under allowUnder, denied under denyUnder.
+// canaryProbe is the connect-only tuple used to check reconciliation against
+// the hash-verified committed policy, independent of its display label.
 type canaryProbe struct {
-	fromNode, label       string
-	toNode, network       string
-	port                  int
-	allowUnder, denyUnder string
+	fromNode, label string
+	toNode, network string
+	port            int
 }
 
 // trafficTarget runs command, with %s replaced by toNode's address on
@@ -175,7 +174,7 @@ func resolveProof(gen *lifecycle.Generation, expectations []labs.PlanExpectation
 		}
 		note := fmt.Sprintf("%s (topology source %s on %s)", expectation.Note, route.Tuple.SrcIP, route.SourceNetwork)
 		probes = append(probes, validationProbe{Src: from.Container, SrcLabel: label, Dst: dst, Port: strconv.Itoa(expectation.Port), Expected: string(expected), Note: note, Category: expectation.Category,
-			ID: expectation.ID})
+			ID: expectation.ID, Route: route})
 	}
 	return probes, nil
 }
