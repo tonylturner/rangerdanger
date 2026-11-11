@@ -26,24 +26,30 @@ steps:
   title: Walk the topology and inspect the crossings
   expected_config: weak
   description: |
+    ### Do this
+    - Start with Weak and a healthy feeder; reset only before collecting evidence.
+    - Open Control Centre, press **Interrogate station**, and wait for GI completion before **Execute Step**.
+    - Walk all six zones on the Network Map; label CC→RTU TCP/2404, RTU→field TCP/502 and the separate pinned PLC→OLTC conduit.
+    - Toggle **Purdue Model View**, inspect crossings, and answer the boundary questions.
+
     **Time budget:** ~15 minutes (estimate; optional depth takes extra time).
 
+    :::hint Glossary and architecture
     ### Quick glossary
     - **CC / RTU:** Control Centre master / Remote Terminal Unit gateway ([architecture](/knowledge#eu-telecontrol-architecture)).
     - **GI:** general interrogation, a request for the complete station inventory ([GI and quality](/knowledge#iec104-gi-cot-quality)).
     - **OLTC / PLC:** on-load tap changer / programmable logic controller regulating it ([architecture](/knowledge#eu-telecontrol-architecture)).
     - **RMU:** ring main unit, a field switching device ([architecture](/knowledge#eu-telecontrol-architecture)).
     - **Deadband:** a value-change threshold for spontaneous reporting, not a permission rule ([GI and quality](/knowledge#iec104-gi-cot-quality)).
+    :::
 
-    Before **Execute Step**, open **Control Centre** in [/substation](/substation)
-    in a second tab, press **Interrogate station**, and wait for GI completion.
-    GI means general interrogation: refresh the station inventory on the current
-    connection. The check needs matched GI evidence within ten minutes; routine
+    Use [/substation](/substation) in a second tab for the GI check.
+    The check needs matched GI evidence within ten minutes; routine
     GI runs only every 15 minutes, so do not rely on the periodic cycle.
 
-    Start with weak policy and a healthy feeder. Use Reset Lab only before gathering evidence. On the [Network Map](/console), walk Enterprise, Vendor/Engineering, Station, Field, Control Centre and Operations DMZ. Label the two control hops: CC→RTU TCP/2404 and RTU→field TCP/502. The PLC has a separate pinned OLTC conduit.
-
+    :::hint Reporting cadence and observation quality
     In [/substation](/substation), compare the **Control Centre** observations, quality and receipt times with the separate **Physical System** view. GI runs on connect, every 15 minutes or via **Interrogate station**; quiet valid status does not expire. Float measurements are cyclic every 10 seconds, PLC parameters every 60 seconds, with deadband/quality spontaneous reports between cycles. Breaker closed and supply present are your known-good baseline; a socket is not proof of fresh observation.
+    :::
 
     :::hint Boundaries and blind spots
     RTU↔PLC and RTU↔GPS share station_net, so the firewall cannot enforce those same-subnet relationships. PLC→OLTC crosses Station→Field and IS visible. Read [Zones and conduits](/knowledge#eu-zone-conduit-design).
@@ -51,7 +57,10 @@ steps:
 
     ### Switch to the Purdue Model view
 
-    In the canvas controls toggle **Purdue Model View**. The layout re-bands the same hosts into the package's teaching interpretation of Purdue architectural levels:
+    In the canvas controls toggle **Purdue Model View**. Toggle it off and on, then inspect Enterprise→Field, Vendor→Station and Station→Field tooltips.
+
+    :::hint Purdue levels and boundary interpretation
+    The layout re-bands the same hosts into the package's teaching interpretation of Purdue architectural levels:
 
     - **Level 4 · Enterprise Zone** - Kali probe (`10.10.10.0/24`)
     - **Level 3.5 · Vendor / Engineering Zone** - vendor-jump / eng-ws maintenance access (`10.20.20.0/24`)
@@ -60,9 +69,11 @@ steps:
     - **Level 1–2 · Station Zone** - RTU gateway (L1–2), PLC (L1) and clock (`10.30.30.0/24`)
     - **Level 1 · Field Device Zone** - breakers / RMUs / OLTC (`10.40.40.0/24`)
 
-    Toggle the view off and on to connect each zone to its functional role. The two L3.5 zones have different roles and remain separate boundaries. IEC 62443 zones/conduits add risk-based boundaries to that architecture; a Purdue band alone is not an enforcement policy or a numeric Security Level target. Inspect Enterprise→Field, Vendor→Station and Station→Field crossing tooltips, distinguishing exposed policy ports from currently observed traffic.
+    The two L3.5 zones have different roles and remain separate boundaries. IEC 62443 zones/conduits add risk-based boundaries to that architecture; a Purdue band alone is not an enforcement policy or a numeric Security Level target. Distinguish exposed policy ports from currently observed traffic.
 
     > **Background:** if the level numbering is new to you, open [Purdue Model](/knowledge#eu-purdue-model) in the Knowledge base. Lab 1.3 returns to this architectural view; Lab 2.4 validates actual paths and continuity, not Purdue level labels. Purdue describes architecture; IEC 62443 adds zones, conduits and risk-based security requirements. Read [Zones and conduits](/knowledge#eu-zone-conduit-design) for the package's boundaries.
+
+    :::
 
     :::decision id=zones-located options=ALL_SIX,SOME_MISSING,COULDNT_FIND correct=ALL_SIX
     Did you locate all six teaching zones on the canvas?
@@ -90,22 +101,28 @@ steps:
 - id: generate-scenario-traffic
   title: Generate scenario traffic
   description: |
-    Press **Generate Traffic (45s)** to preview generated flows. This is a fixed-duration run, not a toggle; start it again immediately before the capture in the next step. The generator makes real engineering→PLC maintenance GETs, enterprise→historian reads and vendor→historian reads under weak policy. These are scenario flows, not autonomous control polls.
+    ### Do this
+    - Press **Generate Traffic (45s)** for a preview.
+    - Open **Traffic Matrix** on the Network Map and compare polling, maintenance and historian reads.
+    - Answer the two observation questions; restart generation immediately before the next capture.
+
+    Generation is a fixed-duration run, not a toggle. Under Weak it makes real engineering→PLC maintenance GETs, enterprise→historian reads and vendor→historian reads: scenario flows, not autonomous control polls.
 
     :::generate-traffic-button
     :::
 
-    While generation runs, open the [Network Map](/console) and click **Traffic Matrix** in the left drawer. Compare active Station→Field polling with Vendor→Station maintenance and Enterprise/Vendor→Operations DMZ reads. Same-subnet RTU↔PLC/GPS is absent from this cross-zone view. Restart generation in the capture step; this preview may have ended by then.
+    On the [Network Map](/console), **Traffic Matrix** is in the left drawer. Compare active Station→Field polling with Vendor→Station maintenance and Enterprise/Vendor→Operations DMZ reads. Same-subnet RTU↔PLC/GPS is absent; this preview may end before the capture.
 
-    ### Sneak preview: the live Traffic Matrix
-
-    This live view of cross-zone flows is the same communication you'll capture and inspect with tshark next. Before committing to the 12-second rotation window, use it to confirm that the autonomous and generated exchanges are active:
+    :::hint Traffic Matrix flow reference
+    This live view shows the cross-zone communication you will inspect with tshark in the 12-second rotation window:
 
     - `10.30.30.20` (RTU) → `10.40.40.x` (field devices) on Modbus 502—the station polling path
     - `10.30.30.30` (PLC) → `10.40.40.23` (OLTC) on Modbus 502—the tap-control path
     - `10.60.60.20` (Control Centre) → `10.30.30.20` (RTU) on IEC 104/2404—the supervisory-control path
     - `10.20.20.20` (Vendor/Engineering workstation) → `10.30.30.30` (PLC) on HTTP 8080—generated maintenance traffic
     - Enterprise and Vendor sources → `10.70.70.40` (historian) on HTTP 8080—generated reads, not historian ingest authority
+
+    :::
 
     :::decision id=matrix-rtu-to-field options=ACTIVE,QUIET,NOT_SEEN correct=ACTIVE
     How active is RTU↔field-device traffic in the live Traffic Matrix?
@@ -130,14 +147,15 @@ steps:
   title: Capture traffic at the firewall
   node: fw-1
   description: |
-    **Terminal choice:** select **fw-1** in the terminal tabs before running
-    capture commands. **Show terminal** reveals the terminal panel; verify its
-    active node label rather than assuming the current tab is the firewall.
-    The [Network Map](/console) also opens a terminal on its selected node.
+    ### Do this
+    - Select the **fw-1** terminal and verify its active node label.
+    - Press **Generate Traffic (45s)**; wait for acknowledgement before starting tcpdump.
+    - Type `exit` if in the configuration CLI; run the Linux capture commands below.
+    - Wait for completion and packet count; preserve the PCAP before any reset.
 
-    Immediately before starting tcpdump, press **Generate Traffic (45s)** here.
-    Wait for the generation acknowledgement, then start the capture without
-    reading ahead. The generator stops automatically.
+    **Show terminal** reveals the terminal panel. The [Network Map](/console)
+    also opens a terminal on its selected node. Start capture immediately after
+    the generation acknowledgement, without reading ahead; generation stops automatically.
 
     :::generate-traffic-button
     :::
@@ -147,7 +165,9 @@ steps:
         mkdir -p /data/captures
         tcpdump -i any -nn 'not host 127.0.0.1' -G 12 -W 1 -w /data/captures/baseline.pcap
 
+    :::hint Capture stop messages and timing
     Wait for capture completion and the packet count. Two messages can look like warnings but are expected: `WARNING: any: That device doesn't support promiscuous mode` is harmless because the Linux `any` pseudo-interface cannot enter promiscuous mode and does not need to inside the container; `Maximum file limit reached: 1` is tcpdump's expected one-file stop. With `-G 12 -W 1`, the rotation closes on the first packet after 12 seconds, not on a wall-clock timer alone. With a healthy CC link, float reports every 10 seconds provide that packet by about 22 seconds, inside Run’s 30-second budget; the running generator also adds engineering maintenance and historian-read traffic. PLC parameter reports are every 60 seconds, not the rotation clock. If teaching traffic stops, rotation can wait beyond the budget. Keep the PCAP before any reset.
+    :::
 
     :::hint Capture scope
     Management UI traffic is out of band. Capture shows cross-zone teaching traffic, not all dependencies. Never infer same-subnet isolation from an empty firewall capture. [Capture reference](/knowledge#eu-tool-tcpdump).
@@ -156,7 +176,13 @@ steps:
   title: Analyze cross-zone flows
   node: eng-ws-1
   description: |
-    Analysis happens on the **engineering workstation**, not on the firewall. The PCAP captured at fw-1 is mounted read-only at `/home/abc/pcaps/baseline.pcap`; there is no copy step. Switch to the **eng-ws-1 terminal tab** for this analysis.
+    ### Do this
+    - Switch to the **eng-ws-1 terminal**; the firewall PCAP is already mounted read-only.
+    - Check the file, then run the conversation and protocol-volume summaries below.
+    - Apply both targeted filters; record source, destination, protocol, purpose and boundary.
+    - Treat an empty filter as not observed, not denied.
+
+    The fw-1 PCAP is mounted read-only at `/home/abc/pcaps/baseline.pcap` on **eng-ws-1**; there is no copy step.
 
     ### Sanity check
 
@@ -197,7 +223,10 @@ steps:
 - id: critical-conduits-what-must-flow
   title: Critical conduits - what MUST flow
   description: |
-    Use the capture and station-state evidence to distinguish required cross-zone flows from same-zone dependencies and other observed access. The six operational intents are CC→RTU, RTU→field, PLC→OLTC, CC historian ingest, enterprise historian read and engineering→PLC web.
+    ### Do this
+    - Compare capture evidence with current station observations.
+    - Identify the six required cross-zone intents, separating same-zone dependencies.
+    - Answer all three conduit and continuity questions below.
 
     :::decision id=required-cross-zone-conduits options=SIX_OPERATIONAL_INTENTS,EVERY_OBSERVED_FLOW,CC_ONLY correct=SIX_OPERATIONAL_INTENTS
     Which cross-zone flows must remain available for normal operation?
@@ -254,7 +283,10 @@ steps:
 - id: findings-what-you-observed
   title: Findings - what you observed
   description: |
-    Record what appeared in the passive capture, not what you want to block. Lab 1.3 owns the design verdicts.
+    ### Do this
+    - Review the passive PCAP, not the active-probe results.
+    - Answer each of the five finding categories using what appeared in that window.
+    - Keep design verdicts for Lab 1.3 and record unobserved traffic honestly.
 
     :::decision id=enterprise-to-field options="EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED" correct=NOT_OBSERVED
     Enterprise/vendor → field on Modbus/502 — what did the passive capture show?
@@ -298,6 +330,11 @@ steps:
   expected_config: weak
   node: kali-1
   description: |
+    ### Do this
+    - Select **Kali** (10.10.10.50) and run the four probes below.
+    - Compare IEC 104 GI and Modbus input-register results with the passive capture.
+    - Record latent reachability and answer the question; neither read proves write authority.
+
     From **Kali** (10.10.10.50), actively probe the dormant paths:
 
         nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4
@@ -326,11 +363,10 @@ steps:
 - id: transition-decide-what-to-fix-first
   title: Transition - decide what to fix first
   description: |
-    In **Control Centre**, press **Interrogate station** again and wait for GI
-    completion before this final **Execute Step** link check. Expand the station
-    inventory there to see the 44 points and command controls. The six operational
-    intents are CC→RTU, RTU→field, PLC→OLTC, CC historian ingest, enterprise
-    historian read and engineering→PLC web.
+    ### Do this
+    - In **Control Centre**, press **Interrogate station** and wait before **Execute Step**.
+    - Expand the inventory; confirm five devices, 44 points and five unchanged commands.
+    - Retain the PCAP and flow inventory; continue to Lab 1.3, then fund changes in Lab 1.4.
 
     Confirm the known-good baseline: five field devices, 44 IEC 104 points including F2 position/trip/lockout/current/MW, and five unchanged commands. You have observed traffic, identified six operational conduits, classified passive findings and tested latent reachability; Lab 1.3 now turns those structured answers into design verdicts and test criteria.
 

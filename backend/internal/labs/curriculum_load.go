@@ -82,6 +82,9 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 	}
 	c.CurriculumBinding = *binding
 	c.ICSRules = pkg.ICSRules
+	if err := resolveCurriculumSteps(dir, c); err != nil {
+		return nil, err
+	}
 	if c.Schema != 1 {
 		return nil, fmt.Errorf("curriculum.schema must be 1")
 	}

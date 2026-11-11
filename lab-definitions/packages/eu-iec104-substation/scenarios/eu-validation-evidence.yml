@@ -30,8 +30,12 @@ steps:
     title: "Write the acceptance test plan"
     expected_config: hardened
     description: |
-      Write the test plan before touching the system. Use your Lab 1.3 requirements
-      and approved Lab 1.4 change request. Lab 2.2 supplies the running-policy record.
+      ### Do this
+      - Use Lab 1.3 requirements, the approved Lab 1.4 request and Lab 2.2 running-policy record.
+      - Copy the test-plan table into Notes; name real sources, expected results and evidence files.
+      - Include every required conduit, prohibited source group and approved deferral.
+      - Agree operators, UTC window, abort criteria and reviewed rollback before testing.
+
       The bonus lab is optional; it is not a prerequisite.
 
       :::hint Set expectations before observing results
@@ -82,6 +86,12 @@ steps:
     title: "Confirm the running policy matches your change request"
     expected_config: hardened
     description: |
+      ### Do this
+      - Start the interactive **fw-1** capture below before any source test; leave that terminal alone.
+      - Use a second browser tab and a second fw-1 terminal for policy and operator work.
+      - Compare running rules and first-match order with the approved request; stop on mismatch.
+      - Save running export, identity, audit chronology and a values/quality/alarm baseline.
+
       **Start the boundary capture now, before any source test.** Keep this exercise
       tab open. Open [containd](/containd/), [Network Map](/console) and the
       [Control Centre](/substation) in a second browser tab. Leave the capturing fw-1 terminal
@@ -100,10 +110,14 @@ steps:
       The capture is bounded to 1200 seconds (20 minutes); Ctrl-C stops it early.
       If it expires before all tests finish, start a new named file/window and
       repeat those rows. Leave this terminal capturing. Wait for the listening message, then use
-      other terminals for tests. `any` writes Linux cooked SLL2 with interface
-      metadata. A routed packet may appear twice; counts are not operation counts.
-      A field-only egress capture misses dropped SYNs. Save the file outside the
-      captures folder before Reset or shutdown; reset deletes /data/captures/*.pcap.
+      other terminals for tests. Save the file outside the captures folder before
+      Reset or shutdown; reset deletes /data/captures/*.pcap.
+
+      :::hint Capture format and scope
+      `any` writes Linux cooked SLL2 with interface metadata. A routed packet may
+      appear twice; counts are not operation counts. A field-only egress capture
+      misses dropped SYNs.
+      :::
 
       In the second tab, read the running policy in [containd](/containd/), not just its label.
       Compare its source, destination, service and first-match order with the
@@ -143,6 +157,13 @@ steps:
     title: "Run tests from the named sources"
     expected_config: hardened
     description: |
+      ### Do this
+      - Use each actual source terminal and its installed method; never substitute another host.
+      - Reconnect CC while capturing, wait for GI and retain valid current inventory.
+      - Run planned positives first, then negatives; use application reads, never control writes.
+      - Record UTC bounds, tuple, TCP/application results and errors; join logged denies to events.
+
+      :::hint TCP results and application evidence
       Open each named source terminal. Never move a test to a convenient host.
       Use a scoped TCP connect and an application READ for test-host positives.
       No control writes belong in this acceptance run. A TCP connection is not
@@ -150,7 +171,9 @@ steps:
       Only a connect timeout counts as a deny result. Tool/container errors are
       untested evidence. A timeout alone does not explain why packets were lost.
       Use the working baseline, capture and running rules together.
+      :::
 
+      :::hint Production-poller evidence without extra clients
       For a production poller, use its own live traffic: fresh good-quality points
       at the operator view after the change, plus its request/response pairs in
       the boundary capture. You do not add test clients to a production RTU; you
@@ -158,6 +181,7 @@ steps:
       Do not install tools or substitute another source. Do not call a connect a
       protocol read. Same-subnet flows need endpoint observations; they do not
       cross the firewall and cannot prove routed enforcement.
+      :::
 
       | Source | Installed method / evidence | Where |
       |---|---|---|
@@ -279,6 +303,13 @@ steps:
     title: "Read the boundary capture"
     expected_config: hardened
     description: |
+      ### Do this
+      - Stop tcpdump with Ctrl-C; record UTC end and packet/drop statistics.
+      - Open the PCAP on **eng-ws** and match each tuple/window on both named boundary interfaces.
+      - Join logged-rule timeouts to SYN/absence and exact events; classify default drops separately.
+      - Retain positive request/response and operator evidence; mark missing evidence inconclusive.
+      - Copy the PCAP and records outside the reset path before any reset or shutdown.
+
       Stop tcpdump with Ctrl-C in fw-1 after the last test. Note the UTC end and
       its packet/drop statistics. A capture that dropped packets cannot establish
       absence reliably. Open the eng-ws desktop from the Network Map node
@@ -289,6 +320,7 @@ steps:
 
           tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 502' -T fields -E header=y -e frame.number -e frame.time_utc -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags
 
+      :::hint Capture columns and exact interface names
       `frame.time_utc` prints ISO 8601 UTC (ending in Z), matching the event
       time basis without converting epoch seconds.
       The `sll.ifindex` column is the Linux cooked SLL2 interface index;
@@ -302,6 +334,7 @@ steps:
       Never infer a zone from packet order or an ethN number. In Wireshark, filter
       one test tuple and its UTC window at a time. Expand TCP and the application
       dissector. Save packet/frame references against each test ID.
+      :::
 
       | Reference negative tuples | Deciding rule / evidence class |
       |---|---|
@@ -346,6 +379,7 @@ steps:
       with no event expected. An event alone does not establish that required
       applications are unaffected.
 
+      :::hint Positive connections and established production traffic
       For each new routed positive connection, find the handshake on both interfaces and the
       source's native request/response. Match the live poller's responses to the
       fresh points observed by the operator. A handshake without application
@@ -356,6 +390,7 @@ steps:
       Clear the SYN filter in Wireshark and match its request/response pairs on
       both boundary interfaces. Record that a new handshake was not observed;
       do not restart a production poller just to manufacture one.
+      :::
 
       | Test ID | UTC / tuple | Source-zone SYN frame | Destination-zone frame or checked absence | DENY event ID / ruleId | Handshake / request-response frames | Result / limitation |
       |---|---|---|---|---|---|---|
@@ -375,8 +410,7 @@ steps:
         policy with Weak. Save before reset or shutdown; do not rely on the
         captures directory as your evidence archive.
 
-      Copy the PCAP out before any reset. Keep this table, capture statistics,
-      running export and UTC window together. Supplementary **Live Firewall Events**
+      Supplementary **Live Firewall Events**
       in the Segmentation drawer may add context. They do not replace this
       capture comparison; a detection record alone is not proof of prevention.
 
@@ -384,6 +418,11 @@ steps:
     title: "Check operator and plant health"
     expected_config: hardened
     description: |
+      ### Do this
+      - Compare plant state, supply, alarms and CC quality with the baseline under the same policy.
+      - Press **Interrogate station**; record fresh valid inventory values, quality and UTC time.
+      - Answer both operator observations; use the approved rollback if an abort criterion was met.
+
       Compare the plant with the baseline while the reviewed policy remains active.
       Check breaker closed, RMU1 closed/RMU2 open, OLTC remote/auto, fresh section
       supply and CC quality in Control Centre and Physical System.
@@ -431,9 +470,14 @@ steps:
     title: "Sign the test record"
     expected_config: hardened
     description: |
-      Read back the running identity after the last test. If it changed, do not
-      merge evidence from different policies; start a new window. Copy this test
-      record into Notes and fill every field. Attach the test plan, row results,
+      ### Do this
+      - Read back the final running identity; start a new window if it changed.
+      - Complete the test record below in Notes and attach every named artifact.
+      - Choose go/no-go against the approved scope; name untested work and residual-risk owners.
+      - Obtain tester, operator and change-owner signatures; save outside the reset path.
+
+      Do not merge evidence from different policies. Fill every record field and
+      attach the test plan, row results,
       packet references, PCAP, redacted running export and before/after operator
       readings. **Cross-check the current system** does not replace your test evidence; use
       **Cross-check the current system** only as an optional second check.

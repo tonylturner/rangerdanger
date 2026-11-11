@@ -42,6 +42,30 @@ class CurriculumReaderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid"):
             self.read_fixture({}, "../curriculum")
 
+    def test_scenario_step_references_are_strict(self):
+        with tempfile.TemporaryDirectory(prefix="rd-curriculum-") as temporary:
+            root = Path(temporary)
+            (root / "curriculum").mkdir()
+            (root / "scenarios").mkdir()
+            (root / "package.yml").write_text(yaml.safe_dump({
+                "scenarios": "scenarios", "curriculum": {
+                    "dir": "curriculum", "roles": {"implementation": "implementation"},
+                    "dynamicSteps": {"implement": "rules"},
+                },
+            }))
+            (root / "scenarios/implementation.yml").write_text(yaml.safe_dump({
+                "id": "implementation", "steps": [{"id": "implement", "description": "Review."}],
+            }))
+            section = root / "curriculum/implementation.yml"
+            section.write_text(yaml.safe_dump({"phases": {"rules": "{{step:implement}}\n\n{{ruleTable}}"}}))
+            self.assertEqual(read_curriculum(root)["phases"]["rules"], "Review.\n\n{{ruleTable}}")
+            for phase, reference in (("rules", "missing"), ("positive", "implement"),
+                                     ("rules", "Bad")):
+                section.write_text(yaml.safe_dump({"phases": {phase: "{{step:" + reference + "}}"}}))
+                with self.subTest(phase=phase, reference=reference), self.assertRaisesRegex(
+                        ValueError, "Invalid implementation step reference"):
+                    read_curriculum(root)
+
 
 class BudgetAdjustmentTests(unittest.TestCase):
     def model(self):

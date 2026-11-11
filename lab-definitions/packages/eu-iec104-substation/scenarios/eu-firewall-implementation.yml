@@ -25,10 +25,15 @@ steps:
   title: Exercise overview
   expected_config: weak
   description: |+
+    ### Do this
+    - Review your Lab 1.4 change request, baseline findings and design verdicts below.
+    - Work through weak probes, staged replacements, one reviewed commit and real-source retests.
+    - Keep rollback available. Save running-policy, operator and test evidence.
+
     :::notes-panel from=eu-remediation-planning title="Your change request (Lab 1.4)"
     :::
 
-    This lab turns your design and funded plan into an enforceable boundary. Work in order: prove weak access, remove broad trust, preserve six minimal conduits, enable visibility, test both directions and export. Keep rollback available.
+    Turn your funded design into an enforceable boundary while preserving six minimal conduits and enabling visibility.
 
     **Time budget:** ~45 minutes (estimate). Use the containd web UI or CLI.
     Author, review and commit your rules. Read back the running policy and test
@@ -65,6 +70,11 @@ steps:
   title: Verify access to containd
   expected_config: weak
   description: |
+    ### Do this
+    - Open the portal **containd** link; use the web UI or the **fw-1** configuration CLI.
+    - Inspect committed interfaces and running rules, not just pending edits.
+    - Export a known-good rollback before editing; preserve reserved management.
+
     Confirm access before changing the policy. Use the portal's
     [containd link](/containd/); management stays out of band.
 
@@ -88,6 +98,7 @@ steps:
     shows the committed rule set. Broad enterprise/vendor access to station and
     field is the Weak Baseline exposure, not an operational requirement.
 
+    :::hint CLI and Linux prompt reference
     ### Switching between the CLI and bash
 
     | Prompt | What you can run | How you got here |
@@ -100,6 +111,7 @@ steps:
     wrapper starts bash; it does not commit or discard the shared candidate.
     Type `containd cli` in bash to return before using appliance commands.
     See [policy enforcement](/knowledge#eu-containd-policy-enforcement).
+    :::
 
     :::hint Do not move management
     Management is out of band. Do not add teaching-to-management allows, routing exceptions or new host ports to make a test pass.
@@ -109,12 +121,18 @@ steps:
   expected_config: weak
   node: kali-1
   description: |
+    ### Do this
+    - Open **kali-1** and run both new-connection scans below under Weak.
+    - Probe field TCP/502 from the **eng-ws** and **vendor-jump** terminals too.
+    - Record the actual source and reachable services as exposure, not control authority.
+
     Open **kali-1** on the [Network Map](/console) and choose **Show terminal**.
     From **Kali** prove Weak Baseline access before changing policy:
 
         nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4
         nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4
 
+    :::hint What the Weak scans establish
     The first scan tests the RTU's IEC 104 listener on TCP/2404; the second
     tests field Modbus on TCP/502. `-Pn` skips host discovery, which may be
     filtered independently. Expect `open` under Weak Baseline. This worked
@@ -122,6 +140,7 @@ steps:
     sources have control authority. The Control Centre can look normal while
     this latent exposure exists; an unchanged operator screen is not closure.
     See [active probes](/knowledge#eu-tool-nmap-probes).
+    :::
 
     Use the eng-ws and vendor-jump terminal tabs to probe field TCP/502 too. Use each named source; successful access now is the exposure you must remove, not authorized control.
 
@@ -147,6 +166,12 @@ steps:
   title: Phase 2 - Remove broad trust and establish default-deny
   expected_config: weak
   description: |
+    ### Do this
+    - Save the running export; agree the rollback owner, triggers and maintenance window.
+    - Stage only approved broad-rule deletes; split bundles to preserve deferred access.
+    - Check default DENY and review CR-22 for its missing conduit.
+    - Do not commit until Phase 3 replacements share the same candidate.
+
     Before editing, use `export config` in the fw-1 configuration CLI and save
     the redacted running JSON with its identity and UTC time. Agree the rollback
     owner, abort triggers and maintenance window from your Lab 1.4 request.
@@ -233,9 +258,7 @@ steps:
     Read back what was loaded before testing.
     :::
 
-    In containd, stage only the approved replacements for broad wan/dmz access.
-    Keep infrastructure, management and deferred access intact. Add all six
-    operational intents before committing the rule change in Phase 3.
+    Keep infrastructure, management and deferred access intact.
 
     :::hint Order matters
     Place operational exceptions before overlapping diagnostic denies. Remove broad Weak allows when closing an exposure: a source-pinned allow alone does not restrict other sources.
@@ -244,6 +267,13 @@ steps:
   title: Phase 3 - Create minimal required rules
   expected_config: hardened
   description: |
+    ### Do this
+    - Use your approved request; preserve all six pinned conduits and reserved management.
+    - Stage replacements with Phase 2 deletes in the same shared candidate, placing allows before overlapping diagnostic denies.
+    - Create the four logged denies; review the complete diff with a second reviewer.
+    - Commit once, read back running order and identity, then retest from named sources.
+
+    :::hint How the request sets expected results
     Implement your approved Lab 1.4 change request, not a policy label.
     The saved selection sets the expected results below. If no eligible action
     is selected, there is no change request and the full Hardened reference is
@@ -251,6 +281,7 @@ steps:
     If you used a catch-up apply, the results follow the policy you applied.
     Keep deferred exposures open only where the request accepts that risk.
     Required operations and reserved management access must remain available.
+    :::
 
     Preserve all six operational conduits:
 
@@ -263,8 +294,6 @@ steps:
     | Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |
     | Engineering→PLC web | 10.20.20.20→10.30.30.30 | TCP/8080 |
 
-    Stage the Phase 2 deletes and all replacements in the same shared candidate.
-    Author these six intents with source and destination pins in containd.
     Keep historian read 8080 separate from CC ingest 8081. Engineering PLC web
     is 10.20.20.20 only. Do not grant vendor field control or enterprise RTU access.
     The first matching enforcing terminal rule decides; monitor rules never decide.
@@ -346,6 +375,12 @@ steps:
   title: Phase 4 - Reconnect the Control Centre after commit
   expected_config: hardened
   description: |
+    ### Do this
+    - Preserve the PCAP and UTC commit boundary; check the CC allow precedes its logged deny.
+    - Reconnect CC using one of the commands below after the Phase 3 commit.
+    - Wait for fresh GI and valid observations; inspect link quality, conduit and matching events.
+    - Record deferred visibility work without changing the rules.
+
     Reconnect the Control Centre now, after the Phase 3 commit, and wait for
     fresh GI and observations before testing. This checks a new handshake
     against the committed rules, not a retained session. The Phase 3 candidate
@@ -371,7 +406,9 @@ steps:
     can remain healthy during observation loss; no trip/reset repairs a missing
     communications allow. See [GI and quality](/knowledge#iec104-gi-cot-quality).
 
+    :::hint Optional session diagnostics
     Exact firewall session retirement is an optional diagnostic to clear a retained entry or force a fresh handshake for DPI inspection from SYN, not a prerequisite for enforcing a committed DENY: the session-kill API revokes the exact tuple in both directions for 60 seconds by default, with TCP resets signalled on subsequent matching packets. A fresh source port still meets the active policy. With a silent blackhole, detection can take configured t3+t1 (currently about 35 s). See [established sessions](/knowledge#eu-established-sessions).
+    :::
 
     :::hint A timeout is a specific result
     Strict active probes count only connection timeout as denied. Connection refused means the packet reached a host; a missing tool or failed container exec is missing evidence, never a pass. A logged SYN deny cannot reveal the denied command payload.
@@ -380,6 +417,13 @@ steps:
   title: Phase 5 - Validate allowed traffic
   expected_config: hardened
   description: |
+    ### Do this
+    - Check a post-commit CC connection, completed GI and valid current inventory.
+    - With operator approval, perform the controlled OLTC regulation demonstration below.
+    - Verify RTU field telemetry, PLC motion and historian ingest independently.
+    - Run historian and PLC-web reads from **Kali** and **eng-ws** respectively.
+    - Record all six conduit results, plant health, policy identity and UTC times in Notes.
+
     Prove all six required operational intents, not merely open sockets. In the Control Centre require a completed current-connection general interrogation (GI) and every inventory point non-null and valid, received at or after that attempt’s GI start. Quiet status does not need advancing receipt times; float quality includes the reporting watchdog. Include F2 position, protection trip, lockout, current and MW (indication only, no command). Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request and its motion after the policy change. Check CC historian ingest and advancing archive samples separately from reader access.
 
     :::hint Use your live operator connection
@@ -392,12 +436,14 @@ steps:
     on connect and every 15 minutes. Quiet status does not need new receipt times.
     :::
 
+    :::hint Monitoring semantics and forwarding dependency
     The L4 source pin enforces; DPI detects and logs. Monitoring never satisfies
     a BLOCK requirement. Select-before-operate (**SBO**) sequences a command;
     it is not authorization. A double command (**C_DC**) addresses an information
     object address (**IOA**); observing it does not prevent its operation.
 
     **Forwarding dependency:** monitor traffic traverses NFQUEUE 101 and adds engine processing latency. There is no queue bypass; if the engine is down, the CC conduit drops. Monitor-only does not mean availability-neutral. Preserve rollback and prove GI, PLC and historian continuity independently; do not deliberately stop the engine for this lesson.
+    :::
 
     :::hint Optional depth: shadow counters and approved breaker operations
 
@@ -481,6 +527,12 @@ steps:
   expected_config: hardened
   node: kali-1
   description: |
+    ### Do this
+    - Set expected results from your request: selected closures deny, approved deferrals remain reachable.
+    - Test new connections from each named source, including Kali, vendor and eng-ws.
+    - Correlate at least one selected logged-rule timeout with its exact fw-1 DENY event.
+    - Record default drops separately for Lab 2.4 packet attribution; name owners of deferred gaps.
+
     Test new unauthorized connections from each real source terminal: Kali→RTU:2404, Kali→all field:502, vendor→all field:502, eng-ws→all field:502, enterprise→PLC:8080 and Kali→vendor:3389/5900. Expect timeout for a selected closure, but reachable for an approved deferral.
     Use your change request, not the policy label, to set each expected result.
     If no eligible action is selected, use the full Hardened reference.
@@ -496,6 +548,7 @@ steps:
     A deferred plan can leave a sampled path open. Correct the plan/rules or record the gap; do not label it passed because the policy is called custom or improved. Connection refused is reached, not denied.
     :::
 
+    :::hint Expected results by owning action
     | Path | Owning action | Selected / deferred |
     |---|---|---|
     | Kali→vendor TCP/3389 and TCP/5900 | Restrict enterprise → vendor remote access | deny / allow |
@@ -505,7 +558,9 @@ steps:
     | Vendor and eng-ws→field TCP/502 | Block vendor → field access | deny / allow |
     | Non-RTU station sources→field except PLC→OLTC | Pin field access to the RTU | deny / allow |
     | CC endpoint scope and historian reader/ingest scope | Tighten firewall object hygiene | narrowed / Weak scope |
+    :::
 
+    :::hint Evidence limits and deferred risk
     Required diagnostic denies still apply to every request. Connection refused
     means reached (allow); only connect timeout means deny. A missing tool or
     container error is missing evidence, never a pass. Keep deferred reachable
@@ -514,6 +569,7 @@ steps:
     Lab 2.4. TCP reachability does not establish command filtering.
     Write actual results in Notes. **Cross-check the current system** does not grade
     your written test plan or sign the test record.
+    :::
 
     For logged-rule negatives, correlate the named host's connect timeout with a
     fw-1 DENY event in the same UTC window. In the
@@ -555,6 +611,11 @@ steps:
   title: Export your policy
   expected_config: hardened
   description: |
+    ### Do this
+    - Save the redacted running JSON and identity, not just the candidate or compiled reference.
+    - Keep the pre-change export separately; record UTC commit/test times and operator observations.
+    - Mark the four evidence statuses honestly and carry artifacts into Lab 2.4.
+
     Save the running configuration, not just the candidate or compiled reference.
     On **Configuration** → **Overview**, use **Download redacted** for a shareable
     copy; **Download full** contains secrets. Full export requires explicit

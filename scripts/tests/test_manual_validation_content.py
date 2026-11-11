@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from scripts.tests.curriculum import read_curriculum
+
 ROOT = Path(__file__).resolve().parents[2]
 HINT = ":::hint Optional catch-up — for less technical students or teams behind schedule"
 IDS = ["write-test-plan", "confirm-hardened-config-is-active", "run-source-tests",
@@ -25,8 +27,7 @@ class ManualValidationContentTests(unittest.TestCase):
             implementation = lesson("firewall-implementation", eu)
             retest = next(s["description"] for s in implementation["steps"]
                           if s["id"] in ("test-negative", "phase-6-validate-blocked-traffic"))
-            dynamic = yaml.safe_load((ROOT / "lab-definitions/packages" / package /
-                                      "curriculum/implementation.yml").read_text())["phases"]["negative"]
+            dynamic = read_curriculum(ROOT / "lab-definitions/packages" / package)["phases"]["negative"]
             validation = lesson("validation-evidence", eu)
             for text in (retest, dynamic):
                 self.assertNotIn("boundary capture", text)

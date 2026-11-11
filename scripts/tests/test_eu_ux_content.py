@@ -74,7 +74,12 @@ class LearningContracts(unittest.TestCase):
             doc = yaml.safe_load((base / manifest["scenarios"] /
                                   f"{prefix}validation-evidence.yml").read_text())
             start, review = doc["steps"][1]["description"], doc["steps"][3]["description"]
-            self.assertTrue(start.startswith("**Start the boundary capture now"))
+            if manifest["id"].startswith("eu-"):
+                self.assertTrue(start.startswith(
+                    "### Do this\n- Start the interactive **fw-1** capture below before any source test;"))
+                self.assertIn("**Start the boundary capture now", start)
+            else:
+                self.assertTrue(start.startswith("**Start the boundary capture now"))
             self.assertRegex(start, r":::interactive\n    tcpdump .* -G 1200 -W 1 .*validation.pcap")
             self.assertIn("second fw-1 terminal", start)
             self.assertIn("-e frame.time_utc", review)
@@ -104,6 +109,37 @@ class LearningContracts(unittest.TestCase):
             commands = lambda text: [line.strip() for line in text.splitlines()
                                      if re.match(r"\s+(?:add|set|move) firewall rule", line)]
             self.assertEqual(commands(static), commands(curriculum["phases"]["rules"]))
+
+    def test_eu_steps_lead_with_three_to_five_actions(self):
+        base = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        counts = {"eu-baseline-assessment": 8, "eu-firewall-implementation": 9,
+                  "eu-validation-evidence": 6}
+        for name, count in counts.items():
+            doc = yaml.safe_load((base / "scenarios" / f"{name}.yml").read_text())
+            self.assertEqual(len(doc["steps"]), count)
+            for step in doc["steps"]:
+                with self.subTest(scenario=name, step=step["id"]):
+                    lead = step["description"].split("\n\n", 1)[0].splitlines()
+                    self.assertEqual(lead[0], "### Do this")
+                    self.assertTrue(3 <= len(lead[1:]) <= 5)
+                    self.assertTrue(all(line.startswith("- ") for line in lead[1:]))
+
+    def test_eu_phase_prose_has_one_authority(self):
+        base = ROOT / "lab-definitions/packages/eu-iec104-substation"
+        authored = yaml.safe_load((base / "curriculum/implementation.yml").read_text())
+        resolved = read_curriculum(base)
+        doc = yaml.safe_load((base / "scenarios/eu-firewall-implementation.yml").read_text())
+        steps = {step["id"]: step["description"].strip() for step in doc["steps"]}
+        for phase, step_id in (("rules", "implement-rules"),
+                               ("positive", "test-positive"), ("negative", "test-negative")):
+            with self.subTest(phase=phase):
+                template = authored["phases"][phase]
+                self.assertTrue(template.startswith("{{step:" + step_id + "}}\n\n### "))
+                # Only the reference and generated section are authored here.
+                lines = [line for line in template.splitlines() if line]
+                self.assertEqual(len(lines), 4 if phase == "rules" else 3)
+                self.assertTrue(resolved["phases"][phase].startswith(steps[step_id] + "\n\n### "))
+                self.assertNotIn("{{step:", resolved["phases"][phase])
 
     def test_reference_negative_classes_match_ordered_policy(self):
         cases = {
