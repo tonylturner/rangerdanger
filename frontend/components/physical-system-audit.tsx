@@ -5,14 +5,23 @@ import { formatUtcTime } from "../lib/operator-format";
 import { useFieldAudit } from "../lib/operator-queries";
 import { errorMessage } from "../lib/utils";
 
-// The position change, a first solve's numbers, or the device's reason
-// (a rejection cause or "no_op").
+// Process-owned controls, the device position change, first-solve numbers,
+// and the service's reason (a rejection cause or "no_op").
 function change(entry: DeviceAuditEntry): string {
   const { detail } = entry;
   if (entry.operation === "first_solve" && typeof detail === "object" && detail !== null) {
     return `revision ${String(detail.revision)} · solve ${String(detail.solve_seq)} · ${String(detail.current_a)} A`;
   }
   const parts: string[] = [];
+  if ("fault_section" in entry.before && "fault_section" in entry.after) {
+    const before = entry.before, after = entry.after;
+    parts.push(
+      `Fault ${before.fault_section} → ${after.fault_section}`,
+      `Load ${before.load_multiplier} → ${after.load_multiplier}`,
+      `Source ${before.source_pu} → ${after.source_pu} p.u.`,
+      `Profile ${before.profile_enabled ? "enabled" : "disabled"} → ${after.profile_enabled ? "enabled" : "disabled"}`,
+    );
+  }
   if ("position" in entry.before && "position" in entry.after && entry.before.position !== entry.after.position) parts.push(`${entry.before.position} → ${entry.after.position}`);
   if (typeof detail === "string") parts.push(detail);
   return parts.join(" · ");
@@ -20,7 +29,7 @@ function change(entry: DeviceAuditEntry): string {
 
 export function AuditTable({ audit }: { audit: DeviceAudit }) {
   const entries = audit.entries.slice(-50).reverse();
-  if (entries.length === 0) return <div className="text-sm text-slate-400">No device audit entries yet.</div>;
+  if (entries.length === 0) return <div className="text-sm text-slate-400">No audit entries yet.</div>;
   return (
     <div className="max-h-96 overflow-auto">
       <table className="w-full text-xs">
@@ -56,15 +65,15 @@ export function AuditTable({ audit }: { audit: DeviceAudit }) {
 export function PhysicalAudit() {
   const [device, setDevice] = useState<FieldDeviceKey>("breaker-1");
   const audit = useFieldAudit(3000, device);
-  return <section aria-label="Device audit" className="min-w-0 space-y-3">
-    <h3 className="text-sm font-semibold text-slate-200">Device audit</h3>
+  return <section aria-label="Device and process audit" className="min-w-0 space-y-3">
+    <h3 className="text-sm font-semibold text-slate-200">Device and process audit</h3>
     <p className="text-xs text-slate-400">Accepted and rejected actions with their source, newest first. Control authority is separate from command acceptance.</p>
     <label className="flex flex-wrap items-center gap-2 text-sm text-slate-300">Audit device
       <select aria-label="Audit device" className="max-w-full rounded-sm border border-slate-600 bg-slate-900 p-2" value={device} onChange={(e) => setDevice(e.target.value as FieldDeviceKey)}>
-        {(["breaker-1", "f2-breaker", "oltc-1", "rmu-1", "rmu-2"] as const).map((id) => <option key={id}>{id}</option>)}
+        {(["breaker-1", "f2-breaker", "oltc-1", "rmu-1", "rmu-2", "process"] as const).map((id) => <option key={id}>{id}</option>)}
       </select>
     </label>
     {audit.error && <p role="alert" className="text-xs text-red-300">Audit unavailable: {errorMessage(audit.error)}{audit.data ? " Showing the last answer." : ""}</p>}
-    {audit.data ? <AuditTable audit={audit.data} /> : <p className="text-xs text-slate-400">Waiting for device audit…</p>}
+    {audit.data ? <AuditTable audit={audit.data} /> : <p className="text-xs text-slate-400">Waiting for audit…</p>}
   </section>;
 }

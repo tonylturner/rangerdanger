@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getFieldAudit, getFieldState, sendOperatorCommand } from "./operator-api";
+import { getFieldAudit, getFieldState, sendOperatorCommand, type ProcessControls } from "./operator-api";
 import { AUDIT, BREAKER, CLOCK, TRUTH, commandResult } from "./operator-fixtures.test-util";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -75,6 +75,70 @@ describe("physical feeder reads", () => {
     await expect(read()).resolves.toEqual(answer);
     expect(String(fetchMock.mock.calls[0][0])).toMatch(new RegExp(path.replace("?", "\\?") + "$"));
     expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
+  });
+});
+
+describe("process audit reads", () => {
+  // TruthSolveLoop records asdict(ProcessControls), not electrical snapshots.
+  const controls: ProcessControls = { fault_section: "none", load_multiplier: 1, source_pu: 1, profile_enabled: true };
+  const entry = {
+    seq: 1, at: "2026-11-11T07:00:00Z", operation: "fault_s1", result: "accepted",
+    before: controls, after: { ...controls, fault_section: "S1" },
+    context: { peer: "10.99.99.10:1234", protocol: "lab", zone: "unknown" },
+  };
+  const audit = { generation: 123, entries: [entry], oldest_seq: 1, latest_seq: 1 };
+  function respond(answer: unknown) {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
+  }
+
+  it.each([
+    entry,
+    { ...entry, operation: "clear_fault", before: controls, after: controls, detail: "no_op" },
+    { ...entry, operation: "unknown", result: "rejected", after: controls, detail: "unknown_action" },
+  ])("preserves controls, result, detail and untrusted attribution ($operation/$result)", async (entry) => {
+    const answer = { ...audit, entries: [entry] };
+    respond(answer);
+    await expect(getFieldAudit("process")).resolves.toEqual(answer);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toMatch(/\/field\/audit\?after=0&device=process$/);
+    expect(vi.mocked(fetch).mock.calls[0][1]?.method).toBeUndefined();
+  });
+
+  it("accepts an empty process audit with null bounds", async () => {
+    const empty = { ...audit, entries: [], latest_seq: null, oldest_seq: null };
+    respond(empty);
+    await expect(getFieldAudit("process")).resolves.toEqual(empty);
+  });
+
+  describe.each(["before", "after"])("%s controls", (side) => {
+    it.each([
+      null, {}, BREAKER, TRUTH.process,
+      { ...controls, fault_section: "S3" },
+      { ...controls, fault_section: undefined },
+      { ...controls, load_multiplier: "1" },
+      { ...controls, load_multiplier: undefined },
+      { ...controls, source_pu: null },
+      { ...controls, source_pu: undefined },
+      { ...controls, profile_enabled: "true" },
+      { ...controls, profile_enabled: undefined },
+      { ...controls, f2_tripped: false },
+    ])("rejects malformed controls or another service's snapshot (%j)", async (snapshot) => {
+      respond({ ...audit, entries: [{ ...entry, [side]: snapshot }] });
+      await expect(getFieldAudit("process")).rejects.toThrow("Expected process audit with control snapshots");
+    });
+  });
+
+  it.each([
+    { at: "not a timestamp" }, { seq: "1" }, { operation: null }, { result: null },
+    { context: null }, { context: { peer: "local", protocol: "lab" } },
+  ])("rejects malformed process entry metadata (%j)", async (patch) => {
+    respond({ ...audit, entries: [{ ...entry, ...patch }] });
+    await expect(getFieldAudit("process")).rejects.toThrow("Expected process audit with control snapshots");
+  });
+
+  it("does not accept process controls as device snapshots", async () => {
+    respond(audit);
+    await expect(getFieldAudit("breaker-1")).rejects.toThrow("Expected device audit with schema 3 snapshots");
   });
 });
 

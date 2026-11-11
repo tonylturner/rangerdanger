@@ -184,7 +184,7 @@ export type Protection = {
   picked_up_since: string | null;
   last_trip_current_a: number | null;
 };
-export type FieldDeviceKey = "breaker-1" | "f2-breaker" | "rmu-1" | "rmu-2" | "oltc-1";
+export type FieldDeviceKey = "breaker-1" | "f2-breaker" | "rmu-1" | "rmu-2" | "oltc-1" | "process";
 export type BreakerPosition = "open" | "closed";
 type DeviceCommon = {
   schema: 3;
@@ -381,7 +381,21 @@ function validClock(value: unknown): boolean {
     strings(value, ["last_command_source"]);
 }
 
-// before and after are full device snapshots. detail is absent, a
+export type ProcessControls = {
+  fault_section: "none" | "S1" | "S2";
+  load_multiplier: number;
+  source_pu: number;
+  profile_enabled: boolean;
+};
+
+function validProcessControls(value: unknown): boolean {
+  return isObject(value) && exactKeys(value, ["fault_section", "load_multiplier", "source_pu", "profile_enabled"]) &&
+    typeof value.fault_section === "string" && ["none", "S1", "S2"].includes(value.fault_section) &&
+    finite(value.load_multiplier) && finite(value.source_pu) && typeof value.profile_enabled === "boolean";
+}
+
+// before and after are full device snapshots or process-owned controls, never
+// electrical/solver snapshots. detail is absent, a
 // reason string ("no_op", "lockout", "stale_truth", ...) or an object
 // (first_solve: revision, solver_epoch, solve_seq, solved_at, current_a).
 export type DeviceAuditEntry = {
@@ -389,8 +403,8 @@ export type DeviceAuditEntry = {
   at: string;
   operation: string;
   result: string;
-  before: DeviceState;
-  after: DeviceState;
+  before: DeviceState | ProcessControls;
+  after: DeviceState | ProcessControls;
   context: { peer: string; protocol: string; zone: string };
   detail?: string | Record<string, unknown>;
 };
@@ -415,10 +429,11 @@ export async function getFieldState() {
 
 export async function getFieldAudit(device: FieldDeviceKey = "breaker-1") {
   const audit = await request<DeviceAudit>(`/field/audit?after=0&device=${device}`);
+  const validSnapshot = device === "process" ? validProcessControls : validDevice;
   if (!isObject(audit) || !integer(audit.generation) || !Array.isArray(audit.entries) ||
     !(["latest_seq", "oldest_seq"] as const).every((k) => nullable(audit[k], integer)) ||
-    !audit.entries.every((e) => isObject(e) && integer(e.seq) && timestamp(e.at) && strings(e, ["operation", "result"]) && validDevice(e.before) && validDevice(e.after) && isObject(e.context) && strings(e.context, ["peer", "protocol", "zone"]))) {
-    throw new Error("Expected device audit with schema 3 snapshots");
+    !audit.entries.every((e) => isObject(e) && integer(e.seq) && timestamp(e.at) && strings(e, ["operation", "result"]) && validSnapshot(e.before) && validSnapshot(e.after) && isObject(e.context) && strings(e.context, ["peer", "protocol", "zone"]))) {
+    throw new Error(device === "process" ? "Expected process audit with control snapshots" : "Expected device audit with schema 3 snapshots");
   }
   return audit;
 }
