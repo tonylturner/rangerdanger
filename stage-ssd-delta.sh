@@ -45,6 +45,21 @@ set -euo pipefail
 # as garbage. A dot_clean sweep at the end catches any written earlier.
 export COPYFILE_DISABLE=1
 
+if [ -t 1 ]; then
+    GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
+else
+    GREEN=""; YELLOW=""; RED=""; BOLD=""; RESET=""
+fi
+say()    { printf "%s[+]%s %s\n" "$GREEN" "$RESET" "$*"; }
+warn()   { printf "%s[!]%s %s\n" "$YELLOW" "$RESET" "$*" >&2; }
+die()    { printf "%s[x]%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
+banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s-' $(seq 1 ${#1}))"; }
+require_value() {
+    case "${2:-}" in
+        ""|-*) die "$1 needs $3" ;;
+    esac
+}
+
 if [ $# -lt 3 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
     exit 0
@@ -60,8 +75,8 @@ SAVE_ALL=0
 INCLUDE_UPSTREAM=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --include)            INCLUDE_LIST="$2"; shift 2 ;;
-        --include=*)          INCLUDE_LIST="${1#*=}"; shift ;;
+        --include)            require_value --include "${2:-}" "a comma-separated image list"; INCLUDE_LIST="$2"; shift 2 ;;
+        --include=*)          require_value --include "${1#*=}" "a comma-separated image list"; INCLUDE_LIST="${1#*=}"; shift ;;
         --all)                SAVE_ALL=1; shift ;;
         --include-upstream)   INCLUDE_UPSTREAM=1; shift ;;
         *) echo "Unknown argument: $1 (see --help)"; exit 1 ;;
@@ -77,15 +92,6 @@ COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
 # stage-ssd.sh, stage-ssd.ps1, stage-ssd-delta.sh and stage-ssd-delta.ps1.
 BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"
 
-if [ -t 1 ]; then
-    GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
-else
-    GREEN=""; YELLOW=""; RED=""; BOLD=""; RESET=""
-fi
-say()    { printf "%s[+]%s %s\n" "$GREEN" "$RESET" "$*"; }
-warn()   { printf "%s[!]%s %s\n" "$YELLOW" "$RESET" "$*" >&2; }
-die()    { printf "%s[x]%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
-banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s-' $(seq 1 ${#1}))"; }
 . "$ROOT_DIR/scripts/lib/stage-pull.sh"
 
 [ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE not found - run from repo root."

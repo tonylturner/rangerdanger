@@ -706,8 +706,6 @@ export type CurriculumBinding = {
   planningOnly: string[];
   phases: Record<string, string>;
   noPlan: string;
-  tests: { kind: "positive" | "negative"; text: string }[];
-  negativeEmpty: string;
   nodeMap: Record<string, { primary: string; others: string[] }>;
   nodeInference: { node: string; ip: string; pattern: string }[];
 };

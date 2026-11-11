@@ -104,7 +104,7 @@ func (s *Server) conduitIsolation(ctx context.Context, gen *lifecycle.Generation
 	}
 	stdout, stderr, rc, err := s.execInContainer(ctx, svc.Container, []string{"python3", "-c", isolationHTTP, string(input)}, 8)
 	if err != nil || rc != 0 {
-		return fail(fmt.Errorf("network probe exited %d: %v; %s", rc, err, stderr))
+		return fail(fmt.Errorf("%s", evidenceDetail(fmt.Sprintf("network probe exited %d; %s", rc, stderr), err)))
 	}
 	var evidence []struct {
 		isolationTarget

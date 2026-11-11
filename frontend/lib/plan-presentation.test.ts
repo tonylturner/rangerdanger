@@ -22,7 +22,7 @@ describe("compiled tables", () => {
     expect(renderPlanTests(US_PLANS[0], binding, "baseline", "positive")).toContain("A1:");
     expect(renderPlanTests(US_PLANS[0], binding, "baseline", "negative")).not.toContain("A1:");
   });
-  it("shows Weak deferred exposure, selected and required origins, logging and inspection verbatim", () => {
+  it("shows Weak deferred exposure, selected and required origins, logging and readable inspection", () => {
     const empty = renderRuleTable(US_PLANS[0], binding);
     expect(empty).toContain("deferred");
     expect(empty).toContain("Weak exposure open");
@@ -31,8 +31,9 @@ describe("compiled tables", () => {
     const text = renderRuleTable(full, binding);
     expect(text).toContain("selected");
     expect(text).toContain("required");
-    expect(text).toContain('"protocol":"modbus","functionCode":[1,2,3,4,5,6]');
-    expect(text).toContain('"protocol":"dnp3","functionCode":[1]');
+    expect(text).toContain("ICS selectors: Protocol: Modbus; Function codes: 1, 2, 3, 4, 5, 6");
+    expect(text).toContain("ICS selectors: Protocol: DNP3; Function codes: 1");
+    expect(text).not.toContain('"functionCode":');
     expect(text).toContain("yes");
     expect(JSON.stringify(full)).toBe(before);
   });
@@ -49,18 +50,19 @@ describe("compiled tables", () => {
     const plan = EU_PLANS[2];
     const before = JSON.stringify(plan);
     const table = renderRuleTable(plan, eu);
-    expect(table).toContain("| Decision / effect |");
+    expect(table).toContain("| Rule | From | To | Port | Action | Log |");
     expect(table).not.toContain("Verdict");
-    const observations = table.split("\n").filter((row) => row.includes("| observation:"));
+    const rows = table.split("\n");
+    const observations = rows.filter((row) => row.includes("Origin: observation:"));
     expect(observations).toHaveLength(3);
-    expect(observations[0]).toContain("| would deny (monitor) |");
-    expect(observations[1]).toContain("| would allow (monitor) |");
-    expect(observations[2]).toContain("| would allow (monitor) |");
-    for (const row of observations) {
+    for (const [i, row] of observations.entries()) {
+      expect(rows[rows.indexOf(row) - 1]).toContain(i === 0 ? "| would deny (monitor) |" : "| would allow (monitor) |");
       expect(row).toContain("observation: Monitor IEC 104 commands (iec104-dpi) — monitor only, not an L4 rule");
       expect(row).not.toMatch(/\| (ALLOW|DENY) \|/);
     }
-    expect(table.split("\n").find((row) => row.includes("control-centre-to-rtu-iec104:"))).toContain("| ALLOW | required |");
+    const required = rows.findIndex((row) => row.includes("control-centre-to-rtu-iec104:"));
+    expect(rows[required]).toContain("| ALLOW |");
+    expect(rows[required + 1]).toContain("Origin: required");
     expect(JSON.stringify(plan)).toBe(before);
   });
   it("trusts detect-only verdicts and renders bridged rows as invariant", () => {
@@ -74,5 +76,44 @@ describe("compiled tables", () => {
     const before = JSON.stringify(plan);
     expect(renderRuleTable(plan, eu)).not.toContain("20000");
     expect(JSON.stringify(plan)).toBe(before);
+  });
+  it.each([...US_PLANS, ...EU_PLANS])("keeps every $packageId $label rule and its details in a six-column table", (plan) => {
+    const table = renderRuleTable(plan, plan.packageId === "eu-iec104-substation" ? eu : binding);
+    const rows = table.split("\n");
+    expect(rows).toHaveLength(2 + 2 * plan.rules.length);
+    for (const row of rows) expect(row.match(/(?<!\\)\|/g)).toHaveLength(7);
+    for (const [i, { rule }] of plan.rules.entries()) {
+      expect(rows[2 + 2 * i]).toContain(rule.id);
+      expect(rows[3 + 2 * i]).toContain("**Rule details:** Origin:");
+      if (rule.ics) {
+        expect(rows[3 + 2 * i]).toContain("ICS selectors:");
+        expect(table).not.toContain(JSON.stringify(rule.ics));
+      }
+    }
+  });
+  it("preserves every IEC selector, including false flags and zero qualifiers, without JSON", () => {
+    const plan = structuredClone(EU_PLANS[2]);
+    plan.rules[0].rule.ics = {
+      protocol: "iec104", mode: "monitor", direction: "request", readOnly: false,
+      typeIds: [46, 47], classes: ["control"], ca: [1], ioa: [{ start: 3001, end: 3001 }, { start: 3301, end: 3302 }],
+      cot: [6], originators: [0], negative: false, test: false, selectExecute: "select", commandStates: [1, 2], commandQualifiers: [0],
+    };
+    const table = renderRuleTable(plan, eu);
+    for (const selector of [
+      "Protocol: IEC 104", "Mode: monitor", "Direction: request", "Read only: no", "Type IDs: 46, 47", "Classes: control",
+      "Common addresses (CA): 1", "Information object addresses (IOA): 3001, 3301–3302", "Causes of transmission (COT): 6",
+      "Originator addresses: 0", "Negative confirmation: no", "Test: no", "Select/execute: select", "Command states: 1, 2", "Command qualifiers: 0",
+    ]) expect(table).toContain(selector);
+    expect(table).not.toContain('"protocol":');
+  });
+  it("preserves Modbus restrictions and escapes detail-row Markdown", () => {
+    const plan = structuredClone(US_PLANS[2]);
+    plan.rules[0].rule.ics = {
+      protocol: "modbus", mode: "enforce", direction: "response", readOnly: false, writeOnly: true,
+      functionCode: [5, 6], unitId: 0, addresses: ["0-10|20", "30\n40"],
+    };
+    const table = renderRuleTable(plan, binding);
+    expect(table).toContain("Mode: enforce; Read only: no; Function codes: 5, 6; Write only: yes; Unit ID: 0; Addresses: 0-10\\|20, 30 40");
+    expect(table.split("\n")).toHaveLength(2 + 2 * plan.rules.length);
   });
 });

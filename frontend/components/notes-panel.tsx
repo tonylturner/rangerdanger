@@ -20,8 +20,8 @@ export function NotesPanel({ sourceScenario, sourceScenarioOrder, title }: {
     <section className="rounded-lg border border-cyan-900/40 bg-cyan-950/10 p-3 text-xs text-slate-300" aria-label={title}>
       <h4 className="mb-2 font-semibold text-cyan-300">{title}</h4>
       {notes.trim()
-        ? <p className="whitespace-pre-wrap break-words">{notes}</p>
-        : <p>Nothing saved in {lab}. <Link className="text-cyan-300 underline" href={`/exercises/${sourceScenario}`}>Open {lab} to write your Notes.</Link></p>}
+        ? <p className="font-mono whitespace-pre-wrap break-words">{notes}</p>
+        : <p>Nothing saved in {lab}. <Link target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline" href={`/exercises/${sourceScenario}`}>Open {lab} to write your Notes.</Link></p>}
     </section>
   );
 }

@@ -122,7 +122,7 @@ describe("Traffic Matrix Stop", () => {
     vi.stubGlobal("fetch", fetch);
     // Capture is already running, but the prop's traffic snapshot is idle.
     const { view, stop, client } = mount(usFixture as LabGraph, { generating: false });
-    fireEvent.click(view.getByLabelText("Generate Traffic"));
+    fireEvent.click(view.getByLabelText("Generate scenario traffic"));
     await waitFor(() => expect(client.getQueryData(["traffic-status"])).toMatchObject({ run_id: "new-run", generating: true }));
     expect(client.getQueryData(["traffic-status"])).toMatchObject({ run_id: "new-run", generating: true });
     fireEvent.click(stop());

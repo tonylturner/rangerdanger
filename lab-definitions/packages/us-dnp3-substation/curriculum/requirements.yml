@@ -4,6 +4,8 @@ requirements:
     impl:
       BLOCK:
         - block-enterprise-to-field
+      RESTRICT:
+        - block-enterprise-to-field
       BLOCK and LOG:
         - block-enterprise-to-field
         - improve-logging
@@ -11,6 +13,8 @@ requirements:
     label: Enterprise → OT Operations on ICS ports
     impl:
       BLOCK:
+        - block-enterprise-to-ot
+      RESTRICT:
         - block-enterprise-to-ot
       BLOCK and LOG:
         - block-enterprise-to-ot
@@ -21,16 +25,19 @@ requirements:
       BLOCK:
         - restrict-vendor-to-ot
         - block-vendor-to-field
+      RESTRICT:
+        - restrict-vendor-to-ot
+        - block-vendor-to-field
       BLOCK and LOG:
         - restrict-vendor-to-ot
         - block-vendor-to-field
         - improve-logging
-      RESTRICT:
-        - restrict-vendor-to-ot
   non-rtac-to-field:
     label: Non-RTAC OT hosts → Field devices
     impl:
       BLOCK:
+        - pin-rtac-to-field
+      RESTRICT:
         - pin-rtac-to-field
       BLOCK and LOG:
         - pin-rtac-to-field
@@ -39,6 +46,10 @@ requirements:
     label: Foreign-source Modbus writes / DNP3 Direct Operate
     impl:
       BLOCK:
+        - block-enterprise-to-field
+        - block-vendor-to-field
+        - pin-rtac-to-field
+      RESTRICT:
         - block-enterprise-to-field
         - block-vendor-to-field
         - pin-rtac-to-field

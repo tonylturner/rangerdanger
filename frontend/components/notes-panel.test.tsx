@@ -47,3 +47,14 @@ it("keeps catch-up hints collapsed and distinguishes them from answer hints", ()
   fireEvent.click(toggle);
   expect(tree.getByRole("button", { name: "Run" })).toBeTruthy();
 });
+
+it("jumps from an Apply Your Plan hint to the expanded policy controls", () => {
+  const tree = render(<>
+    <HintBlock title="Catch up" body="Use Apply Your Plan if behind schedule."
+      runIdPrefix="catch-up" runningId={null} onRun={null} scenarioId="fixture" />
+    <details id="catch-up-controls"><summary>Policy controls</summary>Apply Your Plan</details>
+  </>);
+  fireEvent.click(tree.getByRole("button", { name: /Catch up/ }));
+  fireEvent.click(tree.getByRole("link", { name: "Jump to policy controls" }));
+  expect(tree.container.querySelector("details")?.open).toBe(true);
+});

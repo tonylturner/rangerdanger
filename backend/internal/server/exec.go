@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -51,8 +52,13 @@ func (s *Server) handleWorkshopExec(c *gin.Context) {
 	start := time.Now()
 	stdout, stderr, exitCode, err := s.runShellCommand(c.Request.Context(), svc.Container, req.Command, req.TimeoutSec)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			// The Run UI displays "error", not the separate diagnostic detail.
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":  "exec failed",
+			"error":  "exec failed: " + err.Error(),
 			"detail": err.Error(),
 		})
 		return

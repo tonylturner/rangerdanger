@@ -135,7 +135,7 @@ function mismatchText(expectedConfig: string, policies: PackagePolicies): { need
   if (expectedConfig === HARDENED_ALIAS || expectedConfig === HARDENED_POLICY) {
     return {
       need: `${policyWording(HARDENED_POLICY, policies).label} (reference or your custom policy)`,
-      action: "Author, review, commit and read back in containd. Optional catch-up — for less technical students or teams behind schedule: use Apply Your Plan or Apply Hardened below. These replace typing rules, not your own observations, operator check or sign-off.",
+      action: "Author, review, commit and read back in containd. Optional catch-up — for less technical students or teams behind schedule: use the catch-up controls below. These replace typing rules, not your own observations, operator check or sign-off.",
     };
   }
   return {

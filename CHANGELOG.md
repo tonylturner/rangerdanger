@@ -6,6 +6,44 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Labs 2.2–2.4 (EU and US) show how to write a rule by hand: the Weak rule
+  IDs and what each one bundles, the delete commands, one worked rule in the
+  UI and the CLI, and how to split a bundled rule for a partial request.
+- Lab 2.4 separates logged-rule negatives (timeout, DENY event, capture)
+  from default-drop negatives, which produce no rule-hit event. The capture
+  lists SYNs in UTC, and a checklist says where to save evidence before a
+  reset.
+- Lab 1.2 defines GI, tells students to press Interrogate station before the
+  link checks, and adds a short glossary.
+- Labs 2.3 and bonus say that Reset to Weak replaces the hand-written 2.2
+  policy; Apply Your Plan is the route back.
+- Probe steps judge each row against the policy the step declares: the Weak
+  baseline for baseline demonstrations, your change request (or the full
+  reference) for validation. A mismatch no longer completes the step.
+- Apply Hardened is hidden while a change request is saved. The 2.2 rule
+  table shows Rule, From, To, Port, Action and Log, with ICS details in a
+  row below.
+- RESTRICT verdicts count toward coverage through the BLOCK actions.
+- Validator messages name paths as `src -> dst:port (action)` and list all
+  mismatches. A Run that exceeds its budget reports a timeout and whether
+  the process is still running.
+
+### Fixed
+
+- Terminals stay open when you open the map, containd UI or summary.
+  Completed steps keep Run again, the current step survives a reload, and
+  catch-up buttons confirm before replacing a hand-written policy.
+- Long-running captures are copy-only (`:::interactive`), so Run no longer
+  reports OK while the capture keeps running.
+- The status card shows the GI age. A correct custom policy is no longer
+  shown as a problem.
+- `setup.sh` reports a missing option value instead of crashing on an
+  unbound variable. Both installers say to pass the folder when
+  `--from-tarballs`/`-FromTarballs` gets an image file.
+- The SSD bundle README says to copy the whole folder.
+
 ## [v0.2.4] - 2026-11-10
 
 Manual validation release: students in both packages implement their

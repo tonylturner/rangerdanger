@@ -119,7 +119,7 @@ func euNoForeignBreaker(ev euWorkshopEvidence) ValidationCheck {
 	const name = "No foreign breaker operation since hardening (L4 only)"
 	fail := func(reason string) ValidationCheck { return checkFail(name, ev.target+": "+reason) }
 	if ev.logErr != nil || ev.auditErr != nil || ev.identityErr != nil || ev.ccIP == "" || ev.rtuIP == "" || !insideEvidenceWindow(ev.hardeningSince, ev.start, ev.policyAt) || !insideEvidenceWindow(ev.operationEnd, ev.policyAt, ev.now) {
-		return fail(fmt.Sprintf("missing identity, policy boundary, RTU log or breaker audit: %v; %v; %v", ev.identityErr, ev.logErr, ev.auditErr))
+		return fail(evidenceDetail("missing identity, policy boundary, RTU log or breaker audit; check range services and repeat validation", ev.identityErr, ev.logErr, ev.auditErr))
 	}
 	audit, device := ev.breakerAudit, ev.devices["breaker-1"]
 	if audit == nil || device == nil || device.EventSeq == 0 || audit.Generation == 0 || audit.Generation != device.Generation || audit.OldestSeq == nil || audit.LatestSeq == nil || len(audit.Entries) == 0 {

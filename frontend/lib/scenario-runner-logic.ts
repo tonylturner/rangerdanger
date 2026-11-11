@@ -23,29 +23,3 @@ export function actionLabel(type: string): string {
     default: return type;
   }
 }
-
-export function deviceLabel(device: string): string {
-  switch (device) {
-    case "relay": return "Feeder Breaker (10.40.40.20)";
-    case "recloser": return "Recloser (10.40.40.21)";
-    case "regulator": return "Regulator (10.40.40.22)";
-    default: return device;
-  }
-}
-
-export function isSegmentationStep(title?: string): boolean {
-  if (!title) return false;
-  const t = title.toLowerCase();
-  // Match the "apply hardened policy" steps in Lab 2.3 and 2.3-bonus
-  // alongside the older "improve segmentation" wording used elsewhere.
-  // Without `hardened`/`harden`, Lab 2.3 step 6 ("Apply the hardened
-  // policy") and Lab 2.3-bonus step 5 ("Apply hardened policy") would
-  // hide the Apply Hardened button even though the step's own action
-  // is { type: firewall, config: improved }.
-  return t.includes("improve") || t.includes("segmentation") || t.includes("hardened") || t.includes("harden");
-}
-
-export function isBaselineStep(title?: string): boolean {
-  if (!title) return false;
-  return title.toLowerCase().includes("baseline") || title.toLowerCase().includes("observe");
-}

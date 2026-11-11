@@ -12,21 +12,17 @@ import (
 
 const probeCommand = `if command -v bash >/dev/null 2>&1; then timeout 3 bash -c 'exec 3<>/dev/tcp/$1/$2' _ "$1" "$2"; else timeout 3 nc -w 3 "$1" "$2" </dev/null; fi`
 
-// executeProbe tests TCP reachability from topology nodes. Rows remain in YAML
-// order even though blocked targets run concurrently.
+// executeProbe compares TCP observations with the step's declared reference.
+// Rows remain in YAML order while connection attempts run concurrently.
 func (s *Server) executeProbe(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep) []StepActionResult {
 	results := make([]StepActionResult, len(step.Action.Targets))
-	client := gen.Containd()
-	if client == nil {
-		return probePolicyFailures(step, "running policy unavailable: firewall client is not configured")
-	}
-	data, err := client.GetConfigDocument(ctx)
+	judging, err := s.probeJudgingTarget(ctx, gen, step)
 	if err != nil {
-		return probePolicyFailures(step, "running policy unavailable: "+err.Error())
+		return probePolicyFailures(step, judging.detail+": judging target unavailable: "+err.Error())
 	}
-	policy, err := readEvaluatedFirewall(data)
+	policy, err := readEvaluatedFirewall(judging.plan.Config)
 	if err != nil {
-		return probePolicyFailures(step, "running policy cannot be evaluated: "+err.Error())
+		return probePolicyFailures(step, judging.detail+": judging target cannot be evaluated: "+err.Error())
 	}
 	var workers sync.WaitGroup
 	limit := make(chan struct{}, 5)
@@ -36,11 +32,26 @@ func (s *Server) executeProbe(ctx context.Context, gen *lifecycle.Generation, st
 		go func() {
 			defer workers.Done()
 			defer func() { <-limit }()
-			results[i] = s.probeTarget(ctx, gen, step, target, policy)
+			results[i] = s.probeTarget(ctx, gen, step, target, policy, judging.detail)
 		}()
 	}
 	workers.Wait()
 	return results
+}
+
+func (s *Server) probeJudgingTarget(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep) (gradingTarget, error) {
+	if step.ExpectedConfig != "weak" {
+		return s.judgingTarget(ctx, gen)
+	}
+	target := gradingTarget{detail: "the Weak baseline"}
+	// Use the same packaged reference source as policyJudgment's Weak check.
+	// An empty compiled plan is not the authority for arbitrary probe tuples.
+	path, err := s.policyPath(gen.Package, "weak")
+	if err != nil {
+		return target, err
+	}
+	target.plan.Config, err = readPolicyJSONWithRetry(path)
+	return target, err
 }
 
 func probePolicyFailures(step labs.ScenarioStep, detail string) []StepActionResult {
@@ -62,7 +73,7 @@ func probePolicyFailures(step labs.ScenarioStep, detail string) []StepActionResu
 	return results
 }
 
-func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep, target labs.ProbeTarget, policy evaluatedFirewall) StepActionResult {
+func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep, target labs.ProbeTarget, policy evaluatedFirewall, judgingLabel string) StepActionResult {
 	source := target.From
 	if source == "" {
 		source = step.Node
@@ -72,23 +83,24 @@ func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, ste
 	if target.Note != "" {
 		prefix = target.Note + ": "
 	}
+	fail := func(detail string) StepActionResult {
+		row.Detail = prefix + judgingLabel + ": " + detail
+		return row
+	}
 	svc, err := nodeService(gen, source)
 	if err != nil {
-		row.Detail = prefix + err.Error()
-		return row
+		return fail(err.Error())
 	}
 	route, err := labs.ResolveProbeTuple(gen.Package.Template, source, target.Host, target.Port)
 	if err != nil {
-		row.Detail = prefix + "probe target cannot resolve policy tuple: " + err.Error()
-		return row
+		return fail("probe target cannot resolve policy tuple: " + err.Error())
 	}
 	container := svc.Container
 	cmd := []string{"/bin/sh", "-c", probeCommand, "_", target.Host, fmt.Sprint(target.Port)}
 	stdout, stderr, rc, err := s.execInContainer(ctx, container, cmd, 4)
 	verdict, detail := classifyScenarioProbe(stdout, stderr, rc, err)
 	if verdict == "" {
-		row.Detail = prefix + detail
-		return row
+		return fail(detail)
 	}
 	expectedVerdict := labs.VerdictAllow
 	if !route.Bridged {
@@ -98,7 +110,11 @@ func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, ste
 	if expectedVerdict == labs.VerdictAllow {
 		expected = "reachable"
 	}
-	row.Detail = prefix + fmt.Sprintf("expected %s by running policy, observed %s%s", expected, verdict, detail)
+	expectedLabel := strings.ToUpper(string(expectedVerdict))
+	if step.ExpectedConfig == "weak" {
+		expectedLabel = expected
+	}
+	row.Detail = prefix + fmt.Sprintf("expected %s by %s, observed %s%s", expectedLabel, judgingLabel, verdict, detail)
 	row.Success = verdict == expected
 	return row
 }

@@ -72,6 +72,22 @@ class ExtractTests(unittest.TestCase):
             "dnp3poll -a 2 10.40.40.21:20000",
             "export config > /tmp/policy.json"])
 
+    def test_interactive_capture_inherits_source_without_leaking_local_markers(self):
+        from scripts.lib.lab_commands_inventory import description_commands
+        commands = description_commands(
+            "On fw-1, type `exit`:\n"
+            ":::interactive\n"
+            "Leave this terminal running.\n"
+            "    tcpdump -i any -w /data/captures/validation.pcap\n"
+            "From eng-ws:\n    tshark -r capture.pcap\n"
+            ":::\n    tcpdump -i any")
+        self.assertEqual([(cmd, source, kind) for cmd, _, source, kind in commands], [
+            ("tcpdump -i any -w /data/captures/validation.pcap", "fw-1", "exec"),
+            ("tshark -r capture.pcap", "eng-ws-1", "exec"),
+            ("tcpdump -i any", "fw-1", "exec"),
+        ])
+        self.assertEqual([line for _, line, _, _ in commands], [3, 5, 7])
+
     def test_error_and_empty_inventory_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(

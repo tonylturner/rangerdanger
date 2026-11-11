@@ -45,6 +45,12 @@ function Banner($msg) { Write-Host "`n$msg`n$('-' * $msg.Length)`n" -ForegroundC
 . "$PSScriptRoot/scripts/lib/setup-range.ps1"
 
 trap { Die $_ }
+if ($FromTarballs -and (Test-Path -LiteralPath $FromTarballs -PathType Leaf)) {
+    $tarballFolder = [IO.Path]::GetDirectoryName($FromTarballs)
+    if (-not $tarballFolder) { $tarballFolder = '.' }
+    $tarballFolder = $tarballFolder.Replace("'", "''")
+    Die "-FromTarballs expects the folder containing images-<arch>.tar, not the file; try: -FromTarballs '$tarballFolder'"
+}
 Banner 'Pre-flight checks'
 $RootDir = (Get-Item -LiteralPath $PSScriptRoot).FullName
 $DaemonRoot = ConvertTo-DesktopRoot $RootDir

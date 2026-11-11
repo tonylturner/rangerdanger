@@ -161,7 +161,7 @@ func validateCurriculum(pkg Package) error {
 	}
 	fail := func(format string, args ...any) error { return fmt.Errorf("curriculum: "+format, args...) }
 	// Explicit empty collections keep the wire DTO free of null maps/arrays.
-	if c.Requirements == nil || c.Readiness == nil || c.ReadinessFlags == nil || c.BudgetAdjustments == nil || c.Groups == nil || c.PlanningOnly == nil || c.Phases == nil || c.Tests == nil || c.NodeMap == nil || c.NodeInference == nil || c.RequirementOrder == nil || c.GroupOrder == nil || c.ImpactOrder == nil || c.Impact == nil || c.Activities == nil || c.DynamicSteps == nil {
+	if c.Requirements == nil || c.Readiness == nil || c.ReadinessFlags == nil || c.BudgetAdjustments == nil || c.Groups == nil || c.PlanningOnly == nil || c.Phases == nil || c.NodeMap == nil || c.NodeInference == nil || c.RequirementOrder == nil || c.GroupOrder == nil || c.ImpactOrder == nil || c.Impact == nil || c.Activities == nil || c.DynamicSteps == nil {
 		return fail("collections must be explicit mappings or lists, not null or omitted")
 	}
 	if c.BudgetHours <= 0 || len(c.Teams) == 0 || len(c.Catalog) == 0 {
@@ -336,11 +336,6 @@ func validateCurriculum(pkg Package) error {
 		}
 		if len(seen) != order.count {
 			return fail("%s must list every entry exactly once", order.name)
-		}
-	}
-	for _, t := range c.Tests {
-		if t.Kind != "positive" && t.Kind != "negative" {
-			return fail("unknown test kind %s", t.Kind)
 		}
 	}
 	nodes := map[string]bool{}

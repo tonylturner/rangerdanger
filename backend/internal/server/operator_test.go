@@ -75,6 +75,7 @@ func TestOperatorState(t *testing.T) {
 	}
 	want["package_id"] = euPackageID
 	want["range_generation"] = float64(7)
+	want["gi_evidence_window_ms"] = float64(conduitAttemptLimit.Milliseconds())
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("operator state = %s", rec.Body)
 	}
@@ -119,6 +120,7 @@ func TestOperatorLockoutRelay(t *testing.T) {
 			want[key] = value
 		}
 		want["package_id"], want["range_generation"] = euPackageID, float64(7)
+		want["gi_evidence_window_ms"] = float64(conduitAttemptLimit.Milliseconds())
 		if !reflect.DeepEqual(got, want) {
 			t.Fatal("relay changed IEC observations", rec.Body)
 		}

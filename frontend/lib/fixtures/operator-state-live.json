@@ -1,4 +1,5 @@
 {
+  "gi_evidence_window_ms": 600000,
   "cache_epoch": "095709751b649898",
   "link": {
     "state": "started",

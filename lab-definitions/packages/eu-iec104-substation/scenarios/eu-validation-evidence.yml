@@ -82,7 +82,30 @@ steps:
     title: "Confirm the running policy matches your change request"
     expected_config: hardened
     description: |
-      Read the running policy in [containd](/containd/), not just its label.
+      **Start the boundary capture now, before any source test.** Keep this exercise
+      tab open. Open [containd](/containd/), [Network Map](/console) and the
+      [Control Centre](/substation) in a second browser tab. Leave the capturing fw-1 terminal
+      alone; open a second fw-1 terminal from the Network Map tab for CLI work.
+
+      Start ONE boundary capture before any source test. From fw-1, use the interactive
+      terminal, not Run: this capture must span the whole test window. Type `exit`
+      from `containd(config)#` to reach Linux bash; `containd cli` returns later.
+      In the host filter below include every source and destination in your plan.
+      Do not filter only application ports: that would hide remote-access negatives.
+
+      :::interactive
+          tcpdump -i any -nn -U -G 1200 -W 1 -w /data/captures/validation.pcap 'host 10.10.10.50 or net 10.20.20.0/24 or net 10.30.30.0/24 or net 10.40.40.0/24 or net 10.60.60.0/24 or net 10.70.70.0/24'
+      :::
+
+      The capture is bounded to 1200 seconds (20 minutes); Ctrl-C stops it early.
+      If it expires before all tests finish, start a new named file/window and
+      repeat those rows. Leave this terminal capturing. Wait for the listening message, then use
+      other terminals for tests. `any` writes Linux cooked SLL2 with interface
+      metadata. A routed packet may appear twice; counts are not operation counts.
+      A field-only egress capture misses dropped SYNs. Save the file outside the
+      captures folder before Reset or shutdown; reset deletes /data/captures/*.pcap.
+
+      In the second tab, read the running policy in [containd](/containd/), not just its label.
       Compare its source, destination, service and first-match order with the
       approved request. Without a saved request, use the full Hardened reference.
       Do not replace a partial plan with Hardened just to obtain a green result.
@@ -91,7 +114,7 @@ steps:
 
       Configuration → Running config shows committed policy. Firewall Rules edits
       and its Default row describe the candidate. An uncommitted edit is not active.
-      From the fw-1 terminal, in the configuration CLI:
+      From the second fw-1 terminal, in the configuration CLI:
 
           show running-config
           export config
@@ -111,21 +134,6 @@ steps:
       and start a new test window. Do not silently overwrite a different policy.
       :::
 
-      Start ONE boundary capture before any source test. Use the fw-1 interactive
-      terminal, not Run: this capture must span the whole test window. Type `exit`
-      from `containd(config)#` to reach Linux bash; `containd cli` returns later.
-      In the host filter below include every source and destination in your plan.
-      Do not filter only application ports: that would hide remote-access negatives.
-
-          tcpdump -i any -nn -U -G 1200 -W 1 -w /data/captures/validation.pcap 'host 10.10.10.50 or net 10.20.20.0/24 or net 10.30.30.0/24 or net 10.40.40.0/24 or net 10.60.60.0/24 or net 10.70.70.0/24'
-
-      The capture is bounded to 1200 seconds (20 minutes); Ctrl-C stops it early.
-      If it expires before all tests finish, start a new named file/window and
-      repeat those rows. Leave this terminal capturing. Wait for the listening message, then use
-      other terminals for tests. `any` writes Linux cooked SLL2 with interface
-      metadata. A routed packet may appear twice; counts are not operation counts.
-      A field-only egress capture misses dropped SYNs. Save the file outside the
-      captures folder before Reset or shutdown; reset deletes /data/captures/*.pcap.
     action:
       type: check
       expect:
@@ -192,7 +200,6 @@ steps:
       Quiet valid status need not advance continuously; float points have a
       cyclic-report watchdog. F2 has five indications, no command.
 
-
       Worked example — historian reader from Kali:
 
           nmap -Pn -sT -p 8080 10.70.70.40 --max-retries 1 -T4
@@ -253,9 +260,11 @@ steps:
       probing. See [port and source boundaries](/knowledge#eu-port-source-boundary).
       :::
 
-      For every negative row, correlate the named host's connect timeout with a
-      fw-1 DENY event and the boundary capture in the same UTC window. In the
-      fw-1 containd configuration CLI (type `containd cli` if in Linux), type:
+      Classify each negative from the running export before interpreting events.
+      The reference evidence classes are listed in the next capture-review step.
+      For an explicit logged-rule negative, correlate the named host's connect
+      timeout with a fw-1 DENY event and the boundary capture in the same UTC window.
+      In the second fw-1 containd configuration CLI (type `containd cli` if in Linux), type:
 
           show events
 
@@ -272,12 +281,16 @@ steps:
     description: |
       Stop tcpdump with Ctrl-C in fw-1 after the last test. Note the UTC end and
       its packet/drop statistics. A capture that dropped packets cannot establish
-      absence reliably. Open `/home/abc/pcaps/validation.pcap` in Wireshark on
-      eng-ws. From the eng-ws terminal, list SYN/SYN-ACK rows for one test tuple
+      absence reliably. Open the eng-ws desktop from the Network Map node
+      drawer in the second browser tab, launch Wireshark and use **File → Open**
+      for `/home/abc/pcaps/validation.pcap` (a read-only mount, no transfer needed).
+      From the eng-ws terminal, list SYN/SYN-ACK rows for one test tuple
       (replace both hosts and port for each test):
 
-          tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 502' -T fields -E header=y -e frame.number -e frame.time_epoch -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags
+          tshark -r /home/abc/pcaps/validation.pcap -Y 'tcp.flags.syn == 1 && ip.addr == 10.10.10.50 && ip.addr == 10.40.40.20 && tcp.port == 502' -T fields -E header=y -e frame.number -e frame.time_utc -e sll.ifindex -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e tcp.flags
 
+      `frame.time_utc` prints ISO 8601 UTC (ending in Z), matching the event
+      time basis without converting epoch seconds.
       The `sll.ifindex` column is the Linux cooked SLL2 interface index;
       `frame.interface_id` is not the capture interface in this classic PCAP.
       The short listing is one row per matching frame, not a full packet dump.
@@ -289,6 +302,25 @@ steps:
       Never infer a zone from packet order or an ethN number. In Wireshark, filter
       one test tuple and its UTC window at a time. Expand TCP and the application
       dissector. Save packet/frame references against each test ID.
+
+      | Reference negative tuples | Deciding rule / evidence class |
+      |---|---|
+      | Kali or vendor→RTU:2404 | `deny-unauthorized-iec104`, logged |
+      | Kali, vendor, eng-ws→field:502; PLC/GPS→breaker:502 | `deny-unauthorized-modbus`, logged |
+      | Kali/vendor→PLC:8080 | `deny-unauthorized-plc-web`, logged |
+      | Kali/vendor→historian:8081 | `deny-unauthorized-historian-ingest`, logged |
+      | Kali→vendor:3389,5900 | default drop, no rule-hit event |
+      | Vendor→historian:8080 | default drop, no rule-hit event |
+      | CC→GPS:2404 | `deny-unauthorized-iec104`, logged (GPS is in lan1) |
+
+      These classes describe the full reference, not every partial plan. A
+      deferred exposure may be allowed. For custom rules, read their actual
+      first-match order and logging. Default-drop negatives have no rule-hit
+      event: evidence is the connect timeout + source-zone SYN + destination-zone
+      absence in a loss-free capture with a working control. Record event as
+      “not applicable — default drop”, not “missing”. Never change the policy to
+      manufacture an event. A logged-rule row without its expected event is
+      incomplete evidence; investigate rather than treating it as default drop.
 
       For each negative expected to be denied, find the SYN on the source-zone
       interface and show it is absent on the destination-zone interface in that
@@ -308,11 +340,11 @@ steps:
           show events
 
       Join the `firewall.rule.hit` DENY row's event ID, ruleId, real SRC,
-      DST, TCP port and UTC time to each negative's host timeout and source-zone
-      SYN / destination-zone absence. Preserve all three references. A missing
-      event can mean an unlogged rule or default drop, not an allow; mark the
-      missing correlation as a limitation and investigate. An event alone does
-      not establish that required applications are unaffected.
+      DST, TCP port and UTC time to each logged-rule negative's host timeout and
+      source-zone SYN / destination-zone absence. Preserve all three references
+      for logged-rule rows. Default-drop rows use timeout and both capture legs,
+      with no event expected. An event alone does not establish that required
+      applications are unaffected.
 
       For each new routed positive connection, find the handshake on both interfaces and the
       source's native request/response. Match the live poller's responses to the
@@ -328,6 +360,20 @@ steps:
       | Test ID | UTC / tuple | Source-zone SYN frame | Destination-zone frame or checked absence | DENY event ID / ruleId | Handshake / request-response frames | Result / limitation |
       |---|---|---|---|---|---|---|
       | | | | | | | |
+
+      ### Save your evidence before any reset
+
+      - On the Docker host, open the install root in Finder or File Explorer.
+        The capture is `data/eu-iec104-substation/firewall/captures/validation.pcap` relative to that root.
+      - Copy that file with the host file manager to a folder outside `data/`
+        (for example, Documents/Range evidence). For a browser on another
+        machine, transfer that saved copy to the browser machine first. The
+        eng-ws mount is read-only and is not a download to your computer.
+      - Save Notes, the redacted running export, UTC window, test table,
+        event IDs/ruleIds and packet/drop statistics alongside the PCAP.
+      - Reset Lab deletes `/data/captures/*.pcap` and replaces the running
+        policy with Weak. Save before reset or shutdown; do not rely on the
+        captures directory as your evidence archive.
 
       Copy the PCAP out before any reset. Keep this table, capture statistics,
       running export and UTC window together. Supplementary **Live Firewall Events**
@@ -372,7 +418,7 @@ steps:
       If an abort criterion was met, stop, notify the operator and use the approved
       rollback: re-stage the previous rules from the saved export, review the full
       diff, commit, read back and retest. Record who authorized the restoration.
-      The optional current-system cross-check samples plant state. It does not
+      The **Cross-check the current system** samples plant state. It does not
       grade these observations or authorize the change.
     action:
       type: check
@@ -389,7 +435,7 @@ steps:
       merge evidence from different policies; start a new window. Copy this test
       record into Notes and fill every field. Attach the test plan, row results,
       packet references, PCAP, redacted running export and before/after operator
-      readings. Validate Exercise does not replace your test evidence; use
+      readings. **Cross-check the current system** does not replace your test evidence; use
       **Cross-check the current system** only as an optional second check.
 
       Test record

@@ -94,14 +94,14 @@ func TestChangeRequestManualPolicyJudgment(t *testing.T) {
 				firewall["rules"] = append([]any{map[string]any{"id": "broad", "action": "ALLOW"}}, rules...)
 				setRunning(encode(manual))
 				check := s.policyJudgment(ctx, gen)
-				if check.Status != "fail" || !strings.Contains(check.Detail, "tuple ") {
+				if check.Status != "fail" || !strings.Contains(check.Detail, "policy mismatches: ") {
 					t.Fatal(check)
 				}
 			})
 			t.Run("missing required conduits", func(t *testing.T) {
 				firewall["rules"], firewall["defaultAction"] = []any{}, "DENY"
 				setRunning(encode(manual))
-				if check := s.policyJudgment(ctx, gen); check.Status != "fail" || !strings.Contains(check.Detail, "tuple ") {
+				if check := s.policyJudgment(ctx, gen); check.Status != "fail" || !strings.Contains(check.Detail, "policy mismatches: ") {
 					t.Fatal(check)
 				}
 			})

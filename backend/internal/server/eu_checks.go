@@ -161,8 +161,19 @@ func (s *Server) executeEUCheck(ctx context.Context, gen *lifecycle.Generation, 
 	}
 	sort.Strings(keys)
 	var results []StepActionResult
+	labels := map[string]string{
+		"breaker_closed":  "Breaker closed",
+		"supply_present":  "Feeder supply present",
+		"cc_link_fresh":   euCCLinkCheckLabel,
+		"rmu_normal":      "RMU1 closed and RMU2 open",
+		"oltc_auto":       "OLTC remote automatic mode and tap in range",
+		"firewall_config": "Running policy matches judging target",
+	}
 	for _, key := range keys {
-		result := StepActionResult{Action: key}
+		result := StepActionResult{Action: labels[key]}
+		if result.Action == "" {
+			result.Action = "Unknown check"
+		}
 		var actual bool
 		var err error
 		switch key {
@@ -216,7 +227,7 @@ func (s *Server) executeEUCheck(ctx context.Context, gen *lifecycle.Generation, 
 		case "firewall_config":
 			expected, ok := expect[key].(string)
 			if !ok || expected != "improved" {
-				result.Detail = fmt.Sprintf("unsupported firewall_config expectation %v", expect[key])
+				result.Detail = "unsupported firewall_config expectation; expected improved (judged against your plan or change request, otherwise the full reference)"
 			} else {
 				judgment := s.policyJudgment(ctx, gen)
 				result.Action = judgment.Name
@@ -229,11 +240,15 @@ func (s *Server) executeEUCheck(ctx context.Context, gen *lifecycle.Generation, 
 			err = fmt.Errorf("unknown EU check key %q", key)
 		}
 		if err != nil {
-			result.Detail = "Missing evidence: " + err.Error()
+			result.Detail = missingEvidenceDetail(err)
 		} else {
 			expected, ok := expect[key].(bool)
 			result.Success = ok && actual == expected
-			result.Detail = fmt.Sprintf("Expected %v; observed %t", expect[key], actual)
+			if !ok {
+				result.Detail = "Invalid check expectation; expected true or false"
+			} else {
+				result.Detail = fmt.Sprintf("Expected %t; observed %t", expected, actual)
+			}
 		}
 		results = append(results, result)
 	}

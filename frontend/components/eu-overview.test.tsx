@@ -8,7 +8,7 @@ import { HISTORY, historySample } from "../lib/historian-fixtures.test-util";
 import { RangeProvider } from "./range-context";
 import { RangeScope } from "./range-scope";
 
-function render(workshop: boolean, state = FEEDER_STATE) {
+function render(workshop: boolean, state = FEEDER_STATE, activeConfig = "improved") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const overviewHistory = {
     ...HISTORY, gaps: [],
@@ -16,7 +16,7 @@ function render(workshop: boolean, state = FEEDER_STATE) {
   };
   client.setQueryData(["packages", "active"], EU_PACKAGE);
   client.setQueryData(["operator", "state"], state);
-  client.setQueryData(WORKSHOP_STATUS_KEY, { control_centre: { link: "started", gi: "complete" }, firewall_online: true, firewall_config: "improved" });
+  client.setQueryData(WORKSHOP_STATUS_KEY, { control_centre: { link: "started", gi: "complete" }, firewall_online: true, firewall_config: activeConfig });
   client.setQueryData(["historian", "points"], state.points);
   client.setQueryData(["historian", "trend", "section-voltage"], { histories: ["rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-source-kv"].map((point) => ({ ...overviewHistory, point })), events: [], window: { since: "2026-10-15T09:45:10Z", until: "2026-10-15T10:00:10Z" } });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}><RangeProvider><RangeScope>{workshop ? <EuWorkshopStatus title="EU" /> : <EuDashboard title="EU" />}</RangeScope></RangeProvider></QueryClientProvider>);
@@ -24,6 +24,12 @@ function render(workshop: boolean, state = FEEDER_STATE) {
   return html;
 }
 describe("EU overview and workshop comms", () => {
+  it("shows custom policy as neutral and calls the topology Network Map", () => {
+    const html = render(false, FEEDER_STATE, "custom");
+    expect(html).toContain('class="text-sm font-bold text-slate-400">Custom policy</div>');
+    expect(html).toContain("Network Map");
+    expect(html).not.toContain("Network Console");
+  });
   it("lets the dashboard and trend shrink while comms items wrap inside their available width", () => {
     const html = render(false);
     expect(html).toContain('<section class="min-w-0 flex-1">');

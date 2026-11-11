@@ -43,7 +43,7 @@ export function RemediationPlanBanner({ currentExerciseId, appliedPlan }: Remedi
           <ClipboardList className="h-4 w-4 text-amber-500" />
           <div className="text-[11px] text-amber-400">
             No remediation plan on file. Complete the{" "}
-            <Link href={`/exercises/${binding.roles.planning}`} className="underline hover:text-amber-200">
+            <Link target="_blank" rel="noopener noreferrer" href={`/exercises/${binding.roles.planning}`} className="underline hover:text-amber-200">
               Remediation Planning
             </Link>{" "}
             exercise first - later exercises reference your plan.

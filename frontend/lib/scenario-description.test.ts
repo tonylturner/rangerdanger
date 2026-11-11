@@ -556,3 +556,30 @@ it("does not recognize the retired report directive as an interactive segment", 
   const text = ":::validation-report\n:::";
   expect(splitDescription(text)).toEqual([{ type: "prose", value: text }]);
 });
+
+describe("interactive commands", () => {
+  it("inherits source, keeps prose and local markers, and forces copy-only", () => {
+    const segments = splitDescription("From Kali:\n:::interactive\nLeave this running.\n    tcpdump -i any \\\n      -nn\nFrom the fw-1 terminal:\n    tcpdump -i any\n:::\n    curl fixture");
+    expect(segments.filter((seg) => seg.type === "cmd")).toEqual([
+      { type: "cmd", value: "tcpdump -i any \\\n  -nn", sourceNode: "kali-1", copyOnly: true, interactive: true },
+      { type: "cmd", value: "tcpdump -i any", sourceNode: "fw-1", copyOnly: true, interactive: true },
+      { type: "cmd", value: "curl fixture", sourceNode: "kali-1" },
+    ]);
+    expect(segments.some((seg) => seg.type === "prose" && seg.value.includes("Leave this running."))).toBe(true);
+  });
+
+  it("retains an interactive block nested in a hint until its own closing fence", () => {
+    const segments = splitDescription("From the firewall:\n:::hint Capture\n:::interactive\n    tcpdump -i any\n:::\nAfter capture.\n:::\n    curl fixture");
+    expect(segments[1]).toMatchObject({ type: "hint", sourceNode: "fw-1", value: expect.stringContaining("After capture.") });
+    const hint = segments[1];
+    if (hint.type !== "hint") throw new Error("Expected hint");
+    expect(splitDescription(hint.value, hint.sourceNode)).toContainEqual({ type: "cmd", value: "tcpdump -i any", sourceNode: "fw-1", copyOnly: true, interactive: true });
+  });
+});
+
+it("keeps fenced templates intact and does not route from sample source headers", () => {
+  const text = "From Kali:\n```text\nFrom the firewall:\n    curl template\n```\n    curl real";
+  const segments = splitDescription(text);
+  expect(segments.filter((seg) => seg.type === "cmd")).toEqual([{ type: "cmd", value: "curl real", sourceNode: "kali-1" }]);
+  expect(segments).toContainEqual({ type: "prose", value: "```text\nFrom the firewall:\n    curl template\n```" });
+});

@@ -30,6 +30,16 @@ steps:
     expected_config: weak
     node: rtac-1
     description: |
+      Before proceeding, save your Lab 2.2 running export and Notes. **Reset to
+      Weak** replaces your Lab 2.2 policy, including hand-written rules; it does
+      not preserve them for automatic restoration. Use Reset to Weak for this
+      lesson's initial demonstration only. After restoring the plant, use
+      **Apply Your Plan** with your saved Lab 1.4 request to return to the
+      approved scope before the retest. This is the normal route back, not a
+      catch-up exercise. It regenerates the approved scope, not your exact
+      hand-written IDs or unrelated edits. An empty selection loads Weak; if
+      you have no saved request, use the full Hardened reference instead.
+
       Confirm the substation is healthy under the weak baseline:
 
       - Breaker closed, recloser closed, auto-reclose enabled
@@ -256,6 +266,14 @@ steps:
     title: "Confirm the reviewed boundary before retesting"
     expected_config: hardened
     description: |
+      Use **Apply Your Plan** now to regenerate your saved, approved Lab 1.4
+      scope after the Weak demonstration. Read back the running rules and
+      record the running identity and commit time before retesting. Without a
+      saved request, use **Apply Hardened** for the full reference. Neither
+      route replaces your observations, operator checks or sign-off. If you
+      choose to re-author the policy manually instead, follow the Lab 2.2
+      procedure below rather than mixing manual and automatic changes.
+
       Use the reviewed rules from Lab 2.2. Compare the running policy with your
       Lab 1.4 change request. If it differs, export the running rules first.
       Stage the approved removals and replacements together in containd. Review
@@ -263,13 +281,7 @@ steps:
       Keep the management path and required operating conduits. Record the
       commit time and running identity. Do not widen the approved scope just
       to obtain a green result. Without a saved request, use the full Hardened reference.
-      The current-system check reads the policy without replacing it.
-
-      :::hint Optional catch-up — for less technical students or teams behind schedule
-      This replaces typing rules. It does not replace your own observations, operator check or sign-off.
-      Apply Your Plan for the approved Lab 1.4 scope. Apply Hardened only when
-      you intend to test the full reference. Read back what is running.
-      :::
+      The **Cross-check the current system** reads the policy without replacing it.
 
       **Block enterprise → field direct access** owns Kali→field Modbus/DNP3.
       If selected, expect timeout. If deferred, expect the path to stay open.
@@ -280,6 +292,14 @@ steps:
       They add visibility, not command authorization. Record each deferred exposure and risk owner.
 
       The L4 source pin enforces; DPI detects and logs.
+
+      :::hint Scope is not a policy backup
+      Apply Your Plan compiles the saved selection; it does not import the
+      hand-written Lab 2.2 export. Compare source pins, required conduits and
+      deferred paths with that record. If the scope is wrong, stop before retesting
+      and correct the saved request or return to reviewed manual entry.
+      :::
+
     action:
       type: check
       expect:
@@ -357,7 +377,7 @@ steps:
       as the observation. This is a protocol comparison, not a DPI prevention test.
       :::
 
-      Restore every changed device before Validate, for every plan. Use HMI
+      Restore every changed device before **Cross-check the current system**, for every plan. Use HMI
       Supervisory Control: enable auto-reclose, close the recloser and breaker,
       clear fault/lockout, and return the regulator to auto and tap zero.
       Do not Reset Lab to improve the evidence: it reapplies Weak. If reset is
@@ -375,7 +395,7 @@ steps:
     title: "Read device state and record the result"
     expected_config: hardened
     description: |
-      Read the restored plant before using the optional current-system cross-check.
+      Read the restored plant before using the **Cross-check the current system**.
       From the RTAC terminal, read the aggregated device state:
 
           mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20

@@ -102,12 +102,13 @@ steps:
 
       What the traffic generator adds is **scenario-driven** activity—engineering workstation maintenance access and vendor remote monitoring. These represent things students would see during an exercise that models engineering or vendor activity. **They are not part of the 24×7 baseline.**
 
-      Start the generator now:
+      Press **Generate Traffic (45s)** now:
 
       :::generate-traffic-button
       :::
 
-      Leave it running—we start the capture next.
+      This preview stops automatically after 45 seconds. Start it again immediately
+      before tcpdump in the next step.
 
       ### Sneak preview: the live Traffic Matrix
 
@@ -135,7 +136,9 @@ steps:
     title: "Capture traffic at the firewall"
     node: fw-1
     description: |
-      > **Tip—where you run commands:** click **Show terminal** (the terminal icon at the top right of this exercise) to open an embedded shell right beside the steps. It drops you on the step's node (here the firewall, `fw-1`)—you can type commands directly, or use the **copy** button on any command block and paste. You can also open a node's terminal from the [Network Map](/console). The terminal stays available for every command in the rest of the workshop.
+      **Terminal choice:** select **fw-1** in the terminal tabs and verify its
+      active node label before capture commands. **Show terminal** reveals the
+      panel; it is not a guarantee that the currently selected tab is fw-1.
 
       Open the firewall terminal (the **Show terminal** button above, or `fw-1` on the [Network Map](/console)). The firewall terminal opens the configuration CLI. Type `exit` to leave it; RangerDanger then starts the Linux shell. Run tcpdump there. To return from bash use `containd cli`. Leaving the CLI never commits or discards pending edits.
 
@@ -144,9 +147,17 @@ steps:
       | Configuration CLI | `show *`, `set *`, `commit`, `export config` - appliance commands | Default; opens here |
       | Linux shell (bash) | `tcpdump`, `nft`, `ip`, generic Linux - acts immediately | Type `exit` from the configuration CLI |
 
-      Start a 60-second capture across all interfaces from bash:
+      Press **Generate Traffic (45s)** again immediately before tcpdump; it stops
+      automatically. Start the capture as soon as generation is acknowledged.
 
+      :::generate-traffic-button
+      :::
+
+      From fw-1 bash, paste this capture and leave it running until completion:
+
+      :::interactive
         tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'
+      :::
 
       Wait for tcpdump to print its packet count and exit. You'll see two messages that look like warnings but are expected:
 

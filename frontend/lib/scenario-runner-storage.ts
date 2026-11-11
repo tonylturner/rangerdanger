@@ -16,6 +16,7 @@ export type ExerciseProgress = {
   skippedStepIds: string[];
   notes: string;
   cmdLog: string[];
+  currentStepId?: string;
 };
 
 type ProgressScenario = Pick<Scenario, "id" | "steps">;
@@ -46,8 +47,16 @@ export function loadProgress(scope: CurriculumScope, scenario: ProgressScenario)
     skippedStepIds: [...new Set(stringArray(record.skippedStepIds))]
       .filter((id) => stepIds.has(id) && !completedStepIds.includes(id)),
     notes: typeof record.notes === "string" ? record.notes : "",
-    cmdLog: stringArray(record.cmdLog),
+    cmdLog: stringArray(record.cmdLog).slice(0, 100),
+    ...(typeof record.currentStepId === "string" && stepIds.has(record.currentStepId)
+      ? { currentStepId: record.currentStepId } : {}),
   };
+}
+
+export function initialStepIndex(scenario: ProgressScenario, progress: ExerciseProgress): number {
+  const saved = scenario.steps.findIndex((s) => s.id === progress.currentStepId);
+  if (saved >= 0) return saved;
+  return Math.max(0, scenario.steps.findIndex((s) => !progress.completedStepIds.includes(s.id)));
 }
 
 export function saveProgress(scope: CurriculumScope, scenarioId: string, progress: ExerciseProgress): void {
