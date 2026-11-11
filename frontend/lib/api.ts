@@ -235,7 +235,7 @@ export type ZoneRuleSummary = {
   dest_zone: string;
   summary: string;
   rule_details: string[];
-  action: "ALLOW" | "DENY" | "MIXED";
+  action: "ALLOW" | "DENY" | "RESET" | "MIXED";
 };
 
 export type FirewallRulesResponse = {
@@ -383,7 +383,7 @@ export async function getSubstationHealth() {
 //   - "ics.decision"      — rule-local shadow decisions in monitor mode,
 //     not packet verdicts.
 export type NetworkEventAttributes = {
-  action?: "ALLOW" | "DENY";   // Actual rule hit or configured shadow action.
+  action?: "ALLOW" | "DENY" | "RESET";   // Actual rule hit or configured shadow action.
   ruleId?: string;
   decision?: "would_allow" | "would_drop";
   mode?: "monitor" | "enforce";

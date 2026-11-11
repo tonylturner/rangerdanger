@@ -135,7 +135,7 @@ class ErrataContracts(unittest.TestCase):
         expected = {
             "firewall-implementation": {
                 4: ("**Apply Your Plan**", "replacements and removals together", "Deferred rules retain"),
-                7: ("named sources", "Connection refused means", "prevention gap", "running identity"),
+                7: ("named sources", "Connection refused means the connection got an answer", "prevention gap", "running identity"),
                 8: ("does not support shell redirection",
                     "Keep the pre-change backup separately from this confirmed Lab 2.2 policy.",
                     "change ID", "running identity")},
@@ -145,7 +145,7 @@ class ErrataContracts(unittest.TestCase):
                 5: ("re-test timestamps", "do not clear history", "Restoration is common to every plan")},
             "vendor-rdp-compromise": {
                 4: ("Apply Your Plan", "without replacing it", "| Restrict enterprise → vendor remote access |"),
-                5: ("Deferred means reachable", "Restore auto-reclose", "A refused connection counts as reached")},
+                5: ("Deferred means reachable", "Restore auto-reclose", "Connection refused means the connection got an answer")},
             "validation-evidence": {
                 1: ("Do not replace a partial plan", "A saved browser plan is not an applied plan"),
                 5: ("**Cross-check the current system** does not replace your test evidence",)},

@@ -15,7 +15,7 @@ Require a retained matched GI start/completion on the current connection within 
 The plaintext PLC workshop UI is named eng-ws only, not general vendor station authority. Specify owner, expiry, change window, revocation test and future authenticated gateway. Preserve the seed identity; do not edit PLC logic to fix a firewall test. Rehearse rollback using exported known-good policy and establish a new evidence window afterward. Record actual role effort against the shared 500-hour plan, not a separate retired 80-hour exercise.
 
 ### Negative evidence and acceptance
-New probes must come from each real source. Strict active probing counts only connect timeout as denied; refused means reached, and container/tool errors are failed evidence. Logs can corroborate but are not mandatory for default deny. A logged SYN cannot identify denied payload. Do not require old logged-deny evidence as the only acceptance path.
+New probes must come from each real source. Strict active probing counts only connect timeout as DENY/drop evidence. Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop. Container/tool errors are failed evidence. Logs can corroborate but are not mandatory for default deny. A logged SYN cannot identify denied payload. Do not require old logged-deny evidence as the only acceptance path.
 
 For each row retain planned verdict, measured result, UTC window, policy identity, evidence path, gap, owner and next action. Pair available operations with blocked exposure, not a named policy alone. [IEC 62443 risk design](#eu-iec62443-risk-design) and [resource plan](#eu-change-resource-plan) explain the engineering signoff.
 

@@ -42,7 +42,7 @@ function MapTooltip({
 
 // Custom edge component with tooltip for firewall policy details. The
 // label uses a pill background so it stays readable on the dark canvas
-// and a state-aware leading icon (✓ allow / ✕ deny / ⚠ mixed / ? unknown) so the
+// and a state-aware leading icon (✓ allow / ✕ deny or reset / ⚠ mixed / ? unknown) so the
 // student can scan policy state without reading the label.
 function PolicyEdge({
   id,
@@ -82,9 +82,10 @@ function PolicyEdge({
   const dimmed = data?.dimmed === true;
 
   const unknown = data?.permissiveness === "unknown" || action === "UNKNOWN";
-  const actionIcon = unknown ? "?" : action === "DENY" ? "\u2715" : action === "MIXED" ? "\u26A0" : "\u2713";
+  const blocked = action === "DENY" || action === "RESET";
+  const actionIcon = unknown ? "?" : blocked ? "\u2715" : action === "MIXED" ? "\u26A0" : "\u2713";
   const iconColor =
-    unknown ? "#94a3b8" : action === "DENY" ? "#ef4444" : action === "MIXED" ? "#f59e0b" : "#22c55e";
+    unknown ? "#94a3b8" : blocked ? "#ef4444" : action === "MIXED" ? "#f59e0b" : "#22c55e";
 
   const labelWidth = Math.max(78, label.length * 6 + 28);
   const dimOpacity = dimmed ? 0.45 : 1;
@@ -195,15 +196,15 @@ function PolicyEdge({
             <ul className="space-y-1">
               {details.slice(0, 8).map((detail: string, i: number) => {
                 const isAllow = detail.startsWith("ALLOW");
-                const isDeny = detail.startsWith("DENY");
+                const isBlocked = detail.startsWith("DENY") || detail.startsWith("RESET");
                 return (
                   <li key={i} className="flex items-start gap-1.5 leading-tight">
                     <span
                       className={`shrink-0 text-[10px] font-bold ${
-                        isDeny ? "text-red-400" : isAllow ? "text-green-400" : "text-slate-400"
+                        isBlocked ? "text-red-400" : isAllow ? "text-green-400" : "text-slate-400"
                       }`}
                     >
-                      {isDeny ? "\u2715" : isAllow ? "\u2713" : "\u2022"}
+                      {isBlocked ? "\u2715" : isAllow ? "\u2713" : "\u2022"}
                     </span>
                     <span className="text-slate-200">
                       {detail.replace(/^(ALLOW|DENY)\s*/, "")}

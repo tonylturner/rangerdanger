@@ -54,7 +54,7 @@ describe("SegmentationView", () => {
       { id: "ids", timestamp: "", kind: "anomaly", attributes: { action: "DENY", anomaly_type: "protocol anomaly" } },
     ];
     const html = renderText(EU_PACKAGE, "improved", true, { events, source: "containd" }).split("Named policy comparison")[0];
-    expect(html).toContain("2 rule · 2 dpi · 1 ids · 1 deny");
+    expect(html).toContain("2 rule · 2 dpi · 1 ids · 1 blocked");
     expect(html).toContain("would deny (monitor)");
     expect(html).toContain("would allow (monitor)");
     expect(html).toContain("observe-breaker");
@@ -62,6 +62,33 @@ describe("SegmentationView", () => {
     expect(html.match(/\bDENY\b/g)).toHaveLength(1);
     expect(html.match(/\bALLOW\b/g)).toHaveLength(1);
     expect(html).not.toContain("would have blocked");
+  });
+
+  it("renders RESET as blocked with DENY tone, without counting non-rule actions", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(["packages", "active"], EU_PACKAGE);
+    client.setQueryData(FIREWALL_ACTIVE_KEY, { active_config: "custom" });
+    const events: NetworkEventsResponse = { source: "containd", events: [
+      { id: "reset", timestamp: "", kind: "firewall.rule.hit", attributes: { action: "RESET", ruleId: "reset-rule" } },
+      { id: "deny", timestamp: "", kind: "firewall.rule.hit", attributes: { action: "DENY", ruleId: "deny-rule" } },
+      { id: "ids", timestamp: "", kind: "anomaly", attributes: { action: "RESET" } },
+      { id: "shadow", timestamp: "", kind: "ics.decision", attributes: { mode: "monitor", decision: "would_drop", action: "DENY" } },
+    ] };
+    client.setQueryData(NETWORK_EVENTS_KEY, events);
+    const tree = rtlRender(<QueryClientProvider client={client}><SegmentationView /></QueryClientProvider>);
+    try {
+      expect(screen.getByText("2 rule · 1 dpi · 1 ids · 2 blocked")).toBeTruthy();
+      for (const action of ["RESET", "DENY"]) {
+        const chip = screen.getByText(action);
+        expect(chip.className).toContain("text-red-400");
+        expect(chip.closest("div.rounded-sm")?.className).toContain("bg-red-950/15");
+      }
+      expect(screen.getAllByText("RESET")).toHaveLength(1);
+      expect(screen.getByText("would deny (monitor)")).toBeTruthy();
+    } finally {
+      tree.unmount();
+      client.clear();
+    }
   });
 
   it("never invents a verdict or counts a monitor-only stream as denied commands", () => {
@@ -72,7 +99,7 @@ describe("SegmentationView", () => {
         { id: "unknown", timestamp: "", kind: "ics.decision", attributes: { mode: "monitor", action: "DENY" } },
       ],
     }).split("Named policy comparison")[0];
-    expect(html).toContain("0 rule · 2 dpi · 0 ids · 0 deny");
+    expect(html).toContain("0 rule · 2 dpi · 0 ids · 0 blocked");
     expect(html).toContain("monitor observation");
     expect(html).not.toMatch(/\b(ALLOW|DENY)\b/);
   });

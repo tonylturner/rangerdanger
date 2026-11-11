@@ -39,7 +39,7 @@ These are different assertions. Do not report “historian isolated” if only 8
 ### Understand the result vocabulary
 
 - **Open:** a TCP connection was accepted. It says nothing about valid IEC 104 STARTDT/GI, Modbus register semantics or HTTP authorization.
-- **Closed:** the probe reached something that actively refused the connection. That is not the same as a firewall silently dropping it.
+- **Closed:** Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop. Correlate the timeout with policy and boundary evidence, not just the scan label.
 - **Filtered / timeout:** no decisive response arrived within the scan's budget. Correlate with policy and firewall evidence; service failure or routing can produce similar symptoms.
 
 Keep filtered results in the output; `--open` would hide precisely the negative evidence being collected. Avoid `-sV`, `-A`, NSE scripts and aggressive discovery here. They send additional application probes that the boundary question does not require.

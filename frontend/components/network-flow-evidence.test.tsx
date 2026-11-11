@@ -64,15 +64,27 @@ describe("EU flow meaning", () => {
   });
 
   it("puts purpose, authorization and observation evidence on the canvas too", () => {
-    for (const action of ["MIXED", "DENY"] as const) {
+    for (const action of ["MIXED", "DENY", "RESET"] as const) {
       const edges = buildStyledGraph(graph, [{ ...rules[0], action }], { policyDim: true, traffic: true, iec62443: false }, undefined, undefined, context).edges;
       const data = edges.find((e) => e.id === "traffic-cc-1->rtu-1")!.data;
-      expect(data.blockedByFirewall).toBe(action === "DENY");
+      expect(data.blockedByFirewall).toBe(action !== "MIXED");
       const text = data.tooltipLines.join(" ");
       expect(text).toContain("Monitoring and control");
       expect(text).toContain("Topology: declared");
       expect(text).toContain("Observed liveness: active");
-      expect(text).toContain(action === "DENY" ? "Denied by zone-pair summary" : "Authorization unknown");
+      expect(text).toContain(action !== "MIXED" ? "Denied by zone-pair summary" : "Authorization unknown");
+    }
+  });
+
+  it("labels RESET communications as blocked in the node inspector", () => {
+    const tree = render(<ActiveFlowsPanel graph={graph} nodeId="rtu-1" nodeZone="station_net" multiHomedZones={[]}
+      ruleSummaries={[{ ...rules[0], action: "RESET" }]} />);
+    try {
+      expect(screen.getByText("RESET").className).toContain("text-red-400");
+      expect(screen.getByText("✕").className).toContain("text-red-400");
+      expect(tree.container.textContent).not.toContain("✓");
+    } finally {
+      tree.unmount();
     }
   });
 

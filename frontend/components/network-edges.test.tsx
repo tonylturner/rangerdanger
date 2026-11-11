@@ -42,11 +42,28 @@ describe("PolicyEdge", () => {
     ["ALLOW", "unknown", "?"],
     ["ALLOW", "allowed", "✓"],
     ["DENY", "blocked", "✕"],
+    ["RESET", "blocked", "✕"],
     ["MIXED", "allowed", "⚠"],
   ])("uses a distinct icon for %s/%s", (action, permissiveness, icon) => {
     const out = renderToStaticMarkup(<svg><edgeTypes.policyEdge {...base} data={{ label: "Inbound policy", action, permissiveness }} /></svg>);
     expect(out.match(/<tspan[^>]*>(.*?)<\/tspan>/)?.[1]).toBe(`${icon}  `);
     if (permissiveness === "unknown") expect(out).not.toContain("✓");
+  });
+
+  it("shows RESET on the policy label and in red blocked tooltip details", () => {
+    const tree = render(<svg><edgeTypes.policyEdge {...base} data={{
+      label: "RESET", action: "RESET", permissiveness: "blocked", details: ["RESET wan→lan1: reset-rule"],
+    }} /></svg>);
+    try {
+      expect(tree.container.querySelector("tspan")?.getAttribute("fill")).toBe("#ef4444");
+      fireEvent.mouseEnter(tree.container.querySelector('path[stroke="transparent"]')!);
+      expect(document.body.textContent).toContain("RESET wan→lan1: reset-rule");
+      const detail = document.body.querySelector("li span");
+      expect(detail?.textContent).toBe("✕");
+      expect(detail?.className).toContain("text-red-400");
+    } finally {
+      tree.unmount();
+    }
   });
 
   it("does not default missing policy data to a green check", () => {
