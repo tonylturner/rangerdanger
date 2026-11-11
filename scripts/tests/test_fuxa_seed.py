@@ -3,21 +3,132 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import subprocess
+import sys
 import tempfile
+import threading
 import unittest
 import urllib.error
 import xml.etree.ElementTree as ET
+from contextlib import redirect_stdout
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.tests import test_fuxa_seed_live as live
+from scripts.tests import live_fuxa_seed as live
+from scripts.tests import test_fuxa_seed_boot as boot
 
 ROOT = Path(__file__).resolve().parents[2]
 SEED = ROOT / "lab-definitions/packages/us-dnp3-substation/seeds/fuxa"
 
 
 class FuxaSeedTests(unittest.TestCase):
+    def test_discovery_excludes_live_acceptance_but_explicit_loading_keeps_it(self):
+        loader = unittest.TestLoader()
+        suite = loader.discover(
+            str(ROOT / "scripts/tests"), pattern="test_fuxa*.py",
+            top_level_dir=str(ROOT),
+        )
+
+        def test_ids(tests):
+            for test in tests:
+                if isinstance(test, unittest.TestSuite):
+                    yield from test_ids(test)
+                else:
+                    yield test.id()
+
+        self.assertEqual(loader.errors, [])
+        discovered = set(test_ids(suite))
+        self.assertIn(
+            __name__ + ".FuxaSeedTests.test_fresh_install_and_restart", discovered)
+        explicit = loader.loadTestsFromName("scripts.tests.live_fuxa_seed")
+        live_ids = set(test_ids(explicit))
+        self.assertEqual(live_ids, {
+            "scripts.tests.live_fuxa_seed.FuxaSeedLiveTests."
+            "test_viewer_receives_six_fresh_read_only_values",
+        })
+        self.assertTrue(discovered.isdisjoint(live_ids))
+
+    def test_explicit_live_entrypoints_and_boot_caller_with_fixture_server(self):
+        project = json.loads((SEED / "starter.fuxap").read_text())
+        tag_ids = list(project["devices"]["rd_rtac"]["tags"])
+
+        class Handler(BaseHTTPRequestHandler):
+            polls = 0
+
+            def do_GET(self):
+                if self.path == "/api/project":
+                    Handler.polls = 0
+                    payload = json.dumps(project)
+                elif "sid=" not in self.path:
+                    payload = '0{"sid":"fixture"}'
+                else:
+                    Handler.polls += 1
+                    if Handler.polls == 1:
+                        payload = "40"
+                    else:
+                        payload = "42" + json.dumps(["device-values", {
+                            "id": project["devices"]["rd_rtac"]["id"],
+                            "values": [
+                                {"id": tag, "value": 1, "timestamp": Handler.polls}
+                                for tag in tag_ids
+                            ],
+                        }])
+                body = payload.encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.addCleanup(server.server_close)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        self.addCleanup(thread.join, 5)
+        self.addCleanup(server.shutdown)
+        env = dict(os.environ, FUXA_LIVE_URL=f"http://127.0.0.1:{server.server_port}")
+        for args in (
+            ["-m", "unittest", "scripts.tests.live_fuxa_seed"],
+            ["scripts/tests/live_fuxa_seed.py"],
+        ):
+            with self.subTest(args=args):
+                result = subprocess.run(
+                    [sys.executable, *args], cwd=ROOT, env=env,
+                    capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("Ran 1 test", result.stderr)
+                self.assertIn("FUXA viewer values:", result.stdout)
+                self.assertNotIn("skipped", result.stderr)
+
+        run = subprocess.run
+
+        def fake_docker(command, **kwargs):
+            if "input" in kwargs:
+                result = run(
+                    [sys.executable, "-c", command[-1]], input=kwargs["input"],
+                    cwd=ROOT, env=env, text=True, capture_output=True, timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("FUXA viewer values:", result.stdout)
+            return subprocess.CompletedProcess(command, 0, stdout="")
+
+        with patch.object(boot.subprocess, "run", side_effect=fake_docker) as docker, \
+                redirect_stdout(io.StringIO()):
+            boot.check_live("fixture-runtime", "fixture-python")
+        self.assertEqual(sum("input" in call.kwargs for call in docker.call_args_list), 1)
+
     def test_live_check_skips_only_a_confirmed_absent_us_range(self):
         for state in (
             {"phase": "none"},
