@@ -289,12 +289,26 @@ steps:
       From the fw-1 configuration CLI, commit replacements and removals together:
 
           show diff
-          commit
+          commit confirmed 60
 
-      Or use **Commit** on **Configuration** after the same review. Make ONE commit
-      for this rule change. Read back with `show running-config` and record its
-      identity and UTC time before testing. Confirm the operational exceptions and
-      removal of the approved broad allows in the running rules, not just the candidate.
+      Or use **Commit-confirmed** on **Configuration** after review and set the
+      seconds field to the agreed test window. `60` is an example: agree enough
+      time for management and operational checks before starting. Make ONE commit
+      for this rule change. Read back with `show running-config`; record the
+      running identity, UTC time and confirmation deadline. Check management access
+      through the portal and the required operational conduits before confirming.
+      From the fw-1 configuration CLI, retain the change only after those checks pass:
+
+          confirm
+
+      Or use **Confirm** while the deadline is pending. Without `confirm`, containd
+      restores the previous running config at the deadline. If a rollback trigger
+      occurs, stop testing, notify the operator and do not confirm. The rollback
+      owner checks the restored running identity and retests operations. For an
+      immediate return, use `rollback` (UI **Recovery → Rollback**). Rollback is one
+      level only: it restores the previous running config, not an arbitrary history.
+      The UI rollback keeps the newer staged candidate; do not commit it accidentally.
+      Reserved management protection refuses unsafe changes and rollback targets.
       From Kali, test the enterprise-to-field boundary:
 
           mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20
@@ -302,15 +316,14 @@ steps:
       Expect timeout if that closure is selected; expect a response if deferred.
       From Kali, also use `nmap -Pn -p 3389,5900 10.20.20.10` to test remote access.
       Expect `filtered` for the selected restriction, not for an approved deferral.
-      Check required operations next. If a rollback trigger occurs, stop testing.
-      Re-stage the previous rules from your pre-change export, review the complete
-      diff, commit and read back. Retest operations before resuming the change.
-      The export is a record to work from, not an import or restore command.
+      Check required operations before confirming. Verify the operational exceptions
+      and removal of approved broad allows in the running rules, not just the candidate.
+      Keep the pre-change export as a restorable backup and evidence reference.
 
       The L4 source pin enforces; DPI detects and logs.
 
       :::hint Policy evidence at the containd CLI
-      In the configuration CLI, `export config` prints redacted running JSON; it does not create a file:
+      In the configuration CLI, `export config` prints redacted running JSON for a restorable backup and evidence; it does not create a file:
 
           export config
 
@@ -349,8 +362,10 @@ steps:
     description: |
       Keep this logging change separate from the Phase 3 rule change. Stage only
       approved visibility edits, review the full diff with `show diff`, then use
-      `commit` (or **Commit** on **Configuration**). Read back the running rules
-      and record the new identity and UTC time. Retest operations after this commit.
+      `commit confirmed <seconds>` (or **Commit-confirmed** on **Configuration**).
+      Read back the running rules and record the new identity, UTC time and deadline.
+      Check management and required operations, then `confirm` before the deadline;
+      otherwise the previous running config is restored. Retest after this commit.
       If visibility work is deferred, record that decision and leave the rules unchanged.
 
       Inspect logging against the approved request and reference rule table.
@@ -488,20 +503,47 @@ steps:
     title: "Export your policy"
     expected_config: hardened
     description: |
-      Save the running configuration, not just the candidate or compiled reference.
-      On **Configuration** → **Overview**, use **Download redacted** for a shareable
-      copy; **Download full** contains secrets. Full export requires explicit
-      administrator intent.
+      After `confirm`, save the running configuration, not just the candidate or
+      compiled reference. Keep the pre-change backup separately from this confirmed
+      Lab 2.2 policy. On **Configuration** → **Overview**, **Download redacted**
+      provides a shareable browser copy; **Download full** can contain secrets and
+      requires explicit administrator intent.
 
-      In the fw-1 configuration CLI, run:
+      From the fw-1 configuration CLI, copy the redacted running JSON into your
+      evidence record:
 
           export config
 
-      Copy that redacted running JSON to your evidence document. The appliance CLI
-      does not support shell redirection and does not create a file. Browser export
-      is optional; the copied CLI JSON is your evidence. Keep the pre-change export
-      separately for rollback. To roll back, re-stage its previous rules, review the
-      full diff, commit, read back and retest operations. The CLI export is a record, not a restore file.
+      The appliance CLI does not support shell redirection and does not create a
+      file with `export config`. To save a restorable file without pasting JSON,
+      use the backup tools in the same fw-1 configuration CLI after confirmation:
+
+          create backup lab-2.2 redacted CONFIRM
+          show backups
+
+      `create backup` takes effect immediately, not as a staged candidate edit.
+      A redacted backup is enough here: the lab config has no secrets. Read the
+      backup's `id` from `show backups`, matching the name `lab-2.2` and creation
+      time. Replace `<id>` below with that id, then download it to fw-1:
+
+          download backup <id> /data/lab-2.2-policy.json
+
+      Download writes a private file (mode 0600) and refuses to overwrite an
+      existing file. Both this file and the stored backup survive **Reset to Weak**:
+      `/data` is the firewall's persistent data volume. Keep the id and file path
+      with the running identity in Notes.
+
+      To restore this saved Lab 2.2 policy, from the fw-1 configuration CLI use:
+
+          import config /data/lab-2.2-policy.json
+
+      The fw-1 terminal is a local CLI session. `import config` works in local/SSH
+      CLI sessions, not web CLI execution or WebSocket consoles provided by containd.
+      Alternatively, upload the browser-downloaded Lab 2.2 JSON through the browser's
+      dedicated import controls. Import stages only: review the full diff, then
+      commit to activate it. Use `commit confirmed <seconds>`, check management and
+      required operations, then `confirm` as above. Read back the restored running
+      identity and retest.
 
       In Notes, record the change ID, running identity, UTC commit and test times,
       positive and negative results, operator observations, deviations and any

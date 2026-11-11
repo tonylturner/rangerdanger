@@ -122,9 +122,12 @@ class ErrataContracts(unittest.TestCase):
             self.assertIn(phase, curriculum["phases"])
             self.assertTrue(next(s for s in steps if s["id"] == step_id)["title"].startswith("Phase "))
         rules = curriculum["phases"]["rules"]
-        for phrase in ("**Apply Your Plan**", "Deferred rules retain", "export config", "**Commit**",
+        for phrase in ("**Apply Your Plan**", "Deferred rules retain", "export config",
+                       "**Commit-confirmed**", "**Confirm**",
                        "**Export plan record**", "{{ruleTable}}"):
             self.assertIn(phrase, rules)
+        self.assertEqual(re.findall(r"^    (commit[^\n]*|confirm)$", rules, re.M),
+                         ["commit confirmed 60", "confirm"])
         self.assertNotIn("export config >", rules)
         self.assertIn("config.commit", curriculum["phases"]["negative"])
 
@@ -133,7 +136,9 @@ class ErrataContracts(unittest.TestCase):
             "firewall-implementation": {
                 4: ("**Apply Your Plan**", "replacements and removals together", "Deferred rules retain"),
                 7: ("named sources", "Connection refused means", "prevention gap", "running identity"),
-                8: ("does not support shell redirection", "pre-change export", "change ID", "running identity")},
+                8: ("does not support shell redirection",
+                    "Keep the pre-change backup separately from this confirmed Lab 2.2 policy.",
+                    "change ID", "running identity")},
             "hardening-configurations": {
                 3: ("Apply Your Plan", "without replacing it", "**Block enterprise → field direct access**"),
                 4: ("With it deferred, the command still lands", "Detection selections do not close it", "device evidence"),
@@ -175,18 +180,52 @@ class ErrataContracts(unittest.TestCase):
         self.assertIn("Neither **Apply DNP3 ICS DPI - detect and log Direct Operate writes** nor "
                       "**Apply Modbus ICS DPI - provide function-code visibility** changes these verdicts", apply)
 
-    def test_export_recipes_print_and_copy_without_fictitious_files(self):
+    def test_export_is_copied_evidence_and_backup_file_import_is_staged_before_activation(self):
         for name in ("firewall-implementation", "validation-evidence"):
             doc = scenario(name)
             text = doc["description"] + "\n" + "\n".join(s["description"] for s in doc["steps"])
             self.assertNotRegex(text, r"export config\s*>")
             self.assertNotIn("cat /tmp/student-policy.json", text)
-            self.assertIn("Copy that redacted running JSON to your evidence document",
-                          " ".join(text.split()))
-        text = " ".join(scenario("firewall-implementation")["steps"][8]["description"].split())
-        self.assertIn("does not support shell redirection", text)
-        self.assertIn("re-stage its previous rules, review the full diff, commit, read back and retest operations", text)
-        self.assertIn("Browser export is optional; the copied CLI JSON is your evidence.", text)
+        validation = scenario("validation-evidence")["steps"][1]["description"]
+        self.assertIn("Copy that redacted running JSON to your evidence document",
+                      " ".join(validation.split()))
+        for package_id, prefix in (("us-dnp3-substation", ""),
+                                   ("eu-iec104-substation", "eu-")):
+            base = ROOT / "lab-definitions/packages" / package_id
+            manifest = yaml.safe_load((base / "package.yml").read_text())
+            doc = yaml.safe_load((base / manifest["scenarios"] /
+                                 f"{prefix}firewall-implementation.yml").read_text())
+            raw = doc["steps"][8]["description"]
+            text = " ".join(raw.split())
+            with self.subTest(package=package_id):
+                self.assertEqual(re.findall(r"^    (.+)$", raw, re.M), [
+                    "export config",
+                    "create backup lab-2.2 redacted CONFIRM",
+                    "show backups",
+                    "download backup <id> /data/lab-2.2-policy.json",
+                    "import config /data/lab-2.2-policy.json",
+                ])
+                self.assertNotRegex(raw, r"export config\s*>")
+                for phrase in (
+                        "After `confirm`, save the running configuration, not just the candidate",
+                        "Keep the pre-change backup separately from this confirmed Lab 2.2 policy.",
+                        "**Download redacted** provides a shareable browser copy",
+                        "**Download full** can contain secrets and requires explicit administrator intent.",
+                        "From the fw-1 configuration CLI, copy the redacted running JSON into your evidence record:",
+                        "does not support shell redirection and does not create a file with `export config`.",
+                        "use the backup tools in the same fw-1 configuration CLI after confirmation:",
+                        "`create backup` takes effect immediately, not as a staged candidate edit.",
+                        "Read the backup's `id` from `show backups`, matching the name `lab-2.2` and creation time.",
+                        "Replace `<id>` below with that id",
+                        "Download writes a private file (mode 0600) and refuses to overwrite an existing file.",
+                        "Both this file and the stored backup survive **Reset to Weak**: "
+                        "`/data` is the firewall's persistent data volume.",
+                        "`import config` works in local/SSH CLI sessions, not web CLI execution or WebSocket consoles",
+                        "Alternatively, upload the browser-downloaded Lab 2.2 JSON through the browser's dedicated import controls.",
+                        "Import stages only: review the full diff, then commit to activate it.",
+                        "Use `commit confirmed <seconds>`, check management and required operations, then `confirm` as above.",
+                        "Read back the restored running identity and retest."):
+                    self.assertIn(phrase, text)
 
     def test_rejection_and_historical_audit_details_are_in_rendered_steps(self):
         hardening = " ".join(scenario("hardening-configurations")["steps"][4]["description"].split())

@@ -35,7 +35,7 @@ export function readCurriculumSections(packageDir: string, directory: string): R
 export function fixtureCurriculum(packageDir: string, topologyFile?: string): CurriculumBinding {
   const root = resolve(__dirname, "../..");
   const dir = resolve(root, packageDir);
-  const manifest = load(readFileSync(resolve(dir, "package.yml"), "utf8")) as { topology: string; curriculum: { dir: string }; ics_rules?: CurriculumBinding["icsRules"] };
+  const manifest = load(readFileSync(resolve(dir, "package.yml"), "utf8")) as { topology: string; scenarios: string; curriculum: Pick<CurriculumBinding, "roles" | "dynamicSteps"> & { dir: string }; ics_rules?: CurriculumBinding["icsRules"] };
   const topology = load(readFileSync(topologyFile ?? resolve(dir, manifest.topology), "utf8")) as {
     nodes: { id: string; ip: string }[];
     networks: { id: string; zone: string; subnet: string; name: string }[];
@@ -54,7 +54,26 @@ export function fixtureCurriculum(packageDir: string, topologyFile?: string): Cu
     );
     return value;
   };
-  const curriculum = resolveScalars(readCurriculumSections(dir, manifest.curriculum.dir));
+  const curriculum = resolveScalars(readCurriculumSections(dir, manifest.curriculum.dir)) as CurriculumBinding;
+  for (const [phase, template] of Object.entries(curriculum.phases ?? {})) {
+    if (!template.includes("{{step:")) continue;
+    const documents = readdirSync(resolve(dir, manifest.scenarios))
+      .filter((file) => file.endsWith(".yml"))
+      .map((file) => load(readFileSync(resolve(dir, manifest.scenarios, file), "utf8")) as {
+        id: string; steps: { id: string; description: string }[];
+      });
+    const steps = new Map(documents.filter((doc) => doc.id === manifest.curriculum.roles.implementation)
+      .flatMap((doc) => doc.steps.map((step) => [step.id, step.description.trim()] as const)));
+    const text = template.replace(/\{\{step:([a-z0-9-]+)\}\}/g, (_, id: string) => {
+      const body = steps.get(id);
+      if (manifest.curriculum.dynamicSteps[id] !== phase || !body || body.includes("{{step:")) {
+        throw new Error(`Invalid implementation step reference ${id}`);
+      }
+      return body;
+    });
+    if (text.includes("{{step:")) throw new Error("Invalid implementation step reference");
+    curriculum.phases[phase] = text;
+  }
   return {
     ...curriculum as CurriculumBinding,
     ...manifest.curriculum,

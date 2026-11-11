@@ -27,10 +27,10 @@ import (
 // lastAppliedHash (the hash recorded at the last successful backend
 // apply) AND the divergence has persisted past the grace window
 // (so we don't flip on the brief in-flight period between
-// candidate → commit in a normal backend apply), set
-// activeConfig=custom + policySource=manual-custom, and update
-// lastAppliedHash to the observed value so we don't keep
-// re-flipping every tick.
+// candidate → commit in a normal backend apply), classify it against
+// the named policy hashes captured at activation, or as
+// custom/manual-custom if none match. Update lastAppliedHash to the
+// observed value so we don't keep re-flipping every tick.
 //
 // The grace window is deliberately a soft check: the backend
 // records lastAppliedAt when it sets lastAppliedHash, and the
@@ -132,7 +132,7 @@ func (s *Server) namedPolicyHashes(pkg labs.Package) map[string]string {
 }
 
 // classifyObservedPolicy compares containd's running hash with the last
-// backend apply and relabels the policy as a manual commit on divergence.
+// baseline and classifies a divergence as a named policy or a manual commit.
 func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 	observedSince = observedSince.UTC()
 	s.activeConfigMu.Lock()
@@ -146,28 +146,24 @@ func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 		return
 	}
 
-	// No baseline yet: this can be a fresh start (whose default was just
-	// committed) or a range adopted after a backend restart. Classify its
-	// actual running hash against policy hashes captured at activation.
-	if s.lastAppliedHash == "" {
-		if name, ok := s.policyHashNames[hash]; ok {
-			if name != s.activeConfig {
-				s.setPolicyEvidenceBoundaryLocked(observedSince)
-			} else {
-				s.policyObservedAt = observedSince
-			}
-			s.activeConfig = name
-			s.policySource = policySourceForName(name)
-			s.planProvenance, s.appliedPlan = nil, nil
-			s.lastAppliedHash = hash
-			return
-		}
-		s.markManualCustomLocked(hash, observedSince)
+	if s.lastAppliedHash != "" && hash == s.lastAppliedHash {
+		s.policyObservedAt = observedSince
 		return
 	}
 
-	if hash == s.lastAppliedHash {
-		s.policyObservedAt = observedSince
+	// Classify both an initial observation and a later divergence against
+	// the activation hashes: rollback or commit-confirmed expiry can restore
+	// a named policy without going through a backend apply.
+	if name, ok := s.policyHashNames[hash]; ok {
+		if name != s.activeConfig {
+			s.setPolicyEvidenceBoundaryLocked(observedSince)
+		} else {
+			s.policyObservedAt = observedSince
+		}
+		s.activeConfig = name
+		s.policySource = policySourceForName(name)
+		s.planProvenance, s.appliedPlan = nil, nil
+		s.lastAppliedHash = hash
 		return
 	}
 

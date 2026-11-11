@@ -50,6 +50,28 @@ def read_curriculum(package_dir: Path) -> dict:
             merged[key] = value
     if "budgetAdjustments" in merged:
         validate_budget_adjustments(merged)
+    for phase, text in merged.get("phases", {}).items():
+        if "{{step:" not in text:
+            continue
+        documents = [yaml.safe_load(file.read_text())
+                     for file in (package_dir / manifest["scenarios"]).glob("*.yml")]
+        steps = {step["id"]: step["description"].strip()
+                 for doc in documents
+                 if doc["id"] == manifest["curriculum"]["roles"]["implementation"]
+                 for step in doc["steps"]}
+
+        def expand(match):
+            step_id = match[1]
+            body = steps.get(step_id, "")
+            if (manifest["curriculum"]["dynamicSteps"].get(step_id) != phase
+                    or not body or "{{step:" in body):
+                raise ValueError(f"Invalid implementation step reference {step_id}")
+            return body
+
+        text = re.sub(r"\{\{step:([a-z0-9-]+)\}\}", expand, text)
+        if "{{step:" in text:
+            raise ValueError("Invalid implementation step reference")
+        merged["phases"][phase] = text
     return merged
 
 

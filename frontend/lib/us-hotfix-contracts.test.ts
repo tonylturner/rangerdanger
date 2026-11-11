@@ -27,7 +27,9 @@ describe("US compiled-plan presentation", () => {
   it("retains safe CLI evidence guidance independently of plan compilation", () => {
     const text = US_CURRICULUM.phases.rules;
     expect(text).toContain("export config");
-    expect(text).toContain("**Commit**");
+    expect(text).toContain("**Commit-confirmed**");
+    expect(text).toContain("commit confirmed 60");
+    expect(text).toContain("    confirm");
     expect(text).toContain("The L4 source pin enforces; DPI detects and logs");
     expect(text).not.toContain("export config >");
     expect(text).not.toContain("vi /tmp/");

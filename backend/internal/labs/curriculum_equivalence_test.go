@@ -23,10 +23,11 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// and firewall-native DENY event correlation in both dynamic retest lessons
 	// without requiring the later Lab 2.4 boundary capture, and worked rule
 	// authoring plus source-restricted RESTRICT coverage, and removal of
-	// unrendered tests/negativeEmpty fields.
+	// unrendered tests/negativeEmpty fields, and single-source EU phase prose
+	// with action-first instructions and expandable reference depth.
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "c6dc6c752b597d01ac0cec6b40e914cadef30394265b65fec8822af364d2e20b",
-		"eu-iec104-substation": "343e990e036615663813e6d8492a80ee865dd84a999d1f5119db98013592a343",
+		"us-dnp3-substation":   "b9771dfd7a3e0dd4feede52a46e10472a64136cbaea57fefee397f409aff9078",
+		"eu-iec104-substation": "385e07537f13f5e1bef09234fc4cd612f493ec0d4d74ca257885659dcafe728a",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))

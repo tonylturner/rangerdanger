@@ -135,14 +135,14 @@ steps:
         Maintenance window (UTC start/end):
         Sequence and operator hold points:
         Pre-change running export / identity / retained location:
-        Cut-in: stage deletes and replacements → review full diff → single commit → read back
+        Cut-in: stage deletes and replacements → review full diff → single commit-confirmed → read back → check management and operations → confirm
         Positive acceptance tests:
           Test ID | Source host/zone | Destination | Service | Expected response
         Negative acceptance tests:
           Test ID | Source host/zone | Destination | Service | Expected result
         Abort / rollback triggers:
         Rollback owner and authority:
-        Restore steps: re-stage previous rules from the export, review, commit, read back, retest
+        Restore steps: withhold confirm until expiry or rollback; if needed import backup, review, commit-confirmed, check, confirm
         Deferred exposures / reason / residual risk / named risk owner:
         Requester:
         Implementer:
@@ -153,9 +153,15 @@ steps:
     Agree rollback triggers before the window. Include lost required traffic,
     unexpected prohibited access, lost management and degraded operator data.
 
-    :::hint An export is a rollback reference
-    The export is your record and diff reference. Restore by re-staging its
-    previous rules and committing them; do not assume an import command exists.
+    :::hint Change safety and a restorable backup
+    Name who checks management and required operations before `confirm`, who
+    withholds confirmation on an abort trigger, and who verifies restoration.
+    `commit confirmed <seconds>` restores the previous running config at the
+    deadline without `confirm`; `rollback` returns one level immediately.
+    Save `export config` JSON (or a browser download) as evidence and a restorable
+    backup. Browser import or local/SSH `import config <file>` in fw-1 stages it;
+    review and commit to activate it. Reserved management protection refuses
+    unsafe changes and rollback targets. Read back and retest after restoration.
     :::
 
     Ask the OT reviewer to check the operating sequence and acceptance tests.

@@ -4,6 +4,7 @@ import unittest
 
 import yaml
 
+from scripts.tests.curriculum import read_curriculum
 from scripts.tests.test_lab_content_contracts import ROOT, SCENARIOS, scenario
 
 
@@ -31,7 +32,10 @@ class FirstMatchContracts(unittest.TestCase):
                               ("eu-iec104-substation", ROOT / "lab-definitions/packages/"
                                "eu-iec104-substation/scenarios/eu-firewall-implementation.yml")):
             base = ROOT / "lab-definitions/packages" / package
-            texts = [" ".join(p.read_text().split()) for p in (path, base / "curriculum/implementation.yml")]
+            texts = [
+                " ".join(path.read_text().split()),
+                " ".join("\n".join(read_curriculum(base)["phases"].values()).split()),
+            ]
             for text in texts:
                 self.assertIn("first matching enforcing terminal rule decides", text)
                 self.assertIn("monitor rules never decide", text)
@@ -86,7 +90,8 @@ class EstablishedConnectionContracts(unittest.TestCase):
         eu = ROOT / "lab-definitions/packages/eu-iec104-substation"
         for relative in ("scenarios/eu-firewall-implementation.yml",
                          "curriculum/implementation.yml"):
-            text = (eu / relative).read_text()
+            text = ("\n".join(read_curriculum(eu)["phases"].values())
+                    if relative.startswith("curriculum/") else (eu / relative).read_text())
             with self.subTest(path=relative):
                 self.assertIn("Traffic no longer admitted stops without session deletion", text)
                 self.assertIn("Sessions may retain the conntrack entry until timeout", text)

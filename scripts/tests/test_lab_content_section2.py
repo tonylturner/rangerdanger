@@ -164,7 +164,7 @@ class EnforcementContracts(unittest.TestCase):
                        "`[3]` is auto-reclose enabled", "source, time and policy hash",
                        "Restore every changed device before **Cross-check the current system**, for every plan",
                        "enable auto-reclose", "close the recloser and breaker", "clear fault/lockout",
-                       "return the regulator to auto and tap zero", "reapply the intended plan"):
+                       "return the regulator to auto and tap zero", "restore the intended policy using rollback or import"):
             self.assertIn(phrase, text)
         self.assertNotIn("RTAC-origin write", text)
         self.assertEqual(steps[5]["action"]["expect"]["reclose_enabled"], True)
@@ -262,7 +262,7 @@ class RuleAuthoringContracts(unittest.TestCase):
                         for phrase in ("approved Lab 1.4 change request", "full Hardened reference",
                                        "same shared candidate", "Before the single commit",
                                        "diff", "show running-config", "pre-change export",
-                                       "previous rules", "read back"):
+                                       "previous running config", "Read back"):
                             self.assertIn(phrase, flat)
                         hint = re.search(r":::hint Optional catch-up — for less technical students or teams behind schedule\n(.*?)\n:::", authored, re.S)
                         self.assertIsNotNone(hint)
@@ -273,7 +273,7 @@ class RuleAuthoringContracts(unittest.TestCase):
                          "fresh GI", "Live Firewall Events", "api/operator/reconnect")
                         if package.startswith("eu-") else
                         ("separate from the Phase 3 rule change", "show diff",
-                         "`commit`", "Read back", "Retest operations"))
+                         "`commit confirmed <seconds>`", "Read back", "confirm", "Retest after"))
             for phrase in guidance:
                 self.assertIn(phrase, logging)
             if package.startswith("eu-"):

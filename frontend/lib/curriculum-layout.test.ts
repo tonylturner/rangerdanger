@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { readCurriculumSections } from "./curriculum-storage.test-util";
+import { fixtureCurriculum, readCurriculumSections } from "./curriculum-storage.test-util";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true }); });
@@ -33,5 +33,23 @@ describe("curriculum section reader", () => {
   });
   it("rejects a non-sibling directory", () => {
     expect(() => readCurriculumSections(fixture({}), "../curriculum")).toThrow(/Invalid/);
+  });
+  it("resolves scenario instructions for compiled-plan phase fixtures", () => {
+    const root = fixture({ "implementation.yml": 'phases:\n  rules: "{{step:implement}}\\n\\n{{ruleTable}}"\n' });
+    writeFileSync(resolve(root, "package.yml"), JSON.stringify({
+      topology: "topology.yml", scenarios: "scenarios",
+      curriculum: { dir: "curriculum", roles: { implementation: "implementation" }, dynamicSteps: { implement: "rules" } },
+    }));
+    writeFileSync(resolve(root, "topology.yml"), "nodes: []\nnetworks: []\n");
+    mkdirSync(resolve(root, "scenarios"));
+    const scenario = resolve(root, "scenarios/implementation.yml");
+    writeFileSync(scenario, JSON.stringify({ id: "implementation", steps: [{ id: "implement", description: "### Do this\n- Review." }] }));
+    expect(fixtureCurriculum(root).phases.rules).toBe("### Do this\n- Review.\n\n{{ruleTable}}");
+    for (const body of ["", "{{step:implement}}"]) {
+      writeFileSync(scenario, JSON.stringify({ id: "implementation", steps: [{ id: "implement", description: body }] }));
+      expect(() => fixtureCurriculum(root)).toThrow(/Invalid implementation step reference/);
+    }
+    writeFileSync(scenario, JSON.stringify({ id: "other", steps: [{ id: "implement", description: "Review." }] }));
+    expect(() => fixtureCurriculum(root)).toThrow(/Invalid implementation step reference/);
   });
 });

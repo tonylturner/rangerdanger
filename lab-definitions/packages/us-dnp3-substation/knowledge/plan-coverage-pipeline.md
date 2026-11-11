@@ -28,4 +28,4 @@ Lab 2.4 starts with the approved requirements and change request. Write source-s
 
 ### Reset boundaries
 
-Student records are scoped to package and revision. Reset Progress clears the current exercise's completed steps, notes and command log, not other exercises' decisions or the saved plan. Reset Lab restores simulator and Weak firewall state, not browser records. Reapply the intended plan and collect a new evidence window after reset.
+Student records are scoped to package and revision. Reset Progress clears the current exercise's completed steps, notes and command log, not other exercises' decisions or the saved plan. Reset Lab restores simulator and Weak firewall state, not browser records. After reset, restore the intended policy with one-level `rollback` if no other commit followed the reset; otherwise import the saved Lab 2.2 backup and commit it. Apply Your Plan is the catch-up route. Then collect a new evidence window.

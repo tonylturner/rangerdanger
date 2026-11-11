@@ -83,6 +83,18 @@ describe("splitDescription — command blocks", () => {
     expect(cmds[0].value).toBe("show running-config");
   });
 
+  it.each([
+    "commit", "commit confirmed 60", "confirm", "rollback", "import config /data/lab-2.2-policy.json",
+    "create backup lab-2.2 redacted CONFIRM", "download backup <id> /data/lab-2.2-policy.json",
+  ])(
+    "keeps change-safety command %s on the copy-only appliance CLI path",
+    (command) => {
+      const segs = splitDescription(`From the fw-1 terminal:\n\n    ${command}`);
+      const cmd = segs.find((seg) => seg.type === "cmd");
+      expect(cmd).toMatchObject({ type: "cmd", value: command, cli: true, sourceNode: "fw-1" });
+    },
+  );
+
   it("keeps CLI-ish prose ('set **Rule Mode**', 'commit it.') as prose", () => {
     const segs = splitDescription(
       "Steps:\n\n    set **Rule Mode** to Enforcement, then\n    commit it. The banner updates.",
