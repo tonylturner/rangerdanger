@@ -246,6 +246,12 @@ class ExtractTests(unittest.TestCase):
         self.assertFalse(extract.verdict(
             no_ack, 0, sent + "\nNo route to host", "", control=True))
 
+    def test_reset_refusal_is_not_drop_even_with_timeout_text_and_control(self):
+        oracle = {"intent": "deny", "match": "timed out|refused"}
+        # RESET may answer after retries; a timeout token must not mask refusal.
+        self.assertFalse(extract.verdict(
+            oracle, 2, "timed out", "Connection refused", control=True))
+
     def test_dnp3_control_failure_exit_contract(self):
         data = json.loads(extract.EXPECTATIONS.read_text())
         controls = [(key, row["oracle"]) for key, row in data["commands"].items()

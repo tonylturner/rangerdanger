@@ -31,6 +31,9 @@ eu_plan_case() {
   [ "$HTTP_STATUS" = 200 ] || return 1
   printf '%s\n' "$API_BODY" >"$matrix" || return 1
   jq -e -L "$oracle" --slurpfile golden "$golden" \
+    'include "plan-gate"; if plan_matrix_recorded($golden[0]) then matrix_reference($golden[0]) else error("invalid probe matrix") end' \
+    "$matrix" || return 1
+  jq -e -L "$oracle" --slurpfile golden "$golden" \
     'include "plan-gate"; plan_matrix($golden[0])' "$matrix" || return 1
   pass "G28 $selection plan: faithful proof, golden hardened acceptance and exact prevention gaps; no skipped tuples"
 }

@@ -166,7 +166,9 @@ class EvidenceTests(unittest.TestCase):
         self.mutate("improved-held-field", lambda s: s["devices"]["breaker-1"].update(revision=12))
         self.reduce(False)
 
-    def test_refusal_not_denial(self):
+    def test_reset_refusal_not_denial(self):
+        # RESET can produce exactly this stderr; transport alone cannot
+        # distinguish it from a closed listener or prove a DENY timeout.
         self.mutate("improved-command", lambda s: s.update(
             stderr="connect failed: dial tcp 10.30.30.20:2404: connection refused"))
         record = self.reduce(False)

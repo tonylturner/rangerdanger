@@ -111,6 +111,42 @@ for selection in full partial $(jq -r '.actions[] | select(.kind == "enforce" or
   done
 done
 
+# RESET is complete recorded evidence with attribution, but never a passing
+# deny (or allow), never skipped, and never an open prevention gap.
+golden="$ROOT/frontend/lib/testdata/plans/eu-full.json"
+for verdict in allow deny; do
+  make_matrix "$golden" | jq --slurpfile golden "$golden" --arg verdict "$verdict" '
+    ($golden[0].expectations | map(.hardenedVerdict) | index($verdict)) as $i
+    | .rows[$i] |= (.observed="reset" | .ruleId="manual-reset")
+  ' >"$TMP_DIR/reset-matrix.json"
+  t_run jq -e -L "$ROOT/scripts/tests/fixtures" --slurpfile golden "$golden" '
+    include "plan-gate";
+    plan_matrix_recorded($golden[0]) and (plan_matrix($golden[0]) | not)
+    and (matrix_reference($golden[0]) |
+      .acceptancePass == false and .summary.result == "FAIL" and .summary.skipped == 0
+      and .preventionGaps == []
+      and (.resetFailures | length) == 1 and .resetFailures[0].ruleId == "manual-reset"
+      and ([.acceptanceRows[] | select(.observed == "reset")] |
+        length == 1 and .[0].pass == false and .[0].ruleId == "manual-reset"))
+  ' "$TMP_DIR/reset-matrix.json"
+  t_expect_eq "$T_STATUS" 0 "RESET on required $verdict is recorded as a separate attributed failure"
+done
+# Even ordinary binary rows may now carry running first-match IDs.
+make_matrix "$golden" | jq '.rows[].ruleId = "running-rule"' >"$TMP_DIR/attributed-matrix.json"
+t_run jq -e -L "$ROOT/scripts/tests/fixtures" --slurpfile golden "$golden" \
+  'include "plan-gate"; plan_matrix($golden[0])' "$TMP_DIR/attributed-matrix.json"
+t_expect_eq "$T_STATUS" 0 "ordinary running rule IDs do not change binary golden proof"
+
+BREAK_AT=full
+MUTATION='if has("rows") then .rows[0] |= (.observed="reset" | .ruleId="manual-reset") else . end'
+run_plan_gate
+t_expect_eq "$T_STATUS" 1 "G28 never passes a recorded RESET"
+t_expect_out '"resetFailures"' "G28 reports RESET separately from prevention gaps"
+t_expect_out '"ruleId": "manual-reset"' "G28 preserves the RESET first-match rule ID"
+t_expect_out '"skipped": 0' "G28 does not label RESET untested"
+MUTATION="."
+BREAK_AT=partial
+
 # Changing labels, revision, selected IDs, counts and gap IDs proves the gate
 # reads the goldens, rather than merely mentioning their paths.
 for selection in full partial; do
@@ -147,6 +183,9 @@ for BREAK_AT in full partial; do
     'if has("rows") then .policyHash="" else . end' \
     'if has("rows") then .policyStable=false else . end' \
     'if has("rows") then .rows[0].observed="untested" else . end' \
+    'if has("rows") then .rows[0].observed="reset" else . end' \
+    'if has("rows") then .rows[0] |= (.observed="reset" | .ruleId="") else . end' \
+    'if has("rows") then .rows[0] |= (.observed="reset" | .ruleId=42) else . end' \
     'if has("rows") then .rows=[] else . end' \
     'if has("rows") then .rows[0].error="exec failed" else . end' \
     'if has("rows") then .rows |= reverse else . end' \

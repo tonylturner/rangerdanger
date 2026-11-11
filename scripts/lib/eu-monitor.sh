@@ -46,11 +46,12 @@ eu_run_kali_gi() {
     fi
     pass "$label iec104cmd exited 0 with a confirmed GI result"
   elif [ "$status" = "2" ] && [ ! -s "$output" ] \
-    && grep -Fq 'connect failed' "$stderr_file"; then
-    # iec104cmd exits before emitting JSON when it cannot open a TCP session.
-    pass "$label iec104cmd exited 2 with an explicit connection failure"
+    && grep -Eq 'connect failed:.*dial tcp.*(i/o timeout|context deadline exceeded)' "$stderr_file" \
+    && ! grep -Eiq 'connection refused|no route|network is unreachable' "$stderr_file"; then
+    # A RESET/closed listener can also fail to connect; only timeout proves drop.
+    pass "$label iec104cmd exited 2 with an explicit connect timeout"
   else
-    fail "$label iec104cmd rejection output is not the expected empty-output connect-failure path: $(cat "$stderr_file")"
+    fail "$label iec104cmd rejection output is not the expected empty-output connect-timeout path: $(cat "$stderr_file")"
     return 1
   fi
   return 0

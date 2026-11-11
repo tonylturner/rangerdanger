@@ -42,6 +42,9 @@ run_case() {
   python3 "$SCRIPT_DIR/lib/containd_readiness.py" --backend-receipt <"$receipts/apply.json"
   curl -fsS --max-time 90 -X POST "$API/api/workshop/probe-matrix" >"$receipts/matrix.json"
   jq -e -L "$oracle" --slurpfile golden "$golden" \
+    'include "plan-gate"; if plan_matrix_recorded($golden[0]) then matrix_reference($golden[0]) else error("invalid probe matrix") end' \
+    "$receipts/matrix.json"
+  jq -e -L "$oracle" --slurpfile golden "$golden" \
     'include "plan-gate"; plan_matrix($golden[0])' "$receipts/matrix.json"
 }
 

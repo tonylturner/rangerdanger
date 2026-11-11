@@ -50,7 +50,7 @@ eu_api_post() {
     API_BODY="$DENIED_RESPONSE"
   else
     API_BODY=$(jq -nc --argjson code "$DENIED_EXIT" \
-      '{exit_code:$code,stdout:"",stderr:"connection failed"}')
+      '{exit_code:$code,stdout:"",stderr:"connect failed: dial tcp 10.30.30.20:2404: i/o timeout"}')
   fi
 }
 eu_get_field() {
@@ -142,32 +142,30 @@ G22_GOOD_STATE=$(printf '%s' "$G22_INITIAL_STATE" | jq -c '
   (.points[] | select(.ioa == 2301)) |=
     (.quality.iv = false | .stale_reason = null)')
 
-for DENIED_EXIT in 2 1; do
-  FIELD_WAITS=0
-  UNCHANGED_CALLS=0
-  RECONNECT_CALLS=0
-  EVENTS=""
-  READY_EXPR=""
-  t_run eu_lab_hardening_walk eu-hardening-configurations
-  t_expect_eq "$T_STATUS" 0 "G22 accepts hardened retest denial with exit $DENIED_EXIT"
-  t_expect_eq "$FIELD_WAITS" 3 "G22 adds a baseline and leaves its separate restore assertion in place"
-  t_expect_eq "$UNCHANGED_CALLS" 1 "G22 walk still proves the breaker was unchanged"
-  t_expect_eq "$RECONNECT_CALLS" 2 "G22 walk verifies the CC before and after the hardened retest"
-  t_expect_no_out "protection_tripped" "G22 open assertion does not constrain protection state"
+FIELD_WAITS=0
+UNCHANGED_CALLS=0
+RECONNECT_CALLS=0
+EVENTS=""
+READY_EXPR=""
+t_run eu_lab_hardening_walk eu-hardening-configurations
+t_expect_eq "$T_STATUS" 0 "G22 accepts hardened retest denial with exit $DENIED_EXIT"
+t_expect_eq "$FIELD_WAITS" 3 "G22 adds a baseline and leaves its separate restore assertion in place"
+t_expect_eq "$UNCHANGED_CALLS" 1 "G22 walk still proves the breaker was unchanged"
+t_expect_eq "$RECONNECT_CALLS" 2 "G22 walk verifies the CC before and after the hardened retest"
+t_expect_no_out "protection_tripped" "G22 open assertion does not constrain protection state"
 
-  UNCHANGED_CALLS=0
-  RECONNECT_CALLS=0
-  EVENTS=""
-  READY_EXPR=""
-  t_run eu_lab_hardening_prepare eu-hardening-configurations
-  t_expect_eq "$T_STATUS" 0 "G22 prepare accepts hardened retest denial with exit $DENIED_EXIT"
-  t_expect_eq "$UNCHANGED_CALLS" 1 "G22 prepare still proves the breaker was unchanged"
-  t_expect_eq "$RECONNECT_CALLS" 2 "G22 prepare reconnects both before attack and before validation"
-  case " $EVENTS " in
-    *" deny unchanged reconnect step:validate get:/api/operator/state "*) t_ok "G22 prepare waits for delivered CC evidence after Validate" ;;
-    *) t_not_ok "G22 prepare refreshes delivered CC evidence after the denied retest: $EVENTS" ;;
-  esac
-done
+UNCHANGED_CALLS=0
+RECONNECT_CALLS=0
+EVENTS=""
+READY_EXPR=""
+t_run eu_lab_hardening_prepare eu-hardening-configurations
+t_expect_eq "$T_STATUS" 0 "G22 prepare accepts hardened retest denial with exit $DENIED_EXIT"
+t_expect_eq "$UNCHANGED_CALLS" 1 "G22 prepare still proves the breaker was unchanged"
+t_expect_eq "$RECONNECT_CALLS" 2 "G22 prepare reconnects both before attack and before validation"
+case " $EVENTS " in
+  *" deny unchanged reconnect step:validate get:/api/operator/state "*) t_ok "G22 prepare waits for delivered CC evidence after Validate" ;;
+  *) t_not_ok "G22 prepare refreshes delivered CC evidence after the denied retest: $EVENTS" ;;
+esac
 
 if [ -z "$G22_STATE" ] || [ -z "$G22_JOURNAL" ]; then
   t_not_ok "G22 CC readiness fixtures are valid JSON"
@@ -280,6 +278,15 @@ DENIED_RESPONSE='{"exit_code":2,"stdout":"","stderr":""}'
 t_run eu_lab_exec_denied kali-1 'iec104cmd target'
 t_expect_eq "$T_STATUS" 1 "G22 denied command requires HTTP 200"
 DENIED_HTTP=200
+DENIED_RESPONSE='{"exit_code":1,"stdout":"","stderr":"connect failed: dial tcp 10.30.30.20:2404: i/o timeout"}'
+t_run eu_lab_exec_denied kali-1 'iec104cmd target'
+t_expect_eq "$T_STATUS" 1 "wrong CLI exit code is not a valid connect-timeout result"
+DENIED_RESPONSE='{"exit_code":2,"stdout":"","stderr":"connect failed: dial tcp 10.30.30.20:2404: connection refused"}'
+t_run eu_lab_exec_denied kali-1 'iec104cmd target'
+t_expect_eq "$T_STATUS" 1 "RESET-style refusal cannot prove a DENY drop"
+DENIED_RESPONSE='{"exit_code":2,"stdout":"","stderr":"connection failed"}'
+t_run eu_lab_exec_denied kali-1 'iec104cmd target'
+t_expect_eq "$T_STATUS" 1 "generic connection failure cannot prove a DENY drop"
 DENIED_RESPONSE=""
 
 STALE_FIELD=$(printf '%s' "$OPEN_FIELD" | jq -c \

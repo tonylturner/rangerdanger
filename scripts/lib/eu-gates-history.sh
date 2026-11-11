@@ -47,6 +47,8 @@ eu_gate_G18() {
 
 eu_gate_G19() {
   local container ip port rc path method body
+  # This is a surface-availability check, including internal/non-listening
+  # endpoints, not a DENY/drop proof. Refusal may be a host or firewall RESET.
   # An invalid schema cannot be archived even if the network boundary fails.
   # Do not send a real CC snapshot from an untrusted peer.
   body='{"schema":0}'
@@ -63,16 +65,16 @@ eu_gate_G19() {
           >"$TMP_DIR/G19-$container-$ip.out" 2>"$TMP_DIR/G19-$container-$ip.err"
         rc=$?
         if [ "$rc" = 1 ] && grep -Eq 'timed out|Connection refused' "$TMP_DIR/G19-$container-$ip.err"; then
-          pass "G19 $container -> $ip:$port denied (wget $rc)"
-        else fail "G19 $container -> $ip:$port not proven denied: wget $rc $(cat "$TMP_DIR/G19-$container-$ip.err")"; fi
+          pass "G19 $container -> $ip:$port unavailable (wget $rc; not drop proof)"
+        else fail "G19 $container -> $ip:$port not proven unavailable: wget $rc $(cat "$TMP_DIR/G19-$container-$ip.err")"; fi
       else
         docker exec "$container" curl -sS --connect-timeout 2 --max-time 3 -X "$method" \
           -H 'Content-Type: application/json' -d "$body" "http://$ip:$port$path" \
           >"$TMP_DIR/G19-$container-$ip.out" 2>"$TMP_DIR/G19-$container-$ip.err"
         rc=$?
         if [ "$rc" = 28 ] || [ "$rc" = 7 ]; then
-          pass "G19 $container -> $ip:$port denied (curl $rc)"
-        else fail "G19 $container -> $ip:$port not denied: curl $rc $(cat "$TMP_DIR/G19-$container-$ip.out")"; fi
+          pass "G19 $container -> $ip:$port unavailable (curl $rc; not drop proof)"
+        else fail "G19 $container -> $ip:$port not proven unavailable: curl $rc $(cat "$TMP_DIR/G19-$container-$ip.out")"; fi
       fi
     done
   done

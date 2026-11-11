@@ -14,6 +14,7 @@ def plan_expected:
       acceptancePass: $accepted,
       preventionGaps: [$rows[]
         | select(.planVerdict == "allow" and .hardenedVerdict == "deny") | .id],
+      resetFailures: [],
       summary: {
         authorized_total: ([$rows[] | select(.category == "authorized")] | length),
         authorized_pass: ([$rows[] | select(.category == "authorized"
@@ -34,12 +35,15 @@ def plan_applied($golden):
 # Derive the reference judgment locally from the very same measured rows.
 def matrix_reference($golden):
   .rows as $measured
-  | [$golden.expectations | to_entries[] | .key as $i | .value + {observed: $measured[$i].observed}] as $rows
+  | [$golden.expectations | to_entries[] | .key as $i
+      | .value + ($measured[$i] | {observed} + if has("ruleId") then {ruleId} else {} end)] as $rows
   | all($rows[]; .observed == .hardenedVerdict) as $accepted
   | {
-      acceptanceRows: [$rows[] | {id, expected: .hardenedVerdict, observed, pass: (.observed == .hardenedVerdict)}],
+      acceptanceRows: [$rows[] | {id, expected: .hardenedVerdict, observed, pass: (.observed == .hardenedVerdict)}
+        + if has("ruleId") then {ruleId} else {} end],
       acceptancePass: $accepted,
       preventionGaps: [$rows[] | select(.observed == "allow" and .hardenedVerdict == "deny") | .id],
+      resetFailures: [$rows[] | select(.observed == "reset") | {id, ruleId}],
       summary: {
         authorized_total: ([$rows[] | select(.category == "authorized")] | length),
         authorized_pass: ([$rows[] | select(.category == "authorized" and .observed == .hardenedVerdict)] | length),
@@ -49,7 +53,9 @@ def matrix_reference($golden):
       }
     };
 
-def plan_matrix($golden):
+# A RESET is recorded evidence, not a missing probe or proof of a DENY drop.
+# Named/compiled plans remain binary, so it still fails faithful-plan proof.
+def plan_matrix_recorded($golden):
   ($golden.expectations | map(.id)) as $ids
   | .policyStable == true and .policySource == "plan"
     and (.policyHash | type == "string" and test("^[0-9a-f]{64}$"))
@@ -57,6 +63,14 @@ def plan_matrix($golden):
     and all(.policyChangedAt, .startedAt, .finishedAt; type == "string" and length > 0)
     and ($ids | length > 0 and length == (unique | length))
     and (.rows | type == "array") and [.rows[].id] == $ids
-    and all(.rows[]; (.observed == "allow" or .observed == "deny") and .error == "")
+    and all(.rows[];
+      (.observed == "allow" or .observed == "deny" or .observed == "reset") and .error == ""
+      and (if has("ruleId") then (.ruleId | type == "string") else true end)
+      and (if .observed == "reset" then (.ruleId | type == "string" and length > 0) else true end));
+
+def plan_matrix($golden):
+  plan_matrix_recorded($golden)
     and [.rows[].observed] == [$golden.expectations[].planVerdict]
-    and (matrix_reference($golden) == ($golden | plan_expected));
+    # Rule attribution is extra evidence, not part of the compile golden.
+    and ((matrix_reference($golden) | .acceptanceRows |= map(del(.ruleId)))
+      == ($golden | plan_expected));
