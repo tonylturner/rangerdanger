@@ -208,7 +208,8 @@ describe("runner working context", () => {
     expect(tree.getByRole("heading", { name: "Step 1: First instruction" })).toBeTruthy();
     fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
     await waitFor(() => expect(tree.getByRole("heading", { name: "Step 2: Second instruction" })).toBeTruthy());
-    expect(loadProgress(scope(packageId), activity).completedStepIds).toEqual(["first"]);
+    // Progress is saved by a passive effect after the render that shows step 2.
+    await waitFor(() => expect(loadProgress(scope(packageId), activity).completedStepIds).toEqual(["first"]));
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
