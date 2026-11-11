@@ -289,11 +289,11 @@ eu_gate_G16() {
 
 eu_stop_plc_scan() {
   [ -n "$PLC_SCAN_HELPER" ] || return 0
-  if ! docker stop -t 3 "$PLC_SCAN_HELPER" >/dev/null; then
+  if ! docker_bounded 15 stop -t 3 "$PLC_SCAN_HELPER" >/dev/null; then
     fail "G17 cannot stop owned PLC tracer $PLC_SCAN_HELPER"; return 1
   fi
-  docker logs "$PLC_SCAN_HELPER" >"$TMP_DIR/G17-scan.log" 2>&1 || return
-  docker rm "$PLC_SCAN_HELPER" >/dev/null || return
+  docker_bounded 5 logs "$PLC_SCAN_HELPER" >"$TMP_DIR/G17-scan.log" 2>&1 || return
+  docker_bounded 15 rm "$PLC_SCAN_HELPER" >/dev/null || return
   PLC_SCAN_HELPER=""
   if grep -q '"event": "scan_frozen"' "$TMP_DIR/G17-scan.log" \
     && ! grep -q '"event": "scan_resumed"' "$TMP_DIR/G17-scan.log"; then
@@ -304,20 +304,20 @@ eu_gate_G17() {
   local image platform attempt frozen_at until
   eu_reset_all || return
   eu_window_start G17 || return
-  image=$(docker inspect -f '{{.Image}}' rangerdanger-openplc) || return
-  platform=$(docker image inspect -f '{{.Os}}/{{.Architecture}}' "$image") || return
+  image=$(docker_bounded 5 inspect -f '{{.Image}}' rangerdanger-openplc) || return
+  platform=$(docker_bounded 5 image inspect -f '{{.Os}}/{{.Architecture}}' "$image") || return
   PLC_SCAN_HELPER="rdinc4-i-scan-$$"
-  if ! docker run -d --platform "$platform" --name "$PLC_SCAN_HELPER" --network none --pid container:rangerdanger-openplc \
+  if ! docker_bounded 15 run -d --platform "$platform" --name "$PLC_SCAN_HELPER" --network none --pid container:rangerdanger-openplc \
     --cap-add SYS_PTRACE --entrypoint python3 "$image" -c "$(cat "$SCRIPT_DIR/tests/eu-gate/freeze-plc-scan.py")" \
     >"$TMP_DIR/G17-tracer.id"; then
     fail "G17 cannot start scan-thread fault injector"; return 1
   fi
   for ((attempt=0; attempt<30; attempt++)); do
-    docker exec "$PLC_SCAN_HELPER" test -s /tmp/scan-frozen >/dev/null 2>&1 && break
+    docker_bounded 5 exec "$PLC_SCAN_HELPER" test -s /tmp/scan-frozen >/dev/null 2>&1 && break
     sleep 0.1
   done
   if [ "$attempt" -eq 30 ]; then
-    docker logs "$PLC_SCAN_HELPER" >"$TMP_DIR/G17-scan.log" 2>&1
+    docker_bounded 5 logs "$PLC_SCAN_HELPER" >"$TMP_DIR/G17-scan.log" 2>&1
     fail "G17 scan freeze unavailable: $(cat "$TMP_DIR/G17-scan.log")"; return 1
   fi
   frozen_at=$(eu_epoch_seconds) || return

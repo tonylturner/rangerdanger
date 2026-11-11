@@ -106,7 +106,7 @@ eu_assert_jq() { :; }
 eu_window_start() { :; }
 eu_window_finish() { return 1; } # stop before packet decoding
 eu_unpause_owned() { :; }
-sleep() { case "$1" in 0.1) command sleep "$1" ;; esac; }
+sleep() { :; }
 eu_api_get() { printf '%s\n' "$1" >>"$TMP_DIR/api-paths"; API_BODY='{}'; }
 eu_historian_gap() { return 0; }
 : >"$CLOCK_LOG"

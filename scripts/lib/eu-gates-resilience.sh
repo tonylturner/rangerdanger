@@ -126,7 +126,7 @@ eu_gate_G12() {
     return
   fi
   opendss_paused=1
-  if ! docker pause "$OPENDSS" >/dev/null 2>"$TMP_DIR/pause-opendss.err"; then
+  if ! docker_bounded 15 pause "$OPENDSS" >/dev/null 2>"$TMP_DIR/pause-opendss.err"; then
     fail "G12 could not pause OpenDSS: $(cat "$TMP_DIR/pause-opendss.err")"
     eu_unpause_owned "$OPENDSS" opendss "$opendss_paused" || true
     return
@@ -201,7 +201,7 @@ eu_gate_G13() {
       '.[$node] = {generation:$generation, baseline:$baseline, cursor:$cursor, revisions:[]}') || return
   done
   rtu_paused=1
-  if ! docker pause "$RTU" >/dev/null 2>"$TMP_DIR/pause-rtu.err"; then
+  if ! docker_bounded 15 pause "$RTU" >/dev/null 2>"$TMP_DIR/pause-rtu.err"; then
     fail "G13 could not pause RTU: $(cat "$TMP_DIR/pause-rtu.err")"
     eu_unpause_owned "$RTU" rtu "$rtu_paused" || true
     return

@@ -5,7 +5,7 @@
 eu_unpause_owned() {
   local container="$1" flag_name="$2" was_paused="$3" paused
   [ "$was_paused" -eq 1 ] || return 0
-  paused=$(docker inspect -f '{{.State.Paused}}' "$container" 2>/dev/null) || paused=""
+  paused=$(docker_bounded 5 inspect -f '{{.State.Paused}}' "$container" 2>/dev/null) || paused=""
   if [ "$paused" = "false" ]; then
     case "$flag_name" in
       gps) gps_paused=0 ;;
@@ -19,11 +19,11 @@ eu_unpause_owned() {
     fail "could not determine paused state for owned container $container"
     return 1
   fi
-  if ! docker unpause "$container" >/dev/null 2>"$TMP_DIR/unpause.err"; then
+  if ! docker_bounded 15 unpause "$container" >/dev/null 2>"$TMP_DIR/unpause.err"; then
     fail "could not unpause $container: $(cat "$TMP_DIR/unpause.err")"
     return 1
   fi
-  paused=$(docker inspect -f '{{.State.Paused}}' "$container" 2>/dev/null) || paused=""
+  paused=$(docker_bounded 5 inspect -f '{{.State.Paused}}' "$container" 2>/dev/null) || paused=""
   if [ "$paused" != "false" ]; then
     fail "$container unpause did not read back as unpaused"
     return 1
@@ -47,12 +47,12 @@ eu_save_evidence() {
   fi
   if [ -n "$MONITOR_LOG" ]; then
     for file in "$MONITOR_LOG" "$MONITOR_ERR" "$MONITOR_RC" "$MONITOR_PID"; do
-      docker cp "$KALI:$file" "$dir/kali-${file##*/}" >/dev/null 2>&1 \
+      docker_bounded 60 cp "$KALI:$file" "$dir/kali-${file##*/}" >/dev/null 2>&1 \
         || printf 'evidence: Kali %s was not available\n' "$file" >&2
     done
   fi
   if [ -n "$CAPTURE_PATH" ]; then
-    docker cp "${CAPTURE_HOST:-$FW}:$CAPTURE_PATH" "$dir/firewall-${CAPTURE_PATH##*/}" >/dev/null 2>&1 \
+    docker_bounded 60 cp "${CAPTURE_HOST:-$FW}:$CAPTURE_PATH" "$dir/firewall-${CAPTURE_PATH##*/}" >/dev/null 2>&1 \
       || printf 'evidence: firewall capture %s was not available\n' "$CAPTURE_PATH" >&2
   fi
   printf 'Gate evidence kept in %s\n' "$dir" >&2
@@ -87,6 +87,13 @@ eu_cleanup() {
   [ "$cleanup_running" -eq 0 ] || return
   cleanup_running=1
   trap - EXIT
+  # Restore other resources even if a probe timed out. Keep recording cleanup
+  # timeouts so ignored teardown statuses cannot turn the final result green.
+  DOCKER_BOUNDED_TIMEOUT_CONTINUE=1
+  export DOCKER_BOUNDED_TIMEOUT_CONTINUE
+  if [ -s "${DOCKER_BOUNDED_TIMEOUT_FILE:-}" ]; then
+    fail "Docker timeout during EU gate: $(cat "$DOCKER_BOUNDED_TIMEOUT_FILE")"
+  fi
   eu_stop_capture || true
   eu_stop_monitor || true
   eu_stop_plc_scan || true
@@ -100,16 +107,16 @@ eu_cleanup() {
   fi
   if [ "$MONITOR_STOP_FAILED" -eq 1 ]; then
     printf 'cleanup kept the Kali monitor files %s* for diagnosis\n' "${MONITOR_LOG%.jsonl}" >&2
-  elif [ -n "$MONITOR_LOG" ] && ! docker exec "$KALI" rm -f \
+  elif [ -n "$MONITOR_LOG" ] && ! docker_bounded 5 exec "$KALI" rm -f \
     "$MONITOR_LOG" "$MONITOR_ERR" "$MONITOR_RC" "$MONITOR_PID" \
     >/dev/null 2>"$TMP_DIR/monitor-rm.err"; then
     fail "cleanup could not remove Kali monitor logs: $(cat "$TMP_DIR/monitor-rm.err")"
   fi
   if [ -n "$CAPTURE_HOST" ]; then
-    docker rm "$CAPTURE_HOST" >/dev/null || fail "cleanup owned capture container $CAPTURE_HOST"
+    docker_bounded 15 rm "$CAPTURE_HOST" >/dev/null || fail "cleanup owned capture container $CAPTURE_HOST"
     CAPTURE_PATH="" CAPTURE_HOST=""
   fi
-  if [ -n "$CAPTURE_PATH" ] && ! docker exec "$FW" rm -f \
+  if [ -n "$CAPTURE_PATH" ] && ! docker_bounded 5 exec "$FW" rm -f \
     "$CAPTURE_PATH" "$CAPTURE_PID_FILE" "$CAPTURE_LOG" \
     >/dev/null 2>"$TMP_DIR/capture-rm.err"; then
     fail "cleanup could not remove firewall capture files: $(cat "$TMP_DIR/capture-rm.err")"
@@ -140,6 +147,9 @@ eu_cleanup() {
     if [ "$weak_reset" -eq 0 ]; then
       pass "cleanup ended on weak policy + device reset"
     fi
+  fi
+  if [ "$failures" -eq 0 ] && [ -s "${DOCKER_BOUNDED_TIMEOUT_FILE:-}" ]; then
+    fail "Docker timeout recorded during EU gate/cleanup: $(cat "$DOCKER_BOUNDED_TIMEOUT_FILE")"
   fi
   if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
     rm -rf "$TMP_DIR" || fail "could not remove gate temporary directory $TMP_DIR"

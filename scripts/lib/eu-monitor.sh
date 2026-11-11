@@ -28,7 +28,7 @@ PY
 }
 eu_run_kali_gi() {
   local label="$1" status="$2" output="$TMP_DIR/$1.jsonl" stderr_file="$TMP_DIR/$1.stderr"
-  docker exec "$KALI" iec104cmd "$RTU_IP" gi --json >"$output" 2>"$stderr_file"
+  docker_bounded 30 exec "$KALI" iec104cmd "$RTU_IP" gi --json >"$output" 2>"$stderr_file"
   CLI_STATUS=$?
   if [ "$CLI_STATUS" -ne "$status" ]; then
     fail "$label iec104cmd exited $CLI_STATUS, expected $status; stderr: $(cat "$stderr_file")"
@@ -58,7 +58,7 @@ eu_run_kali_gi() {
 }
 eu_monitor_read() {
   local raw
-  raw=$(docker exec "$KALI" cat "$MONITOR_LOG" 2>"$TMP_DIR/monitor-cat.err") || {
+  raw=$(docker_bounded 5 exec "$KALI" cat "$MONITOR_LOG" 2>"$TMP_DIR/monitor-cat.err") || {
     printf 'monitor log read failed: %s\n' "$(cat "$TMP_DIR/monitor-cat.err")" >&2
     return 1
   }
@@ -101,7 +101,7 @@ eu_monitor_start() {
   MONITOR_ERR="/tmp/eu-iec104-smoke-$suffix.stderr"
   MONITOR_RC="/tmp/eu-iec104-smoke-$suffix.exit"
   MONITOR_PID="/tmp/eu-iec104-smoke-$suffix.pid"
-  if ! docker exec "$KALI" sh -c \
+  if ! docker_bounded 5 exec "$KALI" sh -c \
     "rm -f '$MONITOR_LOG' '$MONITOR_ERR' '$MONITOR_RC' '$MONITOR_PID' \
       && : >'$MONITOR_LOG' && : >'$MONITOR_ERR'" \
     >/dev/null 2>"$TMP_DIR/monitor-files.err"; then
@@ -110,7 +110,7 @@ eu_monitor_start() {
   fi
   monitor_running=1
   # shellcheck disable=SC2016
-  if ! docker exec -d "$KALI" sh -c '
+  if ! docker_bounded 5 exec -d "$KALI" sh -c '
     # Explicit test/adversary client, not the CC periodic GI scheduler.
     iec104cmd "$1" monitor --json --hold 180 --gi-every 2 >"$2" 2>"$3" &
     child=$!
@@ -134,15 +134,15 @@ eu_stop_monitor() {
   [ "$monitor_running" -eq 1 ] || return 0
   local pid="" attempt rc
   for ((attempt = 0; attempt < 20; attempt++)); do
-    pid=$(docker exec "$KALI" cat "$MONITOR_PID" 2>/dev/null) || pid=""
+    pid=$(docker_bounded 5 exec "$KALI" cat "$MONITOR_PID" 2>/dev/null) || pid=""
     [[ "$pid" =~ ^[0-9]+$ ]] && break
     sleep 0.1
   done
   # shellcheck disable=SC2016
-  if [[ "$pid" =~ ^[0-9]+$ ]] && docker exec "$KALI" sh -c 'test -s "$2" || kill -TERM "$1" || { sleep 1; test -s "$2"; }' \
+  if [[ "$pid" =~ ^[0-9]+$ ]] && docker_bounded 5 exec "$KALI" sh -c 'test -s "$2" || kill -TERM "$1" || { sleep 1; test -s "$2"; }' \
     eu-stop "$pid" "$MONITOR_RC" >"$TMP_DIR/monitor-kill.out" 2>&1; then
     for ((attempt = 0; attempt < 40; attempt++)); do
-      if rc=$(docker exec "$KALI" cat "$MONITOR_RC" 2>/dev/null) && [[ "$rc" =~ ^[0-9]+$ ]]; then
+      if rc=$(docker_bounded 5 exec "$KALI" cat "$MONITOR_RC" 2>/dev/null) && [[ "$rc" =~ ^[0-9]+$ ]]; then
         monitor_running=0
         pass "owned background monitor (iec104cmd PID $pid) stopped; supervisor recorded exit status $rc"
         return 0
@@ -153,7 +153,7 @@ eu_stop_monitor() {
   # shellcheck disable=SC2034
   MONITOR_STOP_FAILED=1
   # shellcheck disable=SC2016
-  fail "could not stop owned background monitor (iec104cmd PID ${pid:-unrecorded}): $(cat "$TMP_DIR/monitor-kill.out" 2>/dev/null); process: $(docker exec "$KALI" sh -c 'head -n 3 "/proc/$1/status" 2>&1' eu-diag "${pid:-0}" 2>&1)"
+  fail "could not stop owned background monitor (iec104cmd PID ${pid:-unrecorded}): $(cat "$TMP_DIR/monitor-kill.out" 2>/dev/null); process: $(docker_bounded 5 exec "$KALI" sh -c 'head -n 3 "/proc/$1/status" 2>&1' eu-diag "${pid:-0}" 2>&1)"
   return 1
 }
 eu_monitor_wait_event() {
@@ -168,8 +168,8 @@ eu_monitor_wait_event() {
         'any(.[]; .event == $event)' >/dev/null 2>&1; then
       return 0
     fi
-    if docker exec "$KALI" sh -c "test -s '$MONITOR_RC'" >/dev/null 2>&1; then
-      fail "monitor exited before event $event: $(docker exec "$KALI" cat "$MONITOR_RC" 2>/dev/null)"
+    if docker_bounded 5 exec "$KALI" sh -c "test -s '$MONITOR_RC'" >/dev/null 2>&1; then
+      fail "monitor exited before event $event: $(docker_bounded 5 exec "$KALI" cat "$MONITOR_RC" 2>/dev/null)"
       return 1
     fi
     sleep 0.25
@@ -208,8 +208,8 @@ eu_monitor_finish() {
     if [ "$elapsed" -gt "$((timeout * 1000))" ]; then
       break
     fi
-    if docker exec "$KALI" sh -c "test -s '$MONITOR_RC'" >/dev/null 2>&1; then
-      rc=$(docker exec "$KALI" cat "$MONITOR_RC" 2>"$TMP_DIR/monitor-rc.err") || {
+    if docker_bounded 5 exec "$KALI" sh -c "test -s '$MONITOR_RC'" >/dev/null 2>&1; then
+      rc=$(docker_bounded 5 exec "$KALI" cat "$MONITOR_RC" 2>"$TMP_DIR/monitor-rc.err") || {
         fail "monitor exit status file could not be read: $(cat "$TMP_DIR/monitor-rc.err")"
         return 1
       }

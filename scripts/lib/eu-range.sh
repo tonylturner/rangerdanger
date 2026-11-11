@@ -497,7 +497,7 @@ eu_management() {
     rmu-2) ip=10.99.99.25 ;; oltc-1) ip=10.99.99.26 ;;
     process) ip=10.99.99.23 ;; *) fail "unknown management node $node"; return 1 ;;
   esac
-  output=$(docker exec "$FW" curl -sS --max-time 5 -w '\n%{http_code}' \
+  output=$(docker_bounded 10 exec "$FW" curl -sS --max-time 5 -w '\n%{http_code}' \
     -X "$method" -H 'Content-Type: application/json' -d "$body" "http://$ip:8080$path") || {
     fail "$node $method $path transport failed"; return 1;
   }

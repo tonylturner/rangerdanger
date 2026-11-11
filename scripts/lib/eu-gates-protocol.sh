@@ -4,7 +4,7 @@
 
 eu_gate_G2() {
   gps_paused=1
-  if docker pause "$GPS" >/dev/null 2>"$TMP_DIR/pause-gps.err"; then
+  if docker_bounded 15 pause "$GPS" >/dev/null 2>"$TMP_DIR/pause-gps.err"; then
     pass "G2 GPS container paused"
   else
     fail "G2 could not pause GPS: $(cat "$TMP_DIR/pause-gps.err")"
@@ -34,12 +34,12 @@ eu_gate_G3() {
   # shellcheck disable=SC2034
   capture_running=1
   # Keep the measured ring settings in sync with eu_window_start.
-  if ! docker exec "$FW" sh -c "rm -f '$CAPTURE_PATH' '$CAPTURE_PID_FILE' '$CAPTURE_LOG'; \
+  if ! docker_bounded 5 exec "$FW" sh -c "rm -f '$CAPTURE_PATH' '$CAPTURE_PID_FILE' '$CAPTURE_LOG'; \
     tcpdump --immediate-mode -i any -s 65560 -B 32768 -U -w '$CAPTURE_PATH' 'tcp port 2404 or tcp port 502' \
       >'$CAPTURE_LOG' 2>&1 & echo \$! > '$CAPTURE_PID_FILE'"; then
     fail "G3 could not start tcpdump for both protocol hops"
   else
-    CAPTURE_PID=$(docker exec "$FW" cat "$CAPTURE_PID_FILE" 2>/dev/null) || CAPTURE_PID=""
+    CAPTURE_PID=$(docker_bounded 5 exec "$FW" cat "$CAPTURE_PID_FILE" 2>/dev/null) || CAPTURE_PID=""
     if ! [[ "$CAPTURE_PID" =~ ^[0-9]+$ ]]; then
       fail "G3 tcpdump PID is missing or unparsable"
     else
@@ -85,8 +85,8 @@ eu_gate_G3() {
   eu_action_step breaker-1 reset "G3 device reset" || true
   eu_stop_capture || true
   if [ -n "$CAPTURE_PID" ]; then
-    if docker cp "$FW:$CAPTURE_PATH" "$TMP_DIR/eu-iec104-gate.pcap" >/dev/null 2>"$TMP_DIR/docker-cp.err"; then
-      if docker exec "$FW" cat "$CAPTURE_LOG" >"$capture_stats" 2>"$TMP_DIR/G3-tcpdump-log.err"; then
+    if docker_bounded 60 cp "$FW:$CAPTURE_PATH" "$TMP_DIR/eu-iec104-gate.pcap" >/dev/null 2>"$TMP_DIR/docker-cp.err"; then
+      if docker_bounded 5 exec "$FW" cat "$CAPTURE_LOG" >"$capture_stats" 2>"$TMP_DIR/G3-tcpdump-log.err"; then
         eu_check_capture_integrity "$TMP_DIR/eu-iec104-gate.pcap" "$capture_stats" G3 || true
       else
         fail "G3 tcpdump statistics unavailable: $(cat "$TMP_DIR/G3-tcpdump-log.err")"
@@ -100,7 +100,7 @@ eu_gate_G3() {
   fi
 
   # The decoded copy stays in TMP_DIR (evidence on failure).
-  if docker exec "$FW" rm -f "$CAPTURE_PATH" "$CAPTURE_PID_FILE" "$CAPTURE_LOG" >/dev/null 2>&1; then
+  if docker_bounded 5 exec "$FW" rm -f "$CAPTURE_PATH" "$CAPTURE_PID_FILE" "$CAPTURE_LOG" >/dev/null 2>&1; then
     CAPTURE_PATH=""
     CAPTURE_PID_FILE=""
     CAPTURE_LOG=""

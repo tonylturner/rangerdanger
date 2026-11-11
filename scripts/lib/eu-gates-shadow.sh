@@ -3,7 +3,7 @@
 
 eu_shadow_get() {
   local path="$1" file="$2" response code
-  response=$(docker exec "$FW" curl -sS --max-time 10 -w '\n%{http_code}' \
+  response=$(docker_bounded 15 exec "$FW" curl -sS --max-time 10 -w '\n%{http_code}' \
     -H "Authorization: Bearer $FW_TOKEN" "http://127.0.0.1:8080/api/v1$path") || {
     fail "shadow evidence GET $path transport failed"
     return 1

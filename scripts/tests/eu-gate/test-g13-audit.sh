@@ -82,8 +82,10 @@ init_flow() {
       entries:[{seq:(.value.revision * 10), operation:"first_solve",
         before:{revision:.value.revision}, after:{revision:.value.revision},
         detail:{revision:.value.revision}}]}}) | from_entries')
-  RTU_STATE=false
-  WAS_PAUSED=false
+  # Docker runs in the watchdog's child, like a real external CLI. Persist
+  # daemon state outside the shell so pause/unpause survives that boundary.
+  printf 'false\n' >"$TMP_DIR/rtu-state"
+  printf 'false\n' >"$TMP_DIR/was-paused"
   RESET_FAIL=false
   RESET_DONE=false
   BAD_DEVICE=""
@@ -102,9 +104,9 @@ eu_reset_all() {
 docker() {
   printf 'docker %s\n' "$1" >>"$CALLS"
   case "$1" in
-    pause) RTU_STATE=true; WAS_PAUSED=true ;;
-    unpause) RTU_STATE=false ;;
-    inspect) printf '%s\n' "$RTU_STATE" ;;
+    pause) printf 'true\n' >"$TMP_DIR/rtu-state"; printf 'true\n' >"$TMP_DIR/was-paused" ;;
+    unpause) printf 'false\n' >"$TMP_DIR/rtu-state" ;;
+    inspect) cat "$TMP_DIR/rtu-state" ;;
     *) fail "unexpected docker call"; return 1 ;;
   esac
 }
@@ -112,10 +114,10 @@ eu_wait_for_operator() {
   printf 'operator %s\n' "$1" | tr -s ' \n' ' ' >>"$CALLS"
   printf '\n' >>"$CALLS"
   WAIT_BODY="$OPERATOR"
-  if [ "$RTU_STATE" = true ]; then
+  if [ "$(cat "$TMP_DIR/rtu-state")" = true ]; then
     LOSS_BUDGET="$2"
     WAIT_BODY=$(printf '%s' "$WAIT_BODY" | jq -c '.link.state = "disconnected"')
-  elif [ "$WAS_PAUSED" = true ]; then
+  elif [ "$(cat "$TMP_DIR/was-paused")" = true ]; then
     WAIT_BODY=$(printf '%s' "$RECOVERY_OPERATOR" | jq -c '.link.connection_seq += 1')
     if [ "$AUTO_PHASE" = recovery ]; then
       mutate_device oltc-1 plc_request
@@ -128,7 +130,7 @@ eu_wait_for_field() {
   printf 'field\n' >>"$CALLS"
   if [ -z "$BASELINE_PREDICATE" ]; then BASELINE_PREDICATE="$1"; fi
   WAIT_BODY="$FIELD"
-  if [ "$WAS_PAUSED" = true ] && [ "$RTU_STATE" = false ]; then
+  if [ "$(cat "$TMP_DIR/was-paused")" = true ] && [ "$(cat "$TMP_DIR/rtu-state")" = false ]; then
     WAIT_BODY=$(printf '%s' "$WAIT_BODY" | jq -c "$FINAL_DAMAGE")
   fi
   printf '%s' "$WAIT_BODY" | jq -e "$1" >/dev/null || { fail "unsettled field (stub)"; return 1; }
@@ -146,7 +148,7 @@ mutate_device() {
 }
 eu_action() {
   local node="$1" action="$2"
-  if [ "$RESET_DONE" != true ] || [ "$RTU_STATE" != true ]; then fail "mutation outside owned outage"; return 1; fi
+  if [ "$RESET_DONE" != true ] || [ "$(cat "$TMP_DIR/rtu-state")" != true ]; then fail "mutation outside owned outage"; return 1; fi
   printf 'action %s %s\n' "$node" "$action" >>"$CALLS"
   if [ "$node:$action" = "$NOOP_ACTION" ]; then return 0; fi
   case "$node:$action" in
@@ -173,7 +175,7 @@ eu_api_get() {
   printf 'audit %s %s\n' "$node" "$after" >>"$CALLS"
   if [ "$node" = oltc-1 ]; then
     if { [ "$after" = 0 ] && [ "$AUTO_PHASE" = baseline ]; } \
-      || { [ "$after" != 0 ] && [ "$AUTO_PHASE" = audit ] && [ "$RTU_STATE" = false ]; }; then
+      || { [ "$after" != 0 ] && [ "$AUTO_PHASE" = audit ] && [ "$(cat "$TMP_DIR/rtu-state")" = false ]; }; then
       mutate_device oltc-1 plc_request
       mutate_device oltc-1 motion_complete
     fi
@@ -183,7 +185,7 @@ eu_api_get() {
   if [ "$node" = "$BAD_DEVICE" ] && [ "$after" != 0 ]; then API_BODY=$(printf '%s' "$API_BODY" | jq -c "$BAD_AUDIT"); fi
 }
 eu_wait_for_state() {
-  printf 'solve %s paused=%s\n' "$1" "$RTU_STATE" >>"$CALLS"
+  printf 'solve %s paused=%s\n' "$1" "$(cat "$TMP_DIR/rtu-state")" >>"$CALLS"
   eu_api_get "$1"
   printf '%s' "$API_BODY" | jq -e "$EU_JQ_DEFS $2" >/dev/null || { fail "missing first_solve (stub)"; return 1; }
 }

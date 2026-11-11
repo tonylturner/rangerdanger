@@ -7,7 +7,7 @@ CALLS="$TMP_DIR/history-calls"
 : >"$CALLS"
 BOUNDARY=unavailable
 CURL_RC=28
-ARCHIVED=0
+: >"$TMP_DIR/archived"
 eu_apply_named() { :; }
 eu_window_start() { :; }
 eu_window_finish() { :; }
@@ -22,7 +22,7 @@ docker() {
     esac
   done
   if printf '%s' "$payload" | jq -e '.schema == 3 and (.points | length > 0)' >/dev/null; then
-    ARCHIVED=$((ARCHIVED + 1))
+    printf 'archived\n' >>"$TMP_DIR/archived"
   fi
   if [ "$BOUNDARY" = unavailable ]; then
     case "$*" in
@@ -43,7 +43,7 @@ tshark() {
 }
 t_run eu_gate_G19
 t_expect_fails 0 "unavailable probes and real CC ingest evidence pass G19"
-t_expect_eq "$ARCHIVED" 0 "unavailable probes create no archive rows"
+t_expect_eq "$(wc -l <"$TMP_DIR/archived" | tr -d ' ')" 0 "unavailable probes create no archive rows"
 t_expect_out "unavailable (wget 1; not drop proof)" "refusal is not labelled firewall denial"
 t_expect_no_out "denied" "G19 makes no DENY/drop claim"
 t_expect_eq "$(grep -c '\"schema\":0' "$CALLS")" 5 "every untrusted probe uses a non-archivable body"
@@ -54,5 +54,5 @@ t_expect_out "unavailable (curl 7; not drop proof)" "generic curl failure is not
 BOUNDARY=allowed
 t_run eu_gate_G19
 t_expect_fails 5 "a reachable boundary fails (including HTTP rejection), never passes on 400"
-t_expect_eq "$ARCHIVED" 0 "even an allowed boundary cannot archive the G19 probe"
+t_expect_eq "$(wc -l <"$TMP_DIR/archived" | tr -d ' ')" 0 "even an allowed boundary cannot archive the G19 probe"
 t_finish
