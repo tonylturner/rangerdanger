@@ -266,8 +266,12 @@ class ContaindReleaseDocsTests(unittest.TestCase):
                                "last policy change", "5,000", "50 rows",
                                "no age expiry", "not process restarts",
                                "`since`", "`historyTruncated`", "`engineError`",
-                               "does not display that metadata"):
+                               "The expanded drawer shows **Event history is truncated; this is not a complete record.** when `historyTruncated` is true",
+                               "**DPI engine error:** with the error details when `engineError` is present",
+                               "preserve the response when completeness matters"):
                     self.assertIn(phrase, text)
+                self.assertNotIn("does not display that metadata", text)
+                self.assertNotIn("without an on-screen warning", text)
         text = (ROOT / "lab-definitions/packages/us-dnp3-substation/knowledge/"
                        "live-dpi-events-strip.md").read_text()
         for phrase in ("timestamp, tuple and rule ID",

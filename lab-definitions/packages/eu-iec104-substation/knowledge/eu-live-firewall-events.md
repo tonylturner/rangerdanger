@@ -27,10 +27,7 @@ For an L4 rule-hit row, `DENY` or `RESET` reports the firewall action, unlike a 
 
 ### Empty and unavailable states
 
-The API returns `since`, `historyTruncated` and `engineError`, but the drawer
-does not display that metadata. Incomplete history or an engine read error
-can leave partial or empty results without an on-screen warning; preserve
-the API response when assessing completeness.
+The expanded drawer shows **Event history is truncated; this is not a complete record.** when `historyTruncated` is true, and **DPI engine error:** with the error details when `engineError` is present. The API also returns `since`; preserve the response when completeness matters.
 
 If containd cannot be reached, the panel says `containd unreachable`. If the endpoint returns no recent events, the EU view shows a generic prompt to run a probe from a terminal. Neither state proves that no traffic occurred: the endpoint is bounded to recent events, only retained events can appear, and the panel may not yet have refreshed after a probe. Check the selected policy and exact source, destination, service and test time; use a packet capture or other protocol evidence when the question requires more than a logged rule verdict.
 
