@@ -309,6 +309,13 @@ Docker networks (`$RD_CHECK_PREFIX-*`, default `rd-iec104-check-*`, subnets
 RTU connection lifetime is keyed by the Go session identity, not by a peer
 address string. Connection tests cover session removal, concurrent sends and
 close, STOPDT, maximum connections and recovery without stale recipients.
+An exhausted send-admission queue closes only that recipient, without waiting
+under the model lock. Reporting baselines still advance for healthy peers;
+the disconnected CC reconnects and runs a fresh GI rather than keeping a
+started link with missing status/quality reports until the periodic GI.
+An offline real-session regression fills the default k window, bursts 44 stale
+and 44 GOOD reports into the default 64-send queue, and requires retirement
+and a complete GOOD image on the replacement connection.
 Model assertions and strict-loader rejection cases run as ordinary Go tests:
 
 ```sh

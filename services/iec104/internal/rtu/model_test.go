@@ -202,6 +202,9 @@ func TestSendFailuresArePerRecipient(t *testing.T) {
 	if errors != 2 || len(r.started) != 3 {
 		t.Fatalf("logs=%v", log.lines)
 	}
+	if !a.closeRequested || b.closeRequested || c.closeRequested {
+		t.Fatal("only the recipient that lost an ASDU to queue saturation must reconnect")
+	}
 }
 
 func TestPointTypesQualityAndTime(t *testing.T) {
