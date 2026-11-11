@@ -192,8 +192,9 @@ jobs:
         # firewall_config_test reads canonical policy JSONs at
         # runtime; Go's cache doesn't track external files, so a
         # JSON-only edit silently keeps the cached PASS. -count=1
-        # forces every run.
-        run: go test -race -count=1 ./...
+        # forces every run. State the same per-package race budget
+        # used by local full-suite validation instead of Go's 10m default.
+        run: go test -race -count=1 -timeout 900s ./...
       - name: go build
         working-directory: backend
         run: go build ./cmd/server
