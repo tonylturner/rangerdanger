@@ -14,7 +14,6 @@ import (
 
 	"github.com/tturner/rangerdanger/backend/internal/config"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
-	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
@@ -28,7 +27,7 @@ var euStartedAt = time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 // services can never cause a test to contact the real range. client is the firewall API.
 func euGeneration(t *testing.T, client *containd.Client, endpoints map[string]string) *lifecycle.Generation {
 	t.Helper()
-	man, err := manifest.Load(repoRoot(), euPackageID)
+	pkg, man, err := packageGenerationFixture(euPackageID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,10 +42,6 @@ func euGeneration(t *testing.T, client *containd.Client, endpoints map[string]st
 			replaced[name] = base
 		}
 		man.Services[i].Endpoints = replaced
-	}
-	pkg, err := labs.ReadDefinition(filepath.Join(repoRoot(), "lab-definitions"), filepath.Join(manifest.Dir(repoRoot(), euPackageID), "package.yml"))
-	if err != nil {
-		t.Fatal(err)
 	}
 	return lifecycle.NewGeneration(7, pkg, man, client, euStartedAt)
 }
