@@ -70,13 +70,19 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Gener
 	budget := firewallWaitBudget
 	deadline := time.Now().Add(budget)
 	var lastErr error
+	var committed []byte
 	for {
 		if !time.Now().Before(deadline) {
 			return firewallHashTimeout(budget, lastErr)
 		}
-		got, err := gen.Containd().GetFirewallHash(ctx)
+		document, err := gen.Containd().GetConfigDocument(ctx)
+		var got string
+		if err == nil {
+			got, err = containd.FirewallHashFromBytes(document)
+		}
 		if err == nil && got == want {
 			if time.Now().Before(deadline) {
+				committed = document
 				break
 			}
 			return firewallHashTimeout(budget, nil)
@@ -101,7 +107,7 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Gener
 		return fmt.Errorf("dataplane never reconciled to %s: resolve canary target: %w", active, err)
 	}
 	label := fmt.Sprintf("%s→%s:%d", canary.label, target, canary.port)
-	expected, err := s.firewallCanaryExpectation(ctx, gen, active, canary, target)
+	expected, err := firewallCanaryExpectation(gen, active, canary, target, committed)
 	if err != nil {
 		return fmt.Errorf("dataplane never reconciled to %s: canary %s expectation unavailable: %w", active, label, err)
 	}
@@ -137,24 +143,20 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Gener
 	}
 }
 
-func (s *Server) firewallCanaryExpectation(ctx context.Context, gen *lifecycle.Generation, active string, canary canaryProbe, target string) (string, error) {
+func firewallCanaryExpectation(gen *lifecycle.Generation, active string, canary canaryProbe, target string, committed []byte) (string, error) {
 	switch active {
 	case canary.allowUnder:
 		return string(labs.VerdictAllow), nil
 	case canary.denyUnder:
 		return string(labs.VerdictDeny), nil
 	}
-	// Custom policies use the same judging target and tuple evaluator as
-	// scenario probes, never the running policy as its own oracle. A single
-	// canary checks this tuple only; plans with the same verdict are not
-	// distinguishable here and still need the full policy/probe checks.
-	judging, err := s.probeJudgingTarget(ctx, gen, labs.ScenarioStep{})
+	// The canary checks reconciliation, not student correctness. Its oracle
+	// is the committed config snapshot whose hash was verified above; the
+	// measured fact is the dataplane. Probes and validators separately judge
+	// the policy against the student's change request or the full reference.
+	policy, err := readEvaluatedFirewall(committed)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", judging.detail, err)
-	}
-	policy, err := readEvaluatedFirewall(judging.plan.Config)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", judging.detail, err)
+		return "", err
 	}
 	route, err := labs.ResolveProbeTuple(gen.Package.Template, canary.fromNode, target, canary.port)
 	if err != nil {

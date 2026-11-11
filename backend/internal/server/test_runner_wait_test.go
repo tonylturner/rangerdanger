@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +25,11 @@ func firewallWaitTestServer(t *testing.T, pkg, active string, hashMatches bool) 
 	if !hashMatches {
 		observedFirewall = map[string]any{"defaultAction": "ALLOW", "rules": []any{}}
 	}
+	return firewallWaitPolicyTestServer(t, pkg, active, wantedFirewall, observedFirewall)
+}
+
+func firewallWaitPolicyTestServer(t *testing.T, pkg, active string, wantedFirewall, observedFirewall map[string]any) *Server {
+	t.Helper()
 	configBytes, err := json.Marshal(map[string]any{"firewall": wantedFirewall})
 	if err != nil {
 		t.Fatalf("marshal firewall config: %v", err)
@@ -166,73 +172,85 @@ func TestWaitForFirewallPolicyStrictCanary(t *testing.T) {
 	}
 }
 
-func TestWaitForFirewallPolicyCustomCanaryUsesProbeJudgingTarget(t *testing.T) {
+func TestWaitForFirewallPolicyCustomCanaryUsesCommittedPolicy(t *testing.T) {
 	setFirewallWaitBudget(t, 25*time.Millisecond)
 	for _, pkg := range []string{usPackageID, euPackageID} {
 		for _, tc := range []struct {
-			name, source string
-			applied      bool
-			full         bool
-			request      bool
-			requestFull  bool
-			rc           int
-			pass         bool
+			name           string
+			applied        bool
+			committedAllow bool
+			rc             int
+			pass           bool
 		}{
-			{name: "deferred plan allows", applied: true, rc: 0, pass: true},
-			{name: "deferred plan rejects timeout", applied: true, rc: 124},
-			{name: "full plan denies", applied: true, full: true, rc: 124, pass: true},
-			{name: "full plan rejects connection", applied: true, full: true, rc: 0},
-			{name: "manual uses full reference", source: "manual-custom", rc: 124, pass: true},
-			{name: "manual exposure fails reference", source: "manual-custom", rc: 0},
-			{name: "saved empty request allows", source: "manual-custom", request: true, rc: 0, pass: true},
-			{name: "saved full request denies", source: "manual-custom", request: true, requestFull: true, rc: 124, pass: true},
-			{name: "applied empty plan supersedes full request", applied: true, request: true, requestFull: true, rc: 0, pass: true},
-			{name: "applied full plan supersedes empty request", applied: true, full: true, request: true, rc: 124, pass: true},
+			{name: "manual allow differs from deny request and reconciles", committedAllow: true, rc: 0, pass: true},
+			{name: "manual allow differs from deny request but dataplane denies", committedAllow: true, rc: 124},
+			{name: "manual deny differs from allow request and reconciles", rc: 124, pass: true},
+			{name: "manual deny differs from allow request but dataplane allows", rc: 0},
+			{name: "applied deferred plan allows", applied: true, committedAllow: true, rc: 0, pass: true},
+			{name: "applied deferred plan rejects timeout", applied: true, committedAllow: true, rc: 124},
+			{name: "applied full plan denies", applied: true, rc: 124, pass: true},
+			{name: "applied full plan rejects connection", applied: true, rc: 0},
 		} {
 			t.Run(pkg+"/"+tc.name, func(t *testing.T) {
-				s := firewallWaitTestServer(t, pkg, "custom", true)
+				port := 502
+				if pkg == euPackageID {
+					port = 2404
+				}
+				// Opposite defaults ensure the ordered rule, not just the
+				// default action, determines the committed tuple's verdict.
+				action, defaultAction := "DENY", "ALLOW"
+				if tc.committedAllow {
+					action, defaultAction = "ALLOW", "DENY"
+				}
+				firewall := map[string]any{"defaultAction": defaultAction, "rules": []any{map[string]any{
+					"id": "manual-canary", "sourceZones": []string{"wan"}, "destZones": []string{"lan1"},
+					"protocols": []any{map[string]any{"name": "tcp", "port": fmt.Sprint(port)}}, "action": action,
+				}}}
+				s := firewallWaitPolicyTestServer(t, pkg, "custom", firewall, firewall)
 				gen := s.rng.(*fakeRange).gen
-				s.policySource = tc.source
+				s.policySource = "manual-custom"
 				var all []string
 				for _, action := range gen.Package.Curriculum.Catalog {
 					all = append(all, action.ID)
 				}
-				ctx := t.Context()
-				if tc.request {
-					var ids []string
-					if tc.requestFull {
-						ids = all
-					}
-					ctx = context.WithValue(ctx, changeRequestKey{}, compiledChangeRequest{compileProbePlan(t, gen, ids)})
+				var requestIDs []string
+				if tc.committedAllow {
+					requestIDs = all
 				}
+				ctx := context.WithValue(t.Context(), changeRequestKey{}, compiledChangeRequest{compileProbePlan(t, gen, requestIDs)})
 				if tc.applied {
 					var ids []string
-					if tc.full {
+					if !tc.committedAllow {
 						ids = all
 					}
-					// The mock hash deliberately differs from the plan; the
-					// expected verdict must come from the judging target,
-					// not the hash-matched running document.
-					hash := s.lastAppliedHash
 					useAppliedProbePlan(t, s, compileProbePlan(t, gen, ids))
-					s.lastAppliedHash = hash
+					var document struct {
+						Firewall map[string]any `json:"firewall"`
+					}
+					if err := json.Unmarshal(s.appliedPlan.Config, &document); err != nil {
+						t.Fatal(err)
+					}
+					// Serve the actual applied plan as the committed policy.
+					s = firewallWaitPolicyTestServer(t, pkg, "custom", document.Firewall, document.Firewall)
+					gen = s.rng.(*fakeRange).gen
+					useAppliedProbePlan(t, s, compileProbePlan(t, gen, ids))
 				}
 				calls := scriptedFirewallCanary(t, s, []canaryObservation{{rc: tc.rc}})
 				err := s.waitForFirewallPolicy(ctx, gen)
 				if (err == nil) != tc.pass || *calls != 1 {
 					t.Fatalf("canary err=%v calls=%d, want pass=%t", err, *calls, tc.pass)
 				}
-				port := 502
-				if pkg == euPackageID {
-					port = 2404
-				}
 				step := labs.ScenarioStep{Node: "kali-1", Action: &labs.StepAction{Type: "probe", Targets: []labs.ProbeTarget{{Host: "10.30.30.20", Port: port}}}}
 				s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
 					return "", "", tc.rc, nil
 				}
 				rows := s.executeProbe(ctx, gen, step)
-				if len(rows) != 1 || rows[0].Success != tc.pass {
-					t.Fatalf("scenario probe disagrees with canary: %+v", rows)
+				probePass := tc.pass
+				if !tc.applied {
+					probePass = !tc.pass
+				}
+				if len(rows) != 1 || rows[0].Success != probePass {
+					t.Fatalf("scenario probe should retain its separate correctness oracle: %+v", rows)
 				}
 			})
 		}
@@ -240,17 +258,20 @@ func TestWaitForFirewallPolicyCustomCanaryUsesProbeJudgingTarget(t *testing.T) {
 }
 
 func TestWaitForFirewallPolicyUnavailableCanaryExpectation(t *testing.T) {
-	for _, malformed := range []bool{false, true} {
-		t.Run(fmt.Sprint(malformed), func(t *testing.T) {
-			s := firewallWaitTestServer(t, usPackageID, "custom", true)
+	for _, tc := range []struct {
+		name     string
+		firewall map[string]any
+		badTuple bool
+	}{
+		{name: "unsupported default", firewall: map[string]any{"defaultAction": "UNKNOWN", "rules": []any{}}},
+		{name: "unsupported selector", firewall: map[string]any{"defaultAction": "DENY", "rules": []any{map[string]any{"action": "ALLOW", "schedule": "work-hours"}}}},
+		{name: "unresolvable tuple", firewall: map[string]any{"defaultAction": "DENY", "rules": []any{}}, badTuple: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := firewallWaitPolicyTestServer(t, usPackageID, "custom", tc.firewall, tc.firewall)
 			gen := s.rng.(*fakeRange).gen
-			if malformed {
-				hash := s.lastAppliedHash
-				useAppliedProbePlan(t, s, compileProbePlan(t, gen, nil))
-				s.appliedPlan.Config = []byte(`{}`)
-				s.lastAppliedHash = hash
-			} else {
-				gen.Package.Curriculum = nil
+			if tc.badTuple {
+				gen.Package.Template.Networks = nil
 			}
 			calls := scriptedFirewallCanary(t, s, []canaryObservation{{rc: 124}})
 			err := s.waitForFirewallPolicy(t.Context(), gen)
@@ -258,6 +279,48 @@ func TestWaitForFirewallPolicyUnavailableCanaryExpectation(t *testing.T) {
 				t.Fatalf("err=%v calls=%d, want explicit unavailable expectation without exec", err, *calls)
 			}
 		})
+	}
+}
+
+func TestFirewallCanaryExpectationBridged(t *testing.T) {
+	canary := canaryProbe{fromNode: "relay-1", toNode: "recloser-1", network: "field_net", port: 502}
+	got, err := firewallCanaryExpectation(usGeneration(nil), "custom", canary, "10.40.40.21",
+		[]byte(`{"firewall":{"defaultAction":"DENY","rules":[]}}`))
+	if err != nil || got != "allow" {
+		t.Fatalf("bridged canary expectation=%q err=%v, want allow", got, err)
+	}
+}
+
+func TestWaitForFirewallPolicyCanaryUsesHashVerifiedSnapshot(t *testing.T) {
+	committed := []byte(`{"firewall":{"defaultAction":"ALLOW","rules":[]}}`)
+	var reads atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/config" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if reads.Add(1) == 1 {
+			_, _ = w.Write(committed)
+		} else {
+			fmt.Fprint(w, `{"firewall":{"defaultAction":"DENY","rules":[]}}`)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+	s := rangeServer(usGeneration(containd.NewClient(upstream.URL)), "custom")
+	var err error
+	s.lastAppliedHash, err = containd.FirewallHashFromBytes(committed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No curriculum is needed for reconciliation of a committed manual policy.
+	s.rng.(*fakeRange).gen.Package.Curriculum = nil
+	calls := scriptedFirewallCanary(t, s, []canaryObservation{{rc: 0}})
+	if err := s.waitForFirewallPolicy(t.Context(), s.rng.(*fakeRange).gen); err != nil {
+		t.Fatal(err)
+	}
+	if *calls != 1 || reads.Load() != 1 {
+		t.Fatalf("calls=%d config reads=%d, want one hash-verified snapshot", *calls, reads.Load())
 	}
 }
 
