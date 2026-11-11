@@ -144,8 +144,8 @@ func prepareSuiteCC(parent context.Context, gen *lifecycle.Generation, budget ti
 	return result
 }
 
-// Keep the suite's one-shot POST on its declared endpoint, including on a
-// redirect. Do not change the shared operator client or interactive routes.
+// The shared upstream client keeps this one-shot POST on its declared endpoint,
+// returning redirects without following them.
 func requestSuiteGI(parent context.Context, endpoint string) (int, error) {
 	ctx, cancel := context.WithTimeout(parent, upstreamReadTimeout)
 	defer cancel()
@@ -153,9 +153,7 @@ func requestSuiteGI(parent context.Context, endpoint string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	client := *upstreamClient
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := client.Do(req)
+	resp, err := upstreamClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
