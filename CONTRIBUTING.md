@@ -14,10 +14,10 @@ You will need:
   allocated. The compose stack pulls roughly
   6–8 GB on a first run.
 - **Go 1.26+** for the backend (`backend/go.mod` declares `go 1.26.0`
-  and pins `toolchain go1.26.10`, which `go` downloads automatically);
+  and pins `toolchain go1.26.11`, which `go` downloads automatically);
   the `services/` and `dnp3go/` modules declare `go 1.24.0` as their
-  minimum but pin the same `go1.26.10` toolchain. `iec104go/` also pins
-  `go1.26.10`.
+  minimum but pin the same `go1.26.11` toolchain. `iec104go/` also pins
+  `go1.26.11`.
 - **Node.js 20+** and **npm** for the frontend.
 
 The lab runs as two Compose projects. The **platform**
