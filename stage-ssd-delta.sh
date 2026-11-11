@@ -313,7 +313,9 @@ rate_limit_abort() {
 
 manifest_value() {
     local key="$1" data="$2"
-    printf '%s\n' "$data" | awk -F '\t' -v key="$key" '$1 == key { print $2; exit }'
+    # A here-string, not a pipe: awk exits at the first match, and a printf
+    # still writing would then fail with SIGPIPE under pipefail.
+    awk -F '\t' -v key="$key" '$1 == key { print $2; exit }' <<<"$data"
 }
 
 banner "Comparing $SINCE -> $NEW across $(echo "$CANDIDATE_IMAGES" | wc -l | tr -d ' ') candidate image(s)"
