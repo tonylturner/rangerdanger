@@ -67,6 +67,15 @@ CVE-2026-54283 are fixed by upgrading to FastAPI 0.133.0 and Starlette
 1.3.1 in `services/opendss-sim/requirements.txt` and validating both
 simulation profiles.
 
+## Resolved by frontend dependency override (2026-11-11)
+
+- Frontend: `minimatch` override 11.0.7 (GHSA-g3hv-75wg-m249,
+  globparts-amplification denial of service, via development-only
+  `typescript-eslint`). The override is scoped to
+  `@typescript-eslint/typescript-estree`; other ESLint consumers retain
+  minimatch 3.x. Revisit when typescript-estree accepts a patched release
+  without an override. `npm audit` 0.
+
 ## Open
 
 ### docker/docker - `GO-2026-4887`, `GO-2026-4883`
