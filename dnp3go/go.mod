@@ -2,4 +2,4 @@ module github.com/tonylturner/dnp3go
 
 go 1.24.0
 
-toolchain go1.26.10
+toolchain go1.26.11
