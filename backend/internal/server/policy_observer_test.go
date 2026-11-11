@@ -136,20 +136,189 @@ func TestObserver_GraceWindow_SuppressesFlip(t *testing.T) {
 	containdSays := map[string]any{"defaultAction": "DENY", "rules": []any{}}
 	ts := hashServerForFirewall(t, containdSays)
 	defer ts.Close()
-
-	s := &Server{
-		activeConfig:    "improved",
-		policySource:    "hardened-reference",
-		lastAppliedHash: "deadbeef", // would diverge
-		lastAppliedAt:   time.Now(), // INSIDE the grace window
+	configBytes, err := json.Marshal(map[string]any{"firewall": containdSays})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := containd.FirewallHashFromBytes(configBytes)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	s.observePolicyOnce(context.Background(), observedGeneration(ts.URL))
+	for _, named := range []bool{false, true} {
+		t.Run(fmt.Sprintf("named=%t", named), func(t *testing.T) {
+			appliedAt := time.Now().UTC()
+			provenance, plan := &planProvenance{}, &labs.CompiledPlan{}
+			s := &Server{
+				activeConfig:     "custom",
+				policySource:     "plan",
+				lastAppliedHash:  "deadbeef", // would diverge
+				lastAppliedAt:    appliedAt,  // INSIDE the grace window
+				policyChangedAt:  appliedAt,
+				policyObservedAt: appliedAt,
+				planProvenance:   provenance,
+				appliedPlan:      plan,
+			}
+			if named {
+				s.policyHashNames = map[string]string{hash: "weak"}
+			}
+			s.observePolicyOnce(t.Context(), observedGeneration(ts.URL))
 
-	s.activeConfigMu.RLock()
-	defer s.activeConfigMu.RUnlock()
-	if s.activeConfig != "improved" {
-		t.Errorf("activeConfig = %q, want improved (grace window should have suppressed)", s.activeConfig)
+			if s.activeConfig != "custom" || s.policySource != "plan" || s.lastAppliedHash != "deadbeef" {
+				t.Error("grace window did not suppress reclassification")
+			}
+			if s.planProvenance != provenance || s.appliedPlan != plan {
+				t.Error("grace window did not preserve plan provenance")
+			}
+			if !s.lastAppliedAt.Equal(appliedAt) || !s.policyChangedAt.Equal(appliedAt) ||
+				!s.policyObservedAt.Equal(appliedAt) || !s.policyEvidenceSince.IsZero() {
+				t.Error("grace window did not preserve evidence timestamps")
+			}
+		})
+	}
+}
+
+// A plan can compile to a named policy's hash. An unchanged observation is
+// not evidence of an external commit and must retain the applied plan.
+func TestObserver_UnchangedNamedHashPreservesPlan(t *testing.T) {
+	appliedAt := time.Now().UTC().Add(-time.Hour)
+	provenance, plan := &planProvenance{}, &labs.CompiledPlan{}
+	s := &Server{
+		activeConfig:        "custom",
+		policySource:        "plan",
+		lastAppliedHash:     "named-hash",
+		lastAppliedAt:       appliedAt,
+		policyChangedAt:     appliedAt,
+		policyObservedAt:    appliedAt,
+		policyEvidenceSince: appliedAt,
+		policyHashNames:     map[string]string{"named-hash": "weak"},
+		planProvenance:      provenance,
+		appliedPlan:         plan,
+	}
+	observedAt := time.Now().UTC()
+	s.classifyObservedPolicy("named-hash", observedAt)
+	if s.activeConfig != "custom" || s.policySource != "plan" ||
+		s.planProvenance != provenance || s.appliedPlan != plan {
+		t.Error("unchanged named hash discarded the applied plan")
+	}
+	if !s.policyChangedAt.Equal(appliedAt) || !s.policyEvidenceSince.Equal(appliedAt) ||
+		!s.lastAppliedAt.Equal(appliedAt) || !s.policyObservedAt.Equal(observedAt) {
+		t.Error("unchanged named hash should refresh only the observation time")
+	}
+}
+
+// Model containd's running-config transitions, not its CLI or timer: an
+// unconfirmed commit expires back to Weak, while rollback can restore any
+// named policy from a manually authored or plan-derived config.
+func TestObserver_NamedPolicyReturn(t *testing.T) {
+	weak := map[string]any{"defaultAction": "DENY", "rules": []any{}}
+	improved := map[string]any{"defaultAction": "DROP", "rules": []any{}}
+	custom := map[string]any{"defaultAction": "DENY", "rules": []any{}, "comment": "manual"}
+	otherCustom := map[string]any{"defaultAction": "DENY", "rules": []any{}, "comment": "another manual commit"}
+	hashOf := func(firewall any) string {
+		t.Helper()
+		data, err := json.Marshal(map[string]any{"firewall": firewall})
+		if err != nil {
+			t.Fatal(err)
+		}
+		hash, err := containd.FirewallHashFromBytes(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return hash
+	}
+	type observation struct {
+		firewall any
+		config   string
+		source   string
+	}
+	tests := []struct {
+		name         string
+		initial      observation
+		observations []observation
+	}{
+		{
+			name:    "commit-confirmed expiry restores Weak",
+			initial: observation{weak, "weak", "weak"},
+			observations: []observation{
+				{custom, "custom", "manual-custom"},
+				{weak, "weak", "weak"},
+			},
+		},
+		{
+			name:    "rollback onto Weak clears plan provenance",
+			initial: observation{custom, "custom", "plan"},
+			observations: []observation{
+				{weak, "weak", "weak"},
+			},
+		},
+		{
+			name:    "rollback onto Hardened clears plan provenance",
+			initial: observation{custom, "custom", "plan"},
+			observations: []observation{
+				{improved, "improved", "hardened-reference"},
+			},
+		},
+		{
+			name:    "unknown hashes remain manual-custom",
+			initial: observation{weak, "weak", "weak"},
+			observations: []observation{
+				{custom, "custom", "manual-custom"},
+				{otherCustom, "custom", "manual-custom"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts, setFirewall := mutableHashServerForFirewall(t, tt.initial.firewall)
+			defer ts.Close()
+			gen := observedGeneration(ts.URL)
+			appliedAt := time.Now().UTC().Add(-time.Hour)
+			s := &Server{
+				activeConfig:        tt.initial.config,
+				policySource:        tt.initial.source,
+				lastAppliedHash:     hashOf(tt.initial.firewall),
+				lastAppliedAt:       appliedAt,
+				policyObservedAt:    appliedAt,
+				policyEvidenceSince: appliedAt,
+				policyChangedAt:     appliedAt,
+				policyHashNames:     map[string]string{hashOf(weak): "weak", hashOf(improved): "improved"},
+			}
+			if tt.initial.source == "plan" {
+				s.planProvenance = &planProvenance{PolicyHash: s.lastAppliedHash}
+				s.appliedPlan = &labs.CompiledPlan{}
+			}
+			for _, next := range tt.observations {
+				previousObservation := s.policyObservedAt
+				setFirewall(next.firewall)
+				before := time.Now().UTC()
+				s.observePolicyOnce(t.Context(), gen)
+				after := time.Now().UTC()
+				if s.activeConfig != next.config || s.policySource != next.source {
+					t.Errorf("observed = %s/%s, want %s/%s", s.activeConfig, s.policySource, next.config, next.source)
+				}
+				if s.planProvenance != nil || s.appliedPlan != nil {
+					t.Error("external policy transition retained plan provenance")
+				}
+				if s.lastAppliedHash != hashOf(next.firewall) || !s.lastAppliedAt.Equal(appliedAt) {
+					t.Error("observer must update the hash without changing the backend apply time")
+				}
+				if !s.policyEvidenceSince.Equal(previousObservation) {
+					t.Error("policy evidence lost the previous request's lower bound")
+				}
+				if s.policyObservedAt.Before(before) || s.policyObservedAt.After(after) ||
+					s.policyChangedAt.Before(s.policyObservedAt) || s.policyChangedAt.After(after) {
+					t.Error("policy evidence timestamps outside observation window")
+				}
+
+				// An unchanged tick must refresh only the observation time.
+				changedAt, evidenceSince := s.policyChangedAt, s.policyEvidenceSince
+				s.observePolicyOnce(t.Context(), gen)
+				if !s.policyChangedAt.Equal(changedAt) || !s.policyEvidenceSince.Equal(evidenceSince) {
+					t.Error("unchanged hash advanced the policy evidence boundary")
+				}
+			}
+		})
 	}
 }
 
