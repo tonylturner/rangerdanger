@@ -10,7 +10,7 @@ eu_check_tools() {
       missing=1
     fi
   done
-  if ! docker compose version >/dev/null 2>&1; then
+  if ! docker_bounded 5 compose version >/dev/null 2>&1; then
     fail "required Docker Compose v2 is unavailable"
     missing=1
   fi
@@ -26,7 +26,7 @@ eu_check_tools() {
 check_listener() {
   local container="$1" address="$2" label="$3" expected_count="${4:-1}" listeners port
   port="${address##*:}"
-  listeners=$(docker exec "$container" ss -ltn 2>"$TMP_DIR/ss.err") || {
+  listeners=$(docker_bounded 5 exec "$container" ss -ltn 2>"$TMP_DIR/ss.err") || {
     fail "$label listener inspection failed (ss -ltn): $(cat "$TMP_DIR/ss.err")"
     return 1
   }
@@ -45,7 +45,7 @@ check_listener() {
 # Read exactly one default gateway from Linux's /proc/net/route table.
 default_gateway() {
   local container="$1" routes gateway
-  routes=$(docker exec "$container" cat /proc/net/route 2>/dev/null) || return 1
+  routes=$(docker_bounded 5 exec "$container" cat /proc/net/route 2>/dev/null) || return 1
   gateway=$(printf '%s\n' "$routes" | awk '
     $2 == "00000000" && $8 == "00000000" { count++; value = $3 }
     END { if (count != 1) exit 1; print value }
@@ -67,7 +67,7 @@ check_gateway() {
 }
 eu_container_running() {
   local container="$1" status
-  status=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null) || status=""
+  status=$(docker_bounded 5 inspect -f '{{.State.Status}}' "$container" 2>/dev/null) || status=""
   [ "$status" = "running" ]
 }
 
@@ -100,6 +100,11 @@ eu_gate_preflight() {
     echo "FAIL cannot create a temporary directory" >&2
     exit 1
   }
+  # fd 3 preserves timeout diagnostics across per-probe stderr redirects.
+  exec 3>&2
+  DOCKER_BOUNDED_TIMEOUT_FILE="$TMP_DIR/docker-timeouts.log"
+  DOCKER_BOUNDED_TIMEOUT_CONTINUE=0
+  export DOCKER_BOUNDED_TIMEOUT_FILE DOCKER_BOUNDED_TIMEOUT_CONTINUE
   trap eu_on_exit EXIT
   trap 'exit 129' HUP
   trap 'exit 130' INT
@@ -137,10 +142,10 @@ eu_gate_preflight() {
 eu_gate_G0() {
   local image_id kernel tcp_loose ephemeral_range policy_name policy_file compose_json candidate \
     network_count forwarding
-  image_id=$(docker inspect -f '{{.Image}}' "$FW" 2>/dev/null) || image_id=""
-  kernel=$(docker exec "$FW" uname -r 2>/dev/null) || kernel=""
-  tcp_loose=$(docker exec "$FW" cat /proc/sys/net/netfilter/nf_conntrack_tcp_loose 2>/dev/null) || tcp_loose=""
-  ephemeral_range=$(docker exec "$FW" cat /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null) || ephemeral_range=""
+  image_id=$(docker_bounded 5 inspect -f '{{.Image}}' "$FW" 2>/dev/null) || image_id=""
+  kernel=$(docker_bounded 5 exec "$FW" uname -r 2>/dev/null) || kernel=""
+  tcp_loose=$(docker_bounded 5 exec "$FW" cat /proc/sys/net/netfilter/nf_conntrack_tcp_loose 2>/dev/null) || tcp_loose=""
+  ephemeral_range=$(docker_bounded 5 exec "$FW" cat /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null) || ephemeral_range=""
   if [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] && [ -n "$kernel" ] \
     && [[ "$tcp_loose" =~ ^[01]$ ]] && [ "$tcp_loose" = "1" ] \
     && [[ "$ephemeral_range" =~ ^[0-9]+[[:space:]]+[0-9]+$ ]]; then
@@ -177,7 +182,7 @@ eu_gate_G0() {
 
   # The firewall build and package must describe the same internal-only solver net.
   compose_json="$TMP_DIR/eu-compose.json"
-  if RANGERDANGER_ROOT="$ROOT" docker compose -p rangerdanger \
+  if RANGERDANGER_ROOT="$ROOT" docker_bounded 15 compose -p rangerdanger \
     -f "$PACKAGE/compose.source.yml" config --format json >"$compose_json" 2>"$TMP_DIR/compose.err"; then
     if jq -e '.networks.process_net.internal == true' "$compose_json" >/dev/null 2>&1; then
       pass "G0 docker compose config keeps process_net internal"
@@ -218,13 +223,13 @@ eu_gate_G0() {
   check_gateway "$CC" 10.60.60.2
 
   for candidate in "$KALI" rangerdanger-vendor-jump rangerdanger-eng-ws "$RTU" "$CC" "$BREAKER" "$GPS" "$OPENDSS"; do
-    network_count=$(docker inspect -f '{{len .NetworkSettings.Networks}}' "$candidate" 2>/dev/null) || network_count=""
+    network_count=$(docker_bounded 5 inspect -f '{{len .NetworkSettings.Networks}}' "$candidate" 2>/dev/null) || network_count=""
     if ! [[ "$network_count" =~ ^[0-9]+$ ]] || [ "$network_count" -lt 1 ]; then
       fail "$candidate network membership count is missing or invalid"
       continue
     fi
     if [ "$network_count" -gt 1 ]; then
-      forwarding=$(docker exec "$candidate" cat /proc/sys/net/ipv4/ip_forward 2>/dev/null) || forwarding=""
+      forwarding=$(docker_bounded 5 exec "$candidate" cat /proc/sys/net/ipv4/ip_forward 2>/dev/null) || forwarding=""
       if [ "$forwarding" = "0" ]; then
         pass "$candidate is multihomed with ip_forward=0"
       else
@@ -282,7 +287,7 @@ eu_inc4_boundaries() {
   check_gateway rangerdanger-historian 10.70.70.2
   check_gateway rangerdanger-openplc 10.30.30.2
   for container in rangerdanger-rmu-1 rangerdanger-rmu-2 rangerdanger-oltc-1 rangerdanger-f2-breaker rangerdanger-historian rangerdanger-openplc; do
-    forwarding=$(docker exec "$container" cat /proc/sys/net/ipv4/ip_forward) || forwarding=""
+    forwarding=$(docker_bounded 5 exec "$container" cat /proc/sys/net/ipv4/ip_forward) || forwarding=""
     if [ "$forwarding" = 0 ]; then pass "$container ip_forward=0"
     else fail "$container ip_forward=$forwarding (expected 0)"; fi
   done

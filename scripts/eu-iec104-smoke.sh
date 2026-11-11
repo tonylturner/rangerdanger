@@ -183,6 +183,9 @@ eu_run_gate() {
     fail "$gate aborted without complete attempt evidence"
   fi
   eu_gate_resources_finish "$gate"
+  if [ -s "${DOCKER_BOUNDED_TIMEOUT_FILE:-}" ]; then
+    fail "$gate Docker timeout: $(cat "$DOCKER_BOUNDED_TIMEOUT_FILE")"
+  fi
   gate_end "$gate"
 }
 
@@ -207,6 +210,11 @@ eu_gate_main() {
   eu_gate_preflight
   for gate in G0 G1 G2 G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 G13 G15 G16 G17 G18 G19 G20 G21 G22 G23 G24 G25 G26 G27 G28 G29 G14; do
     eu_run_gate "$gate"
+    # A timed-out probe is not a negative network result, nor retryable success.
+    # EXIT restoration still runs with its own bounded Docker calls.
+    if [ -s "${DOCKER_BOUNDED_TIMEOUT_FILE:-}" ]; then
+      exit 1
+    fi
   done
   exit 0
 }

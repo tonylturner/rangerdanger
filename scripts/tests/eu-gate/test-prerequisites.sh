@@ -6,14 +6,14 @@
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 DOCKER_LOG="$TMP_DIR/docker-calls.log"
-OPENDSS_STATE=false
+printf 'false\n' >"$TMP_DIR/opendss-state"
 : >"$DOCKER_LOG"
 docker() {
   printf '%s\n' "$*" >>"$DOCKER_LOG"
   case "$1" in
-    pause) OPENDSS_STATE=true ;;
-    unpause) OPENDSS_STATE=false ;;
-    inspect) printf '%s\n' "$OPENDSS_STATE" ;;
+    pause) printf 'true\n' >"$TMP_DIR/opendss-state" ;;
+    unpause) printf 'false\n' >"$TMP_DIR/opendss-state" ;;
+    inspect) cat "$TMP_DIR/opendss-state" ;;
     *) return 99 ;;
   esac
 }
@@ -58,7 +58,8 @@ t_expect_out "GATE G12 PASS" "G12 passes with its own baseline and both quality 
 t_expect_no_out "improved applied (stub)" "G12 needs only the reset's weak baseline"
 t_expect_out "reset to weak (stub)" "G12 restores the conduit and devices rather than trusting earlier gates"
 t_expect_out "G12 GOOD baseline before measurement loss" "G12 waits for operator/truth/solver agreement"
-t_expect_eq "$OPENDSS_STATE" false "G12 unpaused the OpenDSS container it paused"
+t_expect_eq "$(cat "$TMP_DIR/opendss-state")" false "G12 unpaused the OpenDSS container it paused"
+t_expect_eq "$(grep -c "^unpause $OPENDSS$" "$DOCKER_LOG")" 1 "G12 actually issued unpause across the CLI child boundary"
 
 : >"$DOCKER_LOG"
 BASELINE_FAIL=true
