@@ -66,9 +66,10 @@ build before release images exist. On Windows, use
 `.\setup.ps1 -Package eu-iec104-substation` (or add `-FromSource`).
 Re-running setup acquires all images before
 migration teardown, then restarts the range and resets policy. Save evidence,
-desktop work and local changes first. US revision 4 and EU revision 8 start
-fresh browser progress; earlier-revision notes, decisions and plans are not
-loaded or migrated. Save them before upgrading.
+desktop work and local changes first. US revision 4 and EU revision 8 are
+unchanged from v0.2.4: v0.2.5 reuses saved browser records for lab progress,
+notes, decisions and plans when you keep the same browser and portal address.
+Completion marks follow matching step IDs, not changed wording.
 See [upgrading](docs/quickstart.md#upgrading-to-v025) and
 [offline distribution](docs/workshop-ssd.md). Windows supports Docker Desktop
 with the WSL2 backend and a physical local-drive checkout, not UNC, `\\wsl$`,

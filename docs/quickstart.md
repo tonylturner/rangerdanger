@@ -239,12 +239,23 @@ and resets its policy; save evidence and local work first. On Windows, setup
 probes the current kernel and leaves it unchanged if its required features
 work; it installs the v0.2.5 kernel asset only if the probe finds them missing.
 
-US curriculum revision 4 and EU revision 8 start with fresh browser state.
-Earlier-revision progress, notes, decisions and saved plans remain in browser
-storage but are not loaded or migrated into the new revisions. Save your notes
-and evidence before upgrading, and write a new Lab 1.4 change request.
+US curriculum revision 4 and EU revision 8 are unchanged from v0.2.4.
+With the same browser and portal address, v0.2.5 reuses saved browser records
+for lab progress, notes, decisions and plans. Progress is stored by package,
+revision and exercise ID. Completed/skipped marks are kept only for step IDs
+still present; new steps start unmarked. There is no release-version or
+content-fingerprint reset: changed wording does not clear completion marks.
+Saved decisions are shown only when their values remain valid options.
+Saved browser progress is not fresh evidence that the reset range passes its checks.
 
-API callers must also update: scenario validation changes from
+**Upgrading from v0.2.3 or older:** v0.2.4 introduced US revision 4 and EU
+revision 8 with fresh browser state. Earlier-revision progress, notes,
+decisions and saved plans remain in browser storage but are not loaded or
+migrated into these revisions. Save your notes and evidence before upgrading,
+and write a new Lab 1.4 change request.
+
+For these older releases, API callers must also update for the v0.2.4 cutover:
+scenario validation changes from
 `GET /api/scenarios/:id/validate` to `POST /api/scenarios/:id/validate`,
 with an optional `changeRequest`. The one-click
 `POST /api/firewall/validation-report` endpoint is removed.

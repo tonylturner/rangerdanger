@@ -58,16 +58,44 @@ class ContaindReleaseDocsTests(unittest.TestCase):
         self.assertNotIn("git checkout --detach v0.2.0", text)
         self.assertNotIn("the tag carries `[rebuild-all]`", text)
 
+    def test_v025_upgrade_keeps_matching_browser_progress(self):
+        text = " ".join((ROOT / "docs/quickstart.md").read_text().split())
+        patch, _ = text.split("**Upgrading from v0.2.3 or older:**", 1)
+        for phrase in ("US curriculum revision 4 and EU revision 8 are unchanged from v0.2.4",
+                       "same browser and portal address",
+                       "v0.2.5 reuses saved browser records",
+                       "lab progress, notes, decisions and plans",
+                       "Progress is stored by package, revision and exercise ID",
+                       "Completed/skipped marks are kept only for step IDs still present",
+                       "new steps start unmarked",
+                       "no release-version or content-fingerprint reset",
+                       "changed wording does not clear completion marks",
+                       "Saved decisions are shown only when their values remain valid options",
+                       "not fresh evidence that the reset range passes its checks"):
+            self.assertIn(phrase, patch)
+        self.assertNotIn("fresh browser state", patch)
+        self.assertNotIn("write a new Lab 1.4 change request", patch)
+        self.assertNotIn("API callers must also update", patch)
+        readme = " ".join((ROOT / "README.md").read_text().split())
+        for phrase in ("US revision 4 and EU revision 8 are unchanged from v0.2.4",
+                       "v0.2.5 reuses saved browser records",
+                       "same browser and portal address",
+                       "Completion marks follow matching step IDs, not changed wording"):
+            self.assertIn(phrase, readme)
+        self.assertNotIn("start fresh browser progress", readme)
+
     def test_v024_upgrade_warns_about_revision_scoped_state_and_api_cutover(self):
         text = " ".join((ROOT / "docs/quickstart.md").read_text().split())
-        for phrase in ("US curriculum revision 4 and EU revision 8",
+        _, older = text.split("**Upgrading from v0.2.3 or older:**", 1)
+        for phrase in ("v0.2.4 introduced US revision 4 and EU revision 8",
                        "fresh browser state",
                        "remain in browser storage but are not loaded or migrated",
                        "write a new Lab 1.4 change request",
+                       "API callers must also update for the v0.2.4 cutover",
                        "`GET /api/scenarios/:id/validate` to `POST /api/scenarios/:id/validate`",
                        "optional `changeRequest`",
                        "`POST /api/firewall/validation-report` endpoint is removed"):
-            self.assertIn(phrase, text)
+            self.assertIn(phrase, older)
 
     def test_v025_delta_examples_describe_full_rebuild_and_optional_containd(self):
         text = (ROOT / "docs/workshop-ssd.md").read_text()
