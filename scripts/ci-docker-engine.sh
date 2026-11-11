@@ -2,9 +2,9 @@
 #
 # CI only: move a GitHub-hosted ubuntu-26.04 runner to the Docker Engine
 # the range needs, then assert setup.sh's version floor. The runner image
-# ships Docker CE 29.4.2, not moby; pin Docker's packages explicitly so the
-# Engine matches the backend's docker:29.8.0-cli. Package builds use the
-# Ubuntu version and codename from /etc/os-release.
+# ships Docker CE 29.4.2, not moby; pin Docker's packages explicitly. The
+# Engine is pinned independently of the backend's Compose-binary source
+# image. Package builds use the Ubuntu version and codename from /etc/os-release.
 
 set -euo pipefail
 

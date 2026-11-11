@@ -42,12 +42,7 @@ func repoRoot() string {
 // topology and named policies as the catalog reads them, with client as the
 // firewall API.
 func usGeneration(client *containd.Client) *lifecycle.Generation {
-	man, err := manifest.Load(repoRoot(), usPackageID)
-	if err != nil {
-		panic(err)
-	}
-	definitions := filepath.Join(repoRoot(), "lab-definitions")
-	pkg, err := labs.ReadDefinition(definitions, filepath.Join(manifest.Dir(repoRoot(), usPackageID), "package.yml"))
+	pkg, man, err := packageGenerationFixture(usPackageID)
 	if err != nil {
 		panic(err)
 	}
