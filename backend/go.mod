@@ -2,7 +2,7 @@ module github.com/tturner/rangerdanger/backend
 
 go 1.26.0
 
-toolchain go1.26.11
+toolchain go1.27.4
 
 require (
 	github.com/docker/docker v27.5.1+incompatible

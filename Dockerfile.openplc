@@ -3,7 +3,7 @@
 # students probe field devices from a non-RTAC OT host (OpenPLC) to
 # confirm the segmentation policy is enforcing the RTAC source-pin —
 # that test only works if OpenPLC actually has the tools.
-FROM golang:1.26.11-alpine@sha256:ae52b5bc6ed045a9ed26ab03dc19327a802a9cc9aa8b27ed57f5c6b60579b0bb AS dnp3-builder
+FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS dnp3-builder
 ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY dnp3go/ .

@@ -258,13 +258,23 @@ and resolved by `go get`:
 - **`GO-2025-4134`, `GO-2025-4135`** - `golang.org/x/crypto`
   v0.44.0 → v0.50.0.
 
+## Updated to Go 1.27.4 (2026-11-11)
+
+All four modules now pin `toolchain go1.27.4`, and every Go builder uses
+`golang:1.27.4` or `golang:1.27.4-alpine`. The minimum `go` directives
+remain unchanged: backend `1.26.0`, services and both libraries `1.24.0`.
+CI reads the toolchain from each module's `go.mod`. Multi-platform index
+digests:
+`golang:1.27.4` `sha256:08bcb99a38f85a265f9a93d1d3323e2440eec333380f3ea26ee0dec9264bb41c`,
+`golang:1.27.4-alpine` `sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf`.
+
 ## Resolved by Go toolchain bump (2026-11-11)
 
 **`1.26.10 -> 1.26.11`** clears `GO-2026-6859`, an HTTP/1 server crash caused
 by a `MaxBytesReader` header race in the standard-library `net/http` package
-(fixed in Go 1.26.11). All four Go modules now pin `toolchain go1.26.11`; every
-Go builder image uses the digest-locked `golang:1.26.11` /
-`golang:1.26.11-alpine` image. Multi-platform index digests:
+(fixed in Go 1.26.11). At that point all four Go modules pinned
+`toolchain go1.26.11`; every Go builder image used the digest-locked
+`golang:1.26.11` / `golang:1.26.11-alpine` image. Multi-platform index digests:
 `golang:1.26.11` `sha256:7af425da11f4fc1a9308eb704369e3f6d1c44e35bac0f874a59ade3f20fdc07e`,
 `golang:1.26.11-alpine` `sha256:ae52b5bc6ed045a9ed26ab03dc19327a802a9cc9aa8b27ed57f5c6b60579b0bb`.
 
@@ -350,13 +360,13 @@ and `dnp3go/go.mod` all pinned `toolchain go1.25.10` at the time. The
 subsequent `go1.26.7` bump is recorded in the 2026-08-22 section above.
 The `go 1.24.0` minimum-language directive was left alone in that historical
 change; it is not the current module floor. For the current toolchain pins,
-see [the 2026-10-25 cutover](#resolved-by-go-toolchain-bump-2026-10-25).
+see [the Go 1.27.4 update](#updated-to-go-1274-2026-11-11).
 
 Dockerfile bases were also bumped at the time (`golang:1.25` /
 `golang:1.25-alpine`, from `1.24`). The v0.1.30 notes described a move
 to `golang:1.27` / `golang:1.27-alpine`; that is historical, not the current
-build-stage contract. Current Go builders use `1.26.11` / `1.26.11-alpine`,
-as recorded in the 2026-11-11 cutover above.
+build-stage contract. Current Go builders use `1.27.4` / `1.27.4-alpine`,
+as recorded in the Go 1.27.4 update above.
 
 ## Adding a new exception
 
