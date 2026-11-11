@@ -33,13 +33,12 @@ function errorDetail(body: unknown): string {
 // Every API helper goes through here (lib/operator-api.ts too), so a
 // not-ready range is reported the same way for all of them.
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
     cache: "no-store",
-    ...init
+    ...init,
+    headers,
   });
 
   if (!res.ok) {

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { ApiError, compilePlan, applyPlan, executeScenarioStep, validateScenario, getActiveFirewallConfig, getSubstationNetworkEvents, sendFieldAction, stopTrafficGeneration, type NetworkEventsResponse } from "./api";
+import { request, ApiError, compilePlan, applyPlan, executeScenarioStep, validateScenario, getActiveFirewallConfig, getSubstationNetworkEvents, sendFieldAction, stopTrafficGeneration, type NetworkEventsResponse } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -76,3 +76,16 @@ it.each([undefined, planRequest, { ...planRequest, actionIds: ["pin-rtac-to-fiel
     expect(fetch).toHaveBeenNthCalledWith(2, "/api/scenarios/lab%2Fid/validate", options);
   },
 );
+
+it.each([
+  { "X-Custom": "context" },
+  new Headers({ "X-Custom": "context" }),
+  [["X-Custom", "context"]] as [string, string][],
+])("merges caller headers with JSON defaults: %j", async (headers) => {
+  const fetch = vi.fn().mockResolvedValue(new Response("{}"));
+  vi.stubGlobal("fetch", fetch);
+  await request("/health", { headers });
+  const sent = fetch.mock.calls[0][1].headers as Headers;
+  expect(sent.get("Content-Type")).toBe("application/json");
+  expect(sent.get("X-Custom")).toBe("context");
+});
