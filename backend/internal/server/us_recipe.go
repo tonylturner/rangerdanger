@@ -33,12 +33,11 @@ var usRecipe = &packageRecipe{
 	commandExecutor: (*Server).executeRTACCommand,
 	check:           (*Server).executeUSCheck,
 	resetCommands:   resetDeviceCommands,
-	canary: canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtac-1", network: "ot_ops_net", port: 502,
-		allowUnder: "weak", denyUnder: "improved"},
-	testSuite:    true,
-	compare:      usCompare,
-	staticRules:  usStaticRules,
-	workshopName: "Distribution Substation Segmentation",
+	canary:          canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtac-1", network: "ot_ops_net", port: 502},
+	testSuite:       true,
+	compare:         usCompare,
+	staticRules:     usStaticRules,
+	workshopName:    "Distribution Substation Segmentation",
 	// Scenario-driven traffic only; see runTrafficGeneration.
 	traffic: []trafficTarget{
 		// Engineering workstation (vendor zone). It has mbpoll, dnp3poll,

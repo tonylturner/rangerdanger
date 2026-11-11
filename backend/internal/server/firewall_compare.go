@@ -282,7 +282,7 @@ func compareRuleSets(spec *compareSpec, weak, improved *fwConfigFile) []PolicyRu
 
 	weakByPair := map[zonePair][]ruleInfo{}
 	for _, r := range weak.Firewall.Rules {
-		if r.ICS != nil && r.ICS.Mode == "monitor" {
+		if r.Action == "RATE_LIMIT" || r.Action == "TAG" || r.ICS != nil && r.ICS.Mode == "monitor" {
 			continue
 		}
 		if len(r.SourceZones) == 0 || len(r.DestZones) == 0 {
@@ -297,7 +297,7 @@ func compareRuleSets(spec *compareSpec, weak, improved *fwConfigFile) []PolicyRu
 
 	improvedByPair := map[zonePair][]ruleInfo{}
 	for _, r := range improved.Firewall.Rules {
-		if r.ICS != nil && r.ICS.Mode == "monitor" {
+		if r.Action == "RATE_LIMIT" || r.Action == "TAG" || r.ICS != nil && r.ICS.Mode == "monitor" {
 			continue
 		}
 		if len(r.SourceZones) == 0 || len(r.DestZones) == 0 {
@@ -364,7 +364,7 @@ func compareRuleSets(spec *compareSpec, weak, improved *fwConfigFile) []PolicyRu
 		change := "unchanged"
 		wDescJoined := strings.Join(wDesc, "; ")
 		iDescJoined := strings.Join(iDesc, "; ")
-		if wAction == "ALLOW" && (iAction == "DENY" || iAction == "MIXED") {
+		if wAction == "ALLOW" && (iAction == "DENY" || iAction == "RESET" || iAction == "MIXED") {
 			change = "tightened"
 		} else if wAction == "" && iAction != "" {
 			change = "added"

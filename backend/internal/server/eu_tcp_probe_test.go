@@ -23,6 +23,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
 func TestEUStrictTCPClassification(t *testing.T) {
@@ -31,12 +32,12 @@ func TestEUStrictTCPClassification(t *testing.T) {
 		rc                 int
 		err                error
 	}{
-		{"connected", "", "allow", 0, nil},
-		{"bash refusal", "bash: connect: Connection refused", "allow", 1, nil},
-		{"busybox refusal", "nc: can't connect to remote host (10.0.0.1): Connection refused", "allow", 1, nil},
-		{"busybox timeout", "nc: timed out", "deny", 1, nil},
-		{"connect timeout", "bash: connect: Connection timed out", "deny", 1, nil},
-		{"timeout budget", "", "deny", 124, nil},
+		{"connected", "", "connected", 0, nil},
+		{"bash refusal", "bash: connect: Connection refused", "refused", 1, nil},
+		{"busybox refusal", "nc: can't connect to remote host (10.0.0.1): Connection refused", "refused", 1, nil},
+		{"busybox timeout", "nc: timed out", "timeout", 1, nil},
+		{"connect timeout", "bash: connect: Connection timed out", "timeout", 1, nil},
+		{"timeout budget", "", "timeout", 124, nil},
 		{"container down", "", "skipped", -1, errors.New("container is stopped")},
 		{"exec error overrides success", "", "skipped", 0, errors.New("inspect failed")},
 		{"unknown exit one", "unexpected failure", "skipped", 1, nil},
@@ -76,10 +77,10 @@ exit "$PROBE_RC"
 		rc                            int
 		missingTimeout                bool
 	}{
-		{name: "connected", want: "allow"},
-		{name: "refused", rc: 1, stderr: "Connection refused", want: "allow"},
-		{name: "GNU timeout", timeoutRC: "124", want: "deny"},
-		{name: "BusyBox timeout", timeoutRC: "143", want: "deny"},
+		{name: "connected", want: "connected"},
+		{name: "refused", rc: 1, stderr: "Connection refused", want: "refused"},
+		{name: "GNU timeout", timeoutRC: "124", want: "timeout"},
+		{name: "BusyBox timeout", timeoutRC: "143", want: "timeout"},
 		{name: "silent exit one", rc: 1, want: "skipped"},
 		{name: "bad arguments", rc: 2, want: "skipped"},
 		{name: "not executable", rc: 126, want: "skipped"},
@@ -125,10 +126,10 @@ exit "$PROBE_RC"
 		rc, wantRC                 int
 		missingTool                bool
 	}{
-		{name: "open", stdout: header + "65000\ttcp\topen\tunknown\n0 closed, 1 open, 0 timed out (or blocked) ports\n", want: "allow"},
-		{name: "closed", stdout: header + "65000\ttcp\tclosed\tunknown\n1 closed, 0 open, 0 timed out (or blocked) ports\n", wantRC: 1, want: "allow"},
-		{name: "blocked", stdout: header + "65000\ttcp\tblocked\tunknown\n0 closed, 0 open, 1 timed out (or blocked) ports\n", wantRC: 124, want: "deny"},
-		{name: "whitespace", stdout: " 65000  tcp  open  unknown", want: "allow"},
+		{name: "open", stdout: header + "65000\ttcp\topen\tunknown\n0 closed, 1 open, 0 timed out (or blocked) ports\n", want: "connected"},
+		{name: "closed", stdout: header + "65000\ttcp\tclosed\tunknown\n1 closed, 0 open, 0 timed out (or blocked) ports\n", wantRC: 1, want: "refused"},
+		{name: "blocked", stdout: header + "65000\ttcp\tblocked\tunknown\n0 closed, 0 open, 1 timed out (or blocked) ports\n", wantRC: 124, want: "timeout"},
+		{name: "whitespace", stdout: " 65000  tcp  open  unknown", want: "connected"},
 		{name: "empty output", wantRC: 2, want: "skipped"},
 		{name: "unknown state", stdout: "65000\ttcp\tunknown\tunknown", wantRC: 2, want: "skipped"},
 		{name: "wrong port", stdout: "65001\ttcp\topen\tunknown", wantRC: 2, want: "skipped"},
@@ -278,7 +279,7 @@ func TestEUStrictTCPExecWireAndErrors(t *testing.T) {
 		rc                 int
 	}{
 		{"connect", "", "allow", 0},
-		{"refused vendor VNC is reached", "Connection refused", "allow", 1},
+		{"allowed closed-listener refusal", "Connection refused", "allow", 1},
 		{"timeout", "", "deny", 124},
 		{"missing tool", "busybox: not found", "skipped", 127},
 	} {
@@ -291,7 +292,7 @@ func TestEUStrictTCPExecWireAndErrors(t *testing.T) {
 					t.Errorf("wrong probe source/command: %s %+v", source, options)
 				}
 			})
-			row := (&Server{}).strictTCPProbe(t.Context(), cli, validationProbe{Src: "real-kali-container", Dst: "10.20.20.10", Port: "5900", Expected: "deny", Category: "unauthorized"})
+			row := (&Server{}).strictTCPProbe(t.Context(), cli, validationProbe{Src: "real-kali-container", Dst: "10.20.20.10", Port: "5900", Expected: "deny", Category: "unauthorized", Decision: labs.Decision{Verdict: labs.VerdictAllow}})
 			if calls != 1 || row.Actual != tc.want || row.Pass != (tc.want == "deny") || (row.ProbeError != "") != (tc.want == "skipped") {
 				t.Fatalf("calls=%d row=%+v", calls, row)
 			}

@@ -78,7 +78,7 @@ type ZoneRuleSummary struct {
 	DestZone    string   `json:"dest_zone"`
 	Summary     string   `json:"summary"`      // Brief summary for edge label
 	RuleDetails []string `json:"rule_details"` // Full descriptions for tooltip
-	Action      string   `json:"action"`       // Primary action (ALLOW/DENY/MIXED)
+	Action      string   `json:"action"`       // Primary action (ALLOW/DENY/RESET/MIXED)
 }
 
 // GetFirewallRules returns the firewall rules from containd config.
@@ -118,8 +118,8 @@ func (c *Client) GetZoneRuleSummaries(ctx context.Context) ([]ZoneRuleSummary, e
 	pairRules := make(map[zonePair][]FirewallRule)
 
 	for _, rule := range rules {
-		// Observation rules neither admit nor deny and do not restrict edges.
-		if rule.ICS != nil && rule.ICS.Mode == "monitor" {
+		// Nonterminal effects and observations do not decide L4 edges.
+		if rule.Action == "RATE_LIMIT" || rule.Action == "TAG" || rule.ICS != nil && rule.ICS.Mode == "monitor" {
 			continue
 		}
 		srcZones := rule.SourceZones
@@ -148,17 +148,14 @@ func (c *Client) GetZoneRuleSummaries(ctx context.Context) ([]ZoneRuleSummary, e
 			RuleDetails: make([]string, 0, len(rules)),
 		}
 
-		allowCount := 0
-		denyCount := 0
+		actions := map[string]bool{}
 		var protocols []string
 
 		for _, rule := range rules {
 			summary.RuleDetails = append(summary.RuleDetails, rule.Description)
 
-			if rule.Action == "ALLOW" {
-				allowCount++
-			} else if rule.Action == "DENY" {
-				denyCount++
+			if rule.Action == "ALLOW" || rule.Action == "DENY" || rule.Action == "RESET" {
+				actions[rule.Action] = true
 			}
 
 			// Collect protocol info for summary
@@ -180,13 +177,12 @@ func (c *Client) GetZoneRuleSummaries(ctx context.Context) ([]ZoneRuleSummary, e
 			}
 		}
 
-		// Determine action
-		if denyCount > 0 && allowCount > 0 {
+		summary.Action = "ALLOW"
+		for action := range actions {
+			summary.Action = action
+		}
+		if len(actions) > 1 {
 			summary.Action = "MIXED"
-		} else if denyCount > 0 {
-			summary.Action = "DENY"
-		} else {
-			summary.Action = "ALLOW"
 		}
 
 		// Create brief summary

@@ -62,7 +62,7 @@ func ensureHardenedPrecondition(step labs.ScenarioStep, active string, apply fun
 func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Generation) error {
 	s.activeConfigMu.RLock()
 	want := s.lastAppliedHash
-	active := s.activeConfig
+	active, boundary, source := s.activeConfig, s.policyChangedAt, s.policySource
 	s.activeConfigMu.RUnlock()
 	if want == "" {
 		return fmt.Errorf("no recorded firewall hash")
@@ -107,7 +107,7 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Gener
 		return fmt.Errorf("dataplane never reconciled to %s: resolve canary target: %w", active, err)
 	}
 	label := fmt.Sprintf("%s→%s:%d", canary.label, target, canary.port)
-	expected, err := firewallCanaryExpectation(gen, active, canary, target, committed)
+	expected, err := firewallCanaryExpectation(gen, canary, target, committed)
 	if err != nil {
 		return fmt.Errorf("dataplane never reconciled to %s: canary %s expectation unavailable: %w", active, label, err)
 	}
@@ -134,7 +134,18 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Gener
 		}
 		cancel()
 		lastVerdict = verdict
-		if verdict == expected {
+		if canaryObservationMatches(verdict, expected) {
+			// The snapshot is the oracle, but it must still be the running
+			// commit when its observation completes (including same-hash commits).
+			identityCtx, stop := context.WithDeadline(ctx, deadline)
+			finalHash, finalErr := gen.Containd().GetFirewallHash(identityCtx)
+			stop()
+			s.activeConfigMu.RLock()
+			stable := want == s.lastAppliedHash && boundary.Equal(s.policyChangedAt) && source == s.policySource
+			s.activeConfigMu.RUnlock()
+			if finalErr != nil || finalHash != want || !stable || gen.Context().Err() != nil {
+				return fmt.Errorf("%s", evidenceDetail("policy changed or became unavailable during canary; check again", finalErr))
+			}
 			return nil
 		}
 		if !sleepWithinFirewallBudget(ctx, deadline, firewallCanaryPollInterval) {
@@ -143,13 +154,7 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Gener
 	}
 }
 
-func firewallCanaryExpectation(gen *lifecycle.Generation, active string, canary canaryProbe, target string, committed []byte) (string, error) {
-	switch active {
-	case canary.allowUnder:
-		return string(labs.VerdictAllow), nil
-	case canary.denyUnder:
-		return string(labs.VerdictDeny), nil
-	}
+func firewallCanaryExpectation(gen *lifecycle.Generation, canary canaryProbe, target string, committed []byte) (string, error) {
 	// The canary checks reconciliation, not student correctness. Its oracle
 	// is the committed config snapshot whose hash was verified above; the
 	// measured fact is the dataplane. Probes and validators separately judge
@@ -165,7 +170,20 @@ func firewallCanaryExpectation(gen *lifecycle.Generation, active string, canary 
 	if route.Bridged {
 		return string(labs.VerdictAllow), nil
 	}
-	return string(labs.Evaluate(policy.Rules, policy.DefaultAction, route.Tuple)), nil
+	return string(labs.Decide(policy.Rules, policy.DefaultAction, route.Tuple).Verdict), nil
+}
+
+func canaryObservationMatches(observation, expected string) bool {
+	switch labs.Verdict(expected) {
+	case labs.VerdictAllow:
+		return observation == "connected" || observation == "refused"
+	case labs.VerdictDeny:
+		return observation == "timeout"
+	case labs.VerdictReset:
+		return observation == "refused"
+	default:
+		return false
+	}
 }
 
 func firewallHashTimeout(budget time.Duration, lastErr error) error {

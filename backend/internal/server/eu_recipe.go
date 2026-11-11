@@ -18,8 +18,7 @@ var euRecipe = &packageRecipe{
 		{"kali-1", "historian-1", "ops_dmz_net", "curl -sf --max-time 3 http://%s:8080/api/points > /dev/null", "enterprise→historian read"},
 		{"vendor-jump-1", "historian-1", "ops_dmz_net", "curl -sf --max-time 3 http://%s:8080/api/points > /dev/null", "vendor→historian read (weak)"},
 	},
-	canary: canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtu-1", network: "station_net", port: 2404,
-		allowUnder: "weak", denyUnder: "improved"},
+	canary:        canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtu-1", network: "station_net", port: 2404},
 	captureFilter: "tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081",
 	compare: &compareSpec{
 		weakPolicy:     "weak",

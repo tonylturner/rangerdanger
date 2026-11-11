@@ -142,7 +142,7 @@ func TestManualPolicyFirstMatch(t *testing.T) {
 		{"effects fall through", `{"action":"TAG"},{"action":"RATE_LIMIT"}`, "ALLOW", labs.VerdictAllow},
 		{"effects do not grant", `{"action":"RATE_LIMIT"},{"action":"TAG"}`, "DENY", labs.VerdictDeny},
 		{"monitor continues", `{"action":"DENY","ics":{"protocol":"iec104","mode":"monitor"}},{"action":"ALLOW"}`, "DENY", labs.VerdictAllow},
-		{"reset terminates", `{"action":"RESET"},{"action":"ALLOW"}`, "ALLOW", labs.VerdictDeny},
+		{"reset terminates", `{"action":"RESET"},{"action":"ALLOW"}`, "ALLOW", labs.VerdictReset},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := fmt.Sprintf(`{"firewall":{"defaultAction":%q,"rules":[%s]}}`, tc.fallback, tc.rules)
@@ -150,7 +150,7 @@ func TestManualPolicyFirstMatch(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := labs.Evaluate(policy.Rules, policy.DefaultAction, labs.PlanTuple{}); got != tc.want {
+			if got := labs.Decide(policy.Rules, policy.DefaultAction, labs.PlanTuple{}).Verdict; got != tc.want {
 				t.Fatalf("verdict %s, want %s", got, tc.want)
 			}
 		})

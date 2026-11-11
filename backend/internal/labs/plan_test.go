@@ -46,17 +46,17 @@ func TestEvaluatePlanRules(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rule, p := base, tuple
 			tc.change(&rule, &p)
-			if got := Evaluate([]PlanRule{rule}, "DENY", p); got != tc.want {
+			if got := Decide([]PlanRule{rule}, "DENY", p).Verdict; got != tc.want {
 				t.Fatalf("Evaluate = %s, want %s", got, tc.want)
 			}
 		})
 	}
 	deny := PlanRule{ID: "first", Action: "DENY"}
-	if Evaluate([]PlanRule{deny, base}, "ALLOW", tuple) != VerdictDeny ||
-		Evaluate([]PlanRule{base, deny}, "DENY", tuple) != VerdictAllow {
+	if Decide([]PlanRule{deny, base}, "ALLOW", tuple).Verdict != VerdictDeny ||
+		Decide([]PlanRule{base, deny}, "DENY", tuple).Verdict != VerdictAllow {
 		t.Fatal("first matching rule must win")
 	}
-	if Evaluate(nil, "ALLOW", tuple) != VerdictAllow || Evaluate(nil, "DENY", tuple) != VerdictDeny {
+	if Decide(nil, "ALLOW", tuple).Verdict != VerdictAllow || Decide(nil, "DENY", tuple).Verdict != VerdictDeny {
 		t.Fatal("default action is not respected")
 	}
 }

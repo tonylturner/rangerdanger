@@ -68,7 +68,7 @@ func TestProbeMatrixMeasurementsAndIdentity(t *testing.T) {
 					}
 					reads++
 					if reads > 1 && mutation == "live change" {
-						io.WriteString(w, `{"firewall":{}}`)
+						io.WriteString(w, `{"firewall":{"defaultAction":"DENY","rules":[]}}`)
 						return
 					}
 					if mutation == "hash unavailable" {
@@ -126,7 +126,7 @@ func TestProbeMatrixMeasurementsAndIdentity(t *testing.T) {
 					if row.ID != compiled.Expectations[i].ID {
 						t.Fatalf("order: %+v", result.Rows)
 					}
-					if mutation == "cancel" {
+					if mutation == "cancel" || mutation == "hash unavailable" {
 						if row.Observed != "untested" || row.Error == "" {
 							t.Fatalf("cancelled: %+v", row)
 						}
@@ -178,10 +178,10 @@ func TestProbeMatrixHTTPMeasurements(t *testing.T) {
 		if r.Method != "GET" || r.URL.Path != "/api/v1/config" {
 			t.Errorf("unexpected write: %s %s", r.Method, r.URL.Path)
 		}
-		io.WriteString(w, `{"firewall":{}}`)
+		io.WriteString(w, `{"firewall":{"defaultAction":"DENY","rules":[]}}`)
 	}))
 	defer upstream.Close()
-	hash, _ := containd.FirewallHashFromBytes([]byte(`{"firewall":{}}`))
+	hash, _ := containd.FirewallHashFromBytes([]byte(`{"firewall":{"defaultAction":"DENY","rules":[]}}`))
 	for _, pkg := range []string{usPackageID, euPackageID} {
 		var gen *lifecycle.Generation
 		if pkg == euPackageID {

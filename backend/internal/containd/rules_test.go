@@ -177,3 +177,28 @@ func TestGetZoneRuleSummariesMixedAction(t *testing.T) {
 		t.Errorf("expected MIXED action, got %s", summaries[0].Action)
 	}
 }
+
+func TestZoneRuleSummaryResetAndMixtures(t *testing.T) {
+	for _, actions := range [][]string{{"RESET"}, {"RESET", "RESET"}, {"RESET", "ALLOW"}, {"RESET", "DENY"}, {"ALLOW", "DENY", "RESET"}, {"RATE_LIMIT", "TAG", "RESET"}} {
+		t.Run(strings.Join(actions, "/"), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				rules := []FirewallRule{}
+				for _, action := range actions {
+					rules = append(rules, FirewallRule{ID: action, Action: action, SourceZones: []string{"wan"}, DestZones: []string{"lan2"}})
+				}
+				json.NewEncoder(w).Encode(map[string]any{"firewall": FirewallConfig{Rules: rules}})
+			}))
+			defer srv.Close()
+			summaries, err := newTestClient(srv.URL).GetZoneRuleSummaries(t.Context())
+			want := "RESET"
+			for _, action := range actions {
+				if action == "ALLOW" || action == "DENY" {
+					want = "MIXED"
+				}
+			}
+			if err != nil || len(summaries) != 1 || summaries[0].Action != want {
+				t.Fatalf("%+v %v", summaries, err)
+			}
+		})
+	}
+}
