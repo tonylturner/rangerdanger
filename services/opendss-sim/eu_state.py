@@ -1,12 +1,15 @@
 """Last solved EU process snapshot and delivery/health evidence."""
 
 import copy
+import secrets
 import threading
 import time
+from collections import deque
 
 from eu_controls import ProcessControls
 from eu_models import ElectricalSnapshot, HealthSnapshot
 from eu_profile import EUProfile
+from time_utils import utc_timestamp
 
 
 class EUProcessState:
@@ -19,6 +22,10 @@ class EUProcessState:
         self._last_converged: bool | None = None
         self._failures = 0
         self._pending = False
+        # Same boot-scoped, bounded cursor contract as the field devices.
+        self._generation = secrets.randbits(32)
+        self._audit: deque[dict] = deque(maxlen=500)
+        self._audit_seq = 0
         self._latest: ElectricalSnapshot = {
             "schema": 3, "profile_id": profile.id, "solver_epoch": None,
             "solve_seq": 0, "solved_at": None, "truth_stale": True,
@@ -41,6 +48,27 @@ class EUProcessState:
         with self._lock:
             self._latest.update(controls.snapshot())
             self._pending = True
+
+    def record_action(self, operation: str, result: str, before: dict, after: dict,
+                      context: dict, detail: str = "") -> None:
+        """Record process-owned controls, never another device's truth."""
+        with self._lock:
+            self._audit_seq += 1
+            entry = dict(seq=self._audit_seq, at=utc_timestamp(),
+                         operation=operation, result=result, before=before,
+                         after=after, context=context)
+            if detail:
+                entry["detail"] = detail
+            self._audit.append(copy.deepcopy(entry))
+
+    def audit_after(self, after: int) -> dict:
+        with self._lock:
+            return {
+                "generation": self._generation,
+                "entries": copy.deepcopy([e for e in self._audit if e["seq"] > after]),
+                "oldest_seq": self._audit[0]["seq"] if self._audit else None,
+                "latest_seq": self._audit[-1]["seq"] if self._audit else None,
+            }
 
     def truth_received(self) -> None:
         with self._lock:

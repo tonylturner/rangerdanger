@@ -3,6 +3,7 @@ import json
 import threading
 from contextlib import ExitStack, contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 import pytest
 from eu_app import create_eu_app
@@ -14,6 +15,8 @@ from eu_state import EUProcessState
 from eu_support import MemoryClient, profile, profile_file
 from eu_truth_loop import TruthSolveLoop
 from pydantic import TypeAdapter
+
+LAB_ACTOR = dict(peer='local', protocol='lab', zone='unknown')
 
 
 def make_loop(tmp_path, config=None, **kwargs):
@@ -76,7 +79,7 @@ def test_protection_ack_rereads_all_and_resolves_once(tmp_path, fault, rmu_fault
     client = MemoryClient()
     client.protect = True
     loop = make_loop(tmp_path, client=client)
-    result = asyncio.run(loop.action(dict(action=fault)))
+    result = asyncio.run(loop.action(dict(action=fault), LAB_ACTOR))
     assert loop.solve_seq == 2
     assert len(client.gets) == 10
     assert len(client.posts) == 10
@@ -92,6 +95,10 @@ def test_protection_ack_rereads_all_and_resolves_once(tmp_path, fault, rmu_fault
     assert result['buses']['s3']['live']
     for record in result['devices'].values():
         assert record['delivered'] and record['solved_revision'] == record['revision']
+    audit = loop.state.audit_after(0)
+    assert len(audit['entries']) == 1
+    assert audit['entries'][0]['operation'] == fault
+    assert audit['entries'][0]['result'] == 'accepted'
 
 
 def test_409_stale_truth_rereads_full_vector_at_most_once(tmp_path):
@@ -179,7 +186,7 @@ def test_truth_loss_during_correction_does_not_solve_assumed_vector(tmp_path):
         loop.client.unreachable.add('rmu-2')
 
     loop.client.after_post = lose_truth
-    state = asyncio.run(loop.action(dict(action='fault_s1')))
+    state = asyncio.run(loop.action(dict(action='fault_s1'), LAB_ACTOR))
     assert loop.solve_seq == 1
     assert len(loop.client.posts) == 5
     assert state['truth_stale']
@@ -223,14 +230,14 @@ def test_f2_field_trip_ack_corrects_and_process_reset_cannot_clear_it(tmp_path):
     loop.client.truths['feeder-breaker']['position'] = 'open'
     loop.client.truths['rmu-1']['position'] = 'open'
     loop.client.truths['rmu-2']['position'] = 'closed'
-    state = asyncio.run(loop.action(dict(action='fault_s2')))
+    state = asyncio.run(loop.action(dict(action='fault_s2'), LAB_ACTOR))
     assert loop.solve_seq == 2
     first = next(p for p in loop.client.posts if p['device_id'] == 'f2-breaker')
     assert first['current_a'] >= 2000 and first['p_mw'] > 0
     assert state['f2_tripped'] and not state['buses']['s3']['live']
     assert state['devices']['f2-breaker']['solved_revision'] == 2
     assert state['devices']['f2-breaker']['current_a'] < 1
-    reset = asyncio.run(loop.action(dict(action='reset')))
+    reset = asyncio.run(loop.action(dict(action='reset'), LAB_ACTOR))
     assert reset['f2_tripped'] and not reset['buses']['s3']['live']
     # Instructor resets the field device, never a second process latch.
     loop.client.truths['f2-breaker'].update(position='closed', protection_tripped=False,
@@ -241,6 +248,7 @@ def test_f2_field_trip_ack_corrects_and_process_reset_cannot_clear_it(tmp_path):
 
 
 async def invoke(app, method, path, body=None, raw=None):
+    url = urlsplit(path)
     messages = []
     sent = False
     async def receive():
@@ -252,8 +260,8 @@ async def invoke(app, method, path, body=None, raw=None):
     async def send(message):
         messages.append(message)
     await app(dict(type='http', asgi=dict(version='3.0', spec_version='2.3'),
-                   http_version='1.1', method=method, scheme='http', path=path,
-                   raw_path=path.encode(), query_string=b'', headers=[],
+                   http_version='1.1', method=method, scheme='http', path=url.path,
+                   raw_path=url.path.encode(), query_string=url.query.encode(), headers=[],
                    client=('127.0.0.1', 1), server=('127.0.0.1', 2)), receive, send)
     status = next(m['status'] for m in messages if m['type'] == 'http.response.start')
     data = next(m['body'] for m in messages if m['type'] == 'http.response.body')
@@ -265,6 +273,124 @@ def app_with_memory(tmp_path):
     app.state.eu_solver.compile_circuit()
     app.state.eu_loop.client = MemoryClient()
     return app
+
+
+def test_process_fault_actions_share_cursor_audit_contract(tmp_path):
+    app = app_with_memory(tmp_path)
+    status, empty = asyncio.run(invoke(app, 'GET', '/api/audit'))
+    assert status == 200
+    assert isinstance(empty['generation'], int)
+    assert empty['entries'] == []
+    assert empty['latest_seq'] is None and empty['oldest_seq'] is None
+    for seq, (action, before, after) in enumerate([
+        ('fault_s1', 'none', 'S1'), ('fault_s2', 'S1', 'S2'),
+        ('clear_fault', 'S2', 'none'), ('clear_fault', 'none', 'none'),
+    ], start=1):
+        status, result = asyncio.run(invoke(
+            app, 'POST', '/api/process/actions', dict(action=action)))
+        assert status == 200 and result['fault_section'] == after
+        status, audit = asyncio.run(invoke(app, 'GET', f'/api/audit?after={seq - 1}'))
+        assert status == 200 and audit['generation'] == empty['generation']
+        assert audit['latest_seq'] == seq and audit['oldest_seq'] == 1
+        assert len(audit['entries']) == 1
+        entry = audit['entries'][0]
+        assert entry['seq'] == seq
+        assert entry['operation'] == action and entry['result'] == 'accepted'
+        assert entry['before']['fault_section'] == before
+        assert entry['after']['fault_section'] == after
+        assert entry['context'] == dict(peer='127.0.0.1:1', protocol='lab', zone='unknown')
+        assert entry['at'].endswith('Z')
+        if before == after:
+            assert entry['detail'] == 'no_op'
+    status, audit = asyncio.run(invoke(app, 'GET', '/api/audit?after=4'))
+    assert status == 200 and audit['entries'] == []
+    assert audit['latest_seq'] == 4 and audit['oldest_seq'] == 1
+
+
+@pytest.mark.parametrize('failure', ['truth', 'solver', 'delivery'])
+def test_process_action_audited_once_even_when_solve_degrades(tmp_path, failure):
+    app = app_with_memory(tmp_path)
+    if failure == 'truth':
+        app.state.eu_loop.client.unreachable.add('rmu-1')
+    elif failure == 'solver':
+        app.state.eu_solver.solve = lambda *_: dict(converged=False)
+    else:
+        app.state.eu_loop.client.fail_posts.add('rmu-1')
+    status, result = asyncio.run(invoke(
+        app, 'POST', '/api/process/actions', dict(action='fault_s1')))
+    assert status == 200 and result['fault_section'] == 'S1'
+    status, audit = asyncio.run(invoke(app, 'GET', '/api/audit'))
+    assert status == 200 and len(audit['entries']) == 1
+    assert audit['entries'][0]['result'] == 'accepted'
+    assert audit['entries'][0]['after']['fault_section'] == 'S1'
+
+
+def test_process_action_rejection_audited_without_mutation(tmp_path):
+    app = app_with_memory(tmp_path)
+    status, _ = asyncio.run(invoke(
+        app, 'POST', '/api/process/actions', dict(action='unknown')))
+    assert status == 400
+    status, audit = asyncio.run(invoke(app, 'GET', '/api/audit'))
+    assert status == 200 and len(audit['entries']) == 1
+    entry = audit['entries'][0]
+    assert entry['operation'] == 'unknown' and entry['result'] == 'rejected'
+    assert entry['detail'] == 'unknown_action'
+    assert entry['before'] == entry['after']
+    # A malformed body has no attributable action, as for field-device HTTP.
+    status, _ = asyncio.run(invoke(app, 'POST', '/api/process/actions', raw=b'{'))
+    assert status == 400
+    assert len(app.state.eu_state.audit_after(0)['entries']) == 1
+
+
+def test_process_action_cancellation_keeps_committed_control_audit(tmp_path):
+    loop = make_loop(tmp_path)
+
+    async def exercise():
+        started = asyncio.Event()
+
+        async def blocked_tick():
+            started.set()
+            await asyncio.Future()
+
+        loop._tick = blocked_tick
+        task = asyncio.create_task(loop.action(dict(action='fault_s1'), LAB_ACTOR))
+        await asyncio.wait_for(started.wait(), timeout=1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(exercise())
+    assert loop.controls.fault_section == 'S1'
+    audit = loop.state.audit_after(0)
+    assert len(audit['entries']) == 1
+    assert audit['entries'][0]['result'] == 'accepted'
+    assert audit['entries'][0]['after']['fault_section'] == 'S1'
+
+
+@pytest.mark.parametrize('after', ['-1', 'bad', '1.5', '18446744073709551616'])
+def test_process_audit_rejects_invalid_cursor(tmp_path, after):
+    app = app_with_memory(tmp_path)
+    status, _ = asyncio.run(invoke(app, 'GET', f'/api/audit?after={after}'))
+    assert status == 400
+
+
+def test_process_audit_bounded_retention_and_snapshot_isolation(tmp_path):
+    state = EUProcessState(profile(tmp_path))
+    before, after = dict(fault_section='none'), dict(fault_section='S1')
+    actor = dict(peer='local', protocol='lab', zone='unknown')
+    for _ in range(510):
+        state.record_action('fault_s1', 'accepted', before, after, actor)
+    after['fault_section'] = 'S2'
+    actor['peer'] = 'mutated'
+    audit = state.audit_after(0)
+    assert len(audit['entries']) == 500
+    assert (audit['oldest_seq'], audit['latest_seq']) == (11, 510)
+    assert audit['entries'][0]['after']['fault_section'] == 'S1'
+    assert audit['entries'][0]['context']['peer'] == 'local'
+    audit['entries'][0]['after']['fault_section'] = 'S2'
+    assert state.audit_after(0)['entries'][0]['after']['fault_section'] == 'S1'
+    assert [e['seq'] for e in state.audit_after(508)['entries']] == [509, 510]
+    assert state.audit_after(510)['entries'] == []
 
 
 @pytest.mark.parametrize('action,value,field,expected', [

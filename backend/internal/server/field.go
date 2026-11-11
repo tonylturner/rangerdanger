@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
@@ -91,16 +92,25 @@ func (s *Server) handleFieldState(c *gin.Context) {
 	c.JSON(http.StatusOK, fieldState{Devices: devices, Clock: clock, Process: electrical})
 }
 
-// handleFieldAudit is the device audit after ?after=.
+// handleFieldAudit is the selected device or process audit after ?after=.
 func (s *Server) handleFieldAudit(c *gin.Context) {
 	key := c.DefaultQuery("device", "breaker-1")
+	var endpoint, service string
+	var ok bool
 	switch key {
 	case "breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1":
+		endpoint, ok = nodeSimURL(rangeOf(c), key)
+		service = simService
+	case "process":
+		gen := rangeOf(c)
+		if slices.Contains(gen.Package.Capabilities, labs.CapabilityProcessTruth) {
+			endpoint, ok = solverURL(gen)
+		}
+		service = solverService
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device key"})
 		return
 	}
-	device, ok := nodeSimURL(rangeOf(c), key)
 	if !ok {
 		notSupported(c)
 		return
@@ -109,7 +119,7 @@ func (s *Server) handleFieldAudit(c *gin.Context) {
 	if !ok {
 		return
 	}
-	audit, err := fetchUpstreamObject(c.Request.Context(), simService, fmt.Sprintf("%s/api/audit?after=%d", device, after))
+	audit, err := fetchUpstreamObject(c.Request.Context(), service, fmt.Sprintf("%s/api/audit?after=%d", endpoint, after))
 	if err != nil {
 		upstreamFailed(c, err)
 		return

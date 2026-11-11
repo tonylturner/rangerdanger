@@ -218,16 +218,60 @@ func TestFieldAudit(t *testing.T) {
 }
 
 func TestFieldAuditPerDevice(t *testing.T) {
-	for _, key := range []string{"breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1", "bad", "", "feeder-breaker", "../rmu-1"} {
+	for _, key := range []string{"breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1", "process", "bad", "", "feeder-breaker", "../rmu-1"} {
 		t.Run(key, func(t *testing.T) {
 			const audit = `{"generation":1,"entries":[],"latest_seq":null,"oldest_seq":null}`
 			_, upstream := newUpstreamStub(t, map[string]stubResponse{"GET /" + key + "/api/audit?after=7": {http.StatusOK, audit}})
 			s := rangeServer(multiDeviceGeneration(t, upstream.URL), "weak")
 			rec := callRoute(s, s.handleFieldAudit, http.MethodGet, "/api/field/audit", "/api/field/audit?device="+key+"&after=7", "")
-			valid := key == "breaker-1" || key == "f2-breaker" || key == "rmu-1" || key == "rmu-2" || key == "oltc-1"
+			valid := key == "breaker-1" || key == "f2-breaker" || key == "rmu-1" || key == "rmu-2" || key == "oltc-1" || key == "process"
 			if valid && (rec.Code != http.StatusOK || rec.Body.String() != audit) || !valid && rec.Code != http.StatusBadRequest {
 				t.Fatalf("audit %q = %d %s", key, rec.Code, rec.Body)
 			}
 		})
+	}
+}
+
+func TestFieldProcessAuditRejectsInvalidCursor(t *testing.T) {
+	for _, after := range []string{"-1", "invalid", "18446744073709551616"} {
+		t.Run(after, func(t *testing.T) {
+			stub, upstream := newUpstreamStub(t, nil)
+			s := rangeServer(multiDeviceGeneration(t, upstream.URL), "weak")
+			rec := callRoute(s, s.handleFieldAudit, http.MethodGet, "/api/field/audit", "/api/field/audit?device=process&after="+after, "")
+			if rec.Code != http.StatusBadRequest || len(stub.requests) != 0 {
+				t.Fatalf("audit = %d %s; upstream requests %v", rec.Code, rec.Body, stub.requests)
+			}
+		})
+	}
+}
+
+func TestFieldProcessAuditMissingEndpoint(t *testing.T) {
+	s := rangeServer(usGeneration(nil), "weak")
+	rec := callRoute(s, s.handleFieldAudit, http.MethodGet, "/api/field/audit", "/api/field/audit?device=process", "")
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), notSupportedMessage) {
+		t.Fatalf("audit without process = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestFieldProcessAuditWithoutTruthCapability(t *testing.T) {
+	stub, upstream := newUpstreamStub(t, nil)
+	gen := multiDeviceGeneration(t, upstream.URL)
+	gen.Package.Capabilities = nil
+	s := rangeServer(gen, "weak")
+	rec := callRoute(s, s.handleFieldAudit, http.MethodGet, "/api/field/audit", "/api/field/audit?device=process", "")
+	if rec.Code != http.StatusNotFound || len(stub.requests) != 0 {
+		t.Fatalf("unsupported process audit = %d %s; requests %v", rec.Code, rec.Body, stub.requests)
+	}
+}
+
+func TestFieldProcessAuditPreservesEntries(t *testing.T) {
+	const audit = `{"generation":123,"entries":[{"seq":2,"operation":"fault_s2","result":"accepted","before":{"fault_section":"S1"},"after":{"fault_section":"S2"},"context":{"peer":"10.99.99.10:1234","protocol":"lab","zone":"unknown"}}],"latest_seq":2,"oldest_seq":1}`
+	stub, upstream := newUpstreamStub(t, map[string]stubResponse{
+		"GET /process/api/audit?after=1": {http.StatusOK, audit},
+	})
+	s := rangeServer(multiDeviceGeneration(t, upstream.URL), "weak")
+	rec := callRoute(s, s.handleFieldAudit, http.MethodGet, "/api/field/audit", "/api/field/audit?device=process&after=1", "")
+	if rec.Code != http.StatusOK || rec.Body.String() != audit || len(stub.requests) != 1 {
+		t.Fatalf("process audit = %d %s; upstream requests %v", rec.Code, rec.Body, stub.requests)
 	}
 }

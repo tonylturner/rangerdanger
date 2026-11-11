@@ -40,8 +40,10 @@ const maxUpstreamBody = 4 << 20
 const maxRouteRequestBody = 4 << 10
 
 // upstreamClient is shared: requests carry their own context and deadline.
-// The transport does not replay POSTs, so commands are never retried.
-var upstreamClient = &http.Client{}
+// Redirects must not replay commands or change their manifest destination.
+var upstreamClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
 
 // upstreamError is a range service answer other than the expected status.
 type upstreamError struct {

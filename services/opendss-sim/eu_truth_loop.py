@@ -3,10 +3,11 @@
 import asyncio
 import logging
 import time
+from dataclasses import asdict
 from uuid import uuid4
 
 from eu_circuit import EUFeederSolver
-from eu_controls import ProcessControls
+from eu_controls import ActionError, ProcessControls
 from eu_models import DeviceSnapshot, ElectricalSnapshot
 from eu_profile import EUProfile
 from eu_state import EUProcessState
@@ -44,10 +45,22 @@ class TruthSolveLoop:
             except TimeoutError:
                 pass
 
-    async def action(self, body: object) -> ElectricalSnapshot:
+    async def action(self, body: object, actor: dict) -> ElectricalSnapshot:
         async with self._lock:
-            self.controls.action(body)
+            before = asdict(self.controls)
+            try:
+                self.controls.action(body)
+            except ActionError as error:
+                if isinstance(body, dict) and isinstance(body.get("action"), str):
+                    self.state.record_action(body["action"], "rejected", before,
+                                             asdict(self.controls), actor, str(error))
+                raise
             self.state.controls_changed(self.controls)
+            after = asdict(self.controls)
+            # Controls have changed even if solving/delivery fails or is cancelled.
+            # Record once before any I/O, not once per solver retry.
+            self.state.record_action(body["action"], "accepted", before, after, actor,
+                                     "no_op" if before == after else "")
             await self._tick()
             return self.state.electrical()
 

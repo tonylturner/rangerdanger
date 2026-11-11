@@ -203,7 +203,7 @@ For packages whose manifest has a control centre and a field device simulator (`
 | `POST` | `/operator/reconnect` | No body. Relay a real CC link close/reconnect request, not a cache or simulator reset. Preserves CC `202` acceptance, `409` (reconnect pending or command in flight) and `503` (link not started); acceptance is not proof of a restored connection. Other CC failures are upstream failures. |
 | `GET` | `/operator/journal?after=<seq>` | Bounded CC link, GI, quality, status-change and command journal after a sequence number |
 | `GET` | `/field/state` | `{"devices":{<node-id>:<device state>},"clock":<time-source state>|null,"process":<electrical state>}`. `devices` holds every manifest `sim` endpoint except the time source, keyed by topology node ID; the `time-source` sim (GPS) is `clock`, `null` only when none is declared, and more than one is a `502`. Any upstream failure, including a timeout, returns `502 {"error":"..."}` naming the failed upstream; it never returns partial state. |
-| `GET` | `/field/audit?after=<seq>&device=<key>` | Per-device audit. Keys: `breaker-1`, `f2-breaker`, `rmu-1`, `rmu-2`, `oltc-1`; defaults to `breaker-1`. Other keys (including an explicit empty key) return `400`. |
+| `GET` | `/field/audit?after=<seq>&device=<key>` | Device or process audit. Keys: `breaker-1`, `f2-breaker`, `rmu-1`, `rmu-2`, `oltc-1`, `process`; defaults to `breaker-1`. Other keys (including an explicit empty key) return `400`. `process` requires the package's `process.truth` capability and solver endpoint, otherwise `404`. |
 
 ### Physical System (schema 3)
 
@@ -237,7 +237,40 @@ revisions may also be null. Controls `load_multiplier` and top-level
 `source_pu` multiply the running profile; reset restores controls to 1.0
 without changing whether the profile is enabled. Revisions, generations,
 epochs and solve/delivery diagnostics are in collapsed disclosures in the UI.
-Audit before/after snapshots use the same device schema 3.
+Device audit before/after snapshots use the same device schema 3.
+
+#### Process audit
+
+`GET /api/field/audit?device=process&after=0` proxies the process service's audit.
+The response is `{generation,entries,oldest_seq,latest_seq}`. `generation` is a
+boot-scoped integer; sequences start at 1 and the service retains the latest
+500 entries. Entries are returned in ascending sequence order, strictly after
+`after` (default 0, an unsigned 64-bit decimal integer; invalid cursors return
+`400`). The bounds describe the retained audit, not just the returned entries,
+and are null only when that audit is empty.
+
+Each process entry has:
+
+- `seq`: sequence number; `at`: UTC timestamp.
+- `operation`: the submitted action string, such as `fault_s1`, `fault_s2` or
+  `clear_fault`; `result`: `accepted` or `rejected`.
+- `before` and `after`: process-owned controls
+  `{fault_section,load_multiplier,source_pu,profile_enabled}`, where
+  `fault_section` is `none`, `S1` or `S2`, the multipliers are numbers, and
+  `profile_enabled` is Boolean. These are not schema 3 electrical snapshots
+  and contain no field-device state or solver/delivery evidence.
+- `context`: `{peer,protocol,zone}`. `peer` is the process service's observed
+  HTTP socket peer (`host:port`, `[IPv6]:port`, or `unknown` if unavailable),
+  `protocol` is `lab`, and `zone` is `unknown`. This is not an authenticated
+  student identity or an inferred trusted zone.
+- Optional `detail`: `no_op` for an accepted action with unchanged controls,
+  or a rejection reason such as `unknown_action`, `invalid_action` or
+  `invalid_value`; absent for other accepted actions.
+
+Accepted actions are recorded once after changing controls and before
+solving/delivery, so acceptance is not proof that either succeeded.
+Rejections with a string action are recorded with unchanged controls.
+Malformed JSON or bodies without a string action leave no audit entry.
 
 ### Operator state and reporting (schema 3)
 

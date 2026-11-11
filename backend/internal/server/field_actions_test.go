@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -134,6 +135,26 @@ func TestFieldActionReportsFailures(t *testing.T) {
 				t.Fatalf("upstream refusal lost: %s", rec.Body)
 			}
 		})
+	}
+}
+
+func TestFieldActionRejectsUpstreamRedirect(t *testing.T) {
+	var targetCalls atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetCalls.Add(1)
+		_, _ = w.Write([]byte(electricalFixture))
+	}))
+	defer target.Close()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", target.URL)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+		_, _ = w.Write([]byte(`{"reason":"moved"}`))
+	}))
+	defer upstream.Close()
+	s := rangeServer(multiDeviceGeneration(t, upstream.URL), "weak")
+	rec := callRoute(s, s.handleFieldAction, http.MethodPost, "/api/field/actions", "/api/field/actions", `{"device":"process","action":"fault_s1"}`)
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "returned 307") || targetCalls.Load() != 0 {
+		t.Fatalf("redirected action = %d %s; target calls = %d", rec.Code, rec.Body, targetCalls.Load())
 	}
 }
 
