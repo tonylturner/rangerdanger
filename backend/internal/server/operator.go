@@ -51,7 +51,8 @@ func fetchOperatorState(ctx context.Context, cc string) (map[string]json.RawMess
 	return state, nil
 }
 
-// handleOperatorState is the CC state plus the range it belongs to.
+// handleOperatorState adds range identity and display-only evidence metadata
+// to the CC state. It does not report a validator verdict.
 func (s *Server) handleOperatorState(c *gin.Context) {
 	gen := rangeOf(c)
 	cc, ok := controlCentreURL(gen)
@@ -66,6 +67,7 @@ func (s *Server) handleOperatorState(c *gin.Context) {
 	}
 	state["package_id"], _ = json.Marshal(gen.Package.ID)
 	state["range_generation"], _ = json.Marshal(gen.ID)
+	state["gi_evidence_window_ms"], _ = json.Marshal(conduitAttemptLimit.Milliseconds())
 	c.JSON(http.StatusOK, state)
 }
 

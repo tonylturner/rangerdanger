@@ -75,6 +75,8 @@ describe("PolicyStatusBanner", () => {
     expect(banner(pkg, "improved", "weak")).toContain("use Reset to Weak below");
     expect(banner(pkg, "weak", "hardened")).toContain("Hardened Segmentation (reference or your custom policy)");
     expect(banner(pkg, "weak", "hardened")).toContain("Author, review, commit and read back in containd");
+    expect(banner(pkg, "weak", "hardened")).toContain("use the catch-up controls below");
+    expect(banner(pkg, "weak", "hardened")).not.toContain("Apply Hardened");
     expect(banner(pkg, "weak", "improved")).not.toContain("Network Console");
     expect(banner(pkg, "custom", "weak")).toContain("expects the Weak Baseline");
   });

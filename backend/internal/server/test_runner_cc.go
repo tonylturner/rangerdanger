@@ -51,7 +51,7 @@ func (s *Server) executeSuiteCheck(ctx context.Context, gen *lifecycle.Generatio
 		path := filepath.Join(s.cfg.LabDefinitionsPath, "packages", gen.Package.ID, "protocols", "points.json")
 		budget, err := suiteCCBudget(path)
 		if err != nil {
-			return []StepActionResult{{Action: "cc_link_fresh", Detail: "CC preparation timers: " + err.Error()}}
+			return []StepActionResult{{Action: euCCLinkCheckLabel, Detail: "CC preparation timers: " + err.Error()}}
 		}
 		prepared := prepareSuiteCC(ctx, gen, budget)
 		if !prepared.Success {
@@ -67,7 +67,7 @@ func prepareSuiteCC(parent context.Context, gen *lifecycle.Generation, budget ti
 	ticker := time.NewTicker(suiteCCPoll)
 	defer ticker.Stop()
 
-	result := StepActionResult{Action: "cc_link_fresh", Detail: "CC evidence not collected"}
+	result := StepActionResult{Action: euCCLinkCheckLabel, Detail: "CC evidence not collected"}
 	requested := false
 	var requestedEpoch string
 	var requestedAt time.Time

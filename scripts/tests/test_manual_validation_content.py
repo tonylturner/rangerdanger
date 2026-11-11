@@ -20,7 +20,7 @@ def lesson(name, eu):
 
 class ManualValidationContentTests(unittest.TestCase):
     def test_deny_correlation_is_taught_in_static_dynamic_retest_and_both_capture_steps(self):
-        from lab_commands_inventory import extract
+        from scripts.lib.lab_commands_inventory import extract
         for eu, package in ((False, "us-dnp3-substation"), (True, "eu-iec104-substation")):
             implementation = lesson("firewall-implementation", eu)
             retest = next(s["description"] for s in implementation["steps"]
@@ -147,7 +147,8 @@ class ManualValidationContentTests(unittest.TestCase):
                 core = apply["description"].split(HINT)[0]
                 for field in ("full diff", "read back", "commit once"):
                     self.assertIn(field, core)
-                self.assertNotIn("Apply Your Plan", core)
+                self.assertTrue(core.startswith("Use **Apply Your Plan** now"))
+                self.assertNotIn(":::hint Optional catch-up", apply["description"])
                 if name == "vendor-rdp-compromise":
                     for field in ("Enterprise → vendor", "Vendor → field", "tester", "operator", "change owner"):
                         self.assertIn(field, end["description"])

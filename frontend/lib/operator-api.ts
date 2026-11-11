@@ -78,6 +78,8 @@ export type OperatorState = {
   points: OperatorPoint[];
   package_id: string;
   range_generation: number;
+  // Backend-owned window for display hints, not a validator verdict.
+  gi_evidence_window_ms: number;
 };
 
 export type CommandOperation = "open" | "close" | "lower" | "raise" | "auto" | "manual";
@@ -306,9 +308,10 @@ function validPoint(p: unknown): boolean {
   }
 }
 export function validOperatorState(s: unknown): s is OperatorState {
-  if (!isObject(s) || !exactKeys(s, ["schema", "snapshot_seq", "rendered_at", "cache_epoch", "link", "points", "package_id", "range_generation"]) ||
+  if (!isObject(s) || !exactKeys(s, ["schema", "snapshot_seq", "rendered_at", "cache_epoch", "link", "points", "package_id", "range_generation", "gi_evidence_window_ms"]) ||
     s.schema !== 3 || !integer(s.snapshot_seq) || s.snapshot_seq < 0 || !timestamp(s.rendered_at) ||
     !strings(s, ["cache_epoch", "package_id"]) || !integer(s.range_generation) || s.range_generation < 0 ||
+    !integer(s.gi_evidence_window_ms) || s.gi_evidence_window_ms <= 0 ||
     !Array.isArray(s.points) || !s.points.every(validPoint)) return false;
   const l = s.link;
   if (!isObject(l) || !exactKeys(l, ["state", "peer", "since", "last_rx_at", "connection_seq", "gi"]) ||

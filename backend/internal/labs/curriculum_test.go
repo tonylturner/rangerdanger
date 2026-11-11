@@ -109,10 +109,10 @@ func TestCurriculumStrictDecode(t *testing.T) {
 		{"unknown topology node", strings.ReplaceAll(string(raw), "${ip:cc-1}", "${ip:missing}"), "unknown topology reference"},
 		{"unknown topology network", strings.ReplaceAll(string(raw), "${zone:field_net}", "${zone:missing}"), "unknown topology reference"},
 		{"malformed topology reference", strings.ReplaceAll(string(raw), "${ip:cc-1}", "${ips:cc-1}"), "invalid topology reference"},
-		{"reserved interpolation in prose", strings.Replace(string(raw), "noPlan: |+", "noPlan: |+\n  Literal ${ prose", 1), "invalid topology reference"},
+		{"reserved interpolation in prose", strings.Replace(string(raw), "Build a [plan]", "Literal ${ prose Build a [plan]", 1), "invalid topology reference"},
 		{"unsupported schema", strings.Replace(string(raw), "schema: 1", "schema: 2", 1), "schema must be 1"},
 	}
-	for _, field := range []string{"policy", "baselineRules", "enterpriseToVendorRule", "flags", "loggingPrefixes", "legacyDisplayMutation", "legacyEffects"} {
+	for _, field := range []string{"tests", "negativeEmpty", "policy", "baselineRules", "enterpriseToVendorRule", "flags", "loggingPrefixes", "legacyDisplayMutation", "legacyEffects"} {
 		cases = append(cases, struct{ name, data, want string }{"retired " + field, string(raw) + "\n" + field + ": []\n", "field " + field})
 	}
 	for _, tc := range cases {
@@ -204,7 +204,7 @@ func TestCurriculumUSExtraction(t *testing.T) {
 			t.Fatalf("wire DTO missing %s", want)
 		}
 	}
-	for _, retired := range []string{"policy", "baselineRules", "enterpriseToVendorRule", "flags", "loggingPrefixes", "legacyEffects", "legacyDisplayMutation", "interfaces", "zones", "plan"} {
+	for _, retired := range []string{"tests", "negativeEmpty", "policy", "baselineRules", "enterpriseToVendorRule", "flags", "loggingPrefixes", "legacyEffects", "legacyDisplayMutation", "interfaces", "zones", "plan"} {
 		if strings.Contains(string(wire), `"`+retired+`":`) {
 			t.Fatalf("retired field %s served", retired)
 		}

@@ -1,4 +1,4 @@
-import type { CompiledPlan, CurriculumBinding, PlanAction, PlanExpectation } from "./api";
+import type { CompiledPlan, CurriculumBinding, PlanAction, PlanExpectation, PlanICS } from "./api";
 
 export function actionName(id: string, binding: CurriculumBinding): string {
   return binding.catalog.find((a) => a.id === id)?.title ?? id;
@@ -36,20 +36,62 @@ function cell(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 }
 
+function inspectionDetails(ics: PlanICS): string {
+  const protocol = ics.protocol ? { iec104: "IEC 104", modbus: "Modbus", dnp3: "DNP3" }[ics.protocol] : "any";
+  const details: string[] = [`Protocol: ${protocol}`];
+  const list = (label: string, values: (string | number)[] | undefined) => {
+    if (values?.length) details.push(`${label}: ${values.join(", ")}`);
+  };
+  const flag = (label: string, value: boolean | undefined) => {
+    if (value !== undefined) details.push(`${label}: ${value ? "yes" : "no"}`);
+  };
+  if (ics.direction) details.push(`Direction: ${ics.direction}`);
+  if (ics.mode) details.push(`Mode: ${ics.mode}`);
+  flag("Read only", ics.readOnly);
+  if (ics.protocol === "iec104") {
+    list("Type IDs", ics.typeIds);
+    list("Classes", ics.classes);
+    list("Common addresses (CA)", ics.ca);
+    list("Information object addresses (IOA)", ics.ioa?.map(({ start, end }) => start === end ? String(start) : `${start}–${end}`));
+    list("Causes of transmission (COT)", ics.cot);
+    list("Originator addresses", ics.originators);
+    flag("Negative confirmation", ics.negative);
+    flag("Test", ics.test);
+    if (ics.selectExecute) details.push(`Select/execute: ${ics.selectExecute}`);
+    list("Command states", ics.commandStates);
+    list("Command qualifiers", ics.commandQualifiers);
+  } else {
+    list("Function codes", ics.functionCode);
+    flag("Write only", ics.writeOnly);
+    if (ics.protocol === "modbus") {
+      if (ics.unitId !== undefined) details.push(`Unit ID: ${ics.unitId}`);
+      list("Addresses", ics.addresses);
+    }
+  }
+  return details.join("; ");
+}
+
+function tableRow(values: string[]): string {
+  return `| ${values.map(cell).join(" | ")} |`;
+}
+
 export function renderRuleTable(plan: CompiledPlan, binding: CurriculumBinding): string {
   return [
-    "| # | Rule | Source zones / addresses | Destination zones / addresses | Protocol / port | Decision / effect | Origin | Log | Inspection |",
-    "|---|---|---|---|---|---|---|---|---|",
-    ...plan.rules.map(({ rule: r, origin }, i) => [
-      i + 1, `${r.id}${r.description ? `: ${r.description}` : ""}`, `${r.sourceZones?.join(", ") || "any"} / ${r.sources?.join(", ") || "any"}`,
-      `${r.destZones?.join(", ") || "any"} / ${r.destinations?.join(", ") || "any"}`,
-      r.protocols?.map((p) => `${p.name}/${p.port || "any"}`).join(", ") || "any",
-      r.ics?.mode === "monitor" ? `would ${r.action === "DENY" ? "deny" : "allow"} (monitor)` : r.action,
-      origin.kind === "observe"
+    "| Rule | From | To | Port | Action | Log |",
+    "|---|---|---|---|---|---|",
+    ...plan.rules.flatMap(({ rule: r, origin }) => {
+      const provenance = origin.kind === "observe"
         ? `observation${origin.action ? `: ${actionName(origin.action, binding)} (${origin.action})` : ""} — monitor only, not an L4 rule`
-        : `${origin.kind}${origin.action ? `: ${actionName(origin.action, binding)}` : ""}${origin.kind === "deferred" ? " — Weak exposure open" : ""}`,
-      r.log ? "yes" : "no", r.ics ? JSON.stringify(r.ics) : "none",
-    ].map((v) => cell(String(v))).join(" | ")).map((row) => `| ${row} |`),
+        : `${origin.kind}${origin.action ? `: ${actionName(origin.action, binding)}` : ""}${origin.kind === "deferred" ? " — Weak exposure open" : ""}`;
+      const details = `**Rule details:** Origin: ${provenance}${r.ics ? `; ICS selectors: ${inspectionDetails(r.ics)}` : ""}`;
+      return [tableRow([
+        `${r.id}${r.description ? `: ${r.description}` : ""}`, `${r.sourceZones?.join(", ") || "any"} / ${r.sources?.join(", ") || "any"}`,
+        `${r.destZones?.join(", ") || "any"} / ${r.destinations?.join(", ") || "any"}`,
+        r.protocols?.map((p) => `${p.name}/${p.port || "any"}`).join(", ") || "any",
+        r.ics?.mode === "monitor" ? `would ${r.action === "DENY" ? "deny" : "allow"} (monitor)` : r.action,
+        r.log ? "yes" : "no",
+      ]), tableRow([details, "", "", "", "", ""])];
+    }),
   ].join("\n");
 }
 

@@ -1,6 +1,6 @@
 {
   "command": "^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\\s",
-  "cli": "^(containd cli\\b|show\\s+[a-z]|set\\s+(firewall|interface|zone|nat|route|ip|system|syslog|port-forward|dataplane|proxy|outbound)\\b|commit(\\s+confirmed\\b|\\s*$)|confirm\\s*$|rollback\\s*$|delete\\s+firewall\\b|export\\s+config\\b|import\\s+config\\b)",
+  "cli": "^(containd cli\\b|show\\s+[a-z]|(?:add|move)\\s+firewall\\s+rule\\b|set\\s+(firewall|interface|zone|nat|route|ip|system|syslog|port-forward|dataplane|proxy|outbound)\\b|commit(\\s+confirmed\\b|\\s*$)|confirm\\s*$|rollback\\s*$|delete\\s+firewall\\b|export\\s+config\\b|import\\s+config\\b)",
   "copy": "^(xfreerdp|xtightvncviewer|vncviewer|rdesktop|sshpass)\\s",
   "marker": "(?<!not )\\b(?:from|on|via)\\s+(?:the\\s+)?[`*]*([a-z][a-z0-9-]*)\\b",
   "sources": {

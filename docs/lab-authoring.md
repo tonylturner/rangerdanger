@@ -250,6 +250,24 @@ Use **From the host terminal:** for host-side commands: these are copy-only,
 with no Run button. Switch back with another source marker before container
 commands. Avoid combining two source headers above two separate commands.
 
+For long-running commands that students must leave running in a terminal, wrap
+the indented command in `:::interactive`:
+
+```text
+From the fw-1 terminal:
+:::interactive
+    tcpdump -i any -nn -U -G 1200 -W 1 -w /data/captures/validation.pcap
+:::
+```
+
+Commands use the same tool recognition, continuation and source-marker rules,
+but always render **copy-only**, with no Run button and the note
+"Long-running: paste into the fw-1 terminal and leave it running."
+Prose inside remains prose. The block inherits the surrounding source marker;
+markers inside stay local, just as in hints. Supply a source marker or a step
+`node` so the note names the intended terminal. Keep the exercise tab open;
+app links open a second tab, and hiding the terminal panel does not stop it.
+
 The US lab-commands smoke test (`./scripts/lab-commands-smoke.sh`)
 also prefers source headers, but maintains a separate reviewed command
 inventory. Check its extraction tests and expectations as well as frontend

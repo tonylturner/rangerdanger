@@ -179,6 +179,7 @@ export function TerminalPanel({
         <button
           key={nodeId}
           onClick={() => { setActiveTerminalNode(nodeId); setPanelMode("terminal"); }}
+          aria-pressed={activeTerminalNode === nodeId}
           className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
             activeTerminalNode === nodeId
               ? "bg-cyan-950/60 text-cyan-400 border border-cyan-800/50"
@@ -212,13 +213,13 @@ export function TerminalPanel({
 
     {/* Content */}
     <div className="relative" style={{ height: panelHeight }}>
-      {panelMode === "terminal" && (
+      <div hidden={panelMode !== "terminal"}>
         <SharedTerminalPanel
           nodes={exerciseNodes}
           activeNode={activeTerminalNode}
           height={panelHeight}
         />
-      )}
+      </div>
       {panelMode === "ui" && NODE_UI_URLS[activeTerminalNode] && (
         <iframe
           title={`${NODE_LABELS[activeTerminalNode] || activeTerminalNode} UI`}

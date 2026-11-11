@@ -37,8 +37,6 @@ type Curriculum struct {
 	PlanningOnly      []string                         `yaml:"planningOnly" json:"planningOnly"`
 	Phases            map[string]string                `yaml:"phases" json:"phases"`
 	NoPlan            string                           `yaml:"noPlan" json:"noPlan"`
-	Tests             []CurriculumTest                 `yaml:"tests" json:"tests"`
-	NegativeEmpty     string                           `yaml:"negativeEmpty" json:"negativeEmpty"`
 	NodeMap           map[string]CurriculumNodes       `yaml:"nodeMap" json:"nodeMap"`
 	NodeInference     []CurriculumNodeInference        `yaml:"nodeInference" json:"nodeInference"`
 }
@@ -68,10 +66,6 @@ type CurriculumGroup struct {
 	Title       string `yaml:"title" json:"title"`
 	Description string `yaml:"description" json:"description"`
 	Effect      string `yaml:"effect" json:"effect"`
-}
-type CurriculumTest struct {
-	Kind string `yaml:"kind" json:"kind"`
-	Text string `yaml:"text" json:"text"`
 }
 type CurriculumNodes struct {
 	Primary string   `yaml:"primary" json:"primary"`

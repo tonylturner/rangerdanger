@@ -14,7 +14,7 @@ CLI_RE = re.compile(GRAMMAR["cli"])
 COPY_RE = re.compile(GRAMMAR["copy"])
 MARKER_RE = re.compile(GRAMMAR["marker"], re.I)
 FENCE_RE = re.compile(
-    r"^:::(?:hint(?:\s+.+)?|decision\s+.+|"
+    r"^:::(?:hint(?:\s+.+)?|interactive|decision\s+.+|"
     r"(?:findings-panel|notes-panel|plan-coverage|generate-traffic-button|"
     r"icon)(?:\s+.+)?)$")
 
@@ -66,8 +66,10 @@ def marker(text):
 def description_commands(text, inherited=""):
     """Mirror splitDescription fences; one shared vocabulary/source grammar.
 
-    Return command, line, source, UI class. Hints recurse with their
-    inherited source; ignored structured bodies must not create phantom Runs.
+    Return command, line, source, smoke class. Hints and interactive blocks
+    recurse with their inherited source; local markers do not leak outward.
+    Interactive is copy-only in the UI, but retains the normal reviewed smoke
+    class so a capture still runs through the shared capture lifecycle.
     """
     lines = text.split("\n")
     result, prose = [], []
@@ -81,7 +83,7 @@ def description_commands(text, inherited=""):
             i += 1
             while i < len(lines) and lines[i].strip() != ":::":
                 i += 1
-            if re.match(r"^:::hint(?:\s|$)", opening):
+            if re.match(r"^:::(?:hint(?:\s|$)|interactive$)", opening):
                 for cmd, line, src, kind in description_commands(
                         "\n".join(lines[start:i]), source):
                     result.append((cmd, start + line, src, kind))
@@ -139,7 +141,7 @@ def extract(root=ROOT, target="", package_id=US):
                 prompt = "cli" if kind == "cli" or (node == "fw-1" and not entry) else "shell"
                 skip = (kind == "copy" or node == "host" or
                         re.search(r"/api/firewall/apply|^docker |^ssh\b", command) or
-                        re.match(r"^(?:import|delete|set|commit|confirm|vi)\b", command))
+                        re.match(r"^(?:add|move|import|delete|set|commit|confirm|vi)\b", command))
                 rows.append(dict(
                     package=package_id, scenario=scenario, step=idx, step_id=step["id"],
                     title=step["title"], policy=step.get("expected_config") or "weak",

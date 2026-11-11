@@ -49,6 +49,10 @@ describe("reviewed smoke contracts match UI dispatch", () => {
             if (cmd.cli) {
               expect(contract.container, key).toBe(nodes["fw-1"]);
               expect(contract.prompt, key).toBe("cli");
+            } else if (source !== "host" && cmd.interactive && contract.action === "RUN") {
+              // Long-running commands are copy-only in the UI but stay reviewed smoke rows on their node.
+              expect(contract.container, key).toBe(nodes[source]);
+              expect(contract.prompt, key).toBe("shell");
             } else if (source === "host" || cmd.copyOnly) {
               expect(contract.action, key).toBe("SKIP");
               expect(contract.reason, key).toBeTruthy();

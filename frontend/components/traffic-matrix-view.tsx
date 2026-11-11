@@ -234,14 +234,14 @@ export function TrafficMatrixView({
               <button
                 onClick={handleGenerate}
                 disabled={generating || stopping}
-                aria-label="Generate Traffic"
+                aria-label="Generate scenario traffic"
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-cyan-700/60 bg-cyan-950/30 text-cyan-400 transition-colors hover:border-cyan-600 hover:bg-cyan-900/40 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Zap className={`h-3.5 w-3.5 ${generating ? "animate-pulse" : ""}`} />
               </button>
             </TooltipTrigger>
             <TooltipContent>
-              {generating ? "Generating…" : "Generate Traffic"}
+              {generating ? "Generating…" : "Generate scenario traffic"}
             </TooltipContent>
           </Tooltip>
           )}

@@ -159,6 +159,39 @@ steps:
     replacements in Phase 3 to this same shared candidate before reviewing the
     full diff and committing once. Do not create an outage to demonstrate a gap.
 
+    ### What Weak actually contains
+
+    The seven Weak ALLOW rules bundle sources and services as follows:
+
+    | Weak rule ID | Bundled access |
+    |---|---|
+    | `weak-iec104-exposure` | wan + dmz + lan4 → lan1 TCP/2404 |
+    | `weak-rtu-modbus` | all lan1 sources → lan2 TCP/502 |
+    | `weak-foreign-field-modbus` | wan + dmz → lan2 TCP/502 |
+    | `weak-historian-ingest` | all lan4 sources → lan5 TCP/8081 |
+    | `weak-historian-read` | wan + dmz + lan4 → lan5 TCP/8080 |
+    | `weak-enterprise-vendor-remote` | wan → vendor 10.20.20.10 TCP/3389,5900 |
+    | `weak-vendor-station-web` | all dmz sources → lan1 TCP/8080 |
+
+    For the full reference, stage these deletes from the fw-1 CLI. For a
+    partial request, use only the relevant deletes, not the entire block:
+
+        delete firewall rule weak-iec104-exposure
+        delete firewall rule weak-rtu-modbus
+        delete firewall rule weak-foreign-field-modbus
+        delete firewall rule weak-historian-ingest
+        delete firewall rule weak-historian-read
+        delete firewall rule weak-enterprise-vendor-remote
+        delete firewall rule weak-vendor-station-web
+
+    A bundled rule needs splitting when only part of its access is closed.
+    For example, closing Enterprise→RTU while deferring Vendor→RTU means
+    replacing `weak-iec104-exposure` with the pinned CC allow AND a separate
+    dmz→lan1 TCP/2404 deferred allow, before the diagnostic deny. Do not keep
+    wan in that deferred rule. Likewise split wan/dmz field access if only
+    one source zone is funded for closure. Keep accepted risk explicitly;
+    never delete a bundle and silently close its deferred members.
+    Do not commit these deletes until Phase 3 replacements are staged too.
     ### Review a proposed change
 
     **Prepared change request CR-22** removes broad cross-zone trust, keeps
@@ -189,7 +222,7 @@ steps:
     What should happen to this proposed change before commit?
     :::why
     Correct the missing operational allow before commit: the Control Centre loses fresh observations even while field supply may remain healthy.
-    Default DENY cannot replace a required allow. A system cross-check does not
+    Default DENY cannot replace a required allow. **Cross-check the current system** does not
     approve a written change request.
     :::
 
@@ -230,7 +263,6 @@ steps:
     | Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |
     | Engineering→PLC web | 10.20.20.20→10.30.30.30 | TCP/8080 |
 
-
     Stage the Phase 2 deletes and all replacements in the same shared candidate.
     Author these six intents with source and destination pins in containd.
     Keep historian read 8080 separate from CC ingest 8081. Engineering PLC web
@@ -240,8 +272,41 @@ steps:
     before `deny-unauthorized-modbus`, CC ingest before
     `deny-unauthorized-historian-ingest`, and engineering web before
     `deny-unauthorized-plc-web`. If recreating the CC allow, insert or move it
-    before its deny. Preserve required operational allows, logged diagnostic
-    denies and reserved management access. Review configured order and shadow warnings before commit.
+    before its deny. Create the logged diagnostic denies; preserve required
+    operational allows and reserved management access. Review configured order and shadow warnings before commit.
+
+    ### Worked rule: CC → RTU
+
+    On **Firewall Rules**, open **Create rule** below the table. Set ID
+    `control-centre-to-rtu-iec104`, action ALLOW, source zone `lan4`, destination
+    zone `lan1`, source `10.60.60.20/32`, destination `10.30.30.20/32`, protocol
+    TCP and port 2404. Stage the rule. Use **Move to… → top** so the required
+    exception precedes the broader deny. Saving and moving only stage edits.
+
+    Equivalent commands from the fw-1 configuration CLI (create once, not both
+    UI and CLI; if the ID exists, edit it with `set` instead of adding it again):
+
+        add firewall rule control-centre-to-rtu-iec104 ALLOW lan4 lan1
+        set firewall rule control-centre-to-rtu-iec104 --sources 10.60.60.20/32 --destinations 10.30.30.20/32 --protocols tcp:2404
+        move firewall rule control-centre-to-rtu-iec104 top
+
+    Repeat this create → pin → order procedure for the other five conduits.
+    Create the four logged diagnostic DENY rules below; Weak has none. Use
+    `log: true` (the form's Log setting, or `set firewall rule <id> --log true`).
+    Each rule accepts source zones wan, dmz, lan1, lan2, lan3, lan4, lan5 and
+    TCP only; destination scope is below. Do not add a management allow or
+    change the reserved management envelope.
+
+    | Rule ID | Destination zone / address | TCP port | Place after |
+    |---|---|---|---|
+    | `deny-unauthorized-iec104` | lan1, any station address | 2404 | CC→RTU allow |
+    | `deny-unauthorized-modbus` | lan2, any field address | 502 | RTU and PLC allows |
+    | `deny-unauthorized-historian-ingest` | lan5, 10.70.70.40/32 | 8081 | CC ingest allow |
+    | `deny-unauthorized-plc-web` | lan1, 10.30.30.30/32 | 8080 | engineering web allow |
+
+    Under a partial request, keep deferred allows before overlapping denies.
+    The first matching enforcing rule wins. Review the full candidate; never
+    commit the temporary broad rule created by `add` before applying its pins.
 
     Before the single commit, compare the complete candidate with your request.
     On **Configuration**, **Review changes** leads with entity summaries;
@@ -256,7 +321,7 @@ steps:
     and retest operations. The export is a record, not an import or restore command.
 
     :::hint No semantic enforcement claim
-    Keep the six L4 allows and four diagnostic denies unchanged. If the request
+    Create the six L4 allows and four diagnostic denies before adding monitoring. If the request
     includes **Monitor IEC 104 commands**, add `observe-cc-breaker-command`,
     `observe-cc-oltc-step` and `observe-cc-oltc-raise-only` as separate IEC 104
     rules, each explicitly `mode: monitor`. Never overlay a monitor predicate
@@ -278,18 +343,18 @@ steps:
     expect:
       firewall_config: improved
 - id: phase-4-enable-logging-and-visibility
-  title: Phase 4 - Enable logging and visibility
+  title: Phase 4 - Reconnect the Control Centre after commit
   expected_config: hardened
   description: |
-    Keep this logging change separate from the Phase 3 rule change. Stage only
-    approved visibility edits, review the full diff with `show diff`, then use
-    `commit` (or **Commit** on **Configuration**). Read back the running rules
-    and record the new identity and UTC time. Retest operations after this commit.
-    If visibility work is deferred, record that decision and leave the rules unchanged.
+    Reconnect the Control Centre now, after the Phase 3 commit, and wait for
+    fresh GI and observations before testing. This checks a new handshake
+    against the committed rules, not a retained session. The Phase 3 candidate
+    already includes the required logged denies. If additional visibility
+    work is deferred, record that decision and leave the rules unchanged.
 
     Preserve PCAP and the UTC commit boundary. Keep `deny-unauthorized-iec104` after the CC allow: it includes the CC zone, TCP/2404, DENY and `log: true`. If the allow is missing, new CC→RTU sessions hit this explicit logged deny rather than the silent default drop. A custom policy must keep equivalent logged coverage for this lesson.
 
-    Compare the **Control Centre** link/quality, **Network Map** CC→RTU conduit and **Live DPI Events** tuple/rule. A missing CC allow stops established traffic on its next packet after commit. Sessions may still retain the conntrack entry, which is not delivery proof. Separately check fresh-handshake admission and DPI inspection from SYN: force a fresh session after every commit with the portal operator API. From the host terminal:
+    Compare the **Control Centre** link/quality, **Network Map** CC→RTU conduit and **Live Firewall Events** tuple/rule. A missing CC allow stops established traffic on its next packet after commit. Sessions may still retain the conntrack entry, which is not delivery proof. Separately check fresh-handshake admission and DPI inspection from SYN: force a fresh session after every commit with the portal operator API. From the host terminal:
 
         curl -fsS -X POST http://localhost:8088/api/operator/reconnect
 
@@ -447,10 +512,10 @@ steps:
     paths as prevention gaps with named risk owners. A timeout alone does not
     identify the cause; retain packet evidence and operator observations for
     Lab 2.4. TCP reachability does not establish command filtering.
-    Write actual results in Notes. An optional system cross-check does not grade
+    Write actual results in Notes. **Cross-check the current system** does not grade
     your written test plan or sign the test record.
 
-    For every negative row, correlate the named host's connect timeout with a
+    For logged-rule negatives, correlate the named host's connect timeout with a
     fw-1 DENY event in the same UTC window. In the
     fw-1 containd configuration CLI (type `containd cli` if in Linux), type:
 
@@ -459,6 +524,10 @@ steps:
     Match `KIND=firewall.rule.hit`, `action=DENY`, `proto=tcp`, `port=<p>` and
     `ruleId=<rule>` to that row's real SRC host:port, DST and UTC time. Record
     its event ID and matching ruleId, not merely the presence of any deny.
+    For this phase, prove at least one selected logged-rule deny with timeout
+    and its correlated event. Default-drop rows (for example Enterprise→vendor
+    RDP/VNC) have no rule-hit event; record them separately and use the Lab 2.4
+    capture procedure for attribution. Never change policy to manufacture an event.
     A rule without logging or a default drop can deny without an event:
     absence of an event is not proof of an allow. An event alone does not
     prove the application is unaffected; keep the operator observations.

@@ -485,13 +485,13 @@ Staged $now for version ``$Version``.
 ## Contents
 
 - ``images-amd64.tar`` -- Docker images for Intel / AMD64 hosts
-- ``images-arm64.tar`` -- Docker images for Apple Silicon / ARM64 hosts (openplc is cross-included as the amd64 image and runs under Rosetta 2), plus ``$BINFMT_IMAGE`` for qemu-x86_64 on arm64 Linux
-- ``rangerdanger.tgz`` -- Repo archive at $shortSha ($($lastSubject.Substring(0, [Math]::Min(80, $lastSubject.Length))))
+- ``images-arm64.tar`` -- Docker images for Apple Silicon / ARM64 hosts. Includes the amd64 openplc image (cross-arch; macOS runs it under Rosetta 2) plus ``$BINFMT_IMAGE``, which ``setup.sh`` uses to register amd64 emulation on arm64 *Linux* so openplc runs fully offline.
+- ``rangerdanger.tgz`` -- Repo archive at $shortSha ($lastSubject)
 $kernelReadmeRow
 
 ## Use
 
-Copy the four files to the student's laptop, then:
+Copy the whole folder, including hidden files such as .version, to the student's laptop, then:
 
 ``````sh
 tar xzf rangerdanger.tgz -C ~
@@ -499,7 +499,7 @@ cd ~/rangerdanger
 ./setup.sh --from-tarballs <dir-containing-the-tarballs>
 ``````
 
-(or ``./setup.ps1 -FromTarballs <dir>`` on Windows.)
+(or ``./setup.ps1 -FromTarballs <dir>`` on Windows).
 
 ``setup.sh`` / ``setup.ps1`` auto-detects the host architecture and
 loads the right ``images-<arch>.tar`` before bringing the stack up.
@@ -516,7 +516,7 @@ docker run --privileged --rm $BINFMT_IMAGE --install amd64
 # CRLF, which `sh` reads as part of each value it compares.
 [System.IO.File]::WriteAllText(
     (Join-Path $OutDir "README.md"),
-    ($readme -replace "`r`n", "`n"),
+    (($readme -replace "`r`n", "`n") + "`n"),
     (New-Object System.Text.UTF8Encoding $false))
 Say "wrote $OutDir\README.md"
 

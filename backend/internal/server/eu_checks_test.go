@@ -89,6 +89,14 @@ func TestEUCheckDispatchAndMissingEvidence(t *testing.T) {
 			pass := true
 			for _, result := range results {
 				pass = pass && result.Success
+				switch result.Action {
+				case "Breaker closed", "Feeder supply present", "CC link, GI and station delivery", "RMU1 closed and RMU2 open", "OLTC remote automatic mode and tap in range":
+				default:
+					t.Fatalf("non-human check label: %+v", result)
+				}
+				if strings.Count(strings.ToLower(result.Detail), "missing evidence:") > 1 {
+					t.Fatalf("doubled evidence prefix: %+v", result)
+				}
 			}
 			if pass != (failure == "") {
 				t.Fatalf("results=%+v", results)
@@ -107,9 +115,9 @@ func TestEUCheckDispatchAndMissingEvidence(t *testing.T) {
 					}
 				}
 			}
-			for _, expect := range []map[string]any{{"typo": true}, {"breaker_closed": "true"}, {}} {
+			for _, expect := range []map[string]any{{"typo": true}, {"breaker_closed": "true"}, {"breaker_closed": nil}, {"firewall_config": nil}, {}} {
 				for _, r := range s.executeCheck(t.Context(), gen, expect) {
-					if r.Success {
+					if r.Success || strings.Contains(r.Detail, "<nil>") {
 						t.Fatalf("invalid check passed: %+v", r)
 					}
 				}

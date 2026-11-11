@@ -166,3 +166,14 @@ describe("exercise progress", () => {
     expect(loadValidation(US, scenario.id)).toBeNull();
   });
 });
+
+describe("saved runner position", () => {
+  beforeEach(() => vi.stubGlobal("window", { localStorage: memoryStorage() }));
+  afterEach(() => vi.unstubAllGlobals());
+  it("retains a selected authored ID through reordering and drops removed IDs", () => {
+    const progress = { completedStepIds: [], skippedStepIds: [], notes: "", cmdLog: [], currentStepId: "record-findings" };
+    saveProgress(US, scenario.id, progress);
+    expect(loadProgress(US, { ...scenario, steps: [...scenario.steps].reverse() }).currentStepId).toBe("record-findings");
+    expect(loadProgress(US, { ...scenario, steps: scenario.steps.slice(0, 1) }).currentStepId).toBeUndefined();
+  });
+});

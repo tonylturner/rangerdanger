@@ -170,6 +170,9 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 		return fail(err)
 	}
 	gaps := []string{}
+	mismatches := []string{}
+	mismatchCount := 0
+	const mismatchLimit = 8
 	for _, expectation := range target.plan.Expectations {
 		route, err := labs.ResolvePlanTuple(gen.Package, labs.PlanProof{From: expectation.From, To: expectation.To, Network: expectation.Network, Port: expectation.Port})
 		if err != nil {
@@ -180,15 +183,37 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 			verdict = labs.Evaluate(policy.Rules, policy.DefaultAction, route.Tuple)
 		}
 		if verdict != expectation.PlanVerdict {
-			return fail(fmt.Errorf("tuple %s: running %s; judging target %s (Hardened %s)", expectation.ID, verdict, expectation.PlanVerdict, expectation.HardenedVerdict))
+			mismatchCount++
+			if len(mismatches) < mismatchLimit {
+				owners := []string{}
+				for _, owner := range expectation.Owners {
+					for _, action := range gen.Package.Curriculum.Catalog {
+						if action.ID == owner {
+							owners = append(owners, action.Title)
+						}
+					}
+				}
+				ownership := "required conduit"
+				if len(owners) > 0 {
+					ownership = strings.Join(owners, ", ")
+				}
+				mismatches = append(mismatches, fmt.Sprintf("%s -> %s:%d (%s): running %s; judging target %s (Hardened %s)", expectation.From, expectation.To, expectation.Port, ownership, verdict, expectation.PlanVerdict, expectation.HardenedVerdict))
+			}
 		}
 		if verdict != expectation.HardenedVerdict {
 			gaps = append(gaps, expectation.ID)
 		}
 	}
+	if mismatchCount > 0 {
+		detail := fmt.Sprintf("%d policy mismatches: %s", mismatchCount, strings.Join(mismatches, "; "))
+		if mismatchCount > len(mismatches) {
+			detail += fmt.Sprintf("; %d more not shown", mismatchCount-len(mismatches))
+		}
+		return fail(fmt.Errorf("%s. Review these paths in your committed firewall rules, then check again", detail))
+	}
 	finalHash, err := gen.Containd().GetFirewallHash(ctx)
 	if err != nil || finalHash != hash {
-		return fail(fmt.Errorf("policy changed or became unavailable during evaluation: %v", err))
+		return fail(fmt.Errorf("%s", evidenceDetail("policy changed or became unavailable during evaluation; check again", err)))
 	}
 	s.activeConfigMu.RLock()
 	stable := want == s.lastAppliedHash && boundary.Equal(s.policyChangedAt)

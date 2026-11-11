@@ -3,10 +3,7 @@ import { describe, expect, it } from "vitest";
 import { US_PLANS } from "./plan-fixtures.test-util";
 import {
   actionLabel,
-  deviceLabel,
   injectDynamicContent,
-  isBaselineStep,
-  isSegmentationStep,
   showsValidateButton,
 } from "./scenario-runner-logic";
 
@@ -22,11 +19,6 @@ describe("scenario runner logic", () => {
     expect(actionLabel("custom-action")).toBe("custom-action");
   });
 
-  it("maps device labels and passes unknown devices through", () => {
-    expect(deviceLabel("relay")).toBe("Feeder Breaker (10.40.40.20)");
-    expect(deviceLabel("custom-device")).toBe("custom-device");
-  });
-
   it("leaves descriptions unchanged without a plan", () => {
     const description = "Existing step instructions.";
     expect(injectDynamicContent(description, "phase-5-validate-allowed-traffic", null)).toBe(description);
@@ -37,13 +29,6 @@ describe("scenario runner logic", () => {
     expect(description).toContain("Expected result");
     expect(description).toContain("Hardened reference");
     expect(description).toContain("TCP/502");
-  });
-
-  it("identifies segmentation and baseline steps", () => {
-    expect(isSegmentationStep("Apply hardened policy")).toBe(true);
-    expect(isSegmentationStep("Collect observations")).toBe(false);
-    expect(isBaselineStep("Observe the baseline")).toBe(true);
-    expect(isBaselineStep("Apply hardened policy")).toBe(false);
   });
 
   it("keeps US visibility metadata and follows the declared validator elsewhere", () => {

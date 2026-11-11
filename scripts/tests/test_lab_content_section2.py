@@ -162,7 +162,7 @@ class EnforcementContracts(unittest.TestCase):
                        "auto-reclose still enabled", "With it deferred", "auto-reclose becomes disabled",
                        "This command alone does not trip the recloser", "`[2]` is recloser closed",
                        "`[3]` is auto-reclose enabled", "source, time and policy hash",
-                       "Restore every changed device before Validate, for every plan",
+                       "Restore every changed device before **Cross-check the current system**, for every plan",
                        "enable auto-reclose", "close the recloser and breaker", "clear fault/lockout",
                        "return the regulator to auto and tap zero", "reapply the intended plan"):
             self.assertIn(phrase, text)
@@ -246,6 +246,8 @@ class RuleAuthoringContracts(unittest.TestCase):
         ):
             package_dir = ROOT / "lab-definitions/packages" / package
             curriculum = read_curriculum(package_dir)
+            self.assertNotIn("tests", curriculum)
+            self.assertNotIn("negativeEmpty", curriculum)
             binding = yaml.safe_load((package_dir / "package.yml").read_text())["curriculum"]
             doc = yaml.safe_load(scenario_path.read_text())
             steps = {step["id"]: step["description"] for step in doc["steps"]}
@@ -267,15 +269,20 @@ class RuleAuthoringContracts(unittest.TestCase):
                         self.assertIn("Apply Your Plan", hint[1])
                         self.assertNotIn("Apply Your Plan", authored.replace(hint[0], ""))
             logging = steps["phase-4-enable-logging-and-visibility"]
-            for phrase in ("separate from the Phase 3 rule change", "show diff", "`commit`", "Read back", "Retest operations"):
+            guidance = (("Reconnect the Control Centre now", "Phase 3 candidate",
+                         "fresh GI", "Live Firewall Events", "api/operator/reconnect")
+                        if package.startswith("eu-") else
+                        ("separate from the Phase 3 rule change", "show diff",
+                         "`commit`", "Read back", "Retest operations"))
+            for phrase in guidance:
                 self.assertIn(phrase, logging)
             if package.startswith("eu-"):
                 positive = steps["test-positive"]
                 self.assertIn("Operator-authorized operational demonstration", positive)
                 self.assertIn("not\nacceptance reads", positive)
-                demonstration = "\n".join(test["text"] for test in curriculum["tests"])
-                self.assertIn("obtain operator approval", demonstration)
-                self.assertIn("not an acceptance read", demonstration)
+                demonstration = curriculum["phases"]["positive"]
+                self.assertIn("Obtain operator approval first", demonstration)
+                self.assertIn("not\nacceptance reads", demonstration)
 
     def test_custom_policy_authoring_checks_remote_access_after_commit(self):
         weak = json.loads((ROOT / "lab-definitions/firewall/substation-weak.json").read_text())

@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test-util";
 import { loadSavedRemediationPlan, saveRemediationPlan } from "../lib/remediation-plan";
 import { decisionName, writeCurriculum } from "../lib/curriculum-storage";
-import { EU_PLANS } from "../lib/plan-fixtures.test-util";
+import { EU_PLANS, US_PLANS } from "../lib/plan-fixtures.test-util";
 import { useCompiledPlan } from "../lib/use-compiled-plan";
 import * as api from "../lib/api";
 import { ScenarioRunner } from "./scenario-runner";
@@ -80,7 +80,7 @@ describe("Reset Progress", () => {
       const tree = render(<QueryClientProvider client={client}><ScenarioRunner scenario={scenario} onExit={() => {}} /></QueryClientProvider>);
       const click = (label: string) => fireEvent.click(tree.getByRole("button", { name: label }));
       try {
-        expect(tree.queryByRole("button", { name: "Execute Step" })).toBeNull();
+        expect(tree.getByRole("button", { name: "Execute Step" })).toBeTruthy();
         expect(tree.container.textContent).toContain("Mark Complete is self-attested; it does not run a system check.");
         click("View Summary");
         expect(tree.container.textContent).toContain("Steps marked complete");
@@ -90,7 +90,7 @@ describe("Reset Progress", () => {
         expect(tree.container.innerHTML).toContain("First instruction");
         expect(tree.queryByRole("button", { name: "Execute Step" })).toBeNull();
         expect((tree.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
-        expect(loadProgress(scope, scenario)).toEqual({ skippedStepIds: [], completedStepIds: [], notes: "", cmdLog: [] });
+        expect(loadProgress(scope, scenario)).toEqual({ skippedStepIds: [], completedStepIds: [], notes: "", cmdLog: [], currentStepId: "first" });
         expect(loadProgress(scope, { id: "another", steps: [{ id: "kept", title: "", description: "" }] }).notes).toBe("keep");
         fireEvent.click(tree.getByRole("button", { name: /Mark Complete/ }));
         expect(tree.container.innerHTML).toContain("Second instruction");
@@ -193,7 +193,7 @@ describe("Execute Step command log", () => {
     const tree = renderStep(authored, "check", binding);
     try {
       fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
-      const line = await tree.findByText(/^\[NOT MET\] breaker_closed: Expected false; observed true$/);
+      const line = await tree.findByText(/^\[NOT MET\] Step 1: Check breaker — breaker_closed: Expected false; observed true$/);
       expect(execute).toHaveBeenCalledWith(authored.id, 0, undefined);
       expect(line.classList.contains("text-amber-400")).toBe(true);
       expect(line.textContent).not.toContain("BLOCKED");
@@ -261,15 +261,49 @@ describe("interactive grading change requests", () => {
 });
 
 describe("authored description → Run → node exec", () => {
+  it.each([
+    { binding: US_CURRICULUM, plan: US_PLANS[2], eu: false },
+    { binding: EU, plan: EU_PLANS[2], eu: true },
+  ])("keeps the complete six-column rule reference in the $plan.packageId implementation body", ({ binding, plan, eu }) => {
+    compiled.data = plan;
+    const stepId = Object.entries(binding.dynamicSteps).find(([, phase]) => phase === "rules")![0];
+    const tree = renderStep(authoredScenario(binding.roles.implementation, eu), stepId, binding);
+    try {
+      const table = tree.getAllByRole("table").find((candidate) =>
+        Array.from(candidate.querySelectorAll("th")).map((header) => header.textContent).join(",") === "Rule,From,To,Port,Action,Log");
+      expect(table).toBeDefined();
+      expect(table!.closest("details")).toBeNull();
+      expect(table!.querySelectorAll("tbody tr")).toHaveLength(2 * plan.rules.length);
+      for (const { rule } of plan.rules) expect(table!.textContent).toContain(rule.id);
+      expect(table!.textContent).toContain("ICS selectors: Protocol:");
+      expect(table!.textContent).not.toContain('"protocol":');
+    } finally { tree.close(); }
+  });
+
+  it("renders the interactive directive as a named copy-only capture", () => {
+    const authored = { ...scenario, nodes: ["fw-1"], steps: [{
+      ...scenario.steps[0], node: "fw-1",
+      description: "From the fw-1 terminal:\n:::interactive\nLeave it capturing.\n    tcpdump -i any -G 1200 -W 1\n:::",
+    }] };
+    const tree = renderStep(authored, "first", EU);
+    try {
+      expect(tree.queryByRole("button", { name: "Run" })).toBeNull();
+      expect(tree.getByRole("button", { name: "copy" })).toBeTruthy();
+      expect(tree.container.textContent).toContain("Long-running: paste into the fw-1 terminal and leave it running.");
+      expect(tree.container.textContent).toContain("Leave it capturing.");
+      expect(tree.container.textContent).not.toContain(":::interactive");
+    } finally { tree.close(); }
+  });
+
   it.each([US_CURRICULUM, EU])("logs package-neutral scenario generation", async (binding) => {
     vi.spyOn(api, "startTrafficGeneration").mockResolvedValue({
       status: "started", duration_sec: 45, run_id: "fixture", started_at: "2026-11-04T00:00:00Z",
     });
     vi.spyOn(globalThis, "setInterval").mockReturnValue(0 as unknown as ReturnType<typeof setInterval>);
-    const authored = { ...scenario, steps: [{ ...scenario.steps[0], description: "Generate representative traffic." }] };
+    const authored = { ...scenario, steps: [{ ...scenario.steps[0], description: "Generate representative traffic.\n:::generate-traffic-button\n:::" }] };
     const tree = renderStep(authored, "first", binding);
     try {
-      fireEvent.click(tree.getByRole("button", { name: "Generate Traffic (45s)" }));
+      fireEvent.click(tree.getByRole("button", { name: "Generate scenario traffic" }));
       await waitFor(() => expect(tree.container.textContent).toContain("45s of package-defined scenario flows"));
       expect(tree.container.textContent).not.toContain("Modbus, DNP3, HTTP, NTP");
     } finally { tree.close(); }

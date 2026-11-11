@@ -27,9 +27,19 @@ steps:
   expected_config: weak
   node: cc-1
   description: |
+    Before proceeding, save your Lab 2.2 running export and Notes. **Reset to
+    Weak** replaces your Lab 2.2 policy, including hand-written rules; it does
+    not preserve them for automatic restoration. Use Reset to Weak for this
+    lesson's initial demonstration only. After restoring the plant, use
+    **Apply Your Plan** with your saved Lab 1.4 request to return to the
+    approved scope before the retest. This is the normal route back, not a
+    catch-up exercise. It regenerates the approved scope, not your exact
+    hand-written IDs or unrelated edits. An empty selection loads Weak; if
+    you have no saved request, use the full Hardened reference instead.
+
     **Time budget:** ~25 minutes (estimate; optional depth takes extra time).
 
-    Under weak policy confirm breaker closed, RMU1 closed/RMU2 open, OLTC remote/auto and supply present. Compare fresh CC observations with the separate **Physical System** view in [/substation](/substation). The PLC targets 20.4 kV ±1% (20.196–20.604 kV); out-of-band voltage must persist for 30 s before a tap request, not a US low-voltage band.
+    Under weak policy confirm breaker closed, RMU1 closed/RMU2 open, OLTC remote/auto and supply present. Compare fresh CC observations with the separate **Physical System** view in [/substation](/substation). The PLC targets 20.4 kV ±1% (20.196–20.604 kV); out-of-band voltage must persist for 30 s before a tap request.
 
     :::hint Do not repair stale data with truth
     A completed current-connection GI and non-null valid observations within the attempt establish operator visibility, not continuously advancing status receipts. If the GI evidence is missing or outside ten minutes, press **Interrogate station** in the **Control Centre** and validate again. The **Physical System** view can remain correct while the CC is stale. Record both before the attack.
@@ -76,8 +86,7 @@ steps:
       past the breaker de-energizes and loses supply. There is no auto-reclose
       model — the breaker stays open until an operator closes it.
     - **Control Centre**: after the next General Interrogation (**GI**) or cyclic
-      report, the CC breaker-position feedback flips to OPEN. The EU range has no
-      local HMI; the Control Centre is the operator-facing view. Record the
+      report, the CC breaker-position feedback flips to OPEN. The Control Centre is the operator-facing view. Record the
       ACT-CON/ACT-TERM telegrams and the command source — a command
       acknowledgement alone is not the physical outcome.
 
@@ -110,9 +119,18 @@ steps:
   title: Restore the substation
   expected_config: weak
   description: |
-    Restore with the breaker reset below after exporting the attack evidence. This is a lab restoration action, not the attack and not proof of a safe operating switching order. Confirm closed breaker, supply restored and fresh CC observations before changing policy.
+    After saving the evidence, select **Execute Step** on **Restore the substation**
+    (or **Run again** if complete). This is a lab restoration action, not the attack and not proof of a safe operating switching order. Confirm closed breaker, supply restored and fresh CC observations before changing policy.
 
     :::hint Preserve causality
+    To locate device evidence, open **Control Centre → Physical System →
+    Advanced diagnostics → Audit device** in the second browser tab. Select
+    `breaker-1` for the breaker lesson or `rmu-1` for the vendor lesson. Copy
+    the relevant audit row (UTC, revision, peer, operation and result) and the
+    terminal command output into Notes before restoration. Record the displayed
+    solved revision and supply outcome too; “export evidence” means saving
+    those records, not Reset Lab.
+
     Keep command source, audit revision and solved outcome before restoration. Do not reset after hardening: Reset Lab reapplies weak and invalidates your hardened evidence window.
     :::
   action:
@@ -124,6 +142,14 @@ steps:
   title: "Confirm the reviewed boundary before retesting"
   expected_config: hardened
   description: |
+    Use **Apply Your Plan** now to regenerate your saved, approved Lab 1.4
+    scope after the Weak demonstration. Read back the running rules and
+    record the running identity and commit time before retesting. Without a
+    saved request, use **Apply Hardened** for the full reference. Neither
+    route replaces your observations, operator checks or sign-off. If you
+    choose to re-author the policy manually instead, follow the Lab 2.2
+    procedure below rather than mixing manual and automatic changes.
+
     Use the reviewed rules from Lab 2.2. Compare the running policy with your
     Lab 1.4 change request. If it differs, export the running rules first.
     Stage the approved removals and replacements together in containd. Review
@@ -131,13 +157,7 @@ steps:
     Keep the management path and required operating conduits. Record the
     commit time and running identity. Do not widen the approved scope just
     to obtain a green result. Without a saved request, use the full Hardened reference.
-    The current-system check reads the policy without replacing it.
-
-    :::hint Optional catch-up — for less technical students or teams behind schedule
-    This replaces typing rules. It does not replace your own observations, operator check or sign-off.
-    Apply Your Plan for the approved Lab 1.4 scope. Apply Hardened only when
-    you intend to test the full reference. Read back what is running.
-    :::
+    The **Cross-check the current system** reads the policy without replacing it.
 
     **Block enterprise → station RTU access** owns Kali→RTU TCP/2404.
     If selected, expect timeout. If deferred, the breaker command can still land.
@@ -149,6 +169,14 @@ steps:
     explicit; an allowed CC session is not command authorization.
 
     The L4 source pin enforces; DPI detects and logs.
+
+    :::hint Scope is not a policy backup
+    Apply Your Plan compiles the saved selection; it does not import the
+    hand-written Lab 2.2 export. Compare source pins, required conduits and
+    deferred paths with that record. If the scope is wrong, stop before retesting
+    and correct the saved request or return to reviewed manual entry.
+    :::
+
   action:
     type: check
     expect:
@@ -184,8 +212,8 @@ steps:
     source pin — not IEC 104 inspection — is what denies the Kali telegram.
     :::
 
-    Restore the breaker and supply before Validate for every plan. Preserve
-    wire/audit/solve evidence first. Use the prescribed breaker restoration,
+    Restore the breaker and supply before **Cross-check the current system** for every plan. Preserve
+    wire/audit/solve evidence first. Return to **Restore the substation** and select **Run again**,
     not Reset Lab to improve a verdict. Reset Lab reapplies Weak; if recovery
     needs it, reapply the intended plan and collect a new evidence window.
     Required CC→RTU link, GI and supply checks do not depend on the selected plan.
@@ -234,7 +262,7 @@ steps:
     | | | | | | |
 
     Record the attack and retest outcomes separately. Name remaining exposures
-    and their risk owners. The optional current-system cross-check samples the
+    and their risk owners. The **Cross-check the current system** samples the
     current policy, breaker, supply and CC visibility. It does not sign this
     record or certify the earlier restoration, command authorization on an
     allowed session, all possible paths or regulatory compliance. Keep the
