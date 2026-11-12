@@ -34,7 +34,7 @@ class SetupMigrationTests(unittest.TestCase):
 
     def test_acquisition_failure_never_tears_down_and_success_acquires_selected_packages(self):
         start = SOURCE.index('# ─── image acquisition')
-        end = SOURCE.index('# ─── amd64 emulation', start)
+        end = SOURCE.index('# ─── start the platform', start)
         self.assertLess(start, SOURCE.index('"$ROOT_DIR/scripts/dev-down.sh"'))
         self.assertIn('range_compose "$id" pull', SOURCE[start:end])
         for mode in ("offline", "release", "source"):
@@ -55,6 +55,7 @@ package_ids() { printf 'eu\n'; }
 . "$REPO/scripts/lib/installed-packages.sh"
 docker_bounded() { shift; docker "$@"; }
 env_write() { :; }
+ensure_selected_emulation() { :; }
 ADD_PACKAGE='' SELECTED_PACKAGES=eu PACKAGE=''
 with_pull_retry() { "$@"; }
 platform_compose() { echo "platform $*" >> "$CALLS"; [ "${1:-}" != config ] || echo platform:1; }

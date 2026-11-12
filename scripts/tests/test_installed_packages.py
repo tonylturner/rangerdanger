@@ -181,12 +181,13 @@ function Say($m) {}
                     if language == "bash":
                         result = bash(r'''
 banner() { :; }
+ensure_selected_emulation() { printf '%s' "$OPENPLC_SELECTED" > "$ROOT_DIR/emulation-selected"; }
 package_ids() { echo us-dnp3-substation; }
 with_pull_retry() { "$@"; }
 platform_compose() { [ "$1" != config ] || echo platform:1; }
 range_compose() {
     [ "$FAIL" != fetch ] || return 1
-    [ "$2" != config ] || echo selected:1
+    [ "$2" != config ] || echo rangerdanger-openplc:1
 }
 docker_bounded() { [ "$FAIL" != inspect ]; }
 MODE=release VERSION=v-installed ADD_PACKAGE=us-dnp3-substation
@@ -212,6 +213,32 @@ function Invoke-DockerBounded($DockerArgs, $TimeoutSec) {
                     self.assertEqual(file.read_bytes(), expected)
                     self.assertEqual((root / ".env").read_text(), "VERSION=v-installed\n")
                     self.assertFalse((root / "data/install-mode").exists())
+                    if language == "bash":
+                        self.assertEqual((root / "emulation-selected").exists(), not fail)
+                        if not fail:
+                            self.assertEqual((root / "emulation-selected").read_text(), "1")
+
+    def test_emulation_only_registers_for_selected_openplc_before_receipt(self):
+        function = SH.split("ensure_selected_emulation() {\n", 1)[1].split("\n}\n", 1)[0]
+        for selected, present in ((False, False), (True, False), (True, True)):
+            with self.subTest(selected=selected, present=present), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                result = bash(r'''
+OS=Linux ARCH=arm64
+banner() { :; }; warn() { :; }
+amd64_emulation_present() { [ "$PRESENT" = 1 ]; }
+docker() { printf '%s\n' "$*" > "$ROOT_DIR/calls"; PRESENT=1; }
+ensure_selected_emulation() {
+''' + function + "\n}\nensure_selected_emulation", root,
+                              OPENPLC_SELECTED=str(int(selected)), PRESENT=str(int(present)))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                calls = root / "calls"
+                self.assertEqual(calls.exists(), selected and not present)
+                self.assertEqual((root / ".setup-binfmt-amd64").exists(), selected and not present)
+                if calls.exists():
+                    self.assertEqual(calls.read_text().strip(),
+                                     "run --privileged --rm tonistiigi/binfmt:qemu-v10.2.1 --install amd64")
+        self.assertLess(SH.index("\nensure_selected_emulation\n"), SH.index("\nwrite_installed_packages\n"))
 
     def test_install_documentation_pins_the_selection_contract(self):
         for name in ("README.md", "docs/quickstart.md"):

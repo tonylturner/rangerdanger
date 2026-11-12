@@ -60,6 +60,39 @@ amd64_emulation_present() {
     return 1
 }
 
+ensure_selected_emulation() {
+    # ─── amd64 emulation for OpenPLC on arm64 Linux ─────────────────────
+    # OpenPLC is amd64-only (upstream tuttas/openplc_v3). macOS arm64 runs it
+    # under Rosetta automatically; arm64 Linux with Docker Engine has no
+    # Rosetta, so register a qemu-x86_64 binfmt_misc handler via
+    # tonistiigi/binfmt. Best-effort + idempotent: if it can't run (e.g.
+    # offline with the helper image uncached) we warn and continue — only
+    # OpenPLC is affected and nothing depends on it. The marker lets
+    # uninstall revert ONLY a handler we installed (never a pre-existing or
+    # Docker-Desktop one).
+    BINFMT_MARKER="$ROOT_DIR/.setup-binfmt-amd64"
+    # Pinned (not :latest) for reproducible installs. stage-ssd.sh stages this
+    # exact tag, so the offline path loads it and `docker run` finds it with no
+    # pull. Bump deliberately to pick up newer qemu. Keep in sync with
+    # stage-ssd.sh, stage-ssd-delta.sh, and uninstall-rangerdanger.sh.
+    BINFMT_REF="tonistiigi/binfmt:qemu-v10.2.1"
+    if [ "$OPENPLC_SELECTED" -eq 1 ] && [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ] && ! amd64_emulation_present; then
+        banner "Registering amd64 emulation (OpenPLC)"
+        say "OpenPLC is amd64-only; registering a qemu-x86_64 handler via tonistiigi/binfmt..."
+        if docker run --privileged --rm "$BINFMT_REF" --install amd64 >/dev/null 2>&1 \
+            && amd64_emulation_present; then
+            : > "$BINFMT_MARKER"
+            say "amd64 emulation registered (./scripts/uninstall-rangerdanger.sh will revert it)"
+            say "  (runtime only — for reboot persistence: sudo ./scripts/persist-emulation.sh)"
+        else
+            warn "Could not auto-register amd64 emulation."
+            warn "Everything except the OpenPLC lab still works. To enable OpenPLC, run:"
+            warn "    docker run --privileged --rm $BINFMT_REF --install amd64"
+            warn "(needs network to pull $BINFMT_REF if not already cached)."
+        fi
+    fi
+}
+
 # ─── arg parsing ────────────────────────────────────────────────────
 VERSION="${VERSION:-latest}"
 VERSION_SET=0
@@ -595,6 +628,7 @@ while IFS= read -r image; do
 done <<< "$(printf '%s\n' "$REQUIRED_IMAGES" | LC_ALL=C sort -u)"
 OPENPLC_SELECTED=0
 case "$REQUIRED_IMAGES" in *rangerdanger-openplc*) OPENPLC_SELECTED=1 ;; esac
+ensure_selected_emulation
 write_installed_packages
 if [ -n "$ADD_PACKAGE" ]; then
     say "Installed $ADD_PACKAGE; refresh the package list. The running range was not changed."
@@ -628,37 +662,6 @@ if [ "$MGMT_OWNER" = "$RANGE_PROJECT" ] || [ -n "$OLD_PLATFORM" ]; then
     say "Stopping Compose project $RANGE_PROJECT (the single-project stack) before the platform starts."
     "$ROOT_DIR/scripts/dev-down.sh" --range-only \
         || die "Could not remove the pre-split stack; nothing else was changed. Fix the error above, then re-run."
-fi
-
-# ─── amd64 emulation for OpenPLC on arm64 Linux ─────────────────────
-# OpenPLC is amd64-only (upstream tuttas/openplc_v3). macOS arm64 runs it
-# under Rosetta automatically; arm64 Linux with Docker Engine has no
-# Rosetta, so register a qemu-x86_64 binfmt_misc handler via
-# tonistiigi/binfmt. Best-effort + idempotent: if it can't run (e.g.
-# offline with the helper image uncached) we warn and continue — only
-# OpenPLC is affected and nothing depends on it. The marker lets
-# uninstall revert ONLY a handler we installed (never a pre-existing or
-# Docker-Desktop one).
-BINFMT_MARKER="$ROOT_DIR/.setup-binfmt-amd64"
-# Pinned (not :latest) for reproducible installs. stage-ssd.sh stages this
-# exact tag, so the offline path loads it and `docker run` finds it with no
-# pull. Bump deliberately to pick up newer qemu. Keep in sync with
-# stage-ssd.sh, stage-ssd-delta.sh, and uninstall-rangerdanger.sh.
-BINFMT_REF="tonistiigi/binfmt:qemu-v10.2.1"
-if [ "$OPENPLC_SELECTED" -eq 1 ] && [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ] && ! amd64_emulation_present; then
-    banner "Registering amd64 emulation (OpenPLC)"
-    say "OpenPLC is amd64-only; registering a qemu-x86_64 handler via tonistiigi/binfmt..."
-    if docker run --privileged --rm "$BINFMT_REF" --install amd64 >/dev/null 2>&1 \
-        && amd64_emulation_present; then
-        : > "$BINFMT_MARKER"
-        say "amd64 emulation registered (./scripts/uninstall-rangerdanger.sh will revert it)"
-        say "  (runtime only — for reboot persistence: sudo ./scripts/persist-emulation.sh)"
-    else
-        warn "Could not auto-register amd64 emulation."
-        warn "Everything except the OpenPLC lab still works. To enable OpenPLC, run:"
-        warn "    docker run --privileged --rm $BINFMT_REF --install amd64"
-        warn "(needs network to pull $BINFMT_REF if not already cached)."
-    fi
 fi
 
 # ─── start the platform ─────────────────────────────────────────────
