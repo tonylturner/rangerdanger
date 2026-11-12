@@ -8,15 +8,43 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Offline SSD bundles save one archive per image with a checked versioned index;
-  staging, loading and delta updates honor selected packages. Re-stage old
-  monolithic bundles with `rangerdanger-image-index-v1`. Delta rollback restores
-  package selection, install mode and environment together.
+- Setup installs only the packages you select with `--packages` /
+  `-Packages`; the default is every package. Reruns keep the installed set,
+  and `--add-package` / `-AddPackage` adds a package without restarting the
+  range. The backend lists and starts only installed packages.
+- Offline SSD bundles store one archive per image with a checked index, and
+  an offline install loads only the selected packages. Bundles staged by
+  earlier releases must be staged again. Delta rollback restores the package
+  selection, install mode and environment together.
 
-- Select installed packages with `--packages` / `-Packages`; reruns retain the
-  acquired set. Add a package without restarting the range using `--add-package`
-  / `-AddPackage`. The package selector and range admission now require a
-  successful installation receipt.
+## [v0.2.7] - 2026-11-11
+
+Maintenance release refreshing build tools, dependencies and image bases,
+and making EU verification fail promptly on stalled Docker calls. Tested
+on containd 0.1.42 (`latest`); the minimum remains 0.1.41. No firewall-data
+migration is required from v0.2.6. This release moves `latest`. Changed
+images are rebuilt; images with unchanged inputs can be promoted from the
+previous release.
+
+### Changed
+
+- Go builds use Go 1.27.4 across all four modules and container builders.
+  Minimum Go version requirements are unchanged. The EU historian's
+  malformed-JSON error text follows the updated Go decoder.
+- The portal updates Next.js and eslint-config-next to 16.4.6, Tailwind CSS
+  and its PostCSS plugin to 4.3.5, React Query to 5.107.1 and Playwright Core
+  to 1.65.0. ESLint stays on version 9 for plugin compatibility.
+- Image bases refresh the backend's Docker CLI to 29.9.3 and update the
+  Node 24.22.2 Alpine and FUXA digests.
+- Backend tests load package fixtures once per test binary; CI now states
+  the backend race-test time budget explicitly.
+
+### Fixed
+
+- Every Docker CLI call reachable from the EU verification gate has a
+  category-specific 5–60 second limit. A timeout fails the gate, names the
+  call and its limit, and cannot be overwritten by a later passing check.
+  The watchdog uses real elapsed time even when tests replace sleep.
 
 ## [v0.2.6] - 2026-11-11
 
@@ -3790,7 +3818,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.2.7...HEAD
+[v0.2.7]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.7
 [v0.2.6]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.6
 [v0.2.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.5
 [v0.2.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.2.4

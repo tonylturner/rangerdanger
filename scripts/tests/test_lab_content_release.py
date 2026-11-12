@@ -286,7 +286,7 @@ class ErrataContracts(unittest.TestCase):
         text = path.read_text()
         for phrase in ("How to update", "PowerShell", "full image release",
                        "All 16 first-party images", "`latest` moves", "SSD",
-                       "quickstart.md#upgrading-to-v026", "workshop-ssd.md#delta-staging"):
+                       "quickstart.md#upgrading-to-v027", "workshop-ssd.md#delta-staging"):
             self.assertIn(phrase, text)
         for stale in ("existing v0.1.35 images", "no pull, no rebuild",
                       "Do not run `./setup.sh --version v0.1.36`", "./scripts/apply-repo-update.sh"):
@@ -308,33 +308,33 @@ class ErrataContracts(unittest.TestCase):
 
     def test_release_update_uses_standard_setup_and_delta_paths(self):
         quickstart = " ".join((ROOT / "docs/quickstart.md").read_text().split())
-        for phrase in ("git fetch origin tag v0.2.6", "git checkout --detach v0.2.6",
-                       "./setup.sh --version v0.2.6 --package us-dnp3-substation",
-                       "v0.2.5 → v0.2.6", "does not require a firewall-data migration",
+        for phrase in ("git fetch origin tag v0.2.7", "git checkout --detach v0.2.7",
+                       "./setup.sh --version v0.2.7 --package us-dnp3-substation",
+                       "v0.2.6 → v0.2.7", "does not require a firewall-data migration",
                        "A direct upgrade from v0.2.0 or older data",
                        "eu-iec104-substation", "PowerShell", "v0.2.2 Windows fix was validated",
                        "workshop reset", "DELTA-README.md",
-                       "v0.2.5 → v0.2.6 SSD delta carries changed images plus the repository archive",
-                       "Changed first-party images are rebuilt for v0.2.6",
+                       "v0.2.6 → v0.2.7 SSD delta carries changed images plus the repository archive",
+                       "Changed first-party images are rebuilt for v0.2.7",
                        "images with unchanged inputs can be promoted from the previous release",
                        "This is not a full image refresh",
-                       "v0.2.6 kernel asset only if the probe finds them missing"):
+                       "v0.2.7 kernel asset only if the probe finds them missing"):
             self.assertIn(phrase, quickstart)
         current, _ = quickstart.split("## Upgrading to v0.2.0", 1)
         self.assertNotIn("[rebuild-all]", current)
         self.assertNotIn("carries the full first-party image set", current)
         self.assertNotIn("All 20 first-party images are rebuilt", current)
         ssd = " ".join((ROOT / "docs/workshop-ssd.md").read_text().split())
-        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.6",
-                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.6 v0.2.5 v0.2.6",
+        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.7",
+                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.7 v0.2.6 v0.2.7",
                        "v0.1.x SSD baseline lacks it", "package Compose metadata",
-                       "v0.2.6 rebuilds changed first-party images",
+                       "v0.2.7 rebuilds changed first-party images",
                        "images with unchanged inputs can be promoted from the previous release",
                        "This is not a full image refresh", "compares registry manifest digests",
-                       "v0.2.5 → v0.2.6 delta carries changed images plus the repository archive",
+                       "v0.2.6 → v0.2.7 delta carries changed images plus the repository archive",
                        "not automatically the full first-party image set",
                        "for the actual image set and size before distributing it",
-                       "v0.2.0 → v0.2.6", "does not require a containd migration backup"):
+                       "v0.2.0 → v0.2.7", "does not require a containd migration backup"):
             self.assertIn(phrase, ssd)
         self.assertNotIn("[rebuild-all]", ssd)
         self.assertNotIn("rebuilds all 20 first-party images", ssd)

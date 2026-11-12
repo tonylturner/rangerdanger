@@ -46,10 +46,10 @@ Each lab builds on the previous. Write the Lab 1.4 change request, implement it 
 | 5b | **2.3-bonus** | Optional kill-chain exercise: vendor RDP/VNC pivot from enterprise to vendor to field. Demonstrates both the perimeter rule and defense-in-depth. |
 | 6 | **2.4 Validate** | Write the test plan, run source tests without control writes, read the boundary capture, check operations and sign go/no-go. |
 
-## v0.2.6 environments
+## v0.2.7 environments
 
 v0.2.4 keeps the selectable US and EU lab packages and introduces manual
-validation with signed test records. Tagged commands below require v0.2.6's published images.
+validation with signed test records. Tagged commands below require v0.2.7's published images.
 Choose **US distribution substation (DNP3)** (`us-dnp3-substation`) or
 **EU telecontrol substation (IEC 104)** (`eu-iec104-substation`). The portal's
 Range selector switches the active environment; only one range runs at a time.
@@ -67,10 +67,10 @@ build before release images exist. On Windows, use
 Re-running setup acquires the platform and selected package images before
 migration teardown, then restarts the range and resets policy. Save evidence,
 desktop work and local changes first. US revision 4 and EU revision 8 are
-unchanged from v0.2.5: v0.2.6 reuses saved browser records for lab progress,
+unchanged from v0.2.6: v0.2.7 reuses saved browser records for lab progress,
 notes, decisions and plans when you keep the same browser and portal address.
 Completion marks follow matching step IDs, not changed wording.
-See [upgrading](docs/quickstart.md#upgrading-to-v026) and
+See [upgrading](docs/quickstart.md#upgrading-to-v027) and
 [offline distribution](docs/workshop-ssd.md). Windows supports Docker Desktop
 with the WSL2 backend and a physical local-drive checkout, not UNC, `\\wsl$`,
 mapped network drives, junctions or Hyper-V. Setup checks the root mapping
@@ -111,7 +111,7 @@ installed set is rejected at startup.
 ```bash
 git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
-./setup.sh --version v0.2.6
+./setup.sh --version v0.2.7
 ```
 
 **Windows (PowerShell, Docker Desktop WSL2; clone onto a local drive):**
@@ -119,7 +119,7 @@ cd rangerdanger
 ```powershell
 git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
-.\setup.ps1 -Version v0.2.6
+.\setup.ps1 -Version v0.2.7
 ```
 
 **Build from source instead** (developers):
@@ -134,11 +134,11 @@ cd rangerdanger
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
 ```
 
-Use `./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.6` to populate the SSD. The version argument selects the image tags whatever the repo's `.env` says, and the helper verifies both archives against it before reporting success. GitHub releases carry the WSL2 kernel asset, not image tarballs, so students install from an instructor-staged bundle. Full install walkthrough including the offline path and common errors: [`docs/quickstart.md`](docs/quickstart.md). Workshop operators running multi-laptop classroom deployments: [`docs/workshop-ssd.md`](docs/workshop-ssd.md) covers initial staging, mid-workshop delta patches, and recovery.
+Use `./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.7` to populate the SSD. The version argument selects the image tags whatever the repo's `.env` says, and the helper verifies both archives against it before reporting success. GitHub releases carry the WSL2 kernel asset, not image tarballs, so students install from an instructor-staged bundle. Full install walkthrough including the offline path and common errors: [`docs/quickstart.md`](docs/quickstart.md). Workshop operators running multi-laptop classroom deployments: [`docs/workshop-ssd.md`](docs/workshop-ssd.md) covers initial staging, mid-workshop delta patches, and recovery.
 
 RangerDanger uses the published `ghcr.io/tonylturner/containd:latest` image
 in every mode; source mode builds only RangerDanger.
-v0.2.6 requires containd 0.1.41 or later and was tested on 0.1.42. Before the first
+v0.2.7 requires containd 0.1.41 or later and was tested on 0.1.42. Before the first
 0.1.37 start, stop the lab and back up the complete firewall storage for each
 installed package. The one-way migration to schema 0.1.10 means containd
 0.1.36 cannot read the migrated store. containd 0.1.41 also migrates firewall
@@ -146,8 +146,8 @@ installed package. The one-way migration to schema 0.1.10 means containd
 older data not yet on containd 0.1.41, stop the lab and take a fresh full
 pre-upgrade firewall data backup. An older image alone is not a rollback.
 
-For an existing install, follow the [release update procedure](docs/quickstart.md#upgrading-to-v026).
-Updating from v0.2.5, v0.2.4, v0.2.3, v0.2.2 or v0.2.1 needs no firewall-data migration; the containd
+For an existing install, follow the [release update procedure](docs/quickstart.md#upgrading-to-v027).
+Updating from v0.2.6, v0.2.5, v0.2.4, v0.2.3, v0.2.2 or v0.2.1 needs no firewall-data migration; the containd
 0.1.41 migration backup still applies when upgrading directly from v0.2.0
 or older data not yet on containd 0.1.41.
 See the [v0.1.36 workshop errata](docs/v0.1.36-hotfix.md) for historical
