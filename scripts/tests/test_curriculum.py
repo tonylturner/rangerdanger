@@ -14,7 +14,7 @@ class CurriculumReaderTests(unittest.TestCase):
     def read_fixture(self, files, directory="curriculum"):
         with tempfile.TemporaryDirectory(prefix="rd-curriculum-") as temporary:
             root = Path(temporary)
-            (root / "package.yml").write_text(yaml.safe_dump({"curriculum": {"dir": directory}}))
+            (root / "package.yml").write_text(yaml.safe_dump({"course": {"features": {"segmentationPlan": {"dir": directory}}}}))
             (root / "curriculum").mkdir()
             for name, text in files.items():
                 (root / "curriculum" / name).write_text(text)
@@ -48,10 +48,10 @@ class CurriculumReaderTests(unittest.TestCase):
             (root / "curriculum").mkdir()
             (root / "scenarios").mkdir()
             (root / "package.yml").write_text(yaml.safe_dump({
-                "scenarios": "scenarios", "curriculum": {
-                    "dir": "curriculum", "roles": {"implementation": "implementation"},
+                "scenarios": "scenarios", "course": {"features": {"segmentationPlan": {
+                    "dir": "curriculum", "activities": {"implementation": "implementation"},
                     "dynamicSteps": {"implement": "rules"},
-                },
+                }}},
             }))
             (root / "scenarios/implementation.yml").write_text(yaml.safe_dump({
                 "id": "implementation", "steps": [{"id": "implement", "description": "Review."}],

@@ -1,5 +1,4 @@
 id: hardening-configurations
-order: "2.3"
 name: "Protocol-Hardened Configurations"
 summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection from an unauthorized source. The remote trip stays open until someone closes it; disabling auto-reclose removes automatic restoration after a fault. The lesson: on this build the L4 source pin is what enforces, so verify enforcement by device state, not by policy labels. Modbus FC5/FC6 variants available as optional bonus attacks."
 estimated_minutes: 25

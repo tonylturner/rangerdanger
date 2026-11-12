@@ -6,16 +6,16 @@ import { loadProgress } from "../lib/scenario-runner-storage";
 import { useCurriculumStorageRevision } from "../lib/use-curriculum-storage-revision";
 import { useHydrated } from "../lib/use-hydrated";
 
-export function NotesPanel({ sourceScenario, sourceScenarioOrder, title }: {
+export function NotesPanel({ sourceScenario, sourceScenarioLabel, title }: {
   sourceScenario: string;
-  sourceScenarioOrder?: string;
+  sourceScenarioLabel?: string;
   title: string;
 }) {
   const scope = useCurriculumScope();
   const hydrated = useHydrated();
   useCurriculumStorageRevision(scope);
   const notes = hydrated ? loadProgress(scope, { id: sourceScenario, steps: [] }).notes : "";
-  const lab = sourceScenarioOrder ? `Lab ${sourceScenarioOrder}` : sourceScenario;
+  const lab = sourceScenarioLabel ? `Lab ${sourceScenarioLabel}` : sourceScenario;
   return (
     <section className="rounded-lg border border-cyan-900/40 bg-cyan-950/10 p-3 text-xs text-slate-300" aria-label={title}>
       <h4 className="mb-2 font-semibold text-cyan-300">{title}</h4>

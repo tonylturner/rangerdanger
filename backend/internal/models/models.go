@@ -12,7 +12,8 @@ type Scenario struct {
 	Name             string    `json:"name"`
 	Summary          string    `json:"summary"`
 	Description      string    `json:"description"`
-	Order            string    `json:"order"`
+	Label            string    `json:"label"`
+	Position         int       `json:"-"`
 	LabTemplateID    string    `json:"lab_template_id"`
 	Tags             string    `json:"tags"`
 	Steps            string    `json:"steps"`

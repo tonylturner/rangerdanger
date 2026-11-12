@@ -27,7 +27,7 @@ class LearningContracts(unittest.TestCase):
             r"DECISION_DEFAULT_OPTIONS = (\[[^\n]+]);", parser)[1])
         checked = 0
         for base, manifest, curriculum in self.packages():
-            scenario_id = manifest["curriculum"]["roles"]["requirements"]
+            scenario_id = manifest["course"]["features"]["segmentationPlan"]["activities"]["requirements"]
             doc = read_scenarios(base, ROOT / "lab-definitions")[scenario_id]
             declarations = {}
             for step in doc["steps"]:
@@ -129,7 +129,7 @@ class LearningContracts(unittest.TestCase):
 
     def test_worked_rule_mechanics_exist_in_both_render_paths(self):
         for base, manifest, curriculum in self.packages():
-            scenario_id = manifest["curriculum"]["roles"]["implementation"]
+            scenario_id = manifest["course"]["features"]["segmentationPlan"]["activities"]["implementation"]
             doc = read_scenarios(base, ROOT / "lab-definitions")[scenario_id]
             static = next(step["description"] for step in doc["steps"]
                           if step["id"] in ("implement-rules",

@@ -167,7 +167,7 @@ func TestEUFirewallConfigCheckUsesSharedPlanJudgment(t *testing.T) {
 	for _, mode := range []string{"applied plan", "weak baseline", "divergent recorded identity", "divergent plan provenance"} {
 		t.Run(mode, func(t *testing.T) {
 			s, gen, setRunning, _ := euPolicyCheckFixture(t)
-			compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
+			compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, []string{"block-enterprise-to-field"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -230,7 +230,7 @@ func TestEUFirewallConfigCheckUsesSharedPlanJudgment(t *testing.T) {
 
 func TestEUAppliedPlanMatchingWeakHashPassesWithPreventionGaps(t *testing.T) {
 	s, gen, setRunning, _ := euPolicyCheckFixture(t)
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestEUAppliedPlanMatchingWeakHashPassesWithPreventionGaps(t *testing.T) {
 
 func TestEUFirewallPolicyPhaseExecuteDoesNotApply(t *testing.T) {
 	s, gen, setRunning, applyCalls := euPolicyCheckFixture(t)
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, []string{"block-enterprise-to-field"})
 	if err != nil {
 		t.Fatal(err)
 	}

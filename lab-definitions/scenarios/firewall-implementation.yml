@@ -1,5 +1,4 @@
 id: firewall-implementation
-order: "2.2"
 name: "Firewall Policy Implementation"
 summary: "Apply a least-privilege segmentation policy on the containd NGFW, replacing the weak baseline with enforceable rules, then validate it holds."
 estimated_minutes: 45

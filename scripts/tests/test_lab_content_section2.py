@@ -248,7 +248,7 @@ class RuleAuthoringContracts(unittest.TestCase):
             curriculum = read_curriculum(package_dir)
             self.assertNotIn("tests", curriculum)
             self.assertNotIn("negativeEmpty", curriculum)
-            binding = yaml.safe_load((package_dir / "package.yml").read_text())["curriculum"]
+            binding = yaml.safe_load((package_dir / "package.yml").read_text())["course"]["features"]["segmentationPlan"]
             doc = yaml.safe_load(scenario_path.read_text())
             steps = {step["id"]: step["description"] for step in doc["steps"]}
             for step_id, phase in binding["dynamicSteps"].items():

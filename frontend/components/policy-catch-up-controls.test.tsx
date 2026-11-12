@@ -5,7 +5,7 @@ import * as api from "../lib/api";
 import { EU_PLANS, US_PLANS } from "../lib/plan-fixtures.test-util";
 import { PolicyCatchUpControls } from "./policy-catch-up-controls";
 import { CurriculumScopeProvider, scopeOf } from "../lib/curriculum-scope";
-import { fixtureCurriculum } from "../lib/curriculum-storage.test-util";
+import { fixtureCourse } from "../lib/curriculum-storage.test-util";
 import { EU_PACKAGE, US_PACKAGE } from "../lib/operator-fixtures.test-util";
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { saveRemediationPlan } from "../lib/remediation-plan";
@@ -75,29 +75,29 @@ describe("catch-up policy replacement", () => {
 
 describe("saved change request protects manual scope", () => {
   it.each([US_PACKAGE, EU_PACKAGE])("hides Hardened for any saved selection in $id, independently of compilation", (base) => {
-    const pkg = { ...base, curriculum: fixtureCurriculum(`lab-definitions/packages/${base.id}`) };
+    const pkg = { ...base, course: fixtureCourse(`lab-definitions/packages/${base.id}`) };
     const scope = scopeOf(pkg);
     const tree = mount("manual-custom", pkg, null);
     expect(tree.getByRole("button", { name: "Apply Hardened" })).toBeTruthy();
     for (const selectedActionIds of [
-      [pkg.curriculum.catalog[0].id],
-      pkg.curriculum.catalog.map((action) => action.id),
+      [pkg.course.features.segmentationPlan!.model.catalog[0].id],
+      pkg.course.features.segmentationPlan!.model.catalog.map((action) => action.id),
       (base.id === EU_PACKAGE.id ? EU_PLANS[2] : US_PLANS[2]).actions.filter((action) => action.kind === "plan").map((action) => action.id),
     ]) {
       expect(selectedActionIds.length).toBeGreaterThan(0);
-      act(() => saveRemediationPlan(scope, { exerciseId: pkg.curriculum.roles.planning, selectedActionIds, savedAt: "saved" }));
+      act(() => saveRemediationPlan(scope, { exerciseId: pkg.course.features.segmentationPlan!.activities.planning, selectedActionIds, savedAt: "saved" }));
       expect(tree.queryByRole("button", { name: "Apply Hardened" })).toBeNull();
       expect(tree.getByRole("button", { name: "Apply Your Plan" })).toBeTruthy();
       expect(tree.getByRole("button", { name: "Reset to Weak" })).toBeTruthy();
     }
-    act(() => saveRemediationPlan(scope, { exerciseId: pkg.curriculum.roles.planning, selectedActionIds: [], savedAt: "saved" }));
+    act(() => saveRemediationPlan(scope, { exerciseId: pkg.course.features.segmentationPlan!.activities.planning, selectedActionIds: [], savedAt: "saved" }));
     expect(tree.getByRole("button", { name: "Apply Hardened" })).toBeTruthy();
   });
 
   it("reacts to another tab clearing the request and isolates package revisions", () => {
-    const pkg = { ...EU_PACKAGE, curriculum: fixtureCurriculum("lab-definitions/packages/eu-iec104-substation") };
+    const pkg = { ...EU_PACKAGE, course: fixtureCourse("lab-definitions/packages/eu-iec104-substation") };
     const scope = scopeOf(pkg);
-    const request = { exerciseId: pkg.curriculum.roles.planning, selectedActionIds: [pkg.curriculum.catalog[0].id], savedAt: "saved" };
+    const request = { exerciseId: pkg.course.features.segmentationPlan!.activities.planning, selectedActionIds: [pkg.course.features.segmentationPlan!.model.catalog[0].id], savedAt: "saved" };
     saveRemediationPlan(scope, request);
     const tree = mount("manual-custom", pkg);
     expect(tree.queryByRole("button", { name: "Apply Hardened" })).toBeNull();

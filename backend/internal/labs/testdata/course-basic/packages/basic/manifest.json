@@ -1,0 +1,1 @@
+{"package":"basic","services":[{"node":"fw-1","container":"fixture-firewall","roles":["firewall"]}]}

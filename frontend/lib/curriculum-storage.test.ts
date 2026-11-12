@@ -76,7 +76,7 @@ describe("curriculum storage", () => {
   });
 });
 
-import { fixtureCurriculum, US_CURRICULUM } from "./curriculum-storage.test-util";
+import { fixtureCourse, US_COURSE } from "./curriculum-storage.test-util";
 import { readReadiness, readRequirements, readinessFlagsForAction } from "./requirement-coverage";
 import { loadRemediationPlan, loadSavedRemediationPlan, saveRemediationPlan } from "./remediation-plan";
 
@@ -84,20 +84,20 @@ it("reads EU decisions and plans only through its own roles and storage scope", 
   const storage = memoryStorage();
   vi.stubGlobal("window", { localStorage: storage });
   try {
-    const binding = fixtureCurriculum("backend/internal/labs/testdata/curriculum-eu");
-    const eu = { packageId: "eu-example", revision: 3, curriculum: binding };
-    writeCurriculum(eu, decisionName(binding.roles.requirements, "enterprise-to-station"), "BLOCK");
+    const binding = fixtureCourse("backend/internal/labs/testdata/curriculum-eu");
+    const eu = { packageId: "eu-example", revision: 3, course: binding };
+    writeCurriculum(eu, decisionName(binding.features.segmentationPlan!.activities.requirements, "enterprise-to-station"), "BLOCK");
     writeCurriculum(eu, decisionName("segmentation-requirements", "vendor-to-station"), "ALLOW");
-    writeCurriculum(eu, decisionName(binding.roles.requirements, "ot-eng-availability"), "UNAVAILABLE");
+    writeCurriculum(eu, decisionName(binding.features.segmentationPlan!.activities.requirements, "ot-eng-availability"), "UNAVAILABLE");
     expect(readRequirements(eu).map(r => [r.id, r.verdict])).toEqual([
       ["enterprise-to-field", ""], ["enterprise-to-station", "BLOCK"], ["vendor-to-station", ""], ["non-rtu-to-field", ""], ["unauth-control", ""],
     ]);
-    expect(readinessFlagsForAction("restrict-vendor-to-station", readReadiness(eu), binding)).toMatchObject([{ severity: "blocked", source: "ot-eng-availability" }]);
-    const plan = { exerciseId: binding.roles.planning, selectedActionIds: ["iec104-dpi"], savedAt: "now" };
+    expect(readinessFlagsForAction("restrict-vendor-to-station", readReadiness(eu), binding.features.segmentationPlan!.model)).toMatchObject([{ severity: "blocked", source: "ot-eng-availability" }]);
+    const plan = { exerciseId: binding.features.segmentationPlan!.activities.planning, selectedActionIds: ["iec104-dpi"], savedAt: "now" };
     saveRemediationPlan(eu, plan);
     expect(loadSavedRemediationPlan(eu)).toEqual(plan);
     expect(loadRemediationPlan(eu)).toEqual({ ...plan, selectedActionIds: [] });
-    expect(loadRemediationPlan({ ...US, curriculum: US_CURRICULUM })).toBeNull();
+    expect(loadRemediationPlan({ ...US, course: US_COURSE })).toBeNull();
     expect(loadRemediationPlan({ ...eu, revision: 4 })).toBeNull();
     const unbound = { packageId: "unbound", revision: 1 };
     saveRemediationPlan(unbound, plan);

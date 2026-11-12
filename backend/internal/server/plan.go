@@ -40,6 +40,10 @@ type planResponse struct {
 }
 
 func (s *Server) compilePlanRequest(c *gin.Context, failureStatus int) (*planResponse, bool) {
+	if rangeOf(c).Package.SegmentationPlan() == nil {
+		notSupported(c)
+		return nil, false
+	}
 	var req planSelection
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 	decoder := json.NewDecoder(c.Request.Body)
@@ -61,7 +65,7 @@ func (s *Server) compilePlanRequest(c *gin.Context, failureStatus int) (*planRes
 		c.JSON(status, gin.H{"error": err.Error()})
 		return nil, false
 	}
-	compiled, err := labs.CompilePlan(pkg, pkg.Curriculum, req.ActionIDs)
+	compiled, err := labs.CompilePlan(pkg, pkg.SegmentationPlan(), req.ActionIDs)
 	if err != nil {
 		c.JSON(failureStatus, gin.H{"error": err.Error(), "warnings": []string{}})
 		return nil, false
@@ -78,8 +82,8 @@ func (s *Server) compilePlanRequest(c *gin.Context, failureStatus int) (*planRes
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return nil, false
 		}
-		if expectation.Labs == nil {
-			expectation.Labs = []string{}
+		if expectation.Activities == nil {
+			expectation.Activities = []string{}
 		}
 		if expectation.Owners == nil {
 			expectation.Owners = []string{}

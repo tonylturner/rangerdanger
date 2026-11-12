@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Scenario } from "./api";
-import { US_CURRICULUM as binding } from "./curriculum-storage.test-util";
+import { US_COURSE as binding } from "./curriculum-storage.test-util";
 import { US_PLANS } from "./plan-fixtures.test-util";
 import { computeCoverage } from "./requirement-coverage";
 import { injectDynamicContent } from "./scenario-runner-logic";
@@ -16,11 +16,11 @@ function scenario(id: string): Scenario {
 describe("US Apply Your Plan content", () => {
   it("renders rules and both verdicts for empty, partial and full plans", () => {
     const lab = scenario("firewall-implementation");
-    for (const [id, phase] of Object.entries(binding.dynamicSteps)) {
+    for (const [id, phase] of Object.entries(binding.features.segmentationPlan!.dynamicSteps)) {
       const step = lab.steps.find((s) => s.id === id)!;
       expect(step).toBeDefined();
       for (const plan of US_PLANS) {
-        const text = injectDynamicContent(step.description, id, plan, binding);
+        const text = injectDynamicContent(step.description, id, plan, binding, lab.id);
         expect(text).not.toMatch(/\{\{(?:ruleTable|tests|noPlan)\}\}/);
         expect(text).not.toMatch(/fixed blocked outcome|not \*\*Apply Your Plan/);
         if (phase === "rules") {
@@ -55,17 +55,17 @@ describe("US Apply Your Plan content", () => {
   it("requires L4 controls for prevention and logging only for BLOCK and LOG", () => {
     const kinds = new Map(US_PLANS[0].actions.map((a) => [a.id, a.kind]));
     const nonEnforce = new Set(US_PLANS[0].actions.filter((a) => a.kind !== "enforce").map((a) => a.id));
-    for (const [id, req] of Object.entries(binding.requirements)) {
+    for (const [id, req] of Object.entries(binding.features.segmentationPlan!.model.requirements)) {
       for (const [verdict, actions] of Object.entries(req.impl)) {
         expect(actions.some((a) => kinds.get(a) === "enforce"), `${id}: ${verdict}`).toBe(true);
         expect(actions.filter((a) => kinds.get(a) === "plan")).toEqual([]);
         expect(actions.filter((a) => kinds.get(a) === "detect")).toEqual(verdict === "BLOCK and LOG" ? ["improve-logging"] : []);
-        expect(computeCoverage([{ id, label: req.label, verdict }], nonEnforce, binding)[0].status).not.toBe("covered");
+        expect(computeCoverage([{ id, label: req.label, verdict }], nonEnforce, binding.features.segmentationPlan!.model)[0].status).not.toBe("covered");
       }
     }
     const closures = ["block-enterprise-to-field", "block-vendor-to-field", "pin-rtac-to-field"];
-    expect(binding.requirements["unauth-modbus-writes"].impl.BLOCK).toEqual(closures);
-    expect(binding.requirements["unauth-modbus-writes"].impl["BLOCK and LOG"]).toEqual([...closures, "improve-logging"]);
+    expect(binding.features.segmentationPlan!.model.requirements["unauth-modbus-writes"].impl.BLOCK).toEqual(closures);
+    expect(binding.features.segmentationPlan!.model.requirements["unauth-modbus-writes"].impl["BLOCK and LOG"]).toEqual([...closures, "improve-logging"]);
   });
 
   it("shows the selected vendor OT deny as logged without changing proof verdicts", () => {
@@ -114,7 +114,7 @@ describe("US Apply Your Plan content", () => {
       const text = lab.steps.map((s) => s.description).join("\n");
       // Students read catalog titles; the action ID stays out of the lab text.
       for (const owner of owners) {
-        expect(text).toContain(binding.catalog.find((a) => a.id === owner)!.title);
+        expect(text).toContain(binding.features.segmentationPlan!.model.catalog.find((a) => a.id === owner)!.title);
         expect(text).not.toContain(`\`${owner}\``);
       }
       const retest = lab.steps[index].description;

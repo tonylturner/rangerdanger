@@ -44,7 +44,7 @@ func TestProbeVerdictsUseDiagnostics(t *testing.T) {
 			gen := s.rng.(*fakeRange).gen
 			var ids []string
 			if tt.expectation == "DENY" {
-				for _, action := range gen.Package.Curriculum.Catalog {
+				for _, action := range gen.Package.SegmentationPlan().Catalog {
 					ids = append(ids, action.ID)
 				}
 			}

@@ -120,9 +120,9 @@ func TestListPackagesWithoutCatalogIsEmpty(t *testing.T) {
 func TestScenarioRoutesServeActivePackageOnly(t *testing.T) {
 	s := routedServer(t)
 	for _, row := range []models.Scenario{
-		{ID: "active-lab", PackageID: testPackageID, LabTemplateID: testTemplateID, Order: "1", Steps: `[{"id":"only","title":"Only"}]`},
-		{ID: "active-unvalidated", PackageID: testPackageID, LabTemplateID: testTemplateID, Order: "2", Steps: `[]`},
-		{ID: "other-lab", PackageID: "other-package", LabTemplateID: "other-workshop", Order: "0", Validator: "us-remediation-planning", Steps: `[{"id":"only","title":"Only"}]`},
+		{ID: "active-lab", PackageID: testPackageID, LabTemplateID: testTemplateID, Label: "1", Steps: `[{"id":"only","title":"Only"}]`},
+		{ID: "active-unvalidated", PackageID: testPackageID, LabTemplateID: testTemplateID, Label: "2", Steps: `[]`},
+		{ID: "other-lab", PackageID: "other-package", LabTemplateID: "other-workshop", Label: "0", Validator: "us-remediation-planning", Steps: `[{"id":"only","title":"Only"}]`},
 	} {
 		if err := s.db.Create(&row).Error; err != nil {
 			t.Fatal(err)
@@ -274,10 +274,10 @@ func TestShippedPackagesLoad(t *testing.T) {
 	for _, pkg := range catalog.Packages {
 		if pkg.ID == euPackageID {
 			euListed = true
-			if pkg.Revision != 8 || pkg.Curriculum == nil || len(pkg.Curriculum.Roles) != 7 {
+			if pkg.Revision != 8 || pkg.Course.Features.SegmentationPlan.Model == nil || len(pkg.Course.Activities()) != 7 {
 				t.Fatal("EU revision / curriculum binding missing")
 			}
-			for role, id := range pkg.Curriculum.Roles {
+			for role, id := range map[string]string{"requirements": pkg.Course.Features.SegmentationPlan.Activities.Requirements, "planning": pkg.Course.Features.SegmentationPlan.Activities.Planning, "implementation": pkg.Course.Features.SegmentationPlan.Activities.Implementation} {
 				found := false
 				for _, scenario := range pkg.Scenarios {
 					found = found || scenario.ID == id
@@ -315,7 +315,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 	}
 
 	want := map[string]struct {
-		order     string
+		label     string
 		validator string
 		steps     []string
 	}{
@@ -364,9 +364,9 @@ func TestShippedPackagesLoad(t *testing.T) {
 			t.Errorf("unexpected US scenario %q", scenario.ID)
 			continue
 		}
-		if scenario.Order != expected.order || scenario.Validator != expected.validator || scenario.LabTemplateID != "substation-segmentation" {
-			t.Errorf("%s = (order %q, validator %q, template %q), want (%q, %q, substation-segmentation)",
-				scenario.ID, scenario.Order, scenario.Validator, scenario.LabTemplateID, expected.order, expected.validator)
+		if scenario.Label != expected.label || scenario.Validator != expected.validator || scenario.LabTemplateID != "substation-segmentation" {
+			t.Errorf("%s = (label %q, validator %q, template %q), want (%q, %q, substation-segmentation)",
+				scenario.ID, scenario.Label, scenario.Validator, scenario.LabTemplateID, expected.label, expected.validator)
 		}
 		var steps []labs.ScenarioStep
 		if err := json.Unmarshal([]byte(scenario.Steps), &steps); err != nil {
@@ -385,7 +385,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantEU := map[string]struct {
-		order     string
+		label     string
 		validator string
 		steps     []string
 	}{
@@ -407,8 +407,8 @@ func TestShippedPackagesLoad(t *testing.T) {
 			continue
 		}
 		used[scenario.Validator] = true
-		if scenario.Order != expected.order || scenario.Validator != expected.validator {
-			t.Errorf("%s = (order %q, validator %q), want (%q, %q)", scenario.ID, scenario.Order, scenario.Validator, expected.order, expected.validator)
+		if scenario.Label != expected.label || scenario.Validator != expected.validator {
+			t.Errorf("%s = (label %q, validator %q), want (%q, %q)", scenario.ID, scenario.Label, scenario.Validator, expected.label, expected.validator)
 		}
 		var steps []labs.ScenarioStep
 		if err := json.Unmarshal([]byte(scenario.Steps), &steps); err != nil {
@@ -433,27 +433,30 @@ func TestShippedPackagesLoad(t *testing.T) {
 func TestPackageCurriculumDTO(t *testing.T) {
 	s := routedServer(t)
 	catalog := s.currentCatalog()
-	catalog.Packages[1].Curriculum = &labs.Curriculum{
-		Schema: 1, ICSRules: labs.ICSRulesForbidden,
-		CurriculumBinding: labs.CurriculumBinding{Roles: map[string]string{"planning": "package-planner"}, DynamicSteps: map[string]string{"stable-step": "rules"}},
-	}
+	catalog.Packages[0].Course = &labs.Course{Modules: []labs.CourseModule{{ID: "module", Title: "Module", Activities: []labs.CurriculumActivity{{Scenario: "lesson", Label: "B"}}}}, CourseNodes: labs.CourseNodes{NodeMap: map[string]labs.CurriculumNodes{}, NodeInference: []labs.CurriculumNodeInference{}}}
+	catalog.Packages[1].Course = &labs.Course{Features: labs.CourseFeatures{SegmentationPlan: &labs.CurriculumBinding{Activities: labs.CurriculumActivities{Planning: "package-planner"}, DynamicSteps: map[string]string{"stable-step": "rules"}, Model: &labs.Curriculum{Schema: 1, ICSRules: labs.ICSRulesForbidden}}}}
 	rec := serve(s, http.MethodGet, "/api/packages")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET packages: %d %s", rec.Code, rec.Body)
 	}
 	var got []struct {
-		ID         string          `json:"id"`
-		Curriculum json.RawMessage `json:"curriculum"`
+		ID     string          `json:"id"`
+		Course json.RawMessage `json:"course"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || len(got[0].Curriculum) != 0 {
-		t.Fatalf("unbound package gained curriculum: %s", rec.Body)
+	if len(got) != 2 || !strings.Contains(string(got[0].Course), `"features":{}`) {
+		t.Fatalf("featureless course gained a planner: %s", rec.Body)
+	}
+	for _, retired := range []string{`"curriculum":`, `"roles":`, `"dir":`, `"nodes":`} {
+		if strings.Contains(rec.Body.String(), retired) {
+			t.Fatalf("private or retired field %s: %s", retired, rec.Body)
+		}
 	}
 	for _, want := range []string{`"planning":"package-planner"`, `"stable-step":"rules"`, `"icsRules":"forbidden"`} {
-		if !strings.Contains(string(got[1].Curriculum), want) {
-			t.Fatalf("curriculum missing %s: %s", want, got[1].Curriculum)
+		if !strings.Contains(string(got[1].Course), want) {
+			t.Fatalf("curriculum missing %s: %s", want, got[1].Course)
 		}
 	}
 }
@@ -465,7 +468,12 @@ func TestEUWorkshopStepParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	all := map[string]labs.ScenarioYAML{}
+	labels := map[string]string{}
+	positions := map[string]int{}
 	for _, pkg := range catalog.Packages {
+		for position, activity := range pkg.Course.Activities() {
+			labels[activity.Scenario], positions[activity.Scenario] = activity.Label, position
+		}
 		for _, sc := range pkg.Scenarios {
 			all[sc.ID] = sc
 		}
@@ -473,8 +481,8 @@ func TestEUWorkshopStepParity(t *testing.T) {
 	for _, id := range []string{"baseline-assessment", "segmentation-requirements", "remediation-planning", "firewall-implementation", "hardening-configurations", "vendor-rdp-compromise", "validation-evidence"} {
 		t.Run(id, func(t *testing.T) {
 			us, eu := all[id], all["eu-"+id]
-			if eu.Order != us.Order || len(eu.Steps) != len(us.Steps) {
-				t.Fatalf("break points differ: %s/%d vs %s/%d", us.Order, len(us.Steps), eu.Order, len(eu.Steps))
+			if labels[eu.ID] != labels[us.ID] || positions[eu.ID] != positions[us.ID] || len(eu.Steps) != len(us.Steps) {
+				t.Fatalf("break points differ: %s/%d vs %s/%d", us.ID, len(us.Steps), eu.ID, len(eu.Steps))
 			}
 			usDecisions, euDecisions := 0, 0
 			for _, step := range us.Steps {

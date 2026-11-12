@@ -18,3 +18,10 @@ policies:
     description: The reference segmentation policy for this range.
 operator_view: eu-iec104
 ics_rules: forbidden
+course:
+  nodes: nodes.yml
+  modules:
+    - id: section
+      title: Telecontrol
+      activities: [{scenario: eu-baseline-assessment, label: "1"}]
+  features: {}

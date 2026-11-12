@@ -1,0 +1,151 @@
+{
+  "activities": {
+    "baseline-assessment": {
+      "binding": "",
+      "dynamic": {},
+      "flags": {
+        "hideBanner": true,
+        "validate": false
+      },
+      "label": "1.2",
+      "position": 0,
+      "validator": []
+    },
+    "firewall-implementation": {
+      "binding": "implementation",
+      "dynamic": {
+        "phase-3-create-minimal-required-rules": "Implement your approved Lab 1.4 change request, not a policy label.\nThe saved selection sets the expected results below. If no eligible action\nis selected, there is no change request and the full Hardened reference is\nthe target. A planning-only selection keeps the corresponding Weak exposures.\nIf you used a catch-up apply, the results follow the policy you applied.\nKeep deferred exposures open only where the request accepts that risk.\nRequired operations and reserved management access must remain available.\n\nStage the Phase 2 deletes and all replacements in the same shared candidate.\nUse the approved source, destination, service and action for each rule.\nThe first matching enforcing terminal rule decides; monitor rules never decide.\nRule IDs do not set priority. Review configured order and shadow warnings before commit.\nKeep RTAC field exceptions before `deny-ot-to-field-direct`.\n\n### Worked rule: RTAC → field Modbus\n\nOn **Firewall Rules**, choose **Create rule** below the table. Set ID\n`rtac-to-field-modbus`, action ALLOW, source zone `lan1`, destination zone\n`lan2`, source `10.30.30.20/32`, protocol TCP and port 502. Stage it, then\nuse **Move to… → top** to put the exception before broader field denies.\nFrom the fw-1 configuration CLI, the equivalent is (choose UI or CLI):\n\n    add firewall rule rtac-to-field-modbus ALLOW lan1 lan2\n    set firewall rule rtac-to-field-modbus --sources 10.30.30.20/32 --protocols tcp:502 --log true\n    move firewall rule rtac-to-field-modbus top\n\nIf the ID already exists, use `set` rather than creating it again. Repeat\nfor the other required rules and their actual ports and pins. Create the\nlogged diagnostic denies for selected closures; Weak does not contain them.\nUse the rule reference below for their zone, port and action fields.\nNever commit the temporarily broad `add` result before applying its pins.\n\nIf only part of a Weak bundle closes, replace it with the required\nexceptions and a separate allow for the explicitly deferred sources or\nservices. Keep that deferred allow before overlapping denies; do not\nretain the original broad rule and accidentally keep the closed paths open.\n\nBefore the single commit, verify the required operational rules:\n`rtac-to-field-modbus`, `rtac-to-field-dnp3` and `rtac-to-field-http`\nallow source `10.30.30.20/32` on TCP 502, 20000 and 8080 respectively.\nPreserve `ot-intrazone-ops` for HMI operations, `gps-to-field-ntp` for\n`10.30.30.50/32` UDP/123, and reserved management access.\n\nWith **Restrict enterprise → vendor remote access** selected, replace broad\nenterprise→vendor access with TCP 22, 80 and 443. With it deferred, RDP/3389\nand VNC/5900 remain reachable. Deferred rules retain the approved Weak access;\ndo not remove them just to make a reference test pass.\n\n**Create rule** and **Delete** only stage edits. On **Configuration**, open\n**Review changes** and inspect all entity summaries. **Advanced** shows the\nexact JSON diff. Review the full candidate, including surviving rules and\nfirst-match order, against your request with a second reviewer.\nFrom the fw-1 configuration CLI, commit replacements and removals together:\n\n    show diff\n    commit confirmed 60\n\nOr use **Commit-confirmed** on **Configuration** after review and set the\nseconds field to the agreed test window. `60` is an example: agree enough\ntime for management and operational checks before starting. Make ONE commit\nfor this rule change. Read back with `show running-config`; record the\nrunning identity, UTC time and confirmation deadline. Check management access\nthrough the portal and the required operational conduits before confirming.\nFrom the fw-1 configuration CLI, retain the change only after those checks pass:\n\n    confirm\n\nOr use **Confirm** while the deadline is pending. Without `confirm`, containd\nrestores the previous running config at the deadline. If a rollback trigger\noccurs, stop testing, notify the operator and do not confirm. The rollback\nowner checks the restored running identity and retests operations. For an\nimmediate return, use `rollback` (UI **Recovery → Rollback**). Rollback is one\nlevel only: it restores the previous running config, not an arbitrary history.\nThe UI rollback keeps the newer staged candidate; do not commit it accidentally.\nReserved management protection refuses unsafe changes and rollback targets.\nFrom Kali, test the enterprise-to-field boundary:\n\n    mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20\n\nExpect timeout if that closure is selected; expect a response if deferred.\nFrom Kali, also use `nmap -Pn -p 3389,5900 10.20.20.10` to test remote access.\nExpect `filtered` for the selected restriction, not for an approved deferral.\nCheck required operations before confirming. Verify the operational exceptions\nand removal of approved broad allows in the running rules, not just the candidate.\nKeep the pre-change export as a restorable backup and evidence reference.\n\nThe L4 source pin enforces; DPI detects and logs.\n\n:::hint Policy evidence at the containd CLI\nIn the configuration CLI, `export config` prints redacted running JSON for a restorable backup and evidence; it does not create a file:\n\n    export config\n\nCopy the output into your evidence. Do not use shell redirection.\nFull export requires explicit administrator intent; do not share secrets.\nThis reference example includes detection; it is not the whole policy:\n\n    {\n      \"id\": \"rtac-to-field-modbus\",\n      \"sourceZones\": [\"lan1\"],\n      \"destZones\": [\"lan2\"],\n      \"sources\": [\"10.30.30.20/32\"],\n      \"protocols\": [{\"name\": \"tcp\", \"port\": \"502\"}],\n      \"ics\": {\"protocol\": \"modbus\", \"functionCode\": [1, 2, 3, 4, 5, 6]},\n      \"action\": \"ALLOW\",\n      \"log\": true\n    }\n:::\n\n:::hint Optional catch-up — for less technical students or teams behind schedule\nThis replaces typing rules. It does not replace your own observations, operator check or sign-off.\nUse **Apply Your Plan** only if you want the saved selection entered for you.\nWith an empty selection, it loads Weak, not the full reference. Use\n**Apply Hardened** for the full reference instead. Read back what was loaded.\nYou can also save **Export compiled config** and **Export plan record** as\nreference material. Neither is an export of a hand-written running policy.\n:::\n\n### Rule reference\n\n{{noPlan}}\n{{ruleTable}}",
+        "phase-5-validate-allowed-traffic": "Check required operations after the commit. Record each source, destination,\nservice, UTC time, expected result and observation in Notes. From the RTAC terminal, run:\n\n    mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20\n    dnp3poll -a 1 -t 3s 10.40.40.20:20000\n\nBoth should return data. Check field `device_comms` with:\n\n    curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool\n\nOpen the HMI. Confirm no alarms, closed breaker and recloser, auto-reclose\non and energized loads. Check GPS NTP separately; TCP tests do not test NTP.\nHave the operator confirm fresh device communications and supplied loads.\nA bridged same-zone connection does not prove a routed firewall rule.\nStop and follow the agreed rollback if required operations fail.\n\nFrom an OT Ops terminal, check the intra-zone HMI service:\n\n    curl -sf http://10.30.30.10:1881 --connect-timeout 3\n\nThis check must work for every plan. It is not routed firewall proof.\n\n### Expected results\n\n{{tests}}",
+        "phase-6-validate-blocked-traffic": "Test the prohibited paths in your change request from their named sources.\nRecord source, destination, service, expected result, observation and UTC time.\nUse DENY for every required closure. A RESET rule answers with a TCP reset, so the host test shows \"Connection refused\" and cannot prove the drop; the validator reports it as blocked by RESET.\nConnection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop.\nA missing tool or container error is missing evidence, never a pass.\n\n| Path | Owning action | Selected / deferred |\n|---|---|---|\n| Kali→vendor RDP/3389 and VNC/5900 | Restrict enterprise → vendor remote access | deny / allow |\n| Enterprise→OT ICS and web | Block enterprise → OT Operations ICS ports | deny / allow |\n| Enterprise→field | Block enterprise → field direct access | deny / allow |\n| Vendor→OT Modbus and web | Restrict vendor → OT to SSH/HTTPS only | deny / allow |\n| Vendor and eng-ws→field | Block vendor → field devices entirely | deny / allow |\n| Non-RTAC OT hosts→field | Pin field-device access to RTAC source IP | deny / allow |\n\nA deferred exposure remains a prevention gap, even when the policy matches\nyour request. Name its risk owner; do not change policy just to hide the gap.\nPreserve timestamps and the running identity. `show audit` lists `config.commit`\nevidence, not a per-flow verdict. A timeout alone does not identify the cause;\nretain packet evidence and operator observations for review in Lab 2.4.\nTCP reachability does not establish command filtering.\n\n:::hint Run the sampled protocol checks from their real sources\nFrom Kali, test the enterprise-to-field action:\n\n    mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20\n    dnp3poll -a 1 -t 3s 10.40.40.20:20000\n\nFrom eng-ws, test the vendor-to-field action:\n\n    mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.23\n\nFrom vendor-jump, test that same action independently:\n\n    dnp3poll -a 1 -t 3s 10.40.40.20:20000\n    mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20\n\nSelected means timeout; deferred means reachable. These samples do not\nreplace your test plan. Write the actual results, including unexpected ones,\nin Notes for Lab 2.4. **Cross-check the current system** is not your test record.\n:::\n\nFor logged-rule negatives, correlate the named host's connect timeout with a\nfw-1 DENY event in the same UTC window. In the\nfw-1 containd configuration CLI (type `containd cli` if in Linux), type:\n\n    show events\n\nMatch `KIND=firewall.rule.hit`, `action=DENY`, `proto=tcp`, `port=\u003cp\u003e` and\n`ruleId=\u003crule\u003e` to that row's real SRC host:port, DST and UTC time. Record\nits event ID and matching ruleId, not merely the presence of any deny.\nFor this phase, prove at least one selected logged-rule deny with timeout\nand its correlated event. Default-drop rows (for example Enterprise→vendor\nRDP/VNC) have no rule-hit event; record them separately and use the Lab 2.4\ncapture procedure for attribution. Never change policy to manufacture an event.\nA rule without logging or a default drop can deny without an event:\nabsence of an event is not proof of an allow. An event alone does not\nprove the application is unaffected; keep the operator observations.\n\n### Expected results\n\n{{tests}}"
+      },
+      "flags": {
+        "hideBanner": true,
+        "policyActions": true
+      },
+      "label": "2.2",
+      "position": 3,
+      "validator": []
+    },
+    "hardening-configurations": {
+      "binding": "",
+      "dynamic": {},
+      "flags": {
+        "policyActions": true
+      },
+      "label": "2.3",
+      "position": 4,
+      "validator": []
+    },
+    "remediation-planning": {
+      "binding": "planning",
+      "dynamic": {},
+      "flags": {
+        "hideBanner": true,
+        "validate": false
+      },
+      "label": "1.4",
+      "position": 2,
+      "validator": []
+    },
+    "segmentation-requirements": {
+      "binding": "requirements",
+      "dynamic": {},
+      "flags": {
+        "hideBanner": true,
+        "validate": false
+      },
+      "label": "1.3",
+      "position": 1,
+      "validator": []
+    },
+    "validation-evidence": {
+      "binding": "",
+      "dynamic": {},
+      "flags": {
+        "policyActions": true
+      },
+      "label": "2.4",
+      "position": 6,
+      "validator": []
+    },
+    "vendor-rdp-compromise": {
+      "binding": "",
+      "dynamic": {},
+      "flags": {
+        "policyActions": true
+      },
+      "label": "2.3-bonus",
+      "position": 5,
+      "validator": []
+    }
+  },
+  "contentHash": "1654df198e70f727eb9db886a2f4490d7d227dd582dec5078ab177bc51dd7238",
+  "nodeInference": [
+    {
+      "node": "kali-1",
+      "ip": "10.10.10.50",
+      "pattern": "\\bkali\\b"
+    },
+    {
+      "node": "vendor-jump-1",
+      "ip": "10.20.20.10",
+      "pattern": "\\bvendor.?jump\\b"
+    },
+    {
+      "node": "eng-ws-1",
+      "ip": "10.20.20.20",
+      "pattern": "\\bengineering.?workstation\\b"
+    },
+    {
+      "node": "openplc-1",
+      "ip": "10.30.30.30",
+      "pattern": "\\bopenplc\\b"
+    },
+    {
+      "node": "rtac-1",
+      "ip": "10.30.30.20",
+      "pattern": "\\brtac\\b"
+    }
+  ],
+  "nodeMap": {
+    "baseline-assessment": {
+      "primary": "fw-1",
+      "others": [
+        "eng-ws-1",
+        "kali-1"
+      ]
+    },
+    "firewall-implementation": {
+      "primary": "fw-1",
+      "others": [
+        "kali-1",
+        "eng-ws-1"
+      ]
+    },
+    "hardening-configurations": {
+      "primary": "kali-1",
+      "others": []
+    },
+    "remediation-planning": {
+      "primary": "",
+      "others": []
+    },
+    "segmentation-requirements": {
+      "primary": "",
+      "others": []
+    },
+    "validation-evidence": {
+      "primary": "kali-1",
+      "others": [
+        "vendor-jump-1",
+        "eng-ws-1"
+      ]
+    },
+    "vendor-rdp-compromise": {
+      "primary": "kali-1",
+      "others": [
+        "vendor-jump-1"
+      ]
+    }
+  }
+}

@@ -1187,9 +1187,9 @@
       "owners": [
         "block-enterprise-to-station"
       ],
-      "labs": [
-        "implementation",
-        "hardening"
+      "activities": [
+        "eu-firewall-implementation",
+        "eu-hardening-configurations"
       ],
       "note": "Foreign IEC 104 connect",
       "planVerdict": "deny",
@@ -1206,8 +1206,8 @@
       "port": 8080,
       "category": "unauthorized",
       "owners": [],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Enterprise PLC web",
       "planVerdict": "deny",
@@ -1226,9 +1226,9 @@
       "owners": [
         "restrict-enterprise-to-vendor"
       ],
-      "labs": [
-        "implementation",
-        "vendor"
+      "activities": [
+        "eu-firewall-implementation",
+        "eu-vendor-rdp-compromise"
       ],
       "note": "Enterprise vendor RDP",
       "planVerdict": "deny",
@@ -1247,9 +1247,9 @@
       "owners": [
         "restrict-enterprise-to-vendor"
       ],
-      "labs": [
-        "implementation",
-        "vendor"
+      "activities": [
+        "eu-firewall-implementation",
+        "eu-vendor-rdp-compromise"
       ],
       "note": "Enterprise vendor VNC",
       "planVerdict": "deny",
@@ -1283,8 +1283,8 @@
       "owners": [
         "block-enterprise-to-field"
       ],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1303,9 +1303,9 @@
       "owners": [
         "block-vendor-to-field"
       ],
-      "labs": [
-        "implementation",
-        "vendor"
+      "activities": [
+        "eu-firewall-implementation",
+        "eu-vendor-rdp-compromise"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1324,8 +1324,8 @@
       "owners": [
         "block-vendor-to-field"
       ],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1359,8 +1359,8 @@
       "owners": [
         "block-enterprise-to-field"
       ],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1379,9 +1379,9 @@
       "owners": [
         "block-vendor-to-field"
       ],
-      "labs": [
-        "implementation",
-        "vendor"
+      "activities": [
+        "eu-firewall-implementation",
+        "eu-vendor-rdp-compromise"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1400,8 +1400,8 @@
       "owners": [
         "block-vendor-to-field"
       ],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1435,8 +1435,8 @@
       "owners": [
         "block-enterprise-to-field"
       ],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1455,9 +1455,9 @@
       "owners": [
         "block-vendor-to-field"
       ],
-      "labs": [
-        "implementation",
-        "vendor"
+      "activities": [
+        "eu-firewall-implementation",
+        "eu-vendor-rdp-compromise"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1476,8 +1476,8 @@
       "owners": [
         "block-vendor-to-field"
       ],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1511,8 +1511,8 @@
       "owners": [
         "block-enterprise-to-field"
       ],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1531,9 +1531,9 @@
       "owners": [
         "block-vendor-to-field"
       ],
-      "labs": [
-        "implementation",
-        "vendor"
+      "activities": [
+        "eu-firewall-implementation",
+        "eu-vendor-rdp-compromise"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1552,8 +1552,8 @@
       "owners": [
         "block-vendor-to-field"
       ],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1587,8 +1587,8 @@
       "owners": [
         "block-enterprise-to-field"
       ],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1607,9 +1607,9 @@
       "owners": [
         "block-vendor-to-field"
       ],
-      "labs": [
-        "implementation",
-        "vendor"
+      "activities": [
+        "eu-firewall-implementation",
+        "eu-vendor-rdp-compromise"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",
@@ -1628,8 +1628,8 @@
       "owners": [
         "block-vendor-to-field"
       ],
-      "labs": [
-        "implementation"
+      "activities": [
+        "eu-firewall-implementation"
       ],
       "note": "Foreign field Modbus connect",
       "planVerdict": "deny",

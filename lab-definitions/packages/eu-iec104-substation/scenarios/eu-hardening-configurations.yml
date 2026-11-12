@@ -1,5 +1,4 @@
 id: eu-hardening-configurations
-order: '2.3'
 name: Protocol-Hardened Configurations
 summary: Unauthorized IEC 104 SBO breaker OPEN, loss of supply, restoration and identical retest under source pinning.
 estimated_minutes: 25

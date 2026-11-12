@@ -18,7 +18,6 @@ func TestCurriculumRequiredNestedCollections(t *testing.T) {
 		{[]any{"requirements", "enterprise-to-field", "impl"}, "requirements.enterprise-to-field.impl"},
 		{[]any{"readinessFlags", 0, "actions"}, "readinessFlags[0].actions"},
 		{[]any{"impact", "modbus-dpi", "defends"}, "impact.modbus-dpi.defends"},
-		{[]any{"nodeMap", "eu-remediation-planning", "others"}, "nodeMap.eu-remediation-planning.others"},
 		{[]any{"catalog", 0, "roles"}, "catalog[0].roles"},
 		{[]any{"requirements", "enterprise-to-field", "impl", "BLOCK"}, "requirements.enterprise-to-field.impl.BLOCK"},
 	}
@@ -67,7 +66,7 @@ func TestCurriculumRequiredNestedCollections(t *testing.T) {
 				}
 				dir := t.TempDir()
 				writeDefinition(t, filepath.Join(dir, binding.Dir, "catalog.yml"), string(data))
-				pkg.Curriculum, err = loadCurriculum(dir, binding, pkg)
+				pkg.Course.Features.SegmentationPlan.Model, err = loadCurriculum(dir, binding, pkg)
 				if err == nil {
 					err = validateCurriculum(pkg)
 				}

@@ -170,8 +170,8 @@ func TestPlanMonitorPlacement(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pkg := planPackage(t, "eu-iec104-substation")
-			tc.change(pkg.Curriculum)
-			if _, err := validatePlan(pkg, pkg.Curriculum); err == nil || !strings.Contains(err.Error(), tc.want) {
+			tc.change(pkg.SegmentationPlan())
+			if _, err := validatePlan(pkg, pkg.SegmentationPlan()); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error=%v, want %s", err, tc.want)
 			}
 		})
@@ -207,9 +207,9 @@ func TestPlanMonitorEmissionAndEvaluation(t *testing.T) {
 		}
 	}
 	// Detect map order must never determine emission order.
-	first := pkg.Curriculum.Plan.Detect["iec104-dpi"]
+	first := pkg.SegmentationPlan().Plan.Detect["iec104-dpi"]
 	second := PlanDetect{Rules: []PlanRule{{ID: "second-observer", Action: "DENY", ICS: &PlanICS{Protocol: "iec104", Mode: "monitor"}}}}
-	pkg.Curriculum.Plan.Detect["improve-logging"] = second
+	pkg.SegmentationPlan().Plan.Detect["improve-logging"] = second
 	compiled := mustCompilePlan(t, pkg, []string{"improve-logging", "iec104-dpi"})
 	tail := compiled.Rules[len(empty.Rules):]
 	if tail[0].Rule.ID != first.Rules[0].ID || tail[3].Rule.ID != "second-observer" {
@@ -230,7 +230,7 @@ func TestPlanObservePackageModes(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			pkg := planPackage(t, "eu-iec104-substation")
 			pkg.ICSRules = mode
-			_, err := CompilePlan(pkg, pkg.Curriculum, []string{"iec104-dpi"})
+			_, err := CompilePlan(pkg, pkg.Course.Features.SegmentationPlan.Model, []string{"iec104-dpi"})
 			if mode == ICSRulesForbidden {
 				if err == nil || !strings.Contains(err.Error(), "forbidden") {
 					t.Fatalf("error=%v, want forbidden", err)

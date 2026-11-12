@@ -129,22 +129,16 @@ func defaultPolicy(gen *lifecycle.Generation) (string, error) {
 	return name, nil
 }
 
-// resolveProof uses authored lab roles rather than a second Go tuple filter.
+// resolveProof selects explicit activity membership, or the whole universe for an empty id.
 func resolveProof(gen *lifecycle.Generation, expectations []labs.PlanExpectation, slot string, againstPlan bool) ([]validationProbe, error) {
 	probes := []validationProbe{}
-	role := ""
 	if slot != "" {
-		for candidate, id := range gen.Package.Curriculum.Roles {
-			if id == slot {
-				role = candidate
-			}
-		}
-		if role == "" {
-			return nil, fmt.Errorf("unknown lab slot %s", slot)
+		if _, ok := gen.Package.Course.Activity(slot); !ok {
+			return nil, fmt.Errorf("unknown course activity %s", slot)
 		}
 	}
 	for _, expectation := range expectations {
-		if role != "" && !slices.Contains(expectation.Labs, role) {
+		if slot != "" && !slices.Contains(expectation.Activities, slot) {
 			continue
 		}
 		from, err := nodeService(gen, expectation.From)

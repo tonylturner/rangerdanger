@@ -4,7 +4,7 @@
 # Brings RangerDanger up from source (./scripts/dev-up.sh: platform, then
 # the range through the backend), checks that the US range is ready, hits
 # the API endpoints, validates that the right lab inventory is loaded
-# with the expected IDs and order strings, and confirms sims report
+# with the expected IDs and label strings, and confirms sims report
 # healthy.
 #
 # Usage:
@@ -31,7 +31,7 @@ cd "$ROOT_DIR" || exit 1
 API="http://localhost:8088"
 
 # Expected lab inventory after the workshop-deck-aligned restructure.
-# Format: order|id (sorted lexicographically — same order containd
+# Format: label|id (course position — the same order RangerDanger
 # returns from /api/scenarios).
 EXPECTED=(
   "1.2|baseline-assessment"
@@ -152,19 +152,19 @@ if [ "$actual_count" = "$EXPECTED_COUNT" ]; then
   ok "scenario count = $EXPECTED_COUNT"
 else
   err "scenario count: expected $EXPECTED_COUNT, got $actual_count"
-  echo "$inv_json" | jq -r '.scenarios[] | "  \(.order // "-")  \(.id)"'
+  echo "$inv_json" | jq -r '.scenarios[] | "  \(.label // "-")  \(.id)"'
 fi
 
-# Each expected (order,id) must appear.
+# Each expected (label,id) must appear.
 for entry in "${EXPECTED[@]}"; do
-  order="${entry%%|*}"
+  label="${entry%%|*}"
   id="${entry##*|}"
-  found=$(echo "$inv_json" | jq -r --arg id "$id" --arg ord "$order" \
-      '.scenarios[] | select(.id == $id and .order == $ord) | .id')
+  found=$(echo "$inv_json" | jq -r --arg id "$id" --arg ord "$label" \
+      '.scenarios[] | select(.id == $id and .label == $ord) | .id')
   if [ "$found" = "$id" ]; then
-    ok "Lab $order  $id"
+    ok "Lab $label  $id"
   else
-    err "Lab $order  $id  (missing or wrong order)"
+    err "Lab $label  $id  (missing or wrong label)"
   fi
 done
 

@@ -39,7 +39,7 @@ func TestChangeRequestManualPolicyJudgment(t *testing.T) {
 			if pkg == euPackageID {
 				ids = []string{"pin-rtu-to-field"}
 			}
-			compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, ids)
+			compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, ids)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -117,7 +117,7 @@ func TestChangeRequestManualPolicyJudgment(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				empty, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
+				empty, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -130,7 +130,7 @@ func TestChangeRequestManualPolicyJudgment(t *testing.T) {
 			t.Run("applied snapshot supersedes request", func(t *testing.T) {
 				setRunning(compiled.Config)
 				s.appliedPlan, s.planProvenance, s.policySource = &compiled, &planProvenance{PolicyHash: s.lastAppliedHash}, "plan"
-				empty, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
+				empty, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -165,7 +165,7 @@ func TestChangeRequestTransport(t *testing.T) {
 			gen.Manifest.Services[i].Endpoints["api"] = upstream.URL
 		}
 	}
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"pin-rtac-to-field"})
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, []string{"pin-rtac-to-field"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func mustJSON(t *testing.T, value any) []byte {
 
 func TestChangeRequestEUActiveMatrixAndAudit(t *testing.T) {
 	s, gen, setRunning, _ := euPolicyCheckFixture(t)
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, []string{"block-enterprise-to-field"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestChangeRequestEUActiveMatrixAndAudit(t *testing.T) {
 		t.Fatalf("automation: %+v; %v", result, err)
 	}
 	us := usGeneration(nil)
-	empty, err := labs.CompilePlan(us.Package, us.Package.Curriculum, nil)
+	empty, err := labs.CompilePlan(us.Package, us.Package.SegmentationPlan(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -51,7 +51,7 @@ func TestProbeMatrixMeasurementsAndIdentity(t *testing.T) {
 				} else {
 					gen = usGeneration(nil)
 				}
-				compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
+				compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, []string{"block-enterprise-to-field"})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -201,11 +201,11 @@ func TestProbeMatrixHTTPMeasurements(t *testing.T) {
 		if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &result) != nil || !result.PolicyStable || result.PolicySource != "manual-custom" {
 			t.Fatalf("%s: %d %s", pkg, rec.Code, rec.Body)
 		}
-		if len(result.Rows) != len(gen.Package.Curriculum.Plan.Proof) {
+		if len(result.Rows) != len(gen.Package.SegmentationPlan().Plan.Proof) {
 			t.Fatal("incomplete universe")
 		}
 		for i, row := range result.Rows {
-			if row.ID != gen.Package.Curriculum.Plan.Proof[i].ID || row.Observed != "allow" || row.Error != "" {
+			if row.ID != gen.Package.SegmentationPlan().Plan.Proof[i].ID || row.Observed != "allow" || row.Error != "" {
 				t.Fatalf("%+v", row)
 			}
 		}

@@ -20,15 +20,10 @@ func TestCurriculumStepReferences(t *testing.T) {
 		{"malformed", "{{step:Bad}}", "Body", "implementation", "rules", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &Curriculum{
-				CurriculumBinding: CurriculumBinding{
-					Roles:        map[string]string{"implementation": tc.role},
-					DynamicSteps: map[string]string{"implement": tc.binding},
-				},
-				Phases: map[string]string{"rules": tc.template},
-			}
+			c := &Curriculum{Phases: map[string]string{"rules": tc.template}}
+			binding := &CurriculumBinding{Activities: CurriculumActivities{Implementation: tc.role}, DynamicSteps: map[string]string{"implement": tc.binding}}
 			scenarios := []ScenarioYAML{{ID: "implementation", Steps: []ScenarioStep{{ID: "implement", Description: tc.body}}}}
-			err := expandCurriculumSteps(c, scenarios)
+			err := expandCurriculumSteps(c, binding, scenarios)
 			if (err == nil) != tc.valid {
 				t.Fatalf("error = %v, valid = %v", err, tc.valid)
 			}
@@ -51,12 +46,12 @@ func TestCurriculumEUPhasesUseScenarioInstructions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, scenario := range scenarios {
-		if scenario.ID != pkg.Curriculum.Roles["implementation"] {
+		if scenario.ID != pkg.Course.Features.SegmentationPlan.Activities.Implementation {
 			continue
 		}
 		for _, step := range scenario.Steps {
-			if phase := pkg.Curriculum.DynamicSteps[step.ID]; phase != "" {
-				text := pkg.Curriculum.Phases[phase]
+			if phase := pkg.Course.Features.SegmentationPlan.DynamicSteps[step.ID]; phase != "" {
+				text := pkg.SegmentationPlan().Phases[phase]
 				if !strings.HasPrefix(text, strings.TrimSpace(step.Description)+"\n\n### ") || strings.Contains(text, "{{step:") {
 					t.Fatalf("%s does not reuse its scenario instructions", phase)
 				}

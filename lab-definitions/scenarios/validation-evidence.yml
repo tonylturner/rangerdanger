@@ -1,5 +1,4 @@
 id: validation-evidence
-order: "2.4"
 name: "Testing & Validation"
 summary: "Write a test plan, test named sources, read boundary captures and sign the operating record."
 estimated_minutes: 40

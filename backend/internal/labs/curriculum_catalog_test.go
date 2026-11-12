@@ -47,14 +47,14 @@ func TestCurriculumCanonicalValidation(t *testing.T) {
 				t.Fatalf("valid fixture: %v", err)
 			}
 			// Mutate only the canonical sibling, serialize and load one independent defect.
-			tc.change(pkg.Curriculum)
-			data, err := yaml.Marshal(pkg.Curriculum)
+			tc.change(pkg.SegmentationPlan())
+			data, err := yaml.Marshal(pkg.SegmentationPlan())
 			if err != nil {
 				t.Fatal(err)
 			}
 			dir := t.TempDir()
 			writeDefinition(t, filepath.Join(dir, binding.Dir, "catalog.yml"), string(data))
-			pkg.Curriculum, err = loadCurriculum(dir, binding, pkg)
+			pkg.Course.Features.SegmentationPlan.Model, err = loadCurriculum(dir, binding, pkg)
 			if err == nil {
 				err = validateCurriculum(pkg)
 			}
@@ -69,7 +69,7 @@ func TestCurriculumDeclaredOptionsOverrideDefaults(t *testing.T) {
 	pkg, binding := curriculumExample(t)
 	var options map[string]bool
 	for i := range pkg.Scenarios {
-		if pkg.Scenarios[i].ID == binding.Roles["requirements"] {
+		if pkg.Scenarios[i].ID == binding.Activities.Requirements {
 			step := &pkg.Scenarios[i].Steps[0]
 			step.Description = strings.Replace(step.Description,
 				":::decision id=enterprise-to-field\n",
@@ -85,14 +85,14 @@ func TestCurriculumDeclaredOptionsOverrideDefaults(t *testing.T) {
 	}
 	// Only this mapping is invalid: the action exists, and RESTRICT is a
 	// default option but not an option declared by this particular decision.
-	pkg.Curriculum.Requirements["enterprise-to-field"].Impl["RESTRICT"] = []string{"block-enterprise-to-field"}
-	data, err := yaml.Marshal(pkg.Curriculum)
+	pkg.SegmentationPlan().Requirements["enterprise-to-field"].Impl["RESTRICT"] = []string{"block-enterprise-to-field"}
+	data, err := yaml.Marshal(pkg.SegmentationPlan())
 	if err != nil {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
 	writeDefinition(t, filepath.Join(dir, binding.Dir, "catalog.yml"), string(data))
-	pkg.Curriculum, err = loadCurriculum(dir, binding, pkg)
+	pkg.Course.Features.SegmentationPlan.Model, err = loadCurriculum(dir, binding, pkg)
 	if err == nil {
 		err = validateCurriculum(pkg)
 	}

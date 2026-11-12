@@ -60,10 +60,14 @@ var knownOperatorViews = map[string]bool{
 // slugPattern is the shape of package IDs, scenario IDs and step IDs.
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-// ValidatorRequirements maps each registered validator key to the package
-// capabilities it needs. The server owns the validator code; the loader
-// only checks that declared keys exist and that the package can serve them.
-type ValidatorRequirements map[string][]string
+// ValidatorRequirement declares the capabilities and teaching features a validator needs.
+type ValidatorRequirement struct {
+	Capabilities     []string
+	SegmentationPlan bool
+}
+
+// ValidatorRequirements is the server-owned registry used for package validation.
+type ValidatorRequirements map[string]ValidatorRequirement
 
 // PolicyWording is the package-owned presentation of a named policy.
 type PolicyWording struct {
@@ -79,15 +83,15 @@ type PolicyYAML struct {
 
 // PackageYAML mirrors lab-definitions/packages/<id>/package.yml.
 type PackageYAML struct {
-	Curriculum   *CurriculumBinding `yaml:"curriculum"`
-	Schema       int                `yaml:"schema"`
-	ID           string             `yaml:"id"`
-	Title        string             `yaml:"title"`
-	Revision     int                `yaml:"revision"`
-	Topology     string             `yaml:"topology"`  // relative to package.yml
-	Scenarios    string             `yaml:"scenarios"` // directory relative to package.yml
-	Knowledge    string             `yaml:"knowledge"` // required knowledge index, relative to package.yml
-	Capabilities []string           `yaml:"capabilities"`
+	Course       *Course  `yaml:"course"`
+	Schema       int      `yaml:"schema"`
+	ID           string   `yaml:"id"`
+	Title        string   `yaml:"title"`
+	Revision     int      `yaml:"revision"`
+	Topology     string   `yaml:"topology"`  // relative to package.yml
+	Scenarios    string   `yaml:"scenarios"` // directory relative to package.yml
+	Knowledge    string   `yaml:"knowledge"` // required knowledge index, relative to package.yml
+	Capabilities []string `yaml:"capabilities"`
 	// Policies maps the names the firewall buttons and actions apply
 	// ("weak", "improved") to files and wording owned by the package.
 	Policies     map[string]PolicyYAML `yaml:"policies"`
@@ -98,7 +102,7 @@ type PackageYAML struct {
 
 // Package is one fully parsed and validated curriculum package.
 type Package struct {
-	Curriculum *Curriculum
+	Course *Course
 	// Captured at definition load so compilation needs no filesystem access
 	// and retains the package's exact non-rule policy envelope.
 	planEnvelope json.RawMessage
@@ -223,6 +227,9 @@ func (l *Loader) LoadPackage(manifestPath string) (Package, error) {
 	if err != nil {
 		return Package{}, err
 	}
+	if err := validateFeatureUsage(pkg, l.Validators); err != nil {
+		return Package{}, err
+	}
 	if err := ValidateLab(&pkg.Template, pkg.Scenarios, pkg.Capabilities, pkg.Policies, l.Validators); err != nil {
 		return Package{}, err
 	}
@@ -302,16 +309,6 @@ func readDefinition(definitionsDir, manifestPath string) (Package, error) {
 		OperatorView:       manifest.OperatorView,
 		ICSRules:           icsRules,
 	}
-	if manifest.Curriculum != nil {
-		improved, exists := policies["improved"]
-		if !exists {
-			return Package{}, fmt.Errorf("curriculum requires an improved policy envelope")
-		}
-		pkg.planEnvelope, err = os.ReadFile(filepath.Join(definitionsDir, improved))
-		if err != nil {
-			return Package{}, fmt.Errorf("improved policy envelope: %w", err)
-		}
-	}
 	if slices.Contains(pkg.Capabilities, CapabilityProtocolIEC104) {
 		if pkg.StationPoints, err = loadIEC104Points(packageDir); err != nil {
 			return Package{}, err
@@ -326,8 +323,18 @@ func readDefinition(definitionsDir, manifestPath string) (Package, error) {
 	if pkg.Knowledge, err = loadKnowledge(packageDir, manifest.Knowledge, pkg.Scenarios); err != nil {
 		return Package{}, fmt.Errorf("knowledge: %w", err)
 	}
-	if pkg.Curriculum, err = loadCurriculum(packageDir, manifest.Curriculum, pkg); err != nil {
-		return Package{}, fmt.Errorf("curriculum: %w", err)
+	if pkg.Course, err = loadCourse(packageDir, manifest.Course, pkg); err != nil {
+		return Package{}, fmt.Errorf("course: %w", err)
+	}
+	if pkg.Course.Features.SegmentationPlan != nil {
+		improved, exists := policies["improved"]
+		if !exists {
+			return Package{}, fmt.Errorf("curriculum requires an improved policy envelope")
+		}
+		pkg.planEnvelope, err = os.ReadFile(filepath.Join(definitionsDir, improved))
+		if err != nil {
+			return Package{}, fmt.Errorf("improved policy envelope: %w", err)
+		}
 	}
 	return pkg, nil
 }

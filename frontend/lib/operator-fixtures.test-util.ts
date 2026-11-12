@@ -1,3 +1,4 @@
+import { US_COURSE, fixtureCourse } from "./curriculum-storage.test-util";
 // Answers of the EU control-centre, field and firewall-session
 // routes in the shapes the backend and the services really send
 // (services/iec104/internal/controlcentre/, services/devices, backend/internal/server),
@@ -21,6 +22,7 @@ import type {
 } from "./operator-api";
 
 export const US_PACKAGE: PackageSummary = {
+  course: US_COURSE,
   id: "us-dnp3-substation",
   title: "US DNP3 Substation",
   revision: 3,
@@ -33,6 +35,7 @@ export const US_PACKAGE: PackageSummary = {
 };
 
 export const EU_PACKAGE: PackageSummary = {
+  course: fixtureCourse("lab-definitions/packages/eu-iec104-substation"),
   id: "eu-iec104-substation",
   title: "EU IEC 104 Substation",
   revision: 1,

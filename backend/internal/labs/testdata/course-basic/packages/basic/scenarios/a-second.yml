@@ -1,0 +1,9 @@
+id: second
+name: Second activity
+description: Record your observations.
+nodes: [fw-1]
+tags: []
+steps:
+  - id: record
+    title: Record observations
+    description: Write down the interface addresses.

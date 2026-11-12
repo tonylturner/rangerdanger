@@ -10,7 +10,8 @@ import (
 
 // Include the compiler model as well as the public DTO (which omits Plan).
 func TestCurriculumResolvedModelFingerprint(t *testing.T) {
-	// Captured from the resolved monolithic curricula before the directory cutover.
+	// Updated for the course cutover only after TestCourseSemanticParity and
+	// the frontend course presentation snapshot passed without changing their baselines.
 	// Snapshots include intentional catalog/first-match prose, presentation-data
 	// removal, readiness-driven budgets, per-command source headers, and EU
 	// probes without host discovery, commit-time established-flow re-evaluation,
@@ -27,8 +28,8 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 	// with action-first instructions and expandable reference depth, and explicit
 	// DENY/drop closure guidance distinct from RESET responses.
 	for id, want := range map[string]string{
-		"us-dnp3-substation":   "c40f6e6ed9f97a1047a625e746e30c647e82f710dce89ea6c94400d9825cbfad",
-		"eu-iec104-substation": "8322ef6a847425acebc11ae09851fb70c68d5c0a90b9a21d346320ce1bb9d5fa",
+		"us-dnp3-substation":   "375cda0f0b0c4c34ee1bc4e20e4a36511aaf101e2266aa4e6ae95617c04b3b2b",
+		"eu-iec104-substation": "a042df142e964b2ecd5d3469bb768b0c2839ca9d35bb646c2ce88ced7ad28f2c",
 	} {
 		root := filepath.Join("..", "..", "..", "lab-definitions")
 		pkg, err := ReadDefinition(root, filepath.Join(root, "packages", id, "package.yml"))
@@ -38,7 +39,7 @@ func TestCurriculumResolvedModelFingerprint(t *testing.T) {
 		data, err := json.Marshal(struct {
 			Model *Curriculum
 			Plan  *CurriculumPlan
-		}{pkg.Curriculum, pkg.Curriculum.Plan})
+		}{pkg.Course.Features.SegmentationPlan.Model, pkg.SegmentationPlan().Plan})
 		if err != nil {
 			t.Fatal(err)
 		}

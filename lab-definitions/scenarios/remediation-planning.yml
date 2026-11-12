@@ -1,5 +1,4 @@
 id: remediation-planning
-order: "1.4"
 name: "Remediation Planning Under Constraint"
 summary: "Review findings, fund the scope and write an approved change request with tests and rollback."
 estimated_minutes: 30

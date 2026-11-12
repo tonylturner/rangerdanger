@@ -1,4 +1,5 @@
 "use client";
+import { activityOf } from "../lib/course";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -76,8 +77,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const operatorView = useOperatorView();
   const usFeeder = usFeederPolling(operatorView);
   // Planning surfaces are opt-in package curriculum metadata.
-  const binding = scope.curriculum;
-  const hasPolicyActions = !!binding?.activities[scenario.id]?.policyActions;
+  const binding = scope.course?.features.segmentationPlan;
+  const hasPolicyActions = !!activityOf(scope.course, scenario.id)?.policyActions;
   const stateQuery = useSubstationState(3000, usFeeder);
   const state = stateQuery.data ?? null;
   // No feeder while the range is being replaced; the status cards wait
@@ -101,11 +102,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const auditEntries = useSubstationAudit(3000, usFeeder).data?.entries;
   const recentAudit = useMemo(() => (auditEntries ?? []).slice(-5), [auditEntries]);
   const refreshLive = useRefreshLive();
-  const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes, binding);
+  const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes, scope.course);
   // Every activity opting into policy actions loads the saved package plan.
   // Dynamic step text is narrower: only the binding's dynamicSteps are rewritten.
   const appliedPlan = policySource === "plan" ? activeFirewall?.plan : undefined;
-  const appliedOnly = scenario.id !== binding?.roles.implementation || !!appliedPlan;
+  const appliedOnly = scenario.id !== binding?.activities.implementation || !!appliedPlan;
   const compiled = useCompiledPlan(scope, hasPolicyActions, appliedPlan, appliedOnly ? "applied" : "request");
   // A failed refresh must never leave an obsolete export or apply button enabled.
   const dynamicPlan = hasPolicyActions && !compiled.isError && (!appliedOnly || appliedPlan) ? compiled.data ?? null : null;
@@ -165,8 +166,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     const step = scenario.steps[currentStep];
     const nodeId = sourceNode
       || step?.node
-      || inferNodeFromDescription(stepDesc, binding)
-      || (binding?.nodeMap[scenario.id]?.primary)
+      || inferNodeFromDescription(stepDesc, scope.course)
+      || (scope.course?.nodeMap[scenario.id]?.primary)
       || exerciseNodes[0];
 
     if (!nodeId) {
@@ -313,7 +314,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const markStepDone = (idx: number) => {
     const stepId = scenario.steps[idx]?.id;
     if (
-      scenario.id === scope.curriculum?.roles.planning &&
+      scenario.id === scope.course?.features.segmentationPlan?.activities.planning &&
       scenario.steps[idx]?.action?.type === "decision"
     ) {
       saveEmptyRemediationPlanIfMissing(scope, scenario.id);
@@ -339,10 +340,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const progress = completedStepIds.size / scenario.steps.length;
   const hasAction = !!step?.action && step.action.type !== "decision" && step.action.type !== "manual";
   const stepDone = step !== undefined && completedStepIds.has(step.id);
-  const showValidate = showsValidateButton(scenario, binding);
+  const showValidate = showsValidateButton(scenario, scope.course);
   const terminalTarget = step?.node
     || (step?.description ? splitDescription(step.description).flatMap((seg) => seg.type === "cmd" && seg.sourceNode && seg.sourceNode !== "host" ? [seg.sourceNode] : [])[0] : undefined)
-    || inferNodeFromDescription(step?.description || "", binding)
+    || inferNodeFromDescription(step?.description || "", scope.course)
     || exerciseNodes[0];
   const toggleTerminal = () => {
     if (!terminalOpened) {
@@ -365,7 +366,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">
-            Lab {scenario.order}
+            Lab {scenario.label}
           </p>
           <h2 className="text-lg font-bold text-white">{scenario.name}</h2>
           <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
@@ -526,6 +527,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 on mismatched state - the banner always renders so
                 students can always tell what's loaded. */}
             <PolicyStatusBanner
+              course={scope.course}
               activeConfig={activeConfig}
               policySource={policySource}
               plan={appliedPlan}
@@ -533,10 +535,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               policies={packagePolicies}
             />
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
-            {scenario.id === binding?.roles.implementation && dynamicPlan &&
+            {scenario.id === binding?.activities.implementation && dynamicPlan &&
               step && binding?.dynamicSteps[step.id] === "rules" && (
               <div className="mb-3">
-                <CompiledPlanSummary plan={dynamicPlan} binding={binding!} appliedPlan={appliedPlan} />
+                <CompiledPlanSummary plan={dynamicPlan} binding={binding!.model} appliedPlan={appliedPlan} />
               </div>
             )}
             {compiled.error && <p role="alert" className="text-xs text-red-400">{compiled.error.message}</p>}
@@ -553,7 +555,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 handleAutoRun={handleAutoRun}
                 handleGenerateTraffic={handleGenerateTraffic}
                 generatingTraffic={generatingTraffic}
-                targetNode={step.node || inferNodeFromDescription(step.description, binding) || binding?.nodeMap[scenario.id]?.primary || exerciseNodes[0]}
+                targetNode={step.node || inferNodeFromDescription(step.description, scope.course) || scope.course?.nodeMap[scenario.id]?.primary || exerciseNodes[0]}
               />
             )}
 

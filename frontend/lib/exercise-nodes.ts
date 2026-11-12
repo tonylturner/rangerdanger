@@ -1,6 +1,6 @@
 // Resolve exercise nodes from scenario metadata or the active package binding.
 
-import type { CurriculumBinding } from "./api";
+import type { Course } from "./api";
 import commandGrammar from "./command-grammar.json";
 
 export const NODE_LABELS: Record<string, string> = {
@@ -37,18 +37,18 @@ export const NODE_UI_URLS: Record<string, string> = {
 };
 
 // Get all node IDs for an exercise, using scenario metadata or fallback map.
-export function getExerciseNodes(scenarioId: string, scenarioNodes?: string[], curriculum?: CurriculumBinding): string[] {
+export function getExerciseNodes(scenarioId: string, scenarioNodes?: string[], course?: Course): string[] {
   if (scenarioNodes && scenarioNodes.length > 0) {
     return scenarioNodes;
   }
-  const info = curriculum?.nodeMap[scenarioId];
+  const info = course?.nodeMap[scenarioId];
   if (!info || !info.primary) return [];
   return [info.primary, ...info.others];
 }
 
 // Infer which node a step's CLI commands should run on from description text.
-export function inferNodeFromDescription(desc: string, curriculum?: CurriculumBinding): string | null {
-  return curriculum?.nodeInference.find((n) => desc.includes(n.ip) || new RegExp(n.pattern, "i").test(desc))?.node ?? null;
+export function inferNodeFromDescription(desc: string, course?: Course): string | null {
+  return course?.nodeInference.find((n) => desc.includes(n.ip) || new RegExp(n.pattern, "i").test(desc))?.node ?? null;
 }
 
 // Source markers use node IDs or the short names already used by US labs.

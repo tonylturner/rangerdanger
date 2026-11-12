@@ -108,7 +108,7 @@ func TestEUMatrixMissingTopologyIdentityFails(t *testing.T) {
 }
 
 func referenceProof(gen *lifecycle.Generation, slot string) ([]validationProbe, error) {
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, nil)
 	if err != nil {
 		return nil, err
 	}

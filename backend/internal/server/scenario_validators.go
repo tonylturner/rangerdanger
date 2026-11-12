@@ -21,8 +21,9 @@ type validatorInput struct {
 // scenarioValidator is the Go code behind one declared validator key and
 // the package capabilities it relies on.
 type scenarioValidator struct {
-	capabilities []string
-	run          func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck
+	capabilities     []string
+	segmentationPlan bool
+	run              func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck
 }
 
 func (v scenarioValidator) needs(capability string) bool {
@@ -48,7 +49,7 @@ func registerScenarioValidator(key string, validator scenarioValidator) {
 func ValidatorRequirements() labs.ValidatorRequirements {
 	requirements := make(labs.ValidatorRequirements, len(scenarioValidators))
 	for key, validator := range scenarioValidators {
-		requirements[key] = slices.Clone(validator.capabilities)
+		requirements[key] = labs.ValidatorRequirement{Capabilities: slices.Clone(validator.capabilities), SegmentationPlan: validator.segmentationPlan}
 	}
 	return requirements
 }

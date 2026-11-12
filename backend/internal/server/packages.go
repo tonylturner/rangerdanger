@@ -13,11 +13,11 @@ import (
 
 // packageSummary is one row of GET /api/packages.
 type packageSummary struct {
-	Curriculum *labs.Curriculum `json:"curriculum,omitempty"`
-	ID         string           `json:"id"`
-	Title      string           `json:"title"`
-	Revision   int              `json:"revision"`
-	Active     bool             `json:"active"`
+	Course   *labs.Course `json:"course"`
+	ID       string       `json:"id"`
+	Title    string       `json:"title"`
+	Revision int          `json:"revision"`
+	Active   bool         `json:"active"`
 	// OperatorView selects the frontend operator page for the package.
 	OperatorView string `json:"operator_view"`
 	// Policies list package-owned wording, default first, then by name.
@@ -119,7 +119,7 @@ func (s *Server) handleListPackages(c *gin.Context) {
 			Active:       pkg.ID == active,
 			OperatorView: pkg.OperatorView,
 			Policies:     packagePolicies(pkg),
-			Curriculum:   pkg.Curriculum,
+			Course:       pkg.Course,
 		})
 	}
 	c.JSON(http.StatusOK, packages)

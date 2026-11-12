@@ -1,0 +1,160 @@
+{
+  "activities": {
+    "eu-baseline-assessment": {
+      "binding": "",
+      "dynamic": {},
+      "flags": {
+        "hideBanner": true,
+        "policyActions": false
+      },
+      "label": "1.2",
+      "position": 0,
+      "validator": []
+    },
+    "eu-firewall-implementation": {
+      "binding": "implementation",
+      "dynamic": {
+        "implement-rules": "### Do this\n- Use your approved request; preserve all six pinned conduits and reserved management.\n- Stage replacements with Phase 2 deletes in the same shared candidate, placing allows before overlapping diagnostic denies.\n- Create the four logged denies; review the complete diff with a second reviewer.\n- Use Commit-confirmed once; read back, check management and all six conduits, then Confirm before the deadline.\n\n:::hint How the request sets expected results\nImplement your approved Lab 1.4 change request, not a policy label.\nThe saved selection sets the expected results below. If no eligible action\nis selected, there is no change request and the full Hardened reference is\nthe target. A planning-only selection keeps the corresponding Weak exposures.\nIf you used a catch-up apply, the results follow the policy you applied.\nKeep deferred exposures open only where the request accepts that risk.\nRequired operations and reserved management access must remain available.\n:::\n\nPreserve all six operational conduits:\n\n| Required conduit | Pin | Port |\n|---|---|---|\n| CC→RTU | 10.60.60.20→10.30.30.20 | TCP/2404 |\n| RTU→field | 10.30.30.20→10.40.40.20…24 | TCP/502 |\n| PLC→OLTC | 10.30.30.30→10.40.40.23 | TCP/502 |\n| CC→historian ingest | 10.60.60.20→10.70.70.40 | TCP/8081 |\n| Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |\n| Engineering→PLC web | 10.20.20.20→10.30.30.30 | TCP/8080 |\n\nKeep historian read 8080 separate from CC ingest 8081. Engineering PLC web\nis 10.20.20.20 only. Do not grant vendor field control or enterprise RTU access.\nThe first matching enforcing terminal rule decides; monitor rules never decide.\nPut the CC allow before `deny-unauthorized-iec104`, RTU and PLC Modbus allows\nbefore `deny-unauthorized-modbus`, CC ingest before\n`deny-unauthorized-historian-ingest`, and engineering web before\n`deny-unauthorized-plc-web`. If recreating the CC allow, insert or move it\nbefore its deny. Create the logged diagnostic denies; preserve required\noperational allows and reserved management access. Review configured order and shadow warnings before commit.\n\n### Worked rule: CC → RTU\n\nOn **Firewall Rules**, open **Create rule** below the table. Set ID\n`control-centre-to-rtu-iec104`, action ALLOW, source zone `lan4`, destination\nzone `lan1`, source `10.60.60.20/32`, destination `10.30.30.20/32`, protocol\nTCP and port 2404. Stage the rule. Use **Move to… → top** so the required\nexception precedes the broader deny. Saving and moving only stage edits.\n\nEquivalent commands from the fw-1 configuration CLI (create once, not both\nUI and CLI; if the ID exists, edit it with `set` instead of adding it again):\n\n    add firewall rule control-centre-to-rtu-iec104 ALLOW lan4 lan1\n    set firewall rule control-centre-to-rtu-iec104 --sources 10.60.60.20/32 --destinations 10.30.30.20/32 --protocols tcp:2404\n    move firewall rule control-centre-to-rtu-iec104 top\n\nRepeat this create → pin → order procedure for the other five conduits.\nCreate the four logged diagnostic DENY rules below; Weak has none. Use\n`log: true` (the form's Log setting, or `set firewall rule \u003cid\u003e --log true`).\nEach rule accepts source zones wan, dmz, lan1, lan2, lan3, lan4, lan5 and\nTCP only; destination scope is below. Do not add a management allow or\nchange the reserved management envelope.\n\n| Rule ID | Destination zone / address | TCP port | Place after |\n|---|---|---|---|\n| `deny-unauthorized-iec104` | lan1, any station address | 2404 | CC→RTU allow |\n| `deny-unauthorized-modbus` | lan2, any field address | 502 | RTU and PLC allows |\n| `deny-unauthorized-historian-ingest` | lan5, 10.70.70.40/32 | 8081 | CC ingest allow |\n| `deny-unauthorized-plc-web` | lan1, 10.30.30.30/32 | 8080 | engineering web allow |\n\nUnder a partial request, keep deferred allows before overlapping denies.\nThe first matching enforcing rule wins. Review the full candidate; never\ncommit the temporary broad rule created by `add` before applying its pins.\n\nBefore the single commit, compare the complete candidate with your request.\nOn **Configuration**, **Review changes** leads with entity summaries;\n**Advanced** opens the exact JSON diff. Have a second reviewer check deletes,\nreplacements and surviving rules, not just the edited row.\n\nFrom the fw-1 configuration CLI, commit replacements and removals together:\n\n    show diff\n    commit confirmed 60\n\nOr use **Commit-confirmed** on **Configuration** after review and set the\nseconds field to the agreed test window. `60` is an example: agree enough\ntime for management and operational checks before starting. Make ONE commit\nfor this rule change. Read back with `show running-config`; record the\nrunning identity, UTC time and confirmation deadline. Check management access\nthrough the portal and the required operational conduits before confirming.\nFrom the fw-1 configuration CLI, retain the change only after those checks pass:\n\n    confirm\n\nOr use **Confirm** while the deadline is pending. Without `confirm`, containd\nrestores the previous running config at the deadline. If a rollback trigger\noccurs, stop testing, notify the operator and do not confirm. The rollback\nowner checks the restored running identity and retests operations. For an\nimmediate return, use `rollback` (UI **Recovery → Rollback**). Rollback is one\nlevel only: it restores the previous running config, not an arbitrary history.\nThe UI rollback keeps the newer staged candidate; do not commit it accidentally.\nReserved management protection refuses unsafe changes and rollback targets.\n\nReconnect CC and check all six operational conduits before confirming.\nRetest from the named sources in Phases 5 and 6. Keep the pre-change export\nas a restorable backup and evidence reference.\n\n:::hint No semantic enforcement claim\nCreate the six L4 allows and four diagnostic denies before adding monitoring. If the request\nincludes **Monitor IEC 104 commands**, add `observe-cc-breaker-command`,\n`observe-cc-oltc-step` and `observe-cc-oltc-raise-only` as separate IEC 104\nrules, each explicitly `mode: monitor`. Never overlay a monitor predicate\non an operational allow. Monitor ALLOW does not admit traffic and monitor\nDENY does not deny it. The L4 source pin enforces; DPI detects and logs.\nMonitoring never satisfies a BLOCK requirement; Modbus DPI remains planning-only.\n:::\n\n:::hint Optional catch-up — for less technical students or teams behind schedule\nThis replaces typing rules. It does not replace your own observations, operator check or sign-off.\nUse **Apply Your Plan** only if you want the saved selection entered for you.\nWith an empty selection, it loads Weak, not the full reference. Use\n**Apply Hardened** for the full reference instead. Read back what was loaded.\nYou can also save **Export compiled config** and **Export plan record** as\nreference material. Neither is an export of a hand-written running policy.\n:::\n\n### Rule reference\n\n{{noPlan}}\n{{ruleTable}}",
+        "test-negative": "### Do this\n- Set expected results from your request: selected closures deny, approved deferrals remain reachable.\n- Test new connections from each named source, including Kali, vendor and eng-ws.\n- Correlate at least one selected logged-rule timeout with its exact fw-1 DENY event.\n- Record default drops separately for Lab 2.4 packet attribution; name owners of deferred gaps.\n\nTest new unauthorized connections from each real source terminal: Kali→RTU:2404, Kali→all field:502, vendor→all field:502, eng-ws→all field:502, enterprise→PLC:8080 and Kali→vendor:3389/5900. Expect timeout for a selected closure, but reachable for an approved deferral.\nUse your change request, not the policy label, to set each expected result.\nIf no eligible action is selected, use the full Hardened reference.\nRecord source, destination, service, UTC time and observation.\n\nFrom **Kali**:\n\n    nmap -Pn -p 2404 10.30.30.20 --max-retries 1 -T4\n    nmap -Pn -p 502 10.40.40.20 --max-retries 1 -T4\n    nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4\n\n:::hint Diagnose a gap honestly\nA deferred plan can leave a sampled path open. Correct the plan/rules or record the gap; do not label it passed because the policy is called custom or improved. Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop.\n:::\n\n:::hint Expected results by owning action\n| Path | Owning action | Selected / deferred |\n|---|---|---|\n| Kali→vendor TCP/3389 and TCP/5900 | Restrict enterprise → vendor remote access | deny / allow |\n| Enterprise→RTU TCP/2404 | Block enterprise → station RTU access | deny / allow |\n| Vendor→RTU TCP/2404 and PLC web | Restrict vendor → station engineering access | deny / allow |\n| Enterprise→field TCP/502 | Block enterprise → field access | deny / allow |\n| Vendor and eng-ws→field TCP/502 | Block vendor → field access | deny / allow |\n| Non-RTU station sources→field except PLC→OLTC | Pin field access to the RTU | deny / allow |\n| CC endpoint scope and historian reader/ingest scope | Tighten firewall object hygiene | narrowed / Weak scope |\n:::\n\n:::hint Evidence limits and deferred risk\nRequired diagnostic denies still apply to every request. Connection refused means the connection got an answer — from the host (nothing listening) or a firewall RESET rule; only a timeout can prove a DENY drop. A missing tool or\ncontainer error is missing evidence, never a pass. Keep deferred reachable\npaths as prevention gaps with named risk owners. A timeout alone does not\nidentify the cause; retain packet evidence and operator observations for\nLab 2.4. TCP reachability does not establish command filtering.\nWrite actual results in Notes. **Cross-check the current system** does not grade\nyour written test plan or sign the test record.\n:::\n\nFor logged-rule negatives, correlate the named host's connect timeout with a\nfw-1 DENY event in the same UTC window. In the\nfw-1 containd configuration CLI (type `containd cli` if in Linux), type:\n\n    show events\n\nMatch `KIND=firewall.rule.hit`, `action=DENY`, `proto=tcp`, `port=\u003cp\u003e` and\n`ruleId=\u003crule\u003e` to that row's real SRC host:port, DST and UTC time. Record\nits event ID and matching ruleId, not merely the presence of any deny.\nFor this phase, prove at least one selected logged-rule deny with timeout\nand its correlated event. Default-drop rows (for example Enterprise→vendor\nRDP/VNC) have no rule-hit event; record them separately and use the Lab 2.4\ncapture procedure for attribution. Never change policy to manufacture an event.\nA rule without logging or a default drop can deny without an event:\nabsence of an event is not proof of an allow. An event alone does not\nprove the application is unaffected; keep the operator observations.\n\n### Expected results\n\n{{tests}}",
+        "test-positive": "### Do this\n- Check a post-commit CC connection, completed GI and valid current inventory.\n- With operator approval, perform the controlled OLTC regulation demonstration below.\n- Verify RTU field telemetry, PLC motion and historian ingest independently.\n- Run historian and PLC-web reads from **Kali** and **eng-ws** respectively.\n- Record all six conduit results, plant health, policy identity and UTC times in Notes.\n\nProve all six required operational intents, not merely open sockets. In the Control Centre require a completed current-connection general interrogation (GI) and every inventory point non-null and valid, received at or after that attempt’s GI start. Quiet status does not need advancing receipt times; float quality includes the reporting watchdog. Include F2 position, protection trip, lockout, current and MW (indication only, no command). Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request and its motion after the policy change. Check CC historian ingest and advancing archive samples separately from reader access.\n\n:::hint Use your live operator connection\nReconnect CC after the commit using the Phase 4 procedure. Check that\n`link.since` is later than the commit, then wait for the connect GI to finish.\nInterrogate station on an old connection does not test a new handshake.\nKeep the GI start/completion and current-connection identity with your results.\nIf GI evidence is missing or more than ten minutes old, press **Interrogate\nstation** before collecting PLC and historian observations. Routine GI runs\non connect and every 15 minutes. Quiet status does not need new receipt times.\n:::\n\n:::hint Monitoring semantics and forwarding dependency\nThe L4 source pin enforces; DPI detects and logs. Monitoring never satisfies\na BLOCK requirement. Select-before-operate (**SBO**) sequences a command;\nit is not authorization. A double command (**C_DC**) addresses an information\nobject address (**IOA**); observing it does not prevent its operation.\n\n**Forwarding dependency:** monitor traffic traverses NFQUEUE 101 and adds engine processing latency. There is no queue bypass; if the engine is down, the CC conduit drops. Monitor-only does not mean availability-neutral. Preserve rollback and prove GI, PLC and historian continuity independently; do not deliberately stop the engine for this lesson.\n:::\n\n:::hint Optional depth: shadow counters and approved breaker operations\n\nFor Hardened, or a plan selecting **Monitor IEC 104 commands**, inspect the embedded containd **Firewall/ICS tables** and running configuration. Confirm DPI and the IEC 104 decoder are healthy, NFQUEUE is **101**, and all three separate rules are applied with `protocol: iec104`, explicit `mode: monitor`, `direction: request`, CA **1**, and CC **10.60.60.20** → RTU **10.30.30.20 TCP/2404** (lan4→lan1):\nExpand **Inspect rule** for Conditions, ICS Filter and full Shadow matches. On ICS, inspect **Active inspection**, **Why?** and **Inspection details**; **Technical details** retains queue/interface values.\n\n| Rule ID | Configured action | Selectors |\n|---|---|---|\n| `observe-cc-breaker-command` | DENY (monitor) | Double command (C_DC), Type 46, information object address (IOA) 3001 |\n| `observe-cc-oltc-step` | ALLOW (monitor) | Type 47, IOA 3301, COT 6, states [1,2], QU [0], negative false, test false |\n| `observe-cc-oltc-raise-only` | ALLOW (monitor) | Same OLTC selectors, but states [2] |\n\n**Reconnect CC first** with the Phase 4 procedure: inspection starts only at a fresh SYN, not halfway through the old session. Wait for connect GI, then record a shadow-counter baseline from the embedded tables: `available: true`, all three rule IDs, `snapshotVersion`, `since`, `unit` and each rule's `shadowMatches`, `wouldAllow`, `wouldDeny`. Counters reset on every successful apply and are lost on engine restart. `available:false` is never zero; a missing applied rule is not zero either. If the snapshot or since changes, discard the comparison and establish a new baseline after reconnect/GI. A plan deferring **Monitor IEC 104 commands** has no such rules: record observation work as deferred, not as zero matches or prevention.\n\nCorrelate a prescribed, approved CC breaker operation with `observe-cc-breaker-command` `wouldDeny` increasing by **≥1**, `ics.decision` (`mode: monitor`, `decision: would_drop`, `reason: rule`, matching `ruleId` and UTC window), fresh feedback and the actual field result. Restore normal breaker/supply state before continuing. The monitor DENY does not stop CB1 operating; it is a rule-local hypothetical decision, not a denied command or a whole-policy prediction. See [monitor evidence](/knowledge#eu-ics-dpi).\n\n:::\n\n**Operator-authorized operational demonstration — controlled regulation loop.** First wait for a settled tap and the 20.196–20.604 kV band (20.4 kV ±1%). Reset starts at zero but the profile-disabled nominal equilibrium is +2, about 20.429 kV; the daily profile normally keeps running. When regulation is quiescent the PLC sends no tap request, so perturb regulation and let automatic control correct it, producing a PLC-originated request to observe. These control writes are not\nacceptance reads. Obtain operator approval first; do not copy them into the\nread-only acceptance tests in Lab 2.4. Use the **Control Centre** selected-device faceplate or the [operator API](/knowledge#eu-rtu-control-centre-apis); read tap, auto and voltage from `GET /api/operator/state` and wait for completed feedback before each command — an in-flight step returns 409:\n\n1. Select **manual**: command `oltc-1-mode` → `manual`. Verify the auto feedback (IOA 1303) clears before continuing.\n2. Request `oltc-1-step` → `lower`, wait for completed feedback, then one\n   `raise` and wait again to restore that tap. This verifies adjacent motion;\n   it is not yet proof of PLC automatic correction.\n3. Now request **two lower steps**, waiting for completed feedback after each, to exercise automatic correction next. Watch IOA 1301 go transient, then settle at each adjacent tap. One step can remain inside the band and would not prove automatic correction. See [step telemetry](/knowledge#eu-iec104-step-telemetry).\n4. Return to **auto**: `oltc-1-mode` → `auto`. Wait for the configured 30 s sustained demand, then the 2 s motion for each correction; IOA 2403 reports configured delay, not its countdown. Automatic control now issues PLC-originated Modbus requests toward the operating band, not necessarily the exact starting tap under the daily profile. Confirm that PLC request, its motion completion and the solved revision, and that the historian ingests the advancing tap.\n\n:::hint Optional depth: compare OLTC monitor matches\nWith **Monitor IEC 104 commands** applied, compare OLTC shadow evidence while manual: record counters, request `oltc-1-step` → `lower`, and wait for completed feedback. `observe-cc-oltc-step` must gain **≥1** match; `observe-cc-oltc-raise-only` must gain **0**. Then request one `raise` to restore that tap and wait: **both** rules must gain **≥1** match. Keep snapshotVersion/since unchanged and correlate rule/mode/time events with the field feedback. A successful fully decoded SBO action normally produces **2 matches** per matching rule (select + execute, both COT 6), but this is **not guaranteed**; early refusal can end the sequence. Count matching decoded messages, not successful operations. Never require exactly two or interpret missing/unavailable evidence as a non-match. If monitoring is deferred, still perform the lower/raise and check field feedback, but record shadow evidence as deferred.\n:::\n\nFrom the **Kali terminal**, read the historian:\n\n    curl -fsS --max-time 3 http://10.70.70.40:8080/api/points\n\nFrom the **eng-ws terminal**, retrieve the PLC login page:\n\n    curl -fsS --max-time 3 http://10.30.30.30:8080/login\n\n:::hint Continuity is a hard constraint\nBoth breakers closed, RMU1 closed/RMU2 open and a fresh (≤3 s) bus20/S1/S2/S3 supply solve are independently checked from field/process truth. OLTC remote/auto, PLC motion and fresh operator observations must survive. Record these operator observations alongside your source-specific tests. Same-subnet success is not firewall enforcement.\n:::\n\n:::hint Optional depth: instructor-supervised F2 visibility check\nSave the policy and UTC window before temporarily over-restricting RTU→F2 Modbus. A commit re-evaluates established connections on their next packet against the current first-match policy. Traffic no longer admitted stops without session deletion. Sessions may retain the conntrack entry until timeout; its presence is not proof of delivery. Observe loss after commit and allow for protocol failure detection. F2's five last values must remain visible with INVALID / NOT TOPICAL and STALE (underlying reason `device_unreachable`) while other devices retain valid observations and the IEC 104 link stays started. This is observation loss, not proof that F2 opened. Restore the named F2 destination, request a new GI and retain all inventory points non-null and valid received since that GI start. Keep any loss, healthy-peer and recovery evidence locally with this optional exercise; Lab 2.4 does not require it. Do not issue an F2 supervisory command or reset its protection to repair communications.\n:::\n\nRecord the six conduit results, device readings, operator name, UTC times and\nrunning policy identity in Notes. Check fresh valid Control Centre points and\nprocess continuity separately. Bridged rows are endpoint evidence, not proof\nof a routed firewall rule. Stop and follow the agreed rollback if required\noperations fail.\n\n### Expected results\n\n{{tests}}"
+      },
+      "flags": {
+        "hideBanner": true,
+        "policyActions": true
+      },
+      "label": "2.2",
+      "position": 3,
+      "validator": [
+        "U1",
+        "U2",
+        "U3",
+        "U4",
+        "U5",
+        "U6",
+        "U7",
+        "U8",
+        "U9",
+        "U10",
+        "U11",
+        "U12",
+        "U13",
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19"
+      ]
+    },
+    "eu-hardening-configurations": {
+      "binding": "",
+      "dynamic": {},
+      "flags": {
+        "hideBanner": false,
+        "policyActions": true
+      },
+      "label": "2.3",
+      "position": 4,
+      "validator": [
+        "U1"
+      ]
+    },
+    "eu-remediation-planning": {
+      "binding": "planning",
+      "dynamic": {},
+      "flags": {
+        "hideBanner": true,
+        "policyActions": false
+      },
+      "label": "1.4",
+      "position": 2,
+      "validator": []
+    },
+    "eu-segmentation-requirements": {
+      "binding": "requirements",
+      "dynamic": {},
+      "flags": {
+        "hideBanner": true,
+        "policyActions": false
+      },
+      "label": "1.3",
+      "position": 1,
+      "validator": []
+    },
+    "eu-validation-evidence": {
+      "binding": "",
+      "dynamic": {},
+      "flags": {
+        "hideBanner": false,
+        "policyActions": true
+      },
+      "label": "2.4",
+      "position": 6,
+      "validator": []
+    },
+    "eu-vendor-rdp-compromise": {
+      "binding": "",
+      "dynamic": {},
+      "flags": {
+        "hideBanner": false,
+        "policyActions": true
+      },
+      "label": "2.3-bonus",
+      "position": 5,
+      "validator": [
+        "U3",
+        "U4",
+        "U6",
+        "U9",
+        "U12",
+        "U15",
+        "U18"
+      ]
+    }
+  },
+  "contentHash": "6455c397cf053599c52b849f2eca428e5dce2e2f2c1ff4c8e6adff357f53e9de",
+  "nodeInference": [
+    {
+      "node": "rtu-1",
+      "ip": "10.30.30.20",
+      "pattern": "\\brtu\\b"
+    }
+  ],
+  "nodeMap": {
+    "eu-baseline-assessment": {
+      "primary": "kali-1",
+      "others": []
+    },
+    "eu-firewall-implementation": {
+      "primary": "kali-1",
+      "others": [
+        "fw-1",
+        "cc-1",
+        "rtu-1",
+        "plc-1",
+        "vendor-jump-1",
+        "eng-ws-1"
+      ]
+    },
+    "eu-hardening-configurations": {
+      "primary": "kali-1",
+      "others": []
+    },
+    "eu-remediation-planning": {
+      "primary": "",
+      "others": []
+    },
+    "eu-segmentation-requirements": {
+      "primary": "",
+      "others": []
+    },
+    "eu-validation-evidence": {
+      "primary": "kali-1",
+      "others": []
+    },
+    "eu-vendor-rdp-compromise": {
+      "primary": "kali-1",
+      "others": []
+    }
+  }
+}

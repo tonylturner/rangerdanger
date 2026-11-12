@@ -1,5 +1,4 @@
 id: eu-baseline-assessment
-order: '1.2'
 name: Baseline Traffic Analysis
 summary: Observe the EU station, capture required conduits and distinguish passive findings from latent reachability.
 estimated_minutes: 15

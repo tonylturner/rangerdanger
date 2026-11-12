@@ -85,7 +85,7 @@ func TestEUF2IndicationContract(t *testing.T) {
 }
 
 func TestEUF2CurriculumDestinationInventory(t *testing.T) {
-	c := euGeneration(t, nil, nil).Package.Curriculum
+	c := euGeneration(t, nil, nil).Package.SegmentationPlan()
 	var got []string
 	for _, slot := range c.Plan.Rules {
 		if slot.Required != nil && slot.Required.ID == "rtu-to-feeder-modbus" {

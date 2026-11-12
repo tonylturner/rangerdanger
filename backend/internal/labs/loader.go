@@ -84,11 +84,17 @@ func (l *Loader) Seed(ctx context.Context, db *gorm.DB, activeID string) (*Catal
 // is gone. The topology stays in the catalog; nothing persists it.
 func storePackage(tx *gorm.DB, pkg Package) error {
 	ids := make([]string, 0, len(pkg.Scenarios))
+	scenarios := make(map[string]ScenarioYAML, len(pkg.Scenarios))
 	for _, scenario := range pkg.Scenarios {
+		scenarios[scenario.ID] = scenario
+	}
+	for position, activity := range pkg.Course.Activities() {
+		scenario := scenarios[activity.Scenario]
 		row, err := scenarioRow(scenario, pkg.ID, pkg.Template.ID)
 		if err != nil {
 			return err
 		}
+		row.Label, row.Position = activity.Label, position
 		if err := upsert(tx, &row); err != nil {
 			return fmt.Errorf("upsert scenario %s: %w", row.ID, err)
 		}
@@ -137,7 +143,6 @@ func scenarioRow(sc ScenarioYAML, packageID, templateID string) (models.Scenario
 		Name:             sc.Name,
 		Summary:          sc.Summary,
 		Description:      sc.Description,
-		Order:            sc.Order,
 		LabTemplateID:    templateID,
 		Tags:             tags,
 		Steps:            steps,

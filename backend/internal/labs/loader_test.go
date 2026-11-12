@@ -3,14 +3,17 @@ package labs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/tturner/rangerdanger/backend/internal/db"
 	"github.com/tturner/rangerdanger/backend/internal/models"
+	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
 
@@ -67,7 +70,6 @@ const validScenarioYAML = `id: baseline
 name: Baseline Review
 summary: Inspect the weak policy
 description: Identify unnecessary cross-zone access.
-order: "1.2"
 nodes: [rtac-1]
 tags: [segmentation, firewall]
 estimated_minutes: 15
@@ -92,6 +94,13 @@ capabilities: [process.electrical]
 policies:
   weak: {file: firewall/weak.json, label: Policy label, description: Policy description}
 operator_view: us-dnp3-substation
+course:
+  nodes: nodes.yml
+  modules:
+    - id: section
+      title: Section
+      activities: [{scenario: baseline, label: "1.2"}]
+  features: {}
 `
 }
 
@@ -101,7 +110,26 @@ operator_view: us-dnp3-substation
 func writePackage(t *testing.T, definitions, id, topologyID string, scenarios map[string]string) string {
 	t.Helper()
 	dir := filepath.Join(definitions, "packages", id)
-	writeDefinition(t, filepath.Join(dir, "package.yml"), packageYAML(id))
+	manifest := packageYAML(id)
+	names := []string{}
+	for _, content := range scenarios {
+		var scenario struct {
+			ID string `yaml:"id"`
+		}
+		if err := yaml.Unmarshal([]byte(content), &scenario); err == nil && scenario.ID != "" {
+			names = append(names, scenario.ID)
+		}
+	}
+	sort.Strings(names)
+	activities := ""
+	for i, name := range names {
+		activities += fmt.Sprintf("        - {scenario: %s, label: %q}\n", name, fmt.Sprint(i+1))
+	}
+	if activities != "" {
+		manifest = strings.Replace(manifest, "      activities: [{scenario: baseline, label: \"1.2\"}]\n", "      activities:\n"+activities, 1)
+	}
+	writeDefinition(t, filepath.Join(dir, "package.yml"), manifest)
+	writeDefinition(t, filepath.Join(dir, "nodes.yml"), "nodeMap: {}\nnodeInference: []\n")
 	writeDefinition(t, filepath.Join(dir, "knowledge", "index.yml"), `sections:
   - id: basics
     heading: Basics
@@ -259,7 +287,7 @@ func TestSeedPrunesStaleAndLegacyRows(t *testing.T) {
 	}
 }
 
-func TestSeedPrunesEmptyCurriculum(t *testing.T) {
+func TestSeedRejectsEmptyCourse(t *testing.T) {
 	definitions := t.TempDir()
 	dir := writePackage(t, definitions, "alpha", "substation", map[string]string{"baseline.yml": validScenarioYAML})
 	database := testDatabase(t)
@@ -270,11 +298,11 @@ func TestSeedPrunesEmptyCurriculum(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "scenarios", "baseline.yml")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loader.Seed(context.Background(), database, "alpha"); err != nil {
-		t.Fatalf("Seed() of an empty curriculum: %v", err)
+	if _, err := loader.Seed(context.Background(), database, "alpha"); err == nil {
+		t.Fatal("accepted a course whose scenario disappeared")
 	}
-	if n := countRows(t, database, &models.Scenario{}, "package_id = ?", "alpha"); n != 0 {
-		t.Errorf("scenarios after emptying the package = %d, want 0", n)
+	if n := countRows(t, database, &models.Scenario{}, "package_id = ?", "alpha"); n != 1 {
+		t.Errorf("failed seed changed rows: %d", n)
 	}
 }
 
@@ -344,21 +372,23 @@ func TestSeedAllowsSameScenarioAcrossPackages(t *testing.T) {
 	if err := os.Remove(filepath.Join(alpha, "scenarios/baseline.yml")); err != nil {
 		t.Fatal(err)
 	}
+	writeDefinition(t, filepath.Join(alpha, "scenarios/replacement.yml"), scenarioNamed("replacement"))
+	writeDefinition(t, filepath.Join(alpha, "package.yml"), strings.Replace(packageYAML("alpha"), "scenario: baseline", "scenario: replacement", 1))
 	if _, err := loader.Seed(context.Background(), database, "alpha"); err != nil {
 		t.Fatal(err)
 	}
 	if n := countRows(t, database, &models.Scenario{}, "id = ? AND package_id = ?", "baseline", "beta"); n != 1 {
 		t.Fatalf("beta rows = %d", n)
 	}
-	if n := countRows(t, database, &models.Scenario{}, "package_id = ?", "alpha"); n != 0 {
+	if n := countRows(t, database, &models.Scenario{}, "package_id = ? AND id = ?", "alpha", "baseline"); n != 0 {
 		t.Fatalf("alpha rows = %d", n)
 	}
 }
 
 func TestLoadRejectsSharedTopologyID(t *testing.T) {
 	definitions := t.TempDir()
-	writePackage(t, definitions, "alpha", "substation", nil)
-	writePackage(t, definitions, "beta", "substation", nil)
+	writePackage(t, definitions, "alpha", "substation", map[string]string{"baseline.yml": validScenarioYAML})
+	writePackage(t, definitions, "beta", "substation", map[string]string{"baseline.yml": validScenarioYAML})
 	_, err := seedLoader(definitions).Load()
 	if err == nil || !strings.Contains(err.Error(), `package beta: topology id "substation" is already used by package alpha`) {
 		t.Fatalf("Load() error = %v, want duplicate topology id", err)
@@ -370,7 +400,6 @@ func TestSeedWritesNothingWhenAnyPackageFails(t *testing.T) {
 	writePackage(t, definitions, "alpha", "substation", map[string]string{"baseline.yml": validScenarioYAML})
 	writePackage(t, definitions, "beta", "beta-topology", map[string]string{"invalid.yml": `id: invalid-check
 name: Invalid Check
-order: "2.1"
 steps:
   - id: empty-check
     title: Empty check

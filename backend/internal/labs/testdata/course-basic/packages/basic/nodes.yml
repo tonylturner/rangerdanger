@@ -1,0 +1,5 @@
+nodeMap:
+  first: {primary: fw-1, others: []}
+  second: {primary: fw-1, others: []}
+nodeInference:
+  - {node: fw-1, ip: '${ip:fw-1}', pattern: firewall}

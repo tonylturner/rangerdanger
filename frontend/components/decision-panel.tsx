@@ -1,4 +1,5 @@
 "use client";
+import { planActivityOf } from "../lib/course";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -38,7 +39,7 @@ function loadSelectedActions(scope: ReturnType<typeof useCurriculumScope>, exerc
 export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
   const scope = useCurriculumScope();
   const storageRevision = useCurriculumStorageRevision(scope);
-  const binding = scope.curriculum;
+  const binding = scope.course?.features.segmentationPlan?.model;
   const budgetHours = binding?.budgetHours ?? 0;
 
   const selectionScope = `${scope.packageId}:${scope.revision}:${exerciseId}`;
@@ -121,7 +122,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
       {hasAnyVerdict && (
         <div className="rounded-lg border border-cyan-900/40 bg-cyan-950/10 p-3">
           <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-2">
-            Your design requirements (from Lab 1.3)
+            Your design requirements (from Lab {planActivityOf(scope.course, "requirements")?.label})
           </div>
           <div className="grid gap-1.5">
             {requirements.map((req) => (
@@ -142,7 +143,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
           </div>
           <div className="mt-2 text-[10px] text-slate-500 italic">
             These are read-only - change them in the <Link
-              href={`/exercises/${binding?.roles.requirements}`}
+              href={`/exercises/${scope.course?.features.segmentationPlan?.activities.requirements}`}
               className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
             >Segmentation Requirements</Link> exercise.
           </div>
@@ -153,7 +154,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
       {hasAnyReadiness && (
         <div className="rounded-lg border border-purple-900/40 bg-purple-950/10 p-3">
           <div className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-2">
-            Your team readiness (from Lab 1.3)
+            Your team readiness (from Lab {planActivityOf(scope.course, "requirements")?.label})
           </div>
           <div className="grid gap-1.5">
             {readiness.map((r) => (
@@ -186,7 +187,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
         Use default budget
       </label>
       <p className="text-[11px] text-slate-400">
-        {useDefaults ? "Default caps and effort; readiness blocks are off." : "Lab 1.3 readiness constraints are on; unanswered questions keep defaults."}
+        {useDefaults ? "Default caps and effort; readiness blocks are off." : `Lab ${planActivityOf(scope.course, "requirements")?.label} readiness constraints are on; unanswered questions keep defaults.`}
         {" "}The total budget stays {budgetHours}h. Overruns are warnings, not selection blocks.
       </p>
       <PlanReadinessExclusions excluded={excluded} />
@@ -317,7 +318,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                       <span
                         key={`req-${req.id}`}
                         className="rounded-sm border border-cyan-800/60 bg-cyan-950/40 px-1.5 py-0.5 text-[9px] text-cyan-300"
-                        title={`This action implements your Lab 1.3 verdict: ${req.label} = ${req.verdict}`}
+                        title={`This action implements your Lab ${planActivityOf(scope.course, "requirements")?.label} verdict: ${req.label} = ${req.verdict}`}
                       >
                         ↳ {req.label.split(" on ")[0].split(" → ").join("→")}: {req.verdict}
                       </span>
@@ -325,7 +326,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                     {implements_.length === 0 && hasAnyVerdict && (
                       <span
                         className="rounded-sm border border-slate-700/60 bg-slate-800/40 px-1.5 py-0.5 text-[9px] text-slate-500 italic"
-                        title="Operational hygiene / process - not tied to a specific 1.3 design verdict"
+                        title={`Operational hygiene / process - not tied to a specific ${planActivityOf(scope.course, "requirements")?.label} design verdict`}
                       >
                         operational hygiene
                       </span>

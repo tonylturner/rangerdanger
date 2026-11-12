@@ -15,7 +15,7 @@ import (
 
 func compileProbePlan(t testing.TB, gen *lifecycle.Generation, ids []string) labs.CompiledPlan {
 	t.Helper()
-	plan, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, ids)
+	plan, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, ids)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestProbeSuccessFollowsJudgingTarget(t *testing.T) {
 				gen = euGeneration(t, nil, nil)
 			}
 			var all []string
-			for _, action := range gen.Package.Curriculum.Catalog {
+			for _, action := range gen.Package.SegmentationPlan().Catalog {
 				all = append(all, action.ID)
 			}
 			allow := compileProbePlan(t, gen, nil)
@@ -137,7 +137,7 @@ func TestProbeUnavailableJudgingTargetFailsEveryRow(t *testing.T) {
 				useAppliedProbePlan(t, s, plan)
 				s.appliedPlan.Config = []byte(`{}`)
 			} else {
-				gen.Package.Curriculum = nil
+				gen.Package.Course.Features.SegmentationPlan = nil
 			}
 			s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
 				t.Error("probe ran without a judging target")
