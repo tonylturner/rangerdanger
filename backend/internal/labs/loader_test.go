@@ -244,8 +244,8 @@ func TestSeedPrunesStaleAndLegacyRows(t *testing.T) {
 	if err := database.Create(&models.Scenario{ID: "stale", Name: "Old scenario", PackageID: "alpha"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	// Rows written before packages existed have a NULL package_id.
-	if err := database.Exec(`INSERT INTO scenarios (id, name, lab_template_id) VALUES ('legacy', 'Legacy', 'substation')`).Error; err != nil {
+	// An orphaned row with no owning package is also pruned.
+	if err := database.Exec(`INSERT INTO scenarios (id, package_id, name, lab_template_id) VALUES ('legacy', '', 'Legacy', 'substation')`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err := seedLoader(definitions).Seed(context.Background(), database, "alpha"); err != nil {
@@ -308,13 +308,50 @@ func TestSeedPrunesRemovedPackage(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsDuplicateScenarioAcrossPackages(t *testing.T) {
+func TestSeedAllowsSameScenarioAcrossPackages(t *testing.T) {
 	definitions := t.TempDir()
-	writePackage(t, definitions, "alpha", "substation", map[string]string{"baseline.yml": validScenarioYAML})
-	writePackage(t, definitions, "beta", "beta-topology", map[string]string{"copy.yml": validScenarioYAML})
-	_, err := seedLoader(definitions).Load()
-	if err == nil || !strings.Contains(err.Error(), `package beta: scenario id "baseline" is already used by package alpha`) {
-		t.Fatalf("Load() error = %v, want cross-package duplicate slug", err)
+	alpha := writePackage(t, definitions, "alpha", "substation", map[string]string{"baseline.yml": validScenarioYAML})
+	writePackage(t, definitions, "beta", "beta-topology", map[string]string{"baseline.yml": validScenarioYAML})
+	database := testDatabase(t)
+	loader := seedLoader(definitions)
+	for i := 0; i < 2; i++ {
+		if _, err := loader.Seed(context.Background(), database, "alpha"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var rows []models.Scenario
+	if err := database.Order("package_id").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].PackageID != "alpha" || rows[1].PackageID != "beta" || rows[0].ID != rows[1].ID || rows[1].LabTemplateID != "beta-topology" {
+		t.Fatalf("rows = %#v", rows)
+	}
+	// Update and prune independently despite the same authored ID.
+	writeDefinition(t, filepath.Join(definitions, "packages/beta/scenarios/baseline.yml"), strings.Replace(validScenarioYAML, "Baseline Review", "Independent Beta", 1))
+	if _, err := loader.Seed(context.Background(), database, "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	var alphaRow, betaRow models.Scenario
+	if err := database.Where("package_id = ? AND id = ?", "alpha", "baseline").First(&alphaRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Where("package_id = ? AND id = ?", "beta", "baseline").First(&betaRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if alphaRow.Name != "Baseline Review" || betaRow.Name != "Independent Beta" {
+		t.Fatalf("cross-package update: alpha=%q beta=%q", alphaRow.Name, betaRow.Name)
+	}
+	if err := os.Remove(filepath.Join(alpha, "scenarios/baseline.yml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loader.Seed(context.Background(), database, "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if n := countRows(t, database, &models.Scenario{}, "id = ? AND package_id = ?", "baseline", "beta"); n != 1 {
+		t.Fatalf("beta rows = %d", n)
+	}
+	if n := countRows(t, database, &models.Scenario{}, "package_id = ?", "alpha"); n != 0 {
+		t.Fatalf("alpha rows = %d", n)
 	}
 }
 

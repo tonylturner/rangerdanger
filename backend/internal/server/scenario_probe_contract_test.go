@@ -152,7 +152,7 @@ func TestSuiteProbeJudgesDeclaredWeakBaseline(t *testing.T) {
 			full := compileProbePlan(t, gen, all)
 			for _, scenarioID := range []string{"baseline-assessment", "firewall-implementation", "vendor-rdp-compromise"} {
 				t.Run(scenarioID, func(t *testing.T) {
-					scenario, err := s.findActiveScenario(prefix + scenarioID)
+					scenario, err := s.findPackageScenario(s.activePackage().ID, prefix+scenarioID)
 					if err != nil {
 						t.Fatal(err)
 					}

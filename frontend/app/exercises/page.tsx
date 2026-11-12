@@ -28,7 +28,7 @@ export default function ExercisesPage() {
       detail: "Rendering exercise content…",
     });
     try {
-      await downloadExercisePDF(scenario.id, scenario.name);
+      await downloadExercisePDF(scenario.package_id, scenario.id, scenario.name);
       setToast({
         kind: "success",
         title: "Download started",

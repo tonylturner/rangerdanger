@@ -308,7 +308,7 @@ func TestEUFirewallPolicyPhaseExecuteDoesNotApply(t *testing.T) {
 	}
 	for _, phase := range phases {
 		t.Run(phase.stepID, func(t *testing.T) {
-			scenario, err := s.findActiveScenario(phase.scenario)
+			scenario, err := s.findPackageScenario(s.activePackage().ID, phase.scenario)
 			if err != nil {
 				t.Fatal(err)
 			}

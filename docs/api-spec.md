@@ -126,8 +126,9 @@ prove application success or authorization under the current policy.
 ## Scenarios (exercises)
 
 Exercises are stored internally as "scenarios" for historical reasons - the user-facing term is "exercise".
-Scenario rows belong to the active package, and their `steps` field is a
-JSON-encoded ordered array with stable authored step IDs
+Scenario IDs are unique within a package; the same ID may appear in another
+package. Routes resolve IDs relative to the active package, and each row's
+`steps` field is a JSON-encoded ordered array with stable authored step IDs
 ([`models.go`](../backend/internal/models/models.go#L7-L23)).
 The IDs are curriculum identities; step execution remains index-based,
 so automation should look up the ID in the served array before posting.
@@ -141,6 +142,14 @@ The API applies the supplied index to that same active-package scenario
 | `GET` | `/scenarios/:id` | Get exercise detail with steps |
 | `POST` | `/scenarios/:id/steps/:stepIdx/execute` | Execute the action at zero-based `stepIdx` in the served scenario's ordered `steps` array. The route takes an array index, not a step ID; callers that start from an authored ID must resolve its current index from `GET /scenarios/:id`. The response includes `step_index`, `step_title`, `action_type`, `success`, `results` and `timestamp` (see [`scenario_execute.go`](../backend/internal/server/scenario_execute.go#L20-L38)). |
 | `POST` | `/scenarios/:id/validate` | Cross-check the current system against the judging target below; this does not grade the student’s written test plan or signed record. Returns `{"scenario_id", "outcome", "checks": [...], "timestamp"}` |
+
+All scenario mutations (`POST /scenarios/...`) and `POST /workshop/test-suite`
+require `X-RangerDanger-Package: <package id>` from the package the caller
+verified ready. The server compares it with the request's bound generation,
+not a later active-package read. A missing or mismatched header returns
+HTTP 412 before work: `{"error":"...expected and bound package IDs...","code":"package_precondition"}`.
+Execute, validate, test-suite and workshop status always select scenarios from
+that bound generation; a draining request never selects a switch target's row.
 
 ### Interactive policy grading
 

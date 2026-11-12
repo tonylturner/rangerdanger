@@ -83,10 +83,20 @@ func (f *fakeRange) Enter(name string) (*lifecycle.Generation, func(), lifecycle
 
 func rangeRequest(s *Server, method, path, body string) (*httptest.ResponseRecorder, gin.H) {
 	rec := httptest.NewRecorder()
-	s.engine.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	setTestPackageHeader(s, req)
+	s.engine.ServeHTTP(rec, req)
 	var parsed gin.H
 	_ = json.Unmarshal(rec.Body.Bytes(), &parsed)
 	return rec, parsed
+}
+
+// Fixture callers carry the serving generation they intend to use. A stopped
+// fixture has no generation; its routes must still be testable for 503.
+func setTestPackageHeader(s *Server, req *http.Request) {
+	if fake, ok := s.rng.(*fakeRange); ok && fake.gen != nil {
+		req.Header.Set("X-RangerDanger-Package", fake.gen.Package.ID)
+	}
 }
 
 func TestGetRangeReturnsStatus(t *testing.T) {

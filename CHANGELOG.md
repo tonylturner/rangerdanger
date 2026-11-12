@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Scenario IDs are unique within a package, not across packages, so two packages may use the same ID. Scenario actions name the package they expect, so a stale browser tab cannot act on a different range.
+
 ## [v0.2.7] - 2026-11-11
 
 Maintenance release refreshing build tools, dependencies and image bases,

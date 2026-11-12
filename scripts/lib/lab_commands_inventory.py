@@ -1,9 +1,13 @@
 """Offline package discovery and the shared description command grammar."""
 import json
 import re
+import sys
 from pathlib import Path
 
 import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.lib.scenario_sources import scenario_files as resolve_scenario_files
 
 ROOT = Path(__file__).resolve().parents[2]
 US = "us-dnp3-substation"
@@ -48,8 +52,8 @@ def package(root, package_id):
 
 
 def scenario_files(root=ROOT, package_id=US):
-    base, doc, _, _ = package(root, package_id)
-    files = sorted((base / doc["scenarios"]).glob("*.yml"))
+    base, _, _, _ = package(root, package_id)
+    files = resolve_scenario_files(base, Path(root) / "lab-definitions")
     if not files:
         raise ValueError(f"{package_id}: no scenario YAML files")
     return files

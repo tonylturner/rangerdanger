@@ -33,13 +33,12 @@ function errorDetail(body: unknown): string {
 // Every API helper goes through here (lib/operator-api.ts too), so a
 // not-ready range is reported the same way for all of them.
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
     cache: "no-store",
-    ...init
+    ...init,
+    headers,
   });
 
   if (!res.ok) {
@@ -176,8 +175,11 @@ function hydrateScenario(raw: RawScenario): Scenario {
 }
 
 // The backend serves only the active package's scenarios.
-export async function listScenarios() {
+export async function listScenarios(packageId: string) {
   const res = await request<{ scenarios: RawScenario[] }>("/scenarios");
+  if (res.scenarios.some((scenario) => scenario.package_id !== packageId)) {
+    throw new Error(`Scenario response does not belong to package ${packageId}`);
+  }
   return { scenarios: res.scenarios.map(hydrateScenario) };
 }
 
@@ -475,9 +477,9 @@ export type ValidationResult = {
   timestamp: string;
 };
 
-export async function validateScenario(scenarioId: string, changeRequest?: PlanRequest) {
+export async function validateScenario(packageId: string, scenarioId: string, changeRequest?: PlanRequest) {
   return request<ValidationResult>(`/scenarios/${encodeURIComponent(scenarioId)}/validate`, {
-    method: "POST", body: JSON.stringify({ changeRequest }),
+    method: "POST", headers: { "X-RangerDanger-Package": packageId }, body: JSON.stringify({ changeRequest }),
   });
 }
 
@@ -542,9 +544,9 @@ export type StepExecutionResult = {
   timestamp: string;
 };
 
-export async function executeScenarioStep(scenarioId: string, stepIdx: number, changeRequest?: PlanRequest) {
+export async function executeScenarioStep(packageId: string, scenarioId: string, stepIdx: number, changeRequest?: PlanRequest) {
   return request<StepExecutionResult>(`/scenarios/${encodeURIComponent(scenarioId)}/steps/${stepIdx}/execute`, {
-    method: "POST", body: JSON.stringify({ changeRequest }),
+    method: "POST", headers: { "X-RangerDanger-Package": packageId }, body: JSON.stringify({ changeRequest }),
   });
 }
 

@@ -113,6 +113,7 @@ func invoke(s *Server, handler gin.HandlerFunc, method, path string, body any) (
 		}
 	}
 	req := httptest.NewRequest(method, path, bodyReader)
+	setTestPackageHeader(s, req)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

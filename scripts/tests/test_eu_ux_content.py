@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from scripts.lib.scenario_sources import read_scenarios
+
 from scripts.tests.curriculum import read_curriculum
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,8 +28,7 @@ class LearningContracts(unittest.TestCase):
         checked = 0
         for base, manifest, curriculum in self.packages():
             scenario_id = manifest["curriculum"]["roles"]["requirements"]
-            doc = yaml.safe_load(
-                (base / manifest["scenarios"] / f"{scenario_id}.yml").read_text())
+            doc = read_scenarios(base, ROOT / "lab-definitions")[scenario_id]
             declarations = {}
             for step in doc["steps"]:
                 for line in step["description"].splitlines():
@@ -52,8 +53,7 @@ class LearningContracts(unittest.TestCase):
         for base, manifest, _ in self.packages():
             prefix = "eu-" if manifest["id"].startswith("eu-") else ""
             for name in ("hardening-configurations", "vendor-rdp-compromise"):
-                doc = yaml.safe_load((base / manifest["scenarios"] /
-                                      f"{prefix}{name}.yml").read_text())
+                doc = read_scenarios(base, ROOT / "lab-definitions")[f"{prefix}{name}"]
                 first = " ".join(doc["steps"][0]["description"].split())
                 with self.subTest(scenario=doc["id"]):
                     for phrase in (
@@ -106,8 +106,7 @@ class LearningContracts(unittest.TestCase):
         from scripts.lib.lab_commands_inventory import extract
         for base, manifest, _ in self.packages():
             prefix = "eu-" if manifest["id"].startswith("eu-") else ""
-            doc = yaml.safe_load((base / manifest["scenarios"] /
-                                  f"{prefix}validation-evidence.yml").read_text())
+            doc = read_scenarios(base, ROOT / "lab-definitions")[f"{prefix}validation-evidence"]
             start, review = doc["steps"][1]["description"], doc["steps"][3]["description"]
             if manifest["id"].startswith("eu-"):
                 self.assertTrue(start.startswith(
@@ -131,8 +130,7 @@ class LearningContracts(unittest.TestCase):
     def test_worked_rule_mechanics_exist_in_both_render_paths(self):
         for base, manifest, curriculum in self.packages():
             scenario_id = manifest["curriculum"]["roles"]["implementation"]
-            doc = yaml.safe_load(
-                (base / manifest["scenarios"] / f"{scenario_id}.yml").read_text())
+            doc = read_scenarios(base, ROOT / "lab-definitions")[scenario_id]
             static = next(step["description"] for step in doc["steps"]
                           if step["id"] in ("implement-rules",
                                             "phase-3-create-minimal-required-rules"))

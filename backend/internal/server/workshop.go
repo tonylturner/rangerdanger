@@ -128,7 +128,10 @@ func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
 
 	// Count scenarios
 	var scenarioCount int64
-	s.activeScenarios().Count(&scenarioCount)
+	if err := s.packageScenarios(gen.Package.ID).Count(&scenarioCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	// Get active firewall config
 	s.activeConfigMu.RLock()

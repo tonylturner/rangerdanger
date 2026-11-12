@@ -44,12 +44,12 @@ describe("curriculum section reader", () => {
     mkdirSync(resolve(root, "scenarios"));
     const scenario = resolve(root, "scenarios/implementation.yml");
     writeFileSync(scenario, JSON.stringify({ id: "implementation", steps: [{ id: "implement", description: "### Do this\n- Review." }] }));
-    expect(fixtureCurriculum(root).phases.rules).toBe("### Do this\n- Review.\n\n{{ruleTable}}");
+    expect(fixtureCurriculum(root, undefined, root).phases.rules).toBe("### Do this\n- Review.\n\n{{ruleTable}}");
     for (const body of ["", "{{step:implement}}"]) {
       writeFileSync(scenario, JSON.stringify({ id: "implementation", steps: [{ id: "implement", description: body }] }));
-      expect(() => fixtureCurriculum(root)).toThrow(/Invalid implementation step reference/);
+      expect(() => fixtureCurriculum(root, undefined, root)).toThrow(/Invalid implementation step reference/);
     }
     writeFileSync(scenario, JSON.stringify({ id: "other", steps: [{ id: "implement", description: "Review." }] }));
-    expect(() => fixtureCurriculum(root)).toThrow(/Invalid implementation step reference/);
+    expect(() => fixtureCurriculum(root, undefined, root)).toThrow(/Invalid implementation step reference/);
   });
 });

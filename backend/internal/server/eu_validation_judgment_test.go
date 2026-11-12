@@ -71,7 +71,7 @@ func TestEUValidationJudgesRunningPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scenario, err := s.findActiveScenario(slot)
+	scenario, err := s.findPackageScenario(s.activePackage().ID, slot)
 	if err != nil {
 		t.Fatal(err)
 	}

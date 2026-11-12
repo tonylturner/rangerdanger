@@ -7,13 +7,16 @@ from pathlib import Path
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.lib.scenario_sources import scenario_files
+
 ROOT = Path(__file__).resolve().parents[2]
 EXECUTED_TYPES = {"sequence", "firewall", "check", "probe"}
 
 
-def expected_table(directory):
+def expected_table(files):
     table = {}
-    for path in sorted(directory.glob("*.yml")):
+    for path in files:
         doc = yaml.safe_load(path.read_text())
         scenario = doc["id"]
         if scenario in table:
@@ -95,9 +98,10 @@ def validate(response, table):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scenarios", type=Path, default=ROOT / "lab-definitions/scenarios")
+    parser.add_argument("--package", required=True)
+    parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args()
-    print(validate(json.load(sys.stdin), expected_table(args.scenarios)))
+    print(validate(json.load(sys.stdin), expected_table(scenario_files(args.root / "lab-definitions/packages" / args.package, args.root / "lab-definitions"))))
 
 
 if __name__ == "__main__":

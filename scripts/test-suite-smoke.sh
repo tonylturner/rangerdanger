@@ -21,16 +21,13 @@ fi
 package="$1"
 case "$package" in
   us-dnp3-substation)
-    scenarios="lab-definitions/scenarios"
     suite_timeout=900
     ;;
   eu-iec104-substation)
-    scenarios="lab-definitions/packages/eu-iec104-substation/scenarios"
     suite_timeout=1800
     ;;
   *)
-    err "unsupported package: $package"
-    exit 2
+    suite_timeout=1800
     ;;
 esac
 
@@ -52,11 +49,11 @@ fi
 ok "range $package ready"
 
 note "gate 2: workshop test-suite (resets lab state)"
-if ! response=$(curl -fsS --max-time "$suite_timeout" -X POST "$API/api/workshop/test-suite"); then
+if ! response=$(curl -fsS --max-time "$suite_timeout" -X POST -H "X-RangerDanger-Package: $package" "$API/api/workshop/test-suite"); then
   err "workshop test-suite request failed"
   exit 1
 fi
 
 # Independently reconcile every row and all totals against the mounted YAML.
 # Manual and decision steps are reported separately, never called execution.
-python3 scripts/lib/suite-accounting.py --scenarios "$scenarios" <<<"$response"
+python3 scripts/lib/suite-accounting.py --package "$package" <<<"$response"

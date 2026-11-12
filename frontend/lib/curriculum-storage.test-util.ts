@@ -3,6 +3,7 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
+import { scenarioFiles } from "./scenario-sources.test-util";
 import type { CurriculumBinding } from "./api";
 
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
@@ -32,10 +33,10 @@ export function readCurriculumSections(packageDir: string, directory: string): R
   return merged;
 }
 
-export function fixtureCurriculum(packageDir: string, topologyFile?: string): CurriculumBinding {
+export function fixtureCurriculum(packageDir: string, topologyFile?: string, definitionsRoot?: string): CurriculumBinding {
   const root = resolve(__dirname, "../..");
   const dir = resolve(root, packageDir);
-  const manifest = load(readFileSync(resolve(dir, "package.yml"), "utf8")) as { topology: string; scenarios: string; curriculum: Pick<CurriculumBinding, "roles" | "dynamicSteps"> & { dir: string }; ics_rules?: CurriculumBinding["icsRules"] };
+  const manifest = load(readFileSync(resolve(dir, "package.yml"), "utf8")) as { topology: string; curriculum: Pick<CurriculumBinding, "roles" | "dynamicSteps"> & { dir: string }; ics_rules?: CurriculumBinding["icsRules"] };
   const topology = load(readFileSync(topologyFile ?? resolve(dir, manifest.topology), "utf8")) as {
     nodes: { id: string; ip: string }[];
     networks: { id: string; zone: string; subnet: string; name: string }[];
@@ -57,9 +58,8 @@ export function fixtureCurriculum(packageDir: string, topologyFile?: string): Cu
   const curriculum = resolveScalars(readCurriculumSections(dir, manifest.curriculum.dir)) as CurriculumBinding;
   for (const [phase, template] of Object.entries(curriculum.phases ?? {})) {
     if (!template.includes("{{step:")) continue;
-    const documents = readdirSync(resolve(dir, manifest.scenarios))
-      .filter((file) => file.endsWith(".yml"))
-      .map((file) => load(readFileSync(resolve(dir, manifest.scenarios, file), "utf8")) as {
+    const documents = scenarioFiles(dir, definitionsRoot)
+      .map((file) => load(readFileSync(file, "utf8")) as {
         id: string; steps: { id: string; description: string }[];
       });
     const steps = new Map(documents.filter((doc) => doc.id === manifest.curriculum.roles.implementation)

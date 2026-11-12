@@ -183,7 +183,7 @@ func TestChangeRequestTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scenario, err := s.findActiveScenario("firewall-implementation")
+	scenario, err := s.findPackageScenario(s.activePackage().ID, "firewall-implementation")
 	if err != nil {
 		t.Fatal(err)
 	}

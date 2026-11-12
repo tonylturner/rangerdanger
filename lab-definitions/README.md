@@ -35,7 +35,7 @@ id: us-dnp3-substation            # slug; must match the directory name
 title: "US distribution substation (DNP3)"
 revision: 1                       # bump when step IDs or validator meaning change
 topology: ../../substation-segmentation.yml   # relative to package.yml
-scenarios: ../../scenarios                    # directory of <slug>.yml; the only scenario source
+scenarios: ../../scenarios                   # directory relative to package.yml
 capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
 ```
 
@@ -102,15 +102,25 @@ The EU package serves these seven scenario files:
   topology file's directory and must stay inside `lab-definitions/`.
 - A topology must not list scenarios inline; `scenarios: []` is the
   only accepted value.
-- Scenario IDs are slugs unique across **all** packages; a duplicate
-  is a load error.
-- Each package loads in its own transaction: scenarios whose file is
-  gone are removed, and a package directory that disappears takes its
-  scenarios with it.
+- Scenario IDs are slugs unique within a **package**. The same ID may
+  occur in another package. `scenarios` must be one nonempty directory string
+  relative to `package.yml`; every `*.yml` file in it is loaded. Lists and
+  mappings are rejected. Duplicate IDs within that directory are errors,
+  even for identical content.
+- The scenario directory must be a relative portable path (no backslashes).
+  `..` is allowed only inside `lab-definitions/`; symlink targets of directories
+  and files must also remain inside it. Scenarios validate against their
+  package's topology, capabilities, knowledge and curriculum.
+- The whole catalog is seeded and pruned in one transaction: scenarios whose
+  file is gone are removed, and a package directory that disappears takes its
+  scenarios with it. A failed seed leaves the old rows intact.
 - The backend serves one active package, chosen by the
   `RANGERDANGER_PACKAGE` environment variable (default
   `us-dnp3-substation`). Scenario routes answer for the active package
-  only. `GET /api/packages` lists packages and marks the active one.
+  only; IDs in routes are relative to that package. Mutating scenario requests
+  and test-suite runs require `X-RangerDanger-Package` matching the serving
+  generation, or return 412 `package_precondition`. `GET /api/packages` lists
+  packages and marks the active one.
 - Known capabilities: `process.electrical` (substation state and the
   device-command / check vocabulary for `sequence` and `check`
   actions), `policy.containd` (validators read the active
@@ -125,7 +135,7 @@ the US package that is `scenarios/<id>.yml`; it is exposed via
 `GET /api/scenarios`.
 
 ```yaml
-id: my-new-exercise         # slug; unique across every package
+id: my-new-exercise         # slug; unique within the package
 order: "2.5"                # quoted string; sorts lexicographically.
                             # Use the deck numbering (e.g. "1.2",
                             # "2.3-bonus"); the loader unmarshals

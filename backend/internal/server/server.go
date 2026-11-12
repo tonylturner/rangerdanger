@@ -50,6 +50,7 @@ type Server struct {
 	cfg             *config.Config
 	db              *gorm.DB
 	loader          *labs.Loader
+	seedMu          sync.Mutex // serializes reseeding through catalog publication
 	catalogMu       sync.RWMutex
 	catalog         *labs.Catalog // packages from the last successful seed
 	orchestrator    *orchestrator.Orchestrator
@@ -259,7 +260,7 @@ func (s *Server) corsMiddleware() gin.HandlerFunc {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-RangerDanger-Package")
 		// Allow-Credentials is only valid when Allow-Origin is a specific
 		// host. Browsers reject the combination with "*". Skip the header
 		// in the wildcard case (the lab default for single-tenant use).

@@ -92,15 +92,14 @@ func (s *Server) activePackage() labs.PackageInfo {
 	return info
 }
 
-// activeScenarios scopes a scenario query to the active package.
-func (s *Server) activeScenarios() *gorm.DB {
-	return s.db.Model(&models.Scenario{}).Where("package_id = ?", s.activePackage().ID)
+// packageScenarios scopes every query explicitly to its captured package.
+func (s *Server) packageScenarios(packageID string) *gorm.DB {
+	return s.db.Model(&models.Scenario{}).Where("package_id = ?", packageID)
 }
 
-// findActiveScenario loads a scenario only if the active package owns it.
-func (s *Server) findActiveScenario(id string) (models.Scenario, error) {
+func (s *Server) findPackageScenario(packageID, id string) (models.Scenario, error) {
 	var scenario models.Scenario
-	err := s.activeScenarios().Where("id = ?", id).First(&scenario).Error
+	err := s.packageScenarios(packageID).Where("id = ?", id).First(&scenario).Error
 	return scenario, err
 }
 

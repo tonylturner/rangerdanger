@@ -55,6 +55,7 @@ func routedServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	s := activePackageServer(database)
+	s.rng.(*fakeRange).gen.Package.ID = testPackageID
 	s.engine = gin.New()
 	s.registerRoutes()
 	return s
@@ -62,7 +63,9 @@ func routedServer(t *testing.T) *Server {
 
 func serve(s *Server, method, path string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	s.engine.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(`{"lab_instance_id":"lab-1"}`)))
+	req := httptest.NewRequest(method, path, strings.NewReader(`{"lab_instance_id":"lab-1"}`))
+	setTestPackageHeader(s, req)
+	s.engine.ServeHTTP(rec, req)
 	return rec
 }
 
@@ -201,6 +204,37 @@ func TestSeedFailureIsReturnedAndKeepsCatalog(t *testing.T) {
 	if after := s.activePackage(); !reflect.DeepEqual(after, before) {
 		t.Errorf("failed seed changed the active package: %#v -> %#v", before, after)
 	}
+	if !s.seedMu.TryLock() {
+		t.Fatal("failed seed retained publication lock")
+	}
+	s.seedMu.Unlock()
+}
+
+func TestSeedSerializesCatalogPublication(t *testing.T) {
+	s := routedServer(t)
+	s.rng.(*fakeRange).active = usPackageID
+	s.loader = labs.NewLoader(filepath.Join(repoRoot(), "lab-definitions"), ValidatorRequirements())
+	writes := 0
+	if err := s.db.Callback().Create().Before("gorm:create").Register("check-seed-lock", func(tx *gorm.DB) {
+		writes++
+		if s.seedMu.TryLock() {
+			s.seedMu.Unlock()
+			t.Error("catalog write ran outside the seed publication lock")
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec := serve(s, http.MethodPost, "/api/admin/seed")
+	if rec.Code != http.StatusOK || writes != 14 {
+		t.Fatalf("seed = %d %s; writes=%d", rec.Code, rec.Body, writes)
+	}
+	if _, ok := s.currentCatalog().Info(usPackageID); !ok {
+		t.Fatal("successful seed did not publish catalog")
+	}
+	if !s.seedMu.TryLock() {
+		t.Fatal("successful seed retained publication lock")
+	}
+	s.seedMu.Unlock()
 }
 
 func TestWorkshopGraphReadsTheServingPackage(t *testing.T) {

@@ -32,12 +32,11 @@ type ValidationResult struct {
 	Timestamp  string            `json:"timestamp"`
 }
 
-// handleValidateScenario runs the active-package scenario's declared
-// validator against current substation state. A scenario outside the active
-// package, or one without a validator, has no validation result (404).
+// handleValidateScenario runs the bound generation's scenario validator. A
+// scenario outside that package, or without a validator, has no result (404).
 func (s *Server) handleValidateScenario(c *gin.Context) {
 	scenarioID := c.Param("id")
-	scenario, err := s.findActiveScenario(scenarioID)
+	scenario, err := s.findPackageScenario(rangeOf(c).Package.ID, scenarioID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return

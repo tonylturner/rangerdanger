@@ -260,7 +260,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     setValidating(true);
     setValidationError(false);
     try {
-      const result = await validateScenario(scenario.id, changeRequest());
+      const result = await validateScenario(scenario.package_id, scenario.id, changeRequest());
       saveValidation(scope, result);
       setValidation(result);
     } catch {
@@ -274,7 +274,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     setExecuting(true);
     setStepResult(null);
     try {
-      const result = await executeScenarioStep(scenario.id, idx, changeRequest());
+      const result = await executeScenarioStep(scenario.package_id, scenario.id, idx, changeRequest());
       setStepResult(result);
 
       // Log results

@@ -10,7 +10,7 @@ import (
 
 func (s *Server) handleListScenarios(c *gin.Context) {
 	var scenarios []models.Scenario
-	query := s.activeScenarios()
+	query := s.packageScenarios(s.activePackage().ID)
 	if templateID := c.Query("lab_template_id"); templateID != "" {
 		query = query.Where("lab_template_id = ?", templateID)
 	}
@@ -22,7 +22,7 @@ func (s *Server) handleListScenarios(c *gin.Context) {
 }
 
 func (s *Server) handleGetScenario(c *gin.Context) {
-	scenario, err := s.findActiveScenario(c.Param("id"))
+	scenario, err := s.findPackageScenario(s.activePackage().ID, c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return

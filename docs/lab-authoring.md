@@ -13,12 +13,29 @@ file an issue or PR.
 
 ## File location and naming
 
-Each lab is one YAML file in the scenarios directory its package
-names (`lab-definitions/packages/<package>/package.yml`, key
-`scenarios:`). For the US package that is `lab-definitions/scenarios/`.
-By convention the filename matches the scenario `id` (e.g.
-`baseline-assessment.yml` contains `id: baseline-assessment`).
-Scenario IDs must be unique across every package. The package layout
+Each lab is one YAML file in the scenario directory its package names
+(`lab-definitions/packages/<package>/package.yml`, key `scenarios:`).
+For the US package that is `lab-definitions/scenarios/`; EU uses its own
+`scenarios/` directory beside `package.yml`. By convention the filename
+matches the scenario `id` (e.g. `baseline-assessment.yml` contains
+`id: baseline-assessment`). Scenario IDs must be unique within a package;
+the same ID may appear in another package. Declare one directory string
+(lists and mappings are rejected):
+
+```yaml
+scenarios: ../../scenarios  # US; EU uses scenarios: scenarios
+```
+
+Every `*.yml` file in that directory is loaded; duplicate IDs are errors even
+when content is identical. The path is relative to `package.yml`, must not be
+absolute or contain backslashes, and may use `..` only while staying inside
+`lab-definitions/`, including all directory and file symlink targets. Scenarios
+validate against their package's topology, capabilities, knowledge and
+curriculum. Bump the package revision when step IDs or validator meaning change.
+Scenario routes resolve IDs relative to the active package; mutations and
+test-suite runs require the verified ready
+package in `X-RangerDanger-Package` (missing or mismatched returns HTTP 412,
+`package_precondition`). The package layout
 is described in [`lab-definitions/README.md`](../lab-definitions/README.md#packages).
 
 Backend loads them at startup - restart `backend` after changes. Any
@@ -123,7 +140,7 @@ snapshot, not arbitrary files. A failed load or reseed publishes no new content.
 ## Top-level shape
 
 ```yaml
-id: my-new-lab               # required slug, unique across packages; by convention the filename stem
+id: my-new-lab               # required slug, unique within this package; by convention the filename stem
 order: "1.5"                 # required, string. Sorts in the inventory; matches workshop deck numbering.
 name: "Human-readable name"  # required
 summary: "One-line summary." # shown in the lab list

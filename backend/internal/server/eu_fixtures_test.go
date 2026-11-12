@@ -105,6 +105,7 @@ func callRoute(s *Server, handler gin.HandlerFunc, method, pattern, target, body
 	router := gin.New()
 	router.Handle(method, pattern, s.rangeBound(), handler)
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	setTestPackageHeader(s, req)
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}

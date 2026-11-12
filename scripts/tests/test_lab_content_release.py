@@ -5,6 +5,8 @@ import unittest
 
 import yaml
 
+from scripts.lib.scenario_sources import read_scenarios
+
 from scripts.tests.curriculum import read_curriculum
 from scripts.tests.test_lab_content_contracts import ROOT, SCENARIOS, scenario
 
@@ -192,9 +194,7 @@ class ErrataContracts(unittest.TestCase):
         for package_id, prefix in (("us-dnp3-substation", ""),
                                    ("eu-iec104-substation", "eu-")):
             base = ROOT / "lab-definitions/packages" / package_id
-            manifest = yaml.safe_load((base / "package.yml").read_text())
-            doc = yaml.safe_load((base / manifest["scenarios"] /
-                                 f"{prefix}firewall-implementation.yml").read_text())
+            doc = read_scenarios(base, ROOT / "lab-definitions")[f"{prefix}firewall-implementation"]
             raw = doc["steps"][8]["description"]
             text = " ".join(raw.split())
             with self.subTest(package=package_id):
