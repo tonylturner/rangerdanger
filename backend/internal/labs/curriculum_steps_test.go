@@ -46,7 +46,7 @@ func TestCurriculumEUPhasesUseScenarioInstructions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scenarios, err := loadScenarioFiles(filepath.Join(dir, "scenarios"))
+	scenarios, err := resolveScenarioSources(root, dir, []ScenarioSource{{Dir: "scenarios"}})
 	if err != nil {
 		t.Fatal(err)
 	}

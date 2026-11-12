@@ -13,12 +13,33 @@ file an issue or PR.
 
 ## File location and naming
 
-Each lab is one YAML file in the scenarios directory its package
+Each lab is one YAML file in the ordered scenario sources its package
 names (`lab-definitions/packages/<package>/package.yml`, key
 `scenarios:`). For the US package that is `lab-definitions/scenarios/`.
 By convention the filename matches the scenario `id` (e.g.
 `baseline-assessment.yml` contains `id: baseline-assessment`).
-Scenario IDs must be unique across every package. The package layout
+Scenario IDs must be unique within the consuming package, not globally.
+Declare sources as a list (the old scalar is rejected):
+
+```yaml
+scenarios:
+  - dir: ../../scenarios
+    include: [vendor-rdp-compromise, hardening-configurations]
+  - dir: scenarios
+```
+
+Omit `include` to load every `*.yml` in that source. Includes name authored
+scenario IDs, not filenames; an empty list, duplicates or an ID that does not
+resolve exactly once is an error. IDs must also be unique across all sources
+of one consumer, even when content is identical. Paths are relative to
+`package.yml`, must not be absolute or contain backslashes, and may use `..`
+only while staying inside `lab-definitions/`, including all symlink targets.
+Imported scenarios belong to and validate against the consumer's topology,
+capabilities, knowledge and curriculum. Shared semantic changes require a
+revision bump in every affected consumer. Scenario routes resolve IDs relative
+to the active package; mutations and test-suite runs require the verified ready
+package in `X-RangerDanger-Package` (missing or mismatched returns HTTP 412,
+`package_precondition`). The package layout
 is described in [`lab-definitions/README.md`](../lab-definitions/README.md#packages).
 
 Backend loads them at startup - restart `backend` after changes. Any
@@ -123,7 +144,7 @@ snapshot, not arbitrary files. A failed load or reseed publishes no new content.
 ## Top-level shape
 
 ```yaml
-id: my-new-lab               # required slug, unique across packages; by convention the filename stem
+id: my-new-lab               # required slug, unique within this package; by convention the filename stem
 order: "1.5"                 # required, string. Sorts in the inventory; matches workshop deck numbering.
 name: "Human-readable name"  # required
 summary: "One-line summary." # shown in the lab list

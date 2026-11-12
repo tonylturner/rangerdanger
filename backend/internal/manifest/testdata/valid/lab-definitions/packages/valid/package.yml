@@ -3,5 +3,5 @@ id: valid
 title: Valid fixture package
 revision: 1
 topology: topology.yml
-scenarios: scenarios
+scenarios: [{dir: scenarios}]
 capabilities: []

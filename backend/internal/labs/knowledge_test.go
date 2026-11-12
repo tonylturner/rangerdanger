@@ -19,7 +19,11 @@ import (
 var updateKnowledgeUS = flag.Bool("update-knowledge-us", false, "regenerate US knowledge body hashes")
 
 func TestKnowledgeUSMigration(t *testing.T) {
-	sections, err := loadKnowledge("../../../lab-definitions/packages/us-dnp3-substation", "knowledge/index.yml", "../../scenarios")
+	scenarios, err := resolveScenarioSources("../../../lab-definitions", "../../../lab-definitions/packages/us-dnp3-substation", []ScenarioSource{{Dir: "../../scenarios"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sections, err := loadKnowledge("../../../lab-definitions/packages/us-dnp3-substation", "knowledge/index.yml", scenarios)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +113,6 @@ func TestKnowledgeValidation(t *testing.T) {
 			root := t.TempDir()
 			writeDefinition(t, filepath.Join(root, "knowledge/index.yml"), tt.index)
 			writeDefinition(t, filepath.Join(root, "knowledge/baseline.md"), tt.body)
-			writeDefinition(t, filepath.Join(root, "scenarios/one.yml"), strings.Replace(validScenarioYAML, "Review the active firewall rules.", tt.scenario, 1))
 			if tt.symlink {
 				outside := filepath.Join(t.TempDir(), "outside.md")
 				writeDefinition(t, outside, "outside")
@@ -124,7 +127,7 @@ func TestKnowledgeValidation(t *testing.T) {
 			if tt.reference != "" {
 				index = tt.reference
 			}
-			_, err := loadKnowledge(root, index, "scenarios")
+			_, err := loadKnowledge(root, index, []ScenarioYAML{{ID: "baseline", Description: tt.scenario}})
 			if tt.name == "valid" {
 				if err != nil {
 					t.Fatal(err)

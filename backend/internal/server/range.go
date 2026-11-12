@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -41,6 +43,16 @@ func (s *Server) rangeBound() gin.HandlerFunc {
 			return
 		}
 		defer release()
+		if c.Request.Method == http.MethodPost && (strings.HasPrefix(c.FullPath(), "/api/scenarios/") || c.FullPath() == "/api/workshop/test-suite") {
+			expected := c.GetHeader("X-RangerDanger-Package")
+			if expected == "" || expected != gen.Package.ID {
+				c.AbortWithStatusJSON(http.StatusPreconditionFailed, gin.H{
+					"error": fmt.Sprintf("expected package %q does not match bound package %q", expected, gen.Package.ID),
+					"code":  "package_precondition",
+				})
+				return
+			}
+		}
 		ctx, cancel := context.WithCancel(c.Request.Context())
 		defer cancel()
 		stop := context.AfterFunc(gen.Context(), cancel)

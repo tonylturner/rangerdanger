@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
@@ -21,7 +22,7 @@ class SuiteAccountingTests(unittest.TestCase):
         spec.loader.exec_module(cls.accounting)
 
     def test_positive_fixture(self):
-        table = self.accounting.expected_table(FIXTURES)
+        table = self.accounting.expected_table(sorted(FIXTURES.glob("*.yml")))
         response = json.loads((FIXTURES / "valid.json").read_text())
         self.assertIn("example | 1 | 1 | 1", self.accounting.validate(response, table))
 
@@ -30,14 +31,19 @@ class SuiteAccountingTests(unittest.TestCase):
         self.assertGreaterEqual(len(fixtures), 5)
         for path in fixtures:
             with self.subTest(path=path.name):
-                result = subprocess.run(
-                    [sys.executable, str(HELPER), "--scenarios", str(FIXTURES)],
-                    input=path.read_text(), capture_output=True, text=True, timeout=5)
+                with tempfile.TemporaryDirectory() as temporary:
+                    base = Path(temporary) / "lab-definitions/packages/fixture"
+                    base.mkdir(parents=True)
+                    (base / "package.yml").write_text("scenarios: [{dir: scenarios}]\n")
+                    shutil.copytree(FIXTURES, base / "scenarios")
+                    result = subprocess.run(
+                        [sys.executable, str(HELPER), "--package", "fixture", "--root", temporary],
+                        input=path.read_text(), capture_output=True, text=True, timeout=5)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("suite accounting:", result.stderr)
 
     def test_current_yaml_table_not_golden_counts(self):
-        table = self.accounting.expected_table(ROOT / "lab-definitions/scenarios")
+        table = self.accounting.expected_table(sorted((ROOT / "lab-definitions/scenarios").glob("*.yml")))
         self.assertEqual(len(table), 7)
         self.assertEqual(
             {s["kind"] for s in table["remediation-planning"]}, {"manual", "decision"})
@@ -48,7 +54,7 @@ class SuiteAccountingTests(unittest.TestCase):
     def test_eu_package_yaml_is_reconciled_by_the_smoke_gate(self):
         package = "eu-iec104-substation"
         scenarios_dir = ROOT / "lab-definitions/packages" / package / "scenarios"
-        table = self.accounting.expected_table(scenarios_dir)
+        table = self.accounting.expected_table(sorted(scenarios_dir.glob("*.yml")))
         self.assertEqual(len(table), 7)
         scenarios = []
         auto_passed = total = 0
@@ -118,7 +124,7 @@ esac
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn(f"range {package} ready", result.stdout)
             self.assertIn(f"passed={total}/{total}", result.stdout)
-            self.assertIn("--max-time 1800 -X POST http://fixture.invalid/api/workshop/test-suite",
+            self.assertIn("--max-time 1800 -X POST -H X-RangerDanger-Package: eu-iec104-substation http://fixture.invalid/api/workshop/test-suite",
                           trace.read_text())
 
             trace.write_text("")
@@ -141,7 +147,7 @@ esac
         scenario.update(passed=False, reset_ok=False, reset_detail="relay did not close")
         response.update(passed=2, failed=1, reset_failures=1)
         with self.assertRaises(ValueError) as caught:
-            self.accounting.validate(response, self.accounting.expected_table(FIXTURES))
+            self.accounting.validate(response, self.accounting.expected_table(sorted(FIXTURES.glob("*.yml"))))
         message = str(caught.exception)
         self.assertIn('example step 0 "Execute a check": 1 checks, all pass: false', message)
         self.assertIn("example reset: relay did not close", message)
@@ -150,7 +156,7 @@ esac
         response = json.loads((FIXTURES / "valid.json").read_text())
         response["scenarios"][0]["steps"][0]["auto_pass"] = True
         with self.assertRaisesRegex(ValueError, "auto_pass"):
-            self.accounting.validate(response, self.accounting.expected_table(FIXTURES))
+            self.accounting.validate(response, self.accounting.expected_table(sorted(FIXTURES.glob("*.yml"))))
 
 
 if __name__ == "__main__":

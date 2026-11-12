@@ -194,7 +194,7 @@ describe("Execute Step command log", () => {
     try {
       fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
       const line = await tree.findByText(/^\[NOT MET\] Step 1: Check breaker — breaker_closed: Expected false; observed true$/);
-      expect(execute).toHaveBeenCalledWith(authored.id, 0, undefined);
+      expect(execute).toHaveBeenCalledWith(authored.package_id, authored.id, 0, undefined);
       expect(line.classList.contains("text-amber-400")).toBe(true);
       expect(line.textContent).not.toContain("BLOCKED");
       expect(loadProgress(scope, authored).cmdLog).toEqual([line.textContent]);
@@ -228,8 +228,8 @@ describe("interactive grading change requests", () => {
       };
       const expectRequest = (actionIds?: string[]) => {
         const request = actionIds ? { packageId: scope.packageId, revision: scope.revision, actionIds } : undefined;
-        expect(execute).toHaveBeenLastCalledWith(authored.id, 0, request);
-        expect(validate).toHaveBeenLastCalledWith(authored.id, request);
+        expect(execute).toHaveBeenLastCalledWith(authored.package_id, authored.id, 0, request);
+        expect(validate).toHaveBeenLastCalledWith(authored.package_id, authored.id, request);
       };
       // Empty effective intent is no request: never grade manual work against Weak.
       await clickBoth();

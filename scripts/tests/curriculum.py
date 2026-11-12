@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from scripts.lib.scenario_sources import read_scenarios
+
 
 SECTION_FILES = {
     "catalog.yml", "requirements.yml", "readiness.yml", "coverage.yml",
@@ -53,8 +55,7 @@ def read_curriculum(package_dir: Path) -> dict:
     for phase, text in merged.get("phases", {}).items():
         if "{{step:" not in text:
             continue
-        documents = [yaml.safe_load(file.read_text())
-                     for file in (package_dir / manifest["scenarios"]).glob("*.yml")]
+        documents = read_scenarios(package_dir, package_dir.parents[1]).values()
         steps = {step["id"]: step["description"].strip()
                  for doc in documents
                  if doc["id"] == manifest["curriculum"]["roles"]["implementation"]

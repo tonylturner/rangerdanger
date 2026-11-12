@@ -175,8 +175,11 @@ function hydrateScenario(raw: RawScenario): Scenario {
 }
 
 // The backend serves only the active package's scenarios.
-export async function listScenarios() {
+export async function listScenarios(packageId: string) {
   const res = await request<{ scenarios: RawScenario[] }>("/scenarios");
+  if (res.scenarios.some((scenario) => scenario.package_id !== packageId)) {
+    throw new Error(`Scenario response does not belong to package ${packageId}`);
+  }
   return { scenarios: res.scenarios.map(hydrateScenario) };
 }
 
@@ -474,9 +477,9 @@ export type ValidationResult = {
   timestamp: string;
 };
 
-export async function validateScenario(scenarioId: string, changeRequest?: PlanRequest) {
+export async function validateScenario(packageId: string, scenarioId: string, changeRequest?: PlanRequest) {
   return request<ValidationResult>(`/scenarios/${encodeURIComponent(scenarioId)}/validate`, {
-    method: "POST", body: JSON.stringify({ changeRequest }),
+    method: "POST", headers: { "X-RangerDanger-Package": packageId }, body: JSON.stringify({ changeRequest }),
   });
 }
 
@@ -541,9 +544,9 @@ export type StepExecutionResult = {
   timestamp: string;
 };
 
-export async function executeScenarioStep(scenarioId: string, stepIdx: number, changeRequest?: PlanRequest) {
+export async function executeScenarioStep(packageId: string, scenarioId: string, stepIdx: number, changeRequest?: PlanRequest) {
   return request<StepExecutionResult>(`/scenarios/${encodeURIComponent(scenarioId)}/steps/${stepIdx}/execute`, {
-    method: "POST", body: JSON.stringify({ changeRequest }),
+    method: "POST", headers: { "X-RangerDanger-Package": packageId }, body: JSON.stringify({ changeRequest }),
   });
 }
 

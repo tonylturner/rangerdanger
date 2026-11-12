@@ -13,6 +13,7 @@ import (
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
+	"github.com/tturner/rangerdanger/backend/internal/server"
 )
 
 type lintRun struct {
@@ -251,9 +252,9 @@ func discoverPackages(root string) ([]packageModel, error) {
 		if err != nil {
 			return nil, fmt.Errorf("package %s: %w", id, err)
 		}
-		// The catalog's own reader: package.yml, topology and every named
-		// policy, linted exactly as the backend loads them.
-		topology, err := labs.ReadDefinition(filepath.Join(root, "lab-definitions"), filepath.Join(directory, "package.yml"))
+		// Validate the complete consumer using the catalog loader and the
+		// authoritative validator registry, including scenarios and curriculum.
+		topology, err := labs.NewLoader(filepath.Join(root, "lab-definitions"), server.ValidatorRequirements()).LoadPackage(filepath.Join(directory, "package.yml"))
 		if err != nil {
 			return nil, fmt.Errorf("package %s: %w", id, err)
 		}

@@ -265,9 +265,9 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		writeApplyError(c, err, lastApply, gin.H{"context": "workshop test suite"})
 	}
 
-	// Load the active package's scenarios ordered by `order`
+	// Load the bound generation's scenarios ordered by `order`
 	var scenarios []models.Scenario
-	if err := s.activeScenarios().Order("\"order\" ASC, name ASC").Find(&scenarios).Error; err != nil {
+	if err := s.packageScenarios(gen.Package.ID).Order("\"order\" ASC, name ASC").Find(&scenarios).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

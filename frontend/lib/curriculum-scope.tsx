@@ -15,7 +15,10 @@ export function useActiveCurriculum(): {
   const pkg = useQuery({ queryKey: ["packages", "active"], queryFn: getActivePackage });
   const scenarios = useQuery({
     queryKey: ["scenarios", pkg.data?.id],
-    queryFn: listScenarios,
+    queryFn: () => {
+      if (!pkg.data) throw new Error("No active package");
+      return listScenarios(pkg.data.id);
+    },
     enabled: pkg.data !== undefined,
   });
   return {

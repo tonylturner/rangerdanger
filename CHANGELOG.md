@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Allow explicit scenario-source imports with independent package-scoped identity and stale-package mutation protection.
+
 ## [v0.2.6] - 2026-11-11
 
 Patch release correcting RESET results and closure evidence in the labs.

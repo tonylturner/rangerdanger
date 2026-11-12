@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { request, ApiError, compilePlan, applyPlan, executeScenarioStep, validateScenario, getActiveFirewallConfig, getSubstationNetworkEvents, sendFieldAction, stopTrafficGeneration, type NetworkEventsResponse } from "./api";
+import { request, listScenarios, ApiError, compilePlan, applyPlan, executeScenarioStep, validateScenario, getActiveFirewallConfig, getSubstationNetworkEvents, sendFieldAction, stopTrafficGeneration, type NetworkEventsResponse } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -69,13 +69,28 @@ it.each([undefined, planRequest, { ...planRequest, actionIds: ["pin-rtac-to-fiel
   "POSTs interactive grading with optional scoped IDs: %j", async (changeRequest) => {
     const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response("{}")));
     vi.stubGlobal("fetch", fetch);
-    await executeScenarioStep("lab/id", 2, changeRequest);
-    await validateScenario("lab/id", changeRequest);
-    const options = expect.objectContaining({ method: "POST", body: JSON.stringify({ changeRequest }) });
+    await executeScenarioStep("consumer", "lab/id", 2, changeRequest);
+    await validateScenario("consumer", "lab/id", changeRequest);
+    const options = expect.objectContaining({ method: "POST", headers: expect.any(Headers), body: JSON.stringify({ changeRequest }) });
     expect(fetch).toHaveBeenNthCalledWith(1, "/api/scenarios/lab%2Fid/steps/2/execute", options);
     expect(fetch).toHaveBeenNthCalledWith(2, "/api/scenarios/lab%2Fid/validate", options);
+    for (const [, init] of fetch.mock.calls) {
+      expect(init.headers.get("X-RangerDanger-Package")).toBe("consumer");
+      expect(init.headers.get("Content-Type")).toBe("application/json");
+    }
   },
 );
+
+it("refuses scenarios owned by another package before caching them", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ scenarios: [{ id: "shared", package_id: "other" }] }))));
+  await expect(listScenarios("consumer")).rejects.toThrow("does not belong to package consumer");
+});
+it("preserves package precondition failures without retries", async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response('{"code":"package_precondition","error":"expected consumer, bound other"}', { status: 412 }));
+  vi.stubGlobal("fetch", fetch);
+  await expect(validateScenario("consumer", "shared")).rejects.toMatchObject({ status: 412 });
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
 
 it.each([
   { "X-Custom": "context" },
