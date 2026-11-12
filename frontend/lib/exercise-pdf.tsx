@@ -834,9 +834,9 @@ export function WorkbookPDF({
           </Text>
           <Text style={styles.para}>
             The lab is sequential: capture and analyze baseline traffic,
-            identify required communication flows and exposures, plan
-            remediation under real-world constraints, design segmentation
-            requirements, execute attacks against the weak baseline, then
+            identify required communication flows and exposures, design
+            segmentation requirements, plan remediation under real-world
+            constraints, execute attacks against the weak baseline, then
             validate that the hardened policy closes the attack paths
             without breaking operations.
           </Text>
