@@ -182,6 +182,11 @@ elif [ "$PACKAGES_SET" -eq 1 ]; then
 else
     SELECTED_PACKAGES=${INSTALLED_PACKAGES:-$(available_packages)}
 fi
+# range_field and range_status: GET /api/range parsing shared with the
+# host scripts.
+# shellcheck source=scripts/lib/range.sh
+# shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
+. "$ROOT_DIR/scripts/lib/range.sh"
 assert_runtime_package_selected
 if [ -n "$ADD_PACKAGE" ] && printf '%s\n' "$INSTALLED_PACKAGES" | grep -qxF "$ADD_PACKAGE"; then
     say "Package $ADD_PACKAGE is already installed."
@@ -249,11 +254,6 @@ with_pull_retry() {
     - Disk filled mid-pull (df -h to verify)"
 }
 
-# range_field and range_status: GET /api/range parsing shared with the
-# host scripts.
-# shellcheck source=scripts/lib/range.sh
-# shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
-. "$ROOT_DIR/scripts/lib/range.sh"
 # docker_bounded: readiness queries must not wait forever for a stalled CLI.
 # shellcheck source=scripts/lib/docker-bounded.sh
 # shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.

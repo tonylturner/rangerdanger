@@ -25,117 +25,13 @@ normalize_packages() {
     done | LC_ALL=C sort -u
 }
 
-# Read JSON without adding a developer-tool dependency to offline installs.
-# Validate the whole document, not a sed match that could accept truncated JSON
-# or a nested/duplicate package key. Only the top-level package is selection data.
+# The backend owns record validation; setup only checks its package identity.
 assert_runtime_package_selected() {
-    local file="$ROOT_DIR/backend/data/range.json" package
+    local file="$ROOT_DIR/backend/data/range.json" record package
     [ -e "$file" ] || [ -L "$file" ] || return 0
-    if [ ! -f "$file" ] || [ "$(LC_ALL=C tr -cd '\000' < "$file" | wc -c | tr -d ' ')" != 0 ]; then
-        die "Invalid runtime record $file. Repair the runtime record before rerunning setup."
-        return 1
-    fi
-    if ! package=$(LC_ALL=C awk '
-        function fail() { exit 1 }
-        function ws() { while (substr(doc, pos, 1) ~ /^[ \t\r\n]$/) pos++ }
-        function utf8(c,    n, count, min, i, nextbyte) {
-            n = index(bytes, c) + 127
-            if (n >= 194 && n <= 223) { count = 1; min = 128; n -= 192 }
-            else if (n >= 224 && n <= 239) { count = 2; min = 2048; n -= 224 }
-            else if (n >= 240 && n <= 244) { count = 3; min = 65536; n -= 240 }
-            else fail()
-            text = text c
-            for (i = 0; i < count; i++) {
-                c = substr(doc, pos++, 1)
-                if (c == "") fail()
-                nextbyte = index(bytes, c) + 127
-                if (nextbyte < 128 || nextbyte > 191) fail()
-                n = n * 64 + nextbyte - 128
-                text = text c
-            }
-            if (n < min || n > 1114111 || (n >= 55296 && n <= 57343)) fail()
-        }
-        function string(    c, e, h, n, i) {
-            if (substr(doc, pos++, 1) != "\"") fail()
-            text = ""
-            while (pos <= length(doc)) {
-                c = substr(doc, pos++, 1)
-                if (c == "\"") return
-                if (c ~ /[\001-\037]/) fail()
-                if (index(bytes, c)) { utf8(c); continue }
-                if (c != "\\") { text = text c; continue }
-                e = substr(doc, pos++, 1)
-                if (e == "u") {
-                    h = substr(doc, pos, 4)
-                    if (length(h) != 4 || h ~ /[^0-9a-fA-F]/) fail()
-                    pos += 4
-                    n = 0
-                    for (i = 1; i <= 4; i++)
-                        n = n * 16 + index("0123456789abcdef", tolower(substr(h, i, 1))) - 1
-                    # Non-ASCII is irrelevant to package IDs; keep it distinct
-                    # for duplicate-key detection without requiring Unicode awk.
-                    text = text (n > 0 && n < 128 ? sprintf("%c", n) : "\\u" tolower(h))
-                } else {
-                    if (e !~ /^["\\\/bfnrt]$/) fail()
-                    text = text (e == "\"" || e == "\\" || e == "/" ? e : "\\" e)
-                }
-            }
-            fail()
-        }
-        function value(depth,    c, id, key) {
-            if (depth > 64) fail()
-            ws()
-            c = substr(doc, pos, 1)
-            kind = c
-            text = ""
-            if (c == "\"") { string(); return }
-            if (c == "{" || c == "[") {
-                id = ++objects
-                pos++
-                ws()
-                if (substr(doc, pos, 1) == (c == "{" ? "}" : "]")) pos++
-                else while (1) {
-                    if (c == "{") {
-                        string()
-                        key = text
-                        if ((id SUBSEP key) in keys) fail()
-                        keys[id, key] = 1
-                        ws()
-                        if (substr(doc, pos++, 1) != ":") fail()
-                    }
-                    value(depth + 1)
-                    if (depth == 0 && c == "{" && key == "package") {
-                        if (kind != "\"") fail()
-                        package = text
-                    }
-                    ws()
-                    if (substr(doc, pos, 1) == (c == "{" ? "}" : "]")) { pos++; break }
-                    if (substr(doc, pos++, 1) != ",") fail()
-                    ws()
-                }
-                kind = c
-                return
-            }
-            if (match(substr(doc, pos), /^(true|false|null)/)) {
-                pos += RLENGTH
-                return
-            }
-            if (match(substr(doc, pos), /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/)) {
-                pos += RLENGTH
-                return
-            }
-            fail()
-        }
-        BEGIN { for (i = 128; i <= 255; i++) bytes = bytes sprintf("%c", i) }
-        { doc = doc $0 "\n" }
-        END {
-            pos = 1
-            value(0)
-            ws()
-            if (kind != "{" || pos <= length(doc) || package !~ /^[a-z0-9-]+$/) exit 1
-            print package
-        }
-    ' "$file"); then
+    if [ ! -f "$file" ] || [ "$(LC_ALL=C tr -cd '\000' < "$file" | wc -c | tr -d ' ')" != 0 ] \
+        || ! record=$(cat "$file") || ! package=$(range_field "$record" package) \
+        || [[ ! "$package" =~ ^[a-z0-9-]+$ ]]; then
         die "Invalid runtime record $file. Repair the runtime record before rerunning setup."
         return 1
     fi

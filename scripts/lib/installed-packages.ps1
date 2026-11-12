@@ -27,51 +27,8 @@ function Assert-RuntimePackageSelected([string]$Root, [string[]]$Ids) {
         if (-not (Get-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue)) { return }
     }
     try {
-        $utf8 = New-Object Text.UTF8Encoding $false, $true
-        $text = $utf8.GetString([IO.File]::ReadAllBytes($file))
-        # ConvertFrom-Json accepts comments, trailing commas and duplicate keys
-        # on some hosts. Check strict JSON grammar first, including unique keys.
-        # The mutable cursor is shared by recursive calls (PowerShell 5.1 too).
-        $pattern = '\G(?:[ \t\r\n]+|"(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|true|false|null|[{}\[\]:,])'
-        $tokens = New-Object 'Collections.Generic.List[string]'
-        $end = 0
-        foreach ($match in [regex]::Matches($text, $pattern)) {
-            $end += $match.Length
-            if ($match.Value -cnotmatch '^[ \t\r\n]+$') { $tokens.Add($match.Value) }
-        }
-        if ($end -ne $text.Length) { throw 'Invalid JSON token.' }
-        $cursor = @{ Index = 0 }
-        function Read-RuntimeJsonValue([int]$Depth) {
-            if ($Depth -gt 64 -or $cursor.Index -ge $tokens.Count) { throw 'Incomplete runtime JSON.' }
-            $token = $tokens[$cursor.Index++]
-            if ($token -eq '{' -or $token -eq '[') {
-                $close = if ($token -eq '{') { '}' } else { ']' }
-                $keys = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
-                if ($cursor.Index -lt $tokens.Count -and $tokens[$cursor.Index] -eq $close) {
-                    $cursor.Index++
-                    return
-                }
-                while ($true) {
-                    if ($token -eq '{') {
-                        if ($cursor.Index -ge $tokens.Count -or -not $tokens[$cursor.Index].StartsWith('"')) { throw 'Expected JSON key.' }
-                        $key = ConvertFrom-Json -InputObject $tokens[$cursor.Index++]
-                        if (-not $keys.Add($key)) { throw 'Duplicate JSON key.' }
-                        if ($cursor.Index -ge $tokens.Count -or $tokens[$cursor.Index++] -ne ':') { throw 'Expected JSON colon.' }
-                    }
-                    Read-RuntimeJsonValue ($Depth + 1)
-                    if ($cursor.Index -ge $tokens.Count) { throw 'Incomplete runtime JSON.' }
-                    $next = $tokens[$cursor.Index++]
-                    if ($next -eq $close) { return }
-                    if ($next -ne ',') { throw 'Expected JSON comma.' }
-                }
-            }
-            if ($token -in @('}', ']', ':', ',')) { throw 'Expected JSON value.' }
-        }
-        Read-RuntimeJsonValue 0
-        if ($cursor.Index -ne $tokens.Count -or $tokens[0] -ne '{') { throw 'Expected one runtime object.' }
-        $record = ConvertFrom-Json -InputObject $text
-        if ('package' -cnotin @($record.PSObject.Properties.Name) -or
-            $record.package -isnot [string] -or $record.package -cnotmatch '^[a-z0-9-]+\z') {
+        $record = Get-Content -LiteralPath $file -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($record.package -isnot [string] -or $record.package -cnotmatch '^[a-z0-9-]+\z') {
             throw 'Missing or invalid runtime package.'
         }
         $package = $record.package

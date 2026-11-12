@@ -26,7 +26,8 @@ def fixture(root):
         (root / name).write_text("fixture\n")
     (root / "data").mkdir()
     (root / "scripts/lib").mkdir(parents=True)
-    (root / "scripts/lib/installed-packages.sh").write_bytes((ROOT / "scripts/lib/installed-packages.sh").read_bytes())
+    for name in ("installed-packages.sh", "range.sh"):
+        (root / "scripts/lib" / name).write_bytes((ROOT / "scripts/lib" / name).read_bytes())
 
 
 def bash(script, root, **env):
