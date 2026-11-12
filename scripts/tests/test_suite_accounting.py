@@ -34,7 +34,7 @@ class SuiteAccountingTests(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as temporary:
                     base = Path(temporary) / "lab-definitions/packages/fixture"
                     base.mkdir(parents=True)
-                    (base / "package.yml").write_text("scenarios: [{dir: scenarios}]\n")
+                    (base / "package.yml").write_text("scenarios: scenarios\n")
                     shutil.copytree(FIXTURES, base / "scenarios")
                     result = subprocess.run(
                         [sys.executable, str(HELPER), "--package", "fixture", "--root", temporary],
