@@ -48,7 +48,7 @@ class CurriculumReaderTests(unittest.TestCase):
             (root / "curriculum").mkdir()
             (root / "scenarios").mkdir()
             (root / "package.yml").write_text(yaml.safe_dump({
-                "scenarios": [{"dir": "scenarios"}], "curriculum": {
+                "scenarios": "scenarios", "curriculum": {
                     "dir": "curriculum", "roles": {"implementation": "implementation"},
                     "dynamicSteps": {"implement": "rules"},
                 },

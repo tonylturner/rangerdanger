@@ -12,32 +12,27 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
-func TestScenarioSources(t *testing.T) {
+func TestScenarioDirectory(t *testing.T) {
 	for _, tc := range []struct {
-		name, sources, want string
+		name, directory, want string
 	}{
-		{"scalar", "scenarios", "cannot unmarshal"},
-		{"empty sources", "[]", "scenarios must not be empty"},
-		{"unknown field", "[{dir: scenarios, typo: true}]", "field typo not found"},
-		{"empty dir", "[{dir: ''}]", "nonempty relative"},
-		{"absolute", "[{dir: /tmp}]", "relative"},
-		{"windows absolute", "[{dir: 'C:/temp'}]", "relative"},
-		{"backslash", `[{dir: '..\scenarios'}]`, "relative"},
-		{"escape", "[{dir: ../../../outside}]", "escapes definitions root"},
-		{"unknown id", "[{dir: scenarios, include: [unknown]}]", "must resolve exactly once"},
-		{"filename not id", "[{dir: scenarios, include: [one]}]", "must resolve exactly once"},
-		{"null include", "[{dir: scenarios, include: null}]", "include must be a nonempty list"},
-		{"empty include", "[{dir: scenarios, include: []}]", "include must not be empty"},
-		{"repeated include", "[{dir: scenarios, include: [baseline, baseline]}]", "duplicate include"},
-		{"duplicate across sources", "[{dir: scenarios}, {dir: scenarios}]", "duplicate scenario id"},
-		{"literal directory", "[{dir: 'lessons[1]'}]", ""},
-		{"valid subset", "[{dir: scenarios, include: [baseline]}]", ""},
+		{"scalar", "scenarios", ""},
+		{"list", "[{dir: scenarios}]", "cannot unmarshal"},
+		{"mapping", "{dir: scenarios}", "cannot unmarshal"},
+		{"empty", "''", "scenarios must not be empty"},
+		{"null", "null", "scenarios must not be empty"},
+		{"absolute", "/tmp", "relative"},
+		{"windows absolute", "C:/temp", "relative"},
+		{"backslash", `'..\scenarios'`, "relative"},
+		{"escape", "../../../outside", "escapes definitions root"},
+		{"file", "scenarios/one.yml", "not a directory"},
+		{"literal directory", "'lessons[1]'", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			dir := writePackage(t, root, "alpha", "substation", map[string]string{"one.yml": validScenarioYAML})
 			writeDefinition(t, filepath.Join(dir, "lessons[1]/one.yml"), validScenarioYAML)
-			writeDefinition(t, filepath.Join(dir, "package.yml"), strings.Replace(packageYAML("alpha"), "[{dir: scenarios}]", tc.sources, 1))
+			writeDefinition(t, filepath.Join(dir, "package.yml"), strings.Replace(packageYAML("alpha"), "scenarios: scenarios", "scenarios: "+tc.directory, 1))
 			pkg, err := seedLoader(root).LoadPackage(filepath.Join(dir, "package.yml"))
 			if tc.want != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -50,7 +45,45 @@ func TestScenarioSources(t *testing.T) {
 	}
 }
 
-func TestScenarioSourcesSymlinkEscape(t *testing.T) {
+func TestScenarioDirectoryRejectsDuplicateIDs(t *testing.T) {
+	root := t.TempDir()
+	writePackage(t, root, "alpha", "substation", map[string]string{"one.yml": validScenarioYAML, "two.yml": validScenarioYAML})
+	if _, err := seedLoader(root).Load(); err == nil || !strings.Contains(err.Error(), "duplicate scenario id") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestScenarioDirectoryRejectsNonRegularFile(t *testing.T) {
+	root := t.TempDir()
+	dir := writePackage(t, root, "alpha", "substation", nil)
+	if err := os.Mkdir(filepath.Join(dir, "scenarios/not-a-file.yml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := seedLoader(root).Load(); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestScenarioDirectoryAllowsConfinedSymlinks(t *testing.T) {
+	root := t.TempDir()
+	dir := writePackage(t, root, "alpha", "substation", map[string]string{"one.yml": validScenarioYAML})
+	if err := os.Rename(filepath.Join(dir, "scenarios/one.yml"), filepath.Join(dir, "lesson.yml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../lesson.yml", filepath.Join(dir, "scenarios/one.yml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("scenarios", filepath.Join(dir, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	writeDefinition(t, filepath.Join(dir, "package.yml"), strings.Replace(packageYAML("alpha"), "scenarios: scenarios", "scenarios: linked", 1))
+	pkg, err := seedLoader(root).LoadPackage(filepath.Join(dir, "package.yml"))
+	if err != nil || len(pkg.Scenarios) != 1 || pkg.Scenarios[0].ID != "baseline" {
+		t.Fatalf("package = %#v, error = %v", pkg, err)
+	}
+}
+
+func TestScenarioDirectorySymlinkEscape(t *testing.T) {
 	for _, fileLink := range []bool{false, true} {
 		t.Run(map[bool]string{false: "directory", true: "file"}[fileLink], func(t *testing.T) {
 			root := t.TempDir()
@@ -69,33 +102,6 @@ func TestScenarioSourcesSymlinkEscape(t *testing.T) {
 			_, err := seedLoader(root).Load()
 			if err == nil || !strings.Contains(err.Error(), "escapes definitions root") {
 				t.Fatalf("error = %v", err)
-			}
-		})
-	}
-}
-
-func TestScenarioSourcesConsumerValidation(t *testing.T) {
-	for _, tc := range []struct{ name, old, new, want string }{
-		{"topology", "id: rtac-1", "id: other", "unknown node"},
-		{"capability", "capabilities: [process.electrical]", "capabilities: []", "capability"},
-		{"knowledge", "id: baseline", "id: other", "unknown knowledge"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			scenario := strings.Replace(validScenarioYAML, "Review the active firewall rules.", `"[Read](/knowledge#baseline)"`, 1)
-			writePackage(t, root, "alpha", "substation", map[string]string{"one.yml": scenario})
-			dir := writePackage(t, root, "beta", "beta-topology", nil)
-			writeDefinition(t, filepath.Join(dir, "package.yml"), strings.Replace(packageYAML("beta"), "[{dir: scenarios}]", "[{dir: ../alpha/scenarios, include: [baseline]}]", 1))
-			name := map[string]string{"topology": "topology.yml", "capability": "package.yml", "knowledge": "knowledge/index.yml"}[tc.name]
-			path := filepath.Join(dir, name)
-			data, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			writeDefinition(t, path, strings.Replace(string(data), tc.old, tc.new, 1))
-			_, err = seedLoader(root).Load()
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("error = %v, want consumer %s failure", err, tc.name)
 			}
 		})
 	}
