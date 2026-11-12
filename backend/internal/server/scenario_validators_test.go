@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
@@ -30,11 +31,15 @@ func TestValidatorRegistrations(t *testing.T) {
 		}
 	}
 	for key, want := range expected {
-		if !slices.Equal(requirements[key], want) || scenarioValidators[key].run == nil {
+		if !slices.Equal(requirements[key].Capabilities, want) || scenarioValidators[key].run == nil {
 			t.Errorf("registration %s = %v; want %v", key, requirements[key], want)
 		}
+		wantsPlan := strings.HasPrefix(key, "eu-") || slices.Contains([]string{"us-firewall-implementation", "us-hardening-configurations", "us-vendor-rdp-compromise", "us-validation-evidence"}, key)
+		if requirements[key].SegmentationPlan != wantsPlan {
+			t.Errorf("registration %s planning need = %v; want %v", key, requirements[key].SegmentationPlan, wantsPlan)
+		}
 		// A loader cannot mutate the live registry through the returned slice.
-		requirements[key][0] = "mutated"
+		requirements[key].Capabilities[0] = "mutated"
 		if scenarioValidators[key].capabilities[0] != want[0] {
 			t.Errorf("requirements aliased %s", key)
 		}

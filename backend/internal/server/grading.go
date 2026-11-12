@@ -28,8 +28,8 @@ func validatePlanRequest(pkg labs.Package, req planSelection) error {
 		return errPlanScope
 	}
 	known := map[string]bool{}
-	if pkg.Curriculum != nil {
-		for _, action := range pkg.Curriculum.Catalog {
+	if pkg.SegmentationPlan() != nil {
+		for _, action := range pkg.SegmentationPlan().Catalog {
 			known[action.ID] = true
 		}
 	}
@@ -45,7 +45,7 @@ func compileRequestedPlan(pkg labs.Package, req planSelection) (labs.CompiledPla
 	if err := validatePlanRequest(pkg, req); err != nil {
 		return labs.CompiledPlan{}, err
 	}
-	return labs.CompilePlan(pkg, pkg.Curriculum, req.ActionIDs)
+	return labs.CompilePlan(pkg, pkg.SegmentationPlan(), req.ActionIDs)
 }
 
 type changeRequestKey struct{}
@@ -109,19 +109,24 @@ func (s *Server) judgingTarget(ctx context.Context, gen *lifecycle.Generation) (
 				count++
 			}
 		}
-		return gradingTarget{req.plan, fmt.Sprintf("your 1.4 change request (%d actions)", count)}, nil
+		return gradingTarget{req.plan, fmt.Sprintf("your %s change request (%d actions)", planningLabel(gen.Package), count)}, nil
 	}
 	// All selected actions also supply the reference config used by the
 	// retained-command audit; verdicts explicitly remain Hardened's.
 	var ids []string
-	if gen.Package.Curriculum != nil {
-		for _, action := range gen.Package.Curriculum.Catalog {
+	if gen.Package.SegmentationPlan() != nil {
+		for _, action := range gen.Package.SegmentationPlan().Catalog {
 			ids = append(ids, action.ID)
 		}
 	}
-	plan, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, ids)
+	plan, err := labs.CompilePlan(gen.Package, gen.Package.SegmentationPlan(), ids)
 	for i := range plan.Expectations {
 		plan.Expectations[i].PlanVerdict = plan.Expectations[i].HardenedVerdict
 	}
 	return gradingTarget{plan, "full reference (no change request saved)"}, err
+}
+
+func planningLabel(pkg labs.Package) string {
+	a, _ := pkg.Course.Activity(pkg.Course.Features.SegmentationPlan.Activities.Planning)
+	return a.Label
 }

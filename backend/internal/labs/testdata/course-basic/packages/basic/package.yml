@@ -1,0 +1,23 @@
+schema: 1
+id: basic
+title: Basic course fixture
+revision: 1
+topology: topology.yml
+scenarios: [{dir: scenarios}]
+knowledge: knowledge/index.yml
+capabilities: [policy.containd]
+policies:
+  weak: {file: weak.json, label: Baseline, description: Fixture policy}
+operator_view: us-dnp3-substation
+course:
+  nodes: nodes.yml
+  modules:
+    - id: introduction
+      title: Introduction
+      activities:
+        - {scenario: first, label: B}
+    - id: practice
+      title: Practice
+      activities:
+        - {scenario: second, label: A, validate: false}
+  features: {}

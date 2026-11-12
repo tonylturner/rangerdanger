@@ -58,7 +58,7 @@ func TestPlanHandlersAndProvenance(t *testing.T) {
 		}
 	}
 	ids := []string{}
-	for _, action := range s.rng.(*fakeRange).gen.Package.Curriculum.Catalog {
+	for _, action := range s.rng.(*fakeRange).gen.Package.SegmentationPlan().Catalog {
 		ids = append(ids, action.ID)
 	}
 	for _, selected := range [][]string{nil, {"block-enterprise-to-field"}, ids} {

@@ -33,7 +33,7 @@ it.each([US_PACKAGE, EU_PACKAGE])("propagates $id's authored wording to every st
     firewall_config: "weak", scenario_count: 1,
   };
   const banner = text(renderToStaticMarkup(
-    <PolicyStatusBanner activeConfig="weak" policySource="" policies={packagePolicies(authored)} />,
+    <PolicyStatusBanner course={authored.course} activeConfig="weak" policySource="" policies={packagePolicies(authored)} />,
   ));
   expect(banner).toContain("Training baseline Package-owned teaching text.");
   for (const node of [
@@ -51,16 +51,27 @@ describe("PolicyStatusBanner", () => {
   it.each(["weak", "partial", "hardened"] as const)("shows the %s label for a custom plan in both packages", (label) => {
     for (const pkg of [US_PACKAGE, EU_PACKAGE]) {
       const plan = { packageId: pkg.id, revision: pkg.revision, label, actionIds: [], policyHash: "abc", appliedAt: "now" };
-      const out = text(renderToStaticMarkup(<PolicyStatusBanner activeConfig="custom" policySource="plan" plan={plan} policies={packagePolicies(pkg)} />));
+      const out = text(renderToStaticMarkup(<PolicyStatusBanner course={pkg.course} activeConfig="custom" policySource="plan" plan={plan} policies={packagePolicies(pkg)} />));
       expect(out).toContain(`Your plan — ${label[0].toUpperCase() + label.slice(1)}`);
       expect(out).not.toContain("Hardened reference");
+      expect(out).toContain("(Lab 1.4 plan)");
     }
+  });
+
+  it("derives the planning lab label from the binding, not a fixed number", () => {
+    const course = structuredClone(US_PACKAGE.course);
+    const planning = course.features.segmentationPlan!.activities.planning;
+    course.modules.flatMap((module) => module.activities).find((a) => a.scenario === planning)!.label = "B";
+    const out = text(renderToStaticMarkup(<PolicyStatusBanner course={course} activeConfig="custom" policySource="plan" policies={packagePolicies(US_PACKAGE)} />));
+    expect(out).toContain("(Lab B plan)");
+    expect(out).not.toContain("1.4");
   });
 
   const banner = (pkg: PackageSummary, activeConfig: string, expectedConfig?: string) =>
     text(
       renderToStaticMarkup(
         <PolicyStatusBanner
+          course={pkg.course}
           activeConfig={activeConfig}
           policySource=""
           expectedConfig={expectedConfig}
@@ -83,7 +94,7 @@ describe("PolicyStatusBanner", () => {
 
   it("waits for the package before naming a policy", () => {
     const out = text(
-      renderToStaticMarkup(<PolicyStatusBanner activeConfig="weak" policySource="" policies={undefined} />),
+      renderToStaticMarkup(<PolicyStatusBanner course={undefined} activeConfig="weak" policySource="" policies={undefined} />),
     );
     expect(out).toBe("Currently running Loading…");
   });

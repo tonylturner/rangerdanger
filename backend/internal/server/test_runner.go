@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -227,7 +226,7 @@ func firewallCanaryTimeout(active, canary, verdict string, probeErr error, budge
 type scenarioTestResult struct {
 	ScenarioID   string           `json:"scenario_id"`
 	ScenarioName string           `json:"scenario_name"`
-	Order        string           `json:"order"`
+	Label        string           `json:"label"`
 	Steps        []stepTestResult `json:"steps"`
 	Passed       bool             `json:"passed"`
 	ResetOK      bool             `json:"reset_ok"`
@@ -265,17 +264,12 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		writeApplyError(c, err, lastApply, gin.H{"context": "workshop test suite"})
 	}
 
-	// Load the bound generation's scenarios ordered by `order`
+	// Load the bound generation's scenarios ordered by course position
 	var scenarios []models.Scenario
-	if err := s.packageScenarios(gen.Package.ID).Order("\"order\" ASC, name ASC").Find(&scenarios).Error; err != nil {
+	if err := s.packageScenarios(gen.Package.ID).Order("position ASC").Find(&scenarios).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Sort by order field
-	sort.Slice(scenarios, func(i, j int) bool {
-		return scenarios[i].Order < scenarios[j].Order
-	})
 
 	var results []scenarioTestResult
 	totalTests := 0
@@ -287,7 +281,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		if ctx.Err() != nil {
 			break
 		}
-		log.Printf("TEST SUITE: Running scenario %s: %s", sc.Order, sc.Name)
+		log.Printf("TEST SUITE: Running scenario %s: %s", sc.Label, sc.Name)
 		scenarioStart := time.Now()
 
 		// Reset lab before each scenario
@@ -403,7 +397,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		scenarioResult := scenarioTestResult{
 			ScenarioID:   sc.ID,
 			ScenarioName: sc.Name,
-			Order:        sc.Order,
+			Label:        sc.Label,
 			Steps:        stepResults,
 			ResetOK:      resetOK,
 			ResetDetail:  resetDetail,
@@ -420,7 +414,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		}
 
 		results = append(results, scenarioResult)
-		log.Printf("TEST SUITE: Scenario %s %s: %v", sc.Order, sc.Name, scenarioResult.Passed)
+		log.Printf("TEST SUITE: Scenario %s %s: %v", sc.Label, sc.Name, scenarioResult.Passed)
 	}
 	if err := ctx.Err(); err != nil {
 		fields := gin.H{"error": "test suite interrupted: " + err.Error()}

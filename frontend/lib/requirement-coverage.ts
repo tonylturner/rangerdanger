@@ -13,15 +13,15 @@ export type Requirement = {
 
 // Read decisions from the requirements-role scenario in the active package.
 function readVerdict(scope: CurriculumScope, decisionId: string): string {
-  const scenario = scope.curriculum?.roles.requirements;
+  const scenario = scope.course?.features.segmentationPlan?.activities.requirements;
   return scenario ? readCurriculum(scope, decisionName(scenario, decisionId)) ?? "" : "";
 }
 
 export function readRequirements(scope: CurriculumScope): Requirement[] {
   if (typeof window === "undefined") return [];
-  return (scope.curriculum?.requirementOrder ?? []).map((id) => ({
+  return (scope.course?.features.segmentationPlan?.model?.requirementOrder ?? []).map((id) => ({
     id,
-    label: scope.curriculum!.requirements[id].label,
+    label: scope.course!.features.segmentationPlan!.model.requirements[id].label,
     verdict: readVerdict(scope, id),
   }));
 }
@@ -107,7 +107,7 @@ export type ReadinessAnswer = {
 
 export function readReadiness(scope: CurriculumScope): ReadinessAnswer[] {
   if (typeof window === "undefined") return [];
-  return (scope.curriculum?.readiness ?? []).map((r) => {
+  return (scope.course?.features.segmentationPlan?.model?.readiness ?? []).map((r) => {
     const verdict = readVerdict(scope, r.id);
     return { key: r.id, label: r.label, verdict, good: verdict !== "" && verdict === r.good };
   });

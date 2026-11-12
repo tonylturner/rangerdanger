@@ -76,7 +76,7 @@ func TestEUValidationJudgesRunningPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	selection := planSelection{gen.Package.ID, gen.Package.Revision, []string{"pin-rtu-to-field"}}
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, selection.ActionIDs)
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, selection.ActionIDs)
 	if err != nil {
 		t.Fatal(err)
 	}

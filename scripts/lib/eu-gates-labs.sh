@@ -589,12 +589,12 @@ eu_curriculum_slot() {
   if ! printf '%s' "$packages" | jq -e --arg scenario "$scenario" --arg role "$role" '
     [.[] | select(.id == "eu-iec104-substation" and .active == true)] as $active
     | ($active | length) == 1
-      and $active[0].curriculum.roles[$role] == $scenario
-      and ($active[0].curriculum.catalog | type == "array" and length > 0)
-      and $active[0].curriculum.budgetHours == 500
-      and ($active[0].curriculum.teams | length) == 4
+      and $active[0].course.features.segmentationPlan.activities[$role] == $scenario
+      and ($active[0].course.features.segmentationPlan.model.catalog | type == "array" and length > 0)
+      and $active[0].course.features.segmentationPlan.model.budgetHours == 500
+      and ($active[0].course.features.segmentationPlan.model.teams | length) == 4
   ' >/dev/null; then
-    fail "$scenario is not bound to a served EU decision catalog role"
+    fail "$scenario is not bound to a served EU decision catalog activity"
     return 1
   fi
   eu_api_get "/api/scenarios/$scenario" || return

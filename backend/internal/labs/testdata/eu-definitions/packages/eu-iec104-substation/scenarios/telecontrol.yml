@@ -2,7 +2,6 @@ id: eu-baseline-assessment
 name: Telecontrol boundary
 summary: Test fixture
 description: Probe and firewall actions only.
-order: "1.1"
 nodes: [cc-1, rtu-1]
 tags: [iec104]
 steps:

@@ -11,7 +11,7 @@ export type RemediationPlan = {
 };
 
 export function saveRemediationPlan(scope: CurriculumScope, plan: RemediationPlan): void {
-  if (!scope.curriculum) return;
+  if (!scope.course?.features.segmentationPlan?.model) return;
   writeCurriculum(scope, REMEDIATION_PLAN, JSON.stringify(plan));
 }
 
@@ -25,7 +25,7 @@ export function saveEmptyRemediationPlanIfMissing(scope: CurriculumScope, exerci
 }
 
 export function loadSavedRemediationPlan(scope: CurriculumScope): RemediationPlan | null {
-  if (!scope.curriculum) return null;
+  if (!scope.course?.features.segmentationPlan?.model) return null;
   const raw = readCurriculum(scope, REMEDIATION_PLAN);
   if (!raw) return null;
   try {

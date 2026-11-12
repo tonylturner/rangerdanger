@@ -11,7 +11,7 @@ from scripts.lib.scenario_sources import read_scenarios
 
 SECTION_FILES = {
     "catalog.yml", "requirements.yml", "readiness.yml", "coverage.yml",
-    "implementation.yml", "nodes.yml", "plan.yml",
+    "implementation.yml", "plan.yml",
 }
 
 
@@ -28,7 +28,7 @@ class _UniqueLoader(yaml.SafeLoader):
 
 def read_curriculum(package_dir: Path) -> dict:
     manifest = yaml.safe_load((package_dir / "package.yml").read_text())
-    directory = manifest["curriculum"]["dir"]
+    directory = manifest["course"]["features"]["segmentationPlan"]["dir"]
     if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", directory):
         raise ValueError("Invalid curriculum directory")
     path = package_dir / directory
@@ -58,13 +58,13 @@ def read_curriculum(package_dir: Path) -> dict:
         documents = read_scenarios(package_dir, package_dir.parents[1]).values()
         steps = {step["id"]: step["description"].strip()
                  for doc in documents
-                 if doc["id"] == manifest["curriculum"]["roles"]["implementation"]
+                 if doc["id"] == manifest["course"]["features"]["segmentationPlan"]["activities"]["implementation"]
                  for step in doc["steps"]}
 
         def expand(match):
             step_id = match[1]
             body = steps.get(step_id, "")
-            if (manifest["curriculum"]["dynamicSteps"].get(step_id) != phase
+            if (manifest["course"]["features"]["segmentationPlan"]["dynamicSteps"].get(step_id) != phase
                     or not body or "{{step:" in body):
                 raise ValueError(f"Invalid implementation step reference {step_id}")
             return body

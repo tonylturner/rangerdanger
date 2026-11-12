@@ -41,14 +41,14 @@ func TestCurriculumBudgetAdjustments(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pkg, _ := curriculumExample(t)
-			pkg.Curriculum.BudgetAdjustments = []CurriculumBudgetAdjustment{{
+			pkg.SegmentationPlan().BudgetAdjustments = []CurriculumBudgetAdjustment{{
 				Source: "ot-eng-availability", Verdict: "STRETCHED",
 				TeamCaps: map[string]int{"OT Engineer": 60}, Effort: []CurriculumEffortAdjustment{},
 			}}
 			if err := validateCurriculum(pkg); err != nil {
 				t.Fatal(err)
 			}
-			tc.edit(&pkg.Curriculum.BudgetAdjustments[0])
+			tc.edit(&pkg.SegmentationPlan().BudgetAdjustments[0])
 			if err := validateCurriculum(pkg); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want %s", err, tc.want)
 			}
@@ -58,7 +58,7 @@ func TestCurriculumBudgetAdjustments(t *testing.T) {
 
 func TestCurriculumBudgetCollectionsAndDuplicates(t *testing.T) {
 	pkg, _ := curriculumExample(t)
-	pkg.Curriculum.BudgetAdjustments = nil
+	pkg.SegmentationPlan().BudgetAdjustments = nil
 	if err := validateCurriculum(pkg); err == nil {
 		t.Fatal("omitted budgetAdjustments accepted")
 	}
@@ -66,11 +66,11 @@ func TestCurriculumBudgetCollectionsAndDuplicates(t *testing.T) {
 		Source: "ot-eng-availability", Verdict: "UNAVAILABLE",
 		TeamCaps: map[string]int{"OT Engineer": 0}, Effort: []CurriculumEffortAdjustment{},
 	}
-	pkg.Curriculum.BudgetAdjustments = []CurriculumBudgetAdjustment{a}
+	pkg.SegmentationPlan().BudgetAdjustments = []CurriculumBudgetAdjustment{a}
 	if err := validateCurriculum(pkg); err != nil {
 		t.Fatalf("zero-cap adjustment: %v", err)
 	}
-	pkg.Curriculum.BudgetAdjustments = append(pkg.Curriculum.BudgetAdjustments, a)
+	pkg.SegmentationPlan().BudgetAdjustments = append(pkg.SegmentationPlan().BudgetAdjustments, a)
 	if err := validateCurriculum(pkg); err == nil || !strings.Contains(err.Error(), "duplicate source/verdict") {
 		t.Fatalf("duplicate adjustment: %v", err)
 	}

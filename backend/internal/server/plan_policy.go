@@ -182,7 +182,7 @@ func (s *Server) policyJudgment(ctx context.Context, gen *lifecycle.Generation) 
 			if len(mismatches) < mismatchLimit {
 				owners := []string{}
 				for _, owner := range expectation.Owners {
-					for _, action := range gen.Package.Curriculum.Catalog {
+					for _, action := range gen.Package.SegmentationPlan().Catalog {
 						if action.ID == owner {
 							owners = append(owners, action.Title)
 						}

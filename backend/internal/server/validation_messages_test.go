@@ -33,10 +33,10 @@ func TestPolicyMismatchMessages(t *testing.T) {
 				t.Fatal(err)
 			}
 			all := []string{}
-			for _, action := range gen.Package.Curriculum.Catalog {
+			for _, action := range gen.Package.SegmentationPlan().Catalog {
 				all = append(all, action.ID)
 			}
-			plan, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, all)
+			plan, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, all)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -51,7 +51,7 @@ func TestPolicyMismatchMessages(t *testing.T) {
 			}
 			owned := denied[0]
 			title := ""
-			for _, action := range gen.Package.Curriculum.Catalog {
+			for _, action := range gen.Package.SegmentationPlan().Catalog {
 				if action.ID == owned.Owners[0] {
 					title = action.Title
 				}

@@ -31,6 +31,10 @@ type probeMatrixResult struct {
 // It measures the server-owned proof universe without changing policy or
 // capturing, rendering or retaining student evidence.
 func (s *Server) handleProbeMatrix(c *gin.Context) {
+	if rangeOf(c).Package.SegmentationPlan() == nil {
+		notSupported(c)
+		return
+	}
 	if _, ok := supportedRecipe(c, func(r *packageRecipe) bool { return r.testSuite }); !ok {
 		return
 	}

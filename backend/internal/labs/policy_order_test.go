@@ -38,7 +38,7 @@ func TestShippedPolicyFirstMatchCutover(t *testing.T) {
 						}
 					}
 				}
-				for _, ids := range [][]string{nil, {pkg.Curriculum.Catalog[0].ID}} {
+				for _, ids := range [][]string{nil, {pkg.SegmentationPlan().Catalog[0].ID}} {
 					compiled := mustCompilePlan(t, pkg, ids)
 					if err := json.Unmarshal(compiled.Config, &envelope); err != nil || envelope.Schema != "0.1.10" {
 						t.Fatalf("compiled schema = %q, error %v", envelope.Schema, err)

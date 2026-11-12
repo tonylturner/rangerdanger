@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CurriculumScopeProvider, scopeOf } from "../lib/curriculum-scope";
-import { US_CURRICULUM } from "../lib/curriculum-storage.test-util";
+import { US_COURSE } from "../lib/curriculum-storage.test-util";
 import { decisionName, writeCurriculum } from "../lib/curriculum-storage";
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { US_PACKAGE } from "../lib/operator-fixtures.test-util";
@@ -14,14 +14,14 @@ afterEach(() => vi.unstubAllGlobals());
 it("keeps server snapshots independent of browser curriculum storage for hydration", () => {
   const browser = Object.assign(new EventTarget(), { localStorage: memoryStorage() });
   vi.stubGlobal("window", browser);
-  const pkg = { ...US_PACKAGE, curriculum: US_CURRICULUM };
+  const pkg = { ...US_PACKAGE, course: US_COURSE };
   const scope = scopeOf(pkg);
   writeCurriculum(scope, decisionName("requirements", "first"), "BLOCK");
-  saveRemediationPlan(scope, { exerciseId: US_CURRICULUM.roles.planning, selectedActionIds: [], savedAt: "saved" });
+  saveRemediationPlan(scope, { exerciseId: US_COURSE.features.segmentationPlan!.activities.planning, selectedActionIds: [], savedAt: "saved" });
   const html = renderToStaticMarkup(<CurriculumScopeProvider pkg={pkg}>
     <DecisionBlock scenarioId="requirements" decisionId="first" options={["ALLOW", "BLOCK"]} body="Decision" />
     <FindingsPanel sourceScenario="requirements" title="Findings" items={[{ id: "first", label: "Recorded finding" }]} />
-    <RemediationPlanBanner currentExerciseId={US_CURRICULUM.roles.hardening} />
+    <RemediationPlanBanner currentExerciseId={US_COURSE.modules[1].activities[1].scenario} />
   </CurriculumScopeProvider>);
   expect(html).toMatch(/<option value=""[^>]*selected=""/);
   expect(html).not.toContain("Your Remediation Plan");

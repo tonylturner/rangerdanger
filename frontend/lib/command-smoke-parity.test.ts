@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Scenario } from "./api";
 import { scenarioFiles } from "./scenario-sources.test-util";
-import { fixtureCurriculum } from "./curriculum-storage.test-util";
+import { fixtureCourse } from "./curriculum-storage.test-util";
 import { getExerciseNodes, inferNodeFromDescription } from "./exercise-nodes";
 import { splitDescription, type Segment } from "./scenario-description";
 
@@ -30,7 +30,7 @@ describe("reviewed smoke contracts match UI dispatch", () => {
       const contracts = (JSON.parse(readFileSync(resolve(root, `scripts/lab-commands-expectations${suffix}.json`), "utf8")) as {
         commands: Record<string, Contract>;
       }).commands;
-      const binding = fixtureCurriculum(`lab-definitions/packages/${id}`);
+      const binding = fixtureCourse(`lab-definitions/packages/${id}`);
       const seen = new Set<string>();
       for (const file of scenarioFiles(base)) {
         const scenario = load(readFileSync(file, "utf8")) as Scenario;

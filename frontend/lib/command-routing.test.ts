@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Scenario } from "./api";
-import { fixtureCurriculum } from "./curriculum-storage.test-util";
+import { fixtureCourse } from "./curriculum-storage.test-util";
 import { getExerciseNodes, inferNodeFromDescription } from "./exercise-nodes";
 import { EU_PLANS, US_PLANS } from "./plan-fixtures.test-util";
 import { injectDynamicContent } from "./scenario-runner-logic";
@@ -23,7 +23,7 @@ describe("authored command routing inventory", () => {
     const inventory: Record<string, string[]> = {};
     for (const id of ["us-dnp3-substation", "eu-iec104-substation"]) {
       const root = resolve(__dirname, "../..");
-      const binding = fixtureCurriculum(`lab-definitions/packages/${id}`);
+      const binding = fixtureCourse(`lab-definitions/packages/${id}`);
       const dir = resolve(root, id.startsWith("us") ? "lab-definitions/scenarios" : `lab-definitions/packages/${id}/scenarios`);
       const changes: string[] = [];
       for (const file of readdirSync(dir).filter((f) => f.endsWith(".yml")).sort()) {
@@ -31,7 +31,7 @@ describe("authored command routing inventory", () => {
         for (const step of scenario.steps) {
           const before = step.node || inferNodeFromDescription(step.description, binding) || binding.nodeMap[scenario.id]?.primary || getExerciseNodes(scenario.id, scenario.nodes, binding)[0];
           for (const dynamic of [false, true]) {
-            const text = dynamic ? injectDynamicContent(step.description, step.id, id.startsWith("us") ? US_PLANS[1] : EU_PLANS[1], binding) : step.description;
+            const text = dynamic ? injectDynamicContent(step.description, step.id, id.startsWith("us") ? US_PLANS[1] : EU_PLANS[1], binding, scenario.id) : step.description;
             const fallback = step.node || inferNodeFromDescription(text, binding) || binding.nodeMap[scenario.id]?.primary || getExerciseNodes(scenario.id, scenario.nodes, binding)[0];
             for (const cmd of commands(text)) {
               const after = cmd.sourceNode || fallback;

@@ -687,7 +687,7 @@ function ExerciseHeader({
   scenario: Scenario;
   anchorId?: string;
 }) {
-  const eyebrow = scenario.order ? `LAB ${scenario.order}` : "EXERCISE";
+  const eyebrow = scenario.label ? `LAB ${scenario.label}` : "EXERCISE";
   return (
     <View style={styles.pageBody} id={anchorId} wrap>
       <Text style={styles.exerciseEyebrow}>{eyebrow}</Text>
@@ -717,7 +717,7 @@ function ExerciseHeader({
 // ── Exported Document components ──────────────────────────────────
 
 export function ExercisePDF({ scenario }: { scenario: Scenario }) {
-  const lab = scenario.order;
+  const lab = scenario.label;
   const labPrefix = lab ? `LAB ${lab}  ·  ` : "";
   const footer = `${labPrefix}${sanitizeText(scenario.name).toUpperCase()}`;
   const exerciseBookmarkTitle = lab
@@ -773,7 +773,6 @@ export function WorkbookPDF({
   scenarios: Scenario[];
   generatedAt: string;
 }) {
-  const sorted = [...scenarios].sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
   return (
     <Document title="RangerDanger Substation Segmentation Workbook" author="RangerDanger">
       {/* Cover page */}
@@ -799,7 +798,7 @@ export function WorkbookPDF({
             </View>
             <View style={styles.coverMetaCol}>
               <Text style={styles.coverMetaLabel}>EXERCISES</Text>
-              <Text style={styles.coverMetaValue}>{sorted.length} in this workbook</Text>
+              <Text style={styles.coverMetaValue}>{scenarios.length} in this workbook</Text>
             </View>
             <View style={styles.coverMetaCol}>
               <Text style={styles.coverMetaLabel}>GENERATED</Text>
@@ -808,8 +807,8 @@ export function WorkbookPDF({
           </View>
 
           <Text style={styles.coverIntroHeading}>Contents</Text>
-          {sorted.map((s, ei) => {
-            const lab = s.order;
+          {scenarios.map((s, ei) => {
+            const lab = s.label;
             return (
               <Link
                 key={s.id}
@@ -861,8 +860,8 @@ export function WorkbookPDF({
           fake a two-level outline by indenting step titles with a
           leading bullet. PDF readers display the bookmarks in document
           order, which produces the right visual grouping. */}
-      {sorted.flatMap((s, ei) => {
-        const lab = s.order;
+      {scenarios.flatMap((s, ei) => {
+        const lab = s.label;
         const labPrefix = lab ? `LAB ${lab}  ·  ` : "";
         const footer = `${labPrefix}${sanitizeText(s.name).toUpperCase()}`;
         const exerciseBookmarkTitle = lab

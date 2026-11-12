@@ -246,10 +246,12 @@ func validatePlan(pkg Package, c *Curriculum) (map[string]PlanActionKind, error)
 			}
 			seen[owner] = true
 		}
-		for _, role := range proof.Labs {
-			if c.Roles[role] == "" {
-				return fail("proof %s references unknown lab role %s", proof.ID, role)
+		assigned := map[string]bool{}
+		for _, id := range proof.Activities {
+			if _, ok := pkg.Course.Activity(id); !ok || assigned[id] {
+				return fail("proof %s references unknown or duplicate course activity %s", proof.ID, id)
 			}
+			assigned[id] = true
 		}
 	}
 	return kinds, nil

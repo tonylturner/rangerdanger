@@ -131,7 +131,7 @@ func CompilePlan(pkg Package, curriculum *Curriculum, actionIDs []string) (Compi
 		compiled.Expectations = append(compiled.Expectations, PlanExpectation{
 			ID: proof.ID, From: proof.From, To: proof.To, Network: proof.Network,
 			Port: proof.Port, Category: proof.Category, Owners: slices.Clone(proof.Owners),
-			Labs: slices.Clone(proof.Labs), Note: proof.Note,
+			Activities: slices.Clone(proof.Activities), Note: proof.Note,
 			PlanVerdict:     evaluatePlanRoute(emitted, defaultAction, route),
 			HardenedVerdict: evaluatePlanRoute(hardened, defaultAction, route),
 			Bridged:         route.Bridged,

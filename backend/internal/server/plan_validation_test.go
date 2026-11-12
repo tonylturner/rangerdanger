@@ -29,7 +29,7 @@ func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 	s := newTestServer(t, upstream.URL)
 	gen = s.rng.(*fakeRange).gen
 	for _, ids := range [][]string{nil, {"block-enterprise-to-field"}, {"block-vendor-to-field"}, {"pin-rtac-to-field"}} {
-		compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, ids)
+		compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, ids)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,7 +80,7 @@ func TestUSCommandAndPolicyJudgmentByPlan(t *testing.T) {
 func TestEUPartialPlanValidators(t *testing.T) {
 	gen := euGeneration(t, nil, nil)
 	for _, ids := range [][]string{nil, {"block-enterprise-to-field"}, {"block-enterprise-to-station"}} {
-		compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, ids)
+		compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, ids)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,7 +150,7 @@ func TestApplyPlanRejectsInvalidProgramWithoutRecording(t *testing.T) {
 	fake, counters := fakeContaind(t, 200, 200)
 	s := newTestServer(t, fake.URL)
 	gen := s.rng.(*fakeRange).gen
-	gen.Package.Curriculum.Plan.Rules[0].Selected[0].Action = "invalid"
+	gen.Package.SegmentationPlan().Plan.Rules[0].Selected[0].Action = "invalid"
 	rec, body := invoke(s, s.handleFirewallApplyPlan, "POST", "/api/firewall/apply-plan", planRequest(s))
 	if rec.Code != 422 || body["warnings"] == nil || s.planProvenance != nil || counters.candidateCount != 0 {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
@@ -159,7 +159,7 @@ func TestApplyPlanRejectsInvalidProgramWithoutRecording(t *testing.T) {
 
 func TestUSExecutorAllowsDeferredExposure(t *testing.T) {
 	gen := usGeneration(nil)
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestUSRegisteredValidatorsJudgeRulesNotLabels(t *testing.T) {
 		{"weak-label plan", "plan", nil, true},
 	} {
 		if tc.source == "plan" {
-			compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, tc.ids)
+			compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, tc.ids)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -255,7 +255,7 @@ func TestUSAuditAgainstPlanRatherThanForeignSourceLabel(t *testing.T) {
 	s := newTestServer(t, "http://127.0.0.1:1")
 	gen := s.rng.(*fakeRange).gen
 	entries := []map[string]any{{"source": "10.10.10.50", "target": "regulator", "command": "set_tap", "result": "executed"}}
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestUSAuditAgainstPlanRatherThanForeignSourceLabel(t *testing.T) {
 	if check := s.usAuditJudgment(t.Context(), gen, entries); check.Status != "pass" || !strings.Contains(check.Detail, "deferred exposures") {
 		t.Fatal(check)
 	}
-	compiled, err = labs.CompilePlan(gen.Package, gen.Package.Curriculum, []string{"block-enterprise-to-field"})
+	compiled, err = labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, []string{"block-enterprise-to-field"})
 	if err != nil {
 		t.Fatal(err)
 	}

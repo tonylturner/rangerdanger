@@ -143,7 +143,7 @@ export type Scenario = {
   name: string;
   summary?: string;
   description: string;
-  order: string;
+  label: string;
   package_id: string;
   lab_template_id: string;
   // Validator key declared by the scenario; empty when it has none.
@@ -193,7 +193,7 @@ export async function listScenarios(packageId: string) {
 export type PackagePolicy = { name: string; label: string; description: string };
 
 export type PackageSummary = {
-  curriculum?: CurriculumBinding;
+  course: Course;
   id: string;
   title: string;
   revision: number;
@@ -509,7 +509,7 @@ export type PlanRule = {
 };
 export type PlanExpectation = {
   id: string; from: string; to: string; network: string; port: number;
-  category: "authorized" | "unauthorized"; owners: string[]; labs?: string[];
+  category: "authorized" | "unauthorized"; owners: string[]; activities?: string[];
   note: string; planVerdict: "allow" | "deny"; hardenedVerdict: "allow" | "deny";
   bridged: boolean; fromIp: string; toIp: string;
 };
@@ -682,12 +682,9 @@ export async function resetWorkshop() {
 }
 
 // The backend strictly merges the package sibling directory and resolves topology
-// references before publishing this model. Missing binding means no planner.
+// references before publishing this model. The optional feature owns its binding.
 export type CurriculumBinding = {
   schema: 1;
-  roles: Record<string, string>;
-  activities: Record<string, { policyActions: boolean; hideBanner: boolean; validate?: boolean }>;
-  dynamicSteps: Record<string, "rules" | "positive" | "negative">;
   icsRules: "allowed" | "forbidden" | "monitor";
   requirementOrder: string[];
   groupOrder: string[];
@@ -708,8 +705,6 @@ export type CurriculumBinding = {
   planningOnly: string[];
   phases: Record<string, string>;
   noPlan: string;
-  nodeMap: Record<string, { primary: string; others: string[] }>;
-  nodeInference: { node: string; ip: string; pattern: string }[];
 };
 
 type PlanIEC104Selectors = {
@@ -763,3 +758,16 @@ export type PlanICS = {
         }
     ))
 );
+
+export type CourseActivity = { scenario: string; label: string; validate?: boolean; policyActions?: boolean; hideBanner?: boolean };
+export type SegmentationPlan = {
+  activities: { requirements: string; planning: string; implementation: string };
+  dynamicSteps: Record<string, "rules" | "positive" | "negative">;
+  model: CurriculumBinding;
+};
+export type Course = {
+  modules: { id: string; title: string; activities: CourseActivity[] }[];
+  nodeMap: Record<string, { primary: string; others: string[] }>;
+  nodeInference: { node: string; ip: string; pattern: string }[];
+  features: { segmentationPlan?: SegmentationPlan };
+};

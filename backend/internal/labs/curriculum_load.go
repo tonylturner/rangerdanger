@@ -29,50 +29,10 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 			return nil, err
 		}
 	}
-	facts := map[string]string{}
-	for _, n := range pkg.Template.Nodes {
-		facts["ip:"+n.ID] = n.IP
-	}
-	c := &Curriculum{}
-	for _, n := range pkg.Template.Networks {
-		subnet := n.Subnet
-		if subnet == "" {
-			subnet = n.CIDR
-		}
-		facts["subnet:"+n.ID] = subnet
-		facts["zone:"+n.ID] = n.Zone
-	}
-	var resolve func(*yaml.Node) error
-	resolve = func(n *yaml.Node) error {
-		if n.Kind == yaml.ScalarNode && n.Tag == "!!str" {
-			var missing string
-			n.Value = curriculumReference.ReplaceAllStringFunc(n.Value, func(ref string) string {
-				key := ref[2 : len(ref)-1]
-				value := facts[key]
-				if value == "" {
-					missing = ref
-				}
-				return value
-			})
-			if missing != "" {
-				return fmt.Errorf("unknown topology reference %s", missing)
-			}
-			if strings.Contains(n.Value, "${") {
-				// "${" is reserved for topology interpolation throughout authored
-				// strings, including prose. Reject typos rather than publish them.
-				return fmt.Errorf("invalid topology reference in %q", n.Value)
-			}
-		}
-		for _, child := range n.Content {
-			if err := resolve(child); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if err := resolve(document); err != nil {
+	if err := resolveCurriculumTopology(document, pkg); err != nil {
 		return nil, err
 	}
+	c := &Curriculum{}
 	resolved, err := yaml.Marshal(document)
 	if err != nil {
 		return nil, err
@@ -80,9 +40,8 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 	if err := decodeStrict(resolved, c); err != nil {
 		return nil, err
 	}
-	c.CurriculumBinding = *binding
 	c.ICSRules = pkg.ICSRules
-	if err := expandCurriculumSteps(c, pkg.Scenarios); err != nil {
+	if err := expandCurriculumSteps(c, binding, pkg.Scenarios); err != nil {
 		return nil, err
 	}
 	if c.Schema != 1 {
@@ -101,7 +60,7 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 // misspelled filenames must not silently disappear from the loaded model.
 var curriculumSections = map[string]bool{
 	"catalog.yml": true, "requirements.yml": true, "readiness.yml": true,
-	"coverage.yml": true, "implementation.yml": true, "nodes.yml": true,
+	"coverage.yml": true, "implementation.yml": true,
 	"plan.yml": true,
 }
 
@@ -155,7 +114,7 @@ func readCurriculumDocument(dir string, binding *CurriculumBinding) (*yaml.Node,
 }
 
 func validateCurriculum(pkg Package) error {
-	c := pkg.Curriculum
+	c := pkg.SegmentationPlan()
 	if err := validateDecision(pkg); err != nil {
 		return err
 	}
@@ -164,7 +123,7 @@ func validateCurriculum(pkg Package) error {
 	}
 	fail := func(format string, args ...any) error { return fmt.Errorf("curriculum: "+format, args...) }
 	// Explicit empty collections keep the wire DTO free of null maps/arrays.
-	if c.Requirements == nil || c.Readiness == nil || c.ReadinessFlags == nil || c.BudgetAdjustments == nil || c.Groups == nil || c.PlanningOnly == nil || c.Phases == nil || c.NodeMap == nil || c.NodeInference == nil || c.RequirementOrder == nil || c.GroupOrder == nil || c.ImpactOrder == nil || c.Impact == nil || c.Activities == nil || c.DynamicSteps == nil {
+	if c.Requirements == nil || c.Readiness == nil || c.ReadinessFlags == nil || c.BudgetAdjustments == nil || c.Groups == nil || c.PlanningOnly == nil || c.Phases == nil || c.RequirementOrder == nil || c.GroupOrder == nil || c.ImpactOrder == nil || c.Impact == nil {
 		return fail("collections must be explicit mappings or lists, not null or omitted")
 	}
 	if c.BudgetHours <= 0 || len(c.Teams) == 0 || len(c.Catalog) == 0 {
@@ -184,28 +143,8 @@ func validateCurriculum(pkg Package) error {
 	for _, s := range pkg.Scenarios {
 		scenarios[s.ID] = s
 	}
-	for _, role := range []string{"baseline", "requirements", "planning", "implementation", "hardening", "vendor", "validation"} {
-		if _, ok := scenarios[c.Roles[role]]; !ok {
-			return fail("role %s must reference a scenario in this package", role)
-		}
-	}
-	for role, id := range c.Roles {
-		if _, ok := scenarios[id]; !ok {
-			return fail("role %s references unknown scenario %s", role, id)
-		}
-	}
-	for id := range c.Activities {
-		if _, ok := scenarios[id]; !ok {
-			return fail("activity references unknown scenario %s", id)
-		}
-	}
-	for id := range c.NodeMap {
-		if _, ok := scenarios[id]; !ok {
-			return fail("nodeMap references unknown scenario %s", id)
-		}
-	}
 	steps := map[string]bool{}
-	for _, step := range scenarios[c.Roles["implementation"]].Steps {
+	for _, step := range scenarios[pkg.Course.Features.SegmentationPlan.Activities.Implementation].Steps {
 		steps[step.ID] = true
 	}
 	for phase := range c.Phases {
@@ -213,7 +152,7 @@ func validateCurriculum(pkg Package) error {
 			return fail("unknown phase template %s", phase)
 		}
 	}
-	for id, phase := range c.DynamicSteps {
+	for id, phase := range pkg.Course.Features.SegmentationPlan.DynamicSteps {
 		if !steps[id] {
 			return fail("dynamicSteps references unknown implementation step %s", id)
 		}
@@ -224,7 +163,7 @@ func validateCurriculum(pkg Package) error {
 			return fail("missing phase template %s", phase)
 		}
 	}
-	decisions := curriculumDecisionOptions(scenarios[c.Roles["requirements"]])
+	decisions := curriculumDecisionOptions(scenarios[pkg.Course.Features.SegmentationPlan.Activities.Requirements])
 	for id, requirement := range c.Requirements {
 		options, ok := decisions[id]
 		if !ok {
@@ -341,25 +280,6 @@ func validateCurriculum(pkg Package) error {
 			return fail("%s must list every entry exactly once", order.name)
 		}
 	}
-	nodes := map[string]bool{}
-	for _, n := range pkg.Template.Nodes {
-		nodes[n.ID] = true
-	}
-	for _, n := range c.NodeInference {
-		if !nodes[n.Node] {
-			return fail("unknown inference node %s", n.Node)
-		}
-		if _, err := regexp.Compile(n.Pattern); err != nil {
-			return fail("invalid inference pattern: %v", err)
-		}
-	}
-	for _, n := range c.NodeMap {
-		for _, id := range append([]string{n.Primary}, n.Others...) {
-			if id != "" && !nodes[id] {
-				return fail("unknown exercise node %s", id)
-			}
-		}
-	}
 	_, err := validatePlan(pkg, c)
 	return err
 }
@@ -423,15 +343,54 @@ func validateCurriculumCollections(c *Curriculum) error {
 			return missing("impact." + id + ".defends")
 		}
 	}
-	for id, nodes := range c.NodeMap {
-		if nodes.Others == nil {
-			return missing("nodeMap." + id + ".others")
-		}
-	}
 	for i, action := range c.Catalog {
 		if action.Roles == nil {
 			return missing(fmt.Sprintf("catalog[%d].roles", i))
 		}
 	}
 	return nil
+}
+
+func resolveCurriculumTopology(document *yaml.Node, pkg Package) error {
+	facts := map[string]string{}
+	for _, n := range pkg.Template.Nodes {
+		facts["ip:"+n.ID] = n.IP
+	}
+	for _, n := range pkg.Template.Networks {
+		subnet := n.Subnet
+		if subnet == "" {
+			subnet = n.CIDR
+		}
+		facts["subnet:"+n.ID] = subnet
+		facts["zone:"+n.ID] = n.Zone
+	}
+	var resolve func(*yaml.Node) error
+	resolve = func(n *yaml.Node) error {
+		if n.Kind == yaml.ScalarNode && n.Tag == "!!str" {
+			var missing string
+			n.Value = curriculumReference.ReplaceAllStringFunc(n.Value, func(ref string) string {
+				key := ref[2 : len(ref)-1]
+				value := facts[key]
+				if value == "" {
+					missing = ref
+				}
+				return value
+			})
+			if missing != "" {
+				return fmt.Errorf("unknown topology reference %s", missing)
+			}
+			if strings.Contains(n.Value, "${") {
+				// "${" is reserved for topology interpolation throughout authored
+				// strings, including prose. Reject typos rather than publish them.
+				return fmt.Errorf("invalid topology reference in %q", n.Value)
+			}
+		}
+		for _, child := range n.Content {
+			if err := resolve(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return resolve(document)
 }

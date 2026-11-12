@@ -362,9 +362,9 @@ plan:
     expect: deny
     owners:
     - block-enterprise-to-station
-    labs:
-    - implementation
-    - hardening
+    activities:
+    - eu-firewall-implementation
+    - eu-hardening-configurations
     note: Foreign IEC 104 connect
   - id: U2
     from: kali-1
@@ -374,8 +374,8 @@ plan:
     category: unauthorized
     expect: deny
     owners: []
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Enterprise PLC web
   - id: U3
     from: kali-1
@@ -386,9 +386,9 @@ plan:
     expect: deny
     owners:
     - restrict-enterprise-to-vendor
-    labs:
-    - implementation
-    - vendor
+    activities:
+    - eu-firewall-implementation
+    - eu-vendor-rdp-compromise
     note: Enterprise vendor RDP
   - id: U4
     from: kali-1
@@ -399,9 +399,9 @@ plan:
     expect: deny
     owners:
     - restrict-enterprise-to-vendor
-    labs:
-    - implementation
-    - vendor
+    activities:
+    - eu-firewall-implementation
+    - eu-vendor-rdp-compromise
     note: Enterprise vendor VNC
   - id: A6
     from: rtu-1
@@ -421,8 +421,8 @@ plan:
     expect: deny
     owners:
     - block-enterprise-to-field
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Foreign field Modbus connect
   - id: U6
     from: vendor-jump-1
@@ -433,9 +433,9 @@ plan:
     expect: deny
     owners:
     - block-vendor-to-field
-    labs:
-    - implementation
-    - vendor
+    activities:
+    - eu-firewall-implementation
+    - eu-vendor-rdp-compromise
     note: Foreign field Modbus connect
   - id: U7
     from: eng-ws-1
@@ -446,8 +446,8 @@ plan:
     expect: deny
     owners:
     - block-vendor-to-field
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Foreign field Modbus connect
   - id: A7
     from: rtu-1
@@ -467,8 +467,8 @@ plan:
     expect: deny
     owners:
     - block-enterprise-to-field
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Foreign field Modbus connect
   - id: U9
     from: vendor-jump-1
@@ -479,9 +479,9 @@ plan:
     expect: deny
     owners:
     - block-vendor-to-field
-    labs:
-    - implementation
-    - vendor
+    activities:
+    - eu-firewall-implementation
+    - eu-vendor-rdp-compromise
     note: Foreign field Modbus connect
   - id: U10
     from: eng-ws-1
@@ -492,8 +492,8 @@ plan:
     expect: deny
     owners:
     - block-vendor-to-field
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Foreign field Modbus connect
   - id: A8
     from: rtu-1
@@ -513,8 +513,8 @@ plan:
     expect: deny
     owners:
     - block-enterprise-to-field
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Foreign field Modbus connect
   - id: U12
     from: vendor-jump-1
@@ -525,9 +525,9 @@ plan:
     expect: deny
     owners:
     - block-vendor-to-field
-    labs:
-    - implementation
-    - vendor
+    activities:
+    - eu-firewall-implementation
+    - eu-vendor-rdp-compromise
     note: Foreign field Modbus connect
   - id: U13
     from: eng-ws-1
@@ -538,8 +538,8 @@ plan:
     expect: deny
     owners:
     - block-vendor-to-field
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Foreign field Modbus connect
   - id: A9
     from: rtu-1
@@ -559,8 +559,8 @@ plan:
     expect: deny
     owners:
     - block-enterprise-to-field
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Foreign field Modbus connect
   - id: U15
     from: vendor-jump-1
@@ -571,9 +571,9 @@ plan:
     expect: deny
     owners:
     - block-vendor-to-field
-    labs:
-    - implementation
-    - vendor
+    activities:
+    - eu-firewall-implementation
+    - eu-vendor-rdp-compromise
     note: Foreign field Modbus connect
   - id: U16
     from: eng-ws-1
@@ -584,8 +584,8 @@ plan:
     expect: deny
     owners:
     - block-vendor-to-field
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Foreign field Modbus connect
   - id: A10
     from: rtu-1
@@ -605,8 +605,8 @@ plan:
     expect: deny
     owners:
     - block-enterprise-to-field
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Foreign field Modbus connect
   - id: U18
     from: vendor-jump-1
@@ -617,9 +617,9 @@ plan:
     expect: deny
     owners:
     - block-vendor-to-field
-    labs:
-    - implementation
-    - vendor
+    activities:
+    - eu-firewall-implementation
+    - eu-vendor-rdp-compromise
     note: Foreign field Modbus connect
   - id: U19
     from: eng-ws-1
@@ -630,8 +630,8 @@ plan:
     expect: deny
     owners:
     - block-vendor-to-field
-    labs:
-    - implementation
+    activities:
+    - eu-firewall-implementation
     note: Foreign field Modbus connect
   - id: U20
     from: vendor-jump-1

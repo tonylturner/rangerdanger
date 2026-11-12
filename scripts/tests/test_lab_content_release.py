@@ -116,7 +116,7 @@ class ErrataContracts(unittest.TestCase):
 
     def test_lab22_generation_is_bound_by_stable_ids_not_frozen_title_workarounds(self):
         package = yaml.safe_load((ROOT / "lab-definitions/packages/us-dnp3-substation/package.yml").read_text())
-        binding = package["curriculum"]["dynamicSteps"]
+        binding = package["course"]["features"]["segmentationPlan"]["dynamicSteps"]
         steps = scenario("firewall-implementation")["steps"]
         self.assertEqual({s["id"] for s in steps} & set(binding), set(binding))
         curriculum = read_curriculum(ROOT / "lab-definitions/packages/us-dnp3-substation")

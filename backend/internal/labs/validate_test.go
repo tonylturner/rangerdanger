@@ -7,8 +7,8 @@ import (
 
 // testValidators stands in for the server's registry.
 var testValidators = ValidatorRequirements{
-	"electrical-check": {CapabilityProcessElectrical},
-	"audited-policy":   {CapabilityPolicyContaind, CapabilityAuditDeviceControl},
+	"electrical-check": {Capabilities: []string{CapabilityProcessElectrical}},
+	"audited-policy":   {Capabilities: []string{CapabilityPolicyContaind, CapabilityAuditDeviceControl}},
 }
 
 var electricalPackage = []string{CapabilityProcessElectrical}
@@ -30,7 +30,7 @@ func validatorFixture() (*LabYAML, ScenarioYAML) {
 		},
 	}
 	scenario := ScenarioYAML{
-		ID: "baseline", Name: "Baseline", Order: "1.1",
+		ID: "baseline", Name: "Baseline",
 		Steps: []ScenarioStep{{ID: "review-policy", Title: "Review policy"}},
 	}
 	return def, scenario
@@ -244,7 +244,6 @@ func TestValidateLabRejectsMissingRequiredFields(t *testing.T) {
 	}{
 		{"scenario id", func(_ *LabYAML, scenario *ScenarioYAML) { scenario.ID = "" }, "scenario id must not be empty"},
 		{"scenario name", func(_ *LabYAML, scenario *ScenarioYAML) { scenario.Name = "" }, "scenario name must not be empty"},
-		{"scenario order", func(_ *LabYAML, scenario *ScenarioYAML) { scenario.Order = "" }, "scenario order must not be empty"},
 		{"step title", func(_ *LabYAML, scenario *ScenarioYAML) { scenario.Steps[0].Title = "" }, "step title must not be empty"},
 		{"command device", func(_ *LabYAML, scenario *ScenarioYAML) {
 			scenario.Steps[0].Action = &StepAction{Type: "sequence", Commands: []StepActionCmd{{Command: "trip"}}}
@@ -314,7 +313,7 @@ func TestValidateDecisionCanonical(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pkg, _ := curriculumExample(t)
-			tc.change(pkg.Curriculum)
+			tc.change(pkg.SegmentationPlan())
 			if err := validateCurriculum(pkg); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error=%v want %s", err, tc.want)
 			}
@@ -327,10 +326,10 @@ func TestValidateDecisionBinding(t *testing.T) {
 		t.Run(defect, func(t *testing.T) {
 			pkg, _ := curriculumExample(t)
 			for i := range pkg.Scenarios {
-				if pkg.Scenarios[i].ID == pkg.Curriculum.Roles["planning"] {
+				if pkg.Scenarios[i].ID == pkg.Course.Features.SegmentationPlan.Activities.Planning {
 					switch defect {
 					case "wrong role":
-						pkg.Curriculum.Roles["planning"] = pkg.Curriculum.Roles["baseline"]
+						pkg.Course.Features.SegmentationPlan.Activities.Planning = "eu-baseline-assessment"
 					case "missing step":
 						pkg.Scenarios[i].Steps = nil
 					case "duplicate step":
@@ -339,7 +338,7 @@ func TestValidateDecisionBinding(t *testing.T) {
 				}
 			}
 			if defect == "absent" {
-				pkg.Curriculum = nil
+				pkg.Course.Features.SegmentationPlan = nil
 			}
 			if err := validateCurriculum(pkg); err == nil {
 				t.Fatal("accepted unbound decision")

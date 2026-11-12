@@ -15,14 +15,14 @@ func curriculumExample(t *testing.T) (Package, *CurriculumBinding) {
 	t.Helper()
 	dir := filepath.Join("testdata", "curriculum-eu")
 	var manifest struct {
-		Curriculum *CurriculumBinding `yaml:"curriculum"`
-		Topology   string             `yaml:"topology"`
-		ICSRules   string             `yaml:"ics_rules"`
+		Course   *Course `yaml:"course"`
+		Topology string  `yaml:"topology"`
+		ICSRules string  `yaml:"ics_rules"`
 	}
 	if err := decodeFile(filepath.Join(dir, "package.yml"), &manifest); err != nil {
 		t.Fatal(err)
 	}
-	pkg := Package{ID: "eu-example", ICSRules: manifest.ICSRules}
+	pkg := Package{ID: "eu-example", ICSRules: manifest.ICSRules, Course: manifest.Course}
 	if err := decodeFile(filepath.Join(dir, manifest.Topology), &pkg.Template); err != nil {
 		t.Fatal(err)
 	}
@@ -30,11 +30,11 @@ func curriculumExample(t *testing.T) (Package, *CurriculumBinding) {
 		t.Fatal(err)
 	}
 	var err error
-	pkg.Curriculum, err = loadCurriculum(dir, manifest.Curriculum, pkg)
+	pkg.Course, err = loadCourse(dir, manifest.Course, pkg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pkg, manifest.Curriculum
+	return pkg, manifest.Course.Features.SegmentationPlan
 }
 
 func TestCurriculumEUExample(t *testing.T) {
@@ -42,7 +42,7 @@ func TestCurriculumEUExample(t *testing.T) {
 	if err := validateCurriculum(pkg); err != nil {
 		t.Fatal(err)
 	}
-	c := pkg.Curriculum
+	c := pkg.SegmentationPlan()
 	if c.ICSRules != ICSRulesForbidden || len(c.Catalog) != 15 || len(c.Requirements) != 5 || len(c.Readiness) != 4 || c.BudgetHours != 500 {
 		t.Fatalf("incomplete EU model: %#v", c)
 	}
@@ -62,7 +62,7 @@ func TestCurriculumEUExample(t *testing.T) {
 			pkg.Template.Networks[i].Subnet = "192.0.2.0/24"
 		}
 	}
-	binding := c.CurriculumBinding
+	binding := *pkg.Course.Features.SegmentationPlan
 	next, err := loadCurriculum(filepath.Join("testdata", "curriculum-eu"), &binding, pkg)
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestCurriculumEUFieldDestinationInventory(t *testing.T) {
 		t.Fatal("no field devices in topology")
 	}
 	slices.Sort(want)
-	for _, slot := range pkg.Curriculum.Plan.Rules {
+	for _, slot := range pkg.SegmentationPlan().Plan.Rules {
 		if slot.Required != nil && slot.Required.ID == "rtu-to-feeder-modbus" {
 			got := slices.Clone(slot.Required.Destinations)
 			slices.Sort(got)
@@ -135,27 +135,50 @@ func TestCurriculumStrictDecode(t *testing.T) {
 func TestCurriculumReferences(t *testing.T) {
 	cases := []struct {
 		name   string
-		change func(*Curriculum)
+		change func(*Package, *Curriculum)
 		want   string
 	}{
-		{"role", func(c *Curriculum) { c.Roles["planning"] = "remediation-planning" }, "role planning"},
-		{"activity", func(c *Curriculum) { c.Activities["foreign"] = CurriculumActivity{} }, "activity"},
-		{"step", func(c *Curriculum) { c.DynamicSteps["translated-title"] = "rules" }, "unknown implementation step"},
-		{"decision", func(c *Curriculum) { c.Requirements["foreign"] = CurriculumRequirement{Impl: map[string][]string{}} }, "unknown requirement decision"},
-		{"readiness", func(c *Curriculum) { c.Readiness[0].ID = "foreign" }, "unknown readiness decision"},
-		{"catalog", func(c *Curriculum) { c.Catalog[0].ID = "foreign" }, "unknown action"},
-		{"coverage action", func(c *Curriculum) { r := c.Requirements["enterprise-to-field"]; r.Impl["BLOCK"] = []string{"foreign"} }, "unknown action"},
-		{"impact scenario", func(c *Curriculum) { c.Impact["modbus-dpi"] = CurriculumImpact{Defends: []string{"foreign"}} }, "unknown scenario"},
-		{"plan action", func(c *Curriculum) { c.Plan.Rules[6].Action = "foreign" }, "unknown action"},
-		{"effect", func(c *Curriculum) { g := c.Groups["modbus-dpi"]; g.Effect = "magic"; c.Groups["modbus-dpi"] = g }, "unknown effect"},
-		{"node", func(c *Curriculum) { c.NodeInference[0].Node = "rtac-1" }, "unknown inference node"},
-		{"ordering", func(c *Curriculum) { c.GroupOrder = c.GroupOrder[:1] }, "groupOrder"},
+		{"binding", func(p *Package, _ *Curriculum) {
+			p.Course.Features.SegmentationPlan.Activities.Planning = "remediation-planning"
+		}, "distinct course activities"},
+		{"activity", func(p *Package, _ *Curriculum) {
+			p.Course.Modules[0].Activities = append(p.Course.Modules[0].Activities, CurriculumActivity{Scenario: "foreign", Label: "foreign"})
+		}, "activity"},
+		{"step", func(p *Package, _ *Curriculum) {
+			p.Course.Features.SegmentationPlan.DynamicSteps["translated-title"] = "rules"
+		}, "unknown implementation step"},
+		{"decision", func(_ *Package, c *Curriculum) {
+			c.Requirements["foreign"] = CurriculumRequirement{Impl: map[string][]string{}}
+		}, "unknown requirement decision"},
+		{"readiness", func(_ *Package, c *Curriculum) { c.Readiness[0].ID = "foreign" }, "unknown readiness decision"},
+		{"catalog", func(_ *Package, c *Curriculum) { c.Catalog[0].ID = "foreign" }, "unknown action"},
+		{"coverage action", func(_ *Package, c *Curriculum) {
+			r := c.Requirements["enterprise-to-field"]
+			r.Impl["BLOCK"] = []string{"foreign"}
+		}, "unknown action"},
+		{"impact scenario", func(_ *Package, c *Curriculum) {
+			c.Impact["modbus-dpi"] = CurriculumImpact{Defends: []string{"foreign"}}
+		}, "unknown scenario"},
+		{"plan action", func(_ *Package, c *Curriculum) { c.Plan.Rules[6].Action = "foreign" }, "unknown action"},
+		{"effect", func(_ *Package, c *Curriculum) {
+			g := c.Groups["modbus-dpi"]
+			g.Effect = "magic"
+			c.Groups["modbus-dpi"] = g
+		}, "unknown effect"},
+		{"node", func(p *Package, _ *Curriculum) { p.Course.NodeInference[0].Node = "rtac-1" }, "unknown inference node"},
+		{"ordering", func(_ *Package, c *Curriculum) { c.GroupOrder = c.GroupOrder[:1] }, "groupOrder"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pkg, _ := curriculumExample(t)
-			tc.change(pkg.Curriculum)
-			err := validateCurriculum(pkg)
+			tc.change(&pkg, pkg.SegmentationPlan())
+			err := validateCourse(pkg)
+			if err == nil {
+				err = validateCourseNodes(pkg)
+			}
+			if err == nil {
+				err = validateCurriculum(pkg)
+			}
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want %s", err, tc.want)
 			}
@@ -191,11 +214,11 @@ func TestCurriculumUSExtraction(t *testing.T) {
 	if err := validateCurriculum(pkg); err != nil {
 		t.Fatal(err)
 	}
-	c := pkg.Curriculum
+	c := pkg.SegmentationPlan()
 	if len(c.Catalog) != 15 || len(c.Requirements) != 5 || len(c.Plan.Proof) != 21 {
 		t.Fatal("US extraction changed")
 	}
-	wire, err := json.Marshal(c)
+	wire, err := json.Marshal(pkg.Course.Features.SegmentationPlan)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -42,16 +42,16 @@ Set-Location $RootDir
 . "$PSScriptRoot/substation-smoke.ps1"
 
 # Expected lab inventory after the workshop-deck-aligned restructure.
-# Format: order|id (sorted lexicographically -- same order containd
+# Format: label|id (course position -- the same order RangerDanger
 # returns from /api/scenarios).
 $Expected = @(
-    @{ order='1.2';        id='baseline-assessment' },
-    @{ order='1.3';        id='segmentation-requirements' },
-    @{ order='1.4';        id='remediation-planning' },
-    @{ order='2.2';        id='firewall-implementation' },
-    @{ order='2.3';        id='hardening-configurations' },
-    @{ order='2.3-bonus';  id='vendor-rdp-compromise' },
-    @{ order='2.4';        id='validation-evidence' }
+    @{ label='1.2';        id='baseline-assessment' },
+    @{ label='1.3';        id='segmentation-requirements' },
+    @{ label='1.4';        id='remediation-planning' },
+    @{ label='2.2';        id='firewall-implementation' },
+    @{ label='2.3';        id='hardening-configurations' },
+    @{ label='2.3-bonus';  id='vendor-rdp-compromise' },
+    @{ label='2.4';        id='validation-evidence' }
 )
 
 $script:fail = 0
@@ -197,16 +197,16 @@ try {
         OK "scenario count = $expectedCount"
     } else {
         Err "scenario count: expected $expectedCount, got $actualCount"
-        foreach ($s in $inv.scenarios) { Write-Host ("  {0}  {1}" -f $s.order, $s.id) }
+        foreach ($s in $inv.scenarios) { Write-Host ("  {0}  {1}" -f $s.label, $s.id) }
     }
 
-    # Each expected (order,id) must appear with both fields matching.
+    # Each expected (label,id) must appear with both fields matching.
     foreach ($entry in $Expected) {
-        $hit = $inv.scenarios | Where-Object { $_.id -eq $entry.id -and $_.order -eq $entry.order } | Select-Object -First 1
+        $hit = $inv.scenarios | Where-Object { $_.id -eq $entry.id -and $_.label -eq $entry.label } | Select-Object -First 1
         if ($hit) {
-            OK "Lab $($entry.order)  $($entry.id)"
+            OK "Lab $($entry.label)  $($entry.id)"
         } else {
-            Err "Lab $($entry.order)  $($entry.id)  (missing or wrong order)"
+            Err "Lab $($entry.label)  $($entry.id)  (missing or wrong label)"
         }
     }
 

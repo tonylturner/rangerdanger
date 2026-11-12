@@ -203,9 +203,6 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML, capabilities []string, 
 		if scenario.Name == "" {
 			addScenario("scenario name must not be empty")
 		}
-		if scenario.Order == "" {
-			addScenario("scenario order must not be empty")
-		}
 		if seenScenarioIDs[scenario.ID] {
 			addScenario("scenario id must be unique within the package")
 		}
@@ -215,7 +212,7 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML, capabilities []string, 
 			if !known {
 				addScenario(fmt.Sprintf("unknown validator %q", scenario.Validator))
 			}
-			for _, capability := range required {
+			for _, capability := range required.Capabilities {
 				if !declared[capability] {
 					addScenario(fmt.Sprintf("validator %q requires capability %q, which the package does not declare", scenario.Validator, capability))
 				}
@@ -498,14 +495,14 @@ func validateDecision(pkg Package) error {
 			if step.Action == nil || step.Action.Type != "decision" {
 				continue
 			}
-			if pkg.Curriculum == nil || scenario.ID != pkg.Curriculum.Roles["planning"] {
-				return validationIssue{scenario.ID, i, step.Title, "decision must belong to the package curriculum role planning"}
+			if pkg.SegmentationPlan() == nil || scenario.ID != pkg.Course.Features.SegmentationPlan.Activities.Planning {
+				return validationIssue{scenario.ID, i, step.Title, "decision must belong to the segmentationPlan planning activity"}
 			}
 			count++
 		}
 	}
-	if pkg.Curriculum != nil && count != 1 {
-		return fmt.Errorf("curriculum: planning role must contain exactly one decision action, got %d", count)
+	if pkg.SegmentationPlan() != nil && count != 1 {
+		return fmt.Errorf("segmentationPlan: planning activity must contain exactly one decision action, got %d", count)
 	}
 	return nil
 }

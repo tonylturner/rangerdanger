@@ -22,7 +22,7 @@ it.each([US_PACKAGE, EU_PACKAGE])("shows scoped Notes, updates across tabs and c
   const scope = scopeOf(pkg);
   const panel = (revision = pkg.revision) =>
     <CurriculumScopeProvider pkg={{ ...pkg, revision }}>
-      <NotesPanel sourceScenario="planning" sourceScenarioOrder="1.4" title="Your change request (Lab 1.4)" />
+      <NotesPanel sourceScenario="planning" sourceScenarioLabel="1.4" title="Your change request (Lab 1.4)" />
     </CurriculumScopeProvider>;
   const tree = render(panel());
   expect(tree.container.textContent).toContain("Nothing saved in Lab 1.4");

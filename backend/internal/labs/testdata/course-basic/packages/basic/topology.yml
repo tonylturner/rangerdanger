@@ -1,0 +1,9 @@
+id: basic-topology
+name: Basic fixture
+description: Offline course test
+firewall_config: weak.json
+networks:
+  - {id: station, name: Station, purdue: Level 2, cidr: 192.0.2.0/24, zone: lan1}
+nodes:
+  - {id: fw-1, name: Firewall, type: firewall, networks: [station], ip: 192.0.2.2, container: fixture-firewall}
+scenarios: []

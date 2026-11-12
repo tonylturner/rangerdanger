@@ -1,0 +1,12 @@
+id: first
+name: First activity
+description: Read the firewall interface inventory.
+nodes: [fw-1]
+tags: []
+steps:
+  - id: inspect
+    title: Inspect interfaces
+    description: |
+      On **Firewall**, use `exit` to enter the Linux shell:
+
+          ls /sys/class/net

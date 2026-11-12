@@ -1,4 +1,5 @@
 "use client";
+import { activityOf } from "../lib/course";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -32,8 +33,8 @@ export function RemediationPlanBanner({ currentExerciseId, appliedPlan }: Remedi
   const plan = state?.effective;
   const [expanded, setExpanded] = useState(false);
 
-  const binding = scope.curriculum;
-  if (!binding || binding.activities[currentExerciseId]?.hideBanner) return null;
+  const binding = scope.course?.features.segmentationPlan;
+  if (!binding || activityOf(scope.course, currentExerciseId)?.hideBanner) return null;
 
   const selectedIds = appliedPlan?.actionIds ?? plan?.selectedActionIds ?? [];
   if (!plan && !appliedPlan) {
@@ -43,7 +44,7 @@ export function RemediationPlanBanner({ currentExerciseId, appliedPlan }: Remedi
           <ClipboardList className="h-4 w-4 text-amber-500" />
           <div className="text-[11px] text-amber-400">
             No remediation plan on file. Complete the{" "}
-            <Link target="_blank" rel="noopener noreferrer" href={`/exercises/${binding.roles.planning}`} className="underline hover:text-amber-200">
+            <Link target="_blank" rel="noopener noreferrer" href={`/exercises/${binding.activities.planning}`} className="underline hover:text-amber-200">
               Remediation Planning
             </Link>{" "}
             exercise first - later exercises reference your plan.
@@ -57,8 +58,8 @@ export function RemediationPlanBanner({ currentExerciseId, appliedPlan }: Remedi
   // the current exercise (per ACTION_IMPACT mapping).
   const relevantSelected: { id: string; note: string }[] = [];
   const relevantMissed: { id: string; note: string }[] = [];
-  for (const actionId of binding.impactOrder) {
-    const impact = binding.impact[actionId];
+  for (const actionId of binding.model.impactOrder) {
+    const impact = binding.model.impact[actionId];
     if (!impact.defends.includes(currentExerciseId)) continue;
     const label = !selectedIds.includes(actionId) ? "deferred" : appliedPlan ? "applied in your plan" : "planned";
     const item = { id: actionId, note: impact.note + (label ? ` — ${label}` : "") };

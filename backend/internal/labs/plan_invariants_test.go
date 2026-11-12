@@ -45,7 +45,7 @@ func planPolicy(t *testing.T, pkg Package, name string) ([]PlanRule, string, []b
 
 func mustCompilePlan(t *testing.T, pkg Package, actions []string) CompiledPlan {
 	t.Helper()
-	compiled, err := CompilePlan(pkg, pkg.Curriculum, actions)
+	compiled, err := CompilePlan(pkg, pkg.Course.Features.SegmentationPlan.Model, actions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestPlanInvariants(t *testing.T) {
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			pkg := planPackage(t, tc.id)
-			c := pkg.Curriculum
+			c := pkg.SegmentationPlan()
 			kinds, err := validatePlan(pkg, c)
 			if err != nil {
 				t.Fatal(err)
@@ -246,7 +246,7 @@ func assertPlanSourcesExecCapable(t *testing.T, pkg Package) {
 		"rtac_sim": true, "fuxa_hmi": true, "historian_sim": true,
 		"openplc": true, "gps_sim": true, "control_centre": true, "iec104_rtu": true,
 	}
-	for _, proof := range pkg.Curriculum.Plan.Proof {
+	for _, proof := range pkg.SegmentationPlan().Plan.Proof {
 		found := false
 		for _, node := range pkg.Template.Nodes {
 			if node.ID == proof.From {
@@ -269,7 +269,7 @@ func TestPlanDeferredScopesMatchWeak(t *testing.T) {
 				byID[rule.ID] = rule
 			}
 			gotZones := map[string][]string{}
-			for _, slot := range pkg.Curriculum.Plan.Rules {
+			for _, slot := range pkg.SegmentationPlan().Plan.Rules {
 				for _, rule := range slot.Deferred {
 					original := rule.ID
 					if strings.HasPrefix(id, "eu-") {
