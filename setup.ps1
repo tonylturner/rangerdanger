@@ -88,7 +88,6 @@ if ($AddPackage) {
         default { throw "Invalid $modeFile; rerun setup first." }
     }
     if ($FromTarballs -and $FromSource) { throw 'A source install cannot add from a release bundle; use -AddPackage without -FromTarballs.' }
-    if ($AddPackage -cin $installed) { Say "Package $AddPackage is already installed."; exit 0 }
     $selected = @(ConvertTo-PackageSelection $RootDir (@($installed) + $AddPackage))
     $acquire = @($AddPackage)
 } else {
@@ -99,6 +98,8 @@ if ($AddPackage) {
     $acquire = @($selected)
 }
 if (-not $selected.Count) { throw 'Select at least one package.' }
+Assert-RuntimePackageSelected $RootDir $selected
+if ($AddPackage -and $AddPackage -cin $installed) { Say "Package $AddPackage is already installed."; exit 0 }
 $RequestedPackage = $Package
 if ($Package) {
     if ($Package -cnotin $selected) { throw "-Package '$Package' is outside -Packages." }

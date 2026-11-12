@@ -167,6 +167,9 @@ If the record is corrupt or names unknown packages, repair it or remove it and
 rerun setup with an explicit selection. Before narrowing the set, switch to a
 package you will retain: the backend refuses a recorded runtime package outside
 the installed set, even when `--package` names a different first-start default.
+Setup refuses before any changes if `backend/data/range.json` names a package
+the new set drops, in any phase; switch to a retained package in the range
+switcher (or `POST /api/range`) first, then rerun.
 
 Add a package online (or build it for a source installation) without restarting
 or resetting anything:

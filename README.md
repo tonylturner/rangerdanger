@@ -95,6 +95,9 @@ Successful acquisition and image inspection atomically writes
 shipped packages are not added automatically. Existing installs without a record
 acquire every package once. An explicit selection replaces the set without
 deleting dropped images. A malformed record is an error, not an all-package default.
+Setup refuses before any changes if `backend/data/range.json` names a package
+the new set drops, in any phase; switch to a retained package in the range
+switcher (or `POST /api/range`) first, then rerun.
 
 Add a package later with `./setup.sh --add-package eu-iec104-substation` or
 `.\setup.ps1 -AddPackage eu-iec104-substation`. The add command reuses

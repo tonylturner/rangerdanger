@@ -177,14 +177,15 @@ if [ -n "$ADD_PACKAGE" ]; then
     esac
     SELECTED_PACKAGES=$(printf '%s\n%s\n' "$INSTALLED_PACKAGES" "$ADD_PACKAGE" | LC_ALL=C sort -u)
     ACQUIRE_PACKAGES="$ADD_PACKAGE"
-    if printf '%s\n' "$INSTALLED_PACKAGES" | grep -qxF "$ADD_PACKAGE"; then
-        say "Package $ADD_PACKAGE is already installed."
-        exit 0
-    fi
 elif [ "$PACKAGES_SET" -eq 1 ]; then
     SELECTED_PACKAGES=$(normalize_packages "$PACKAGES") || exit 1
 else
     SELECTED_PACKAGES=${INSTALLED_PACKAGES:-$(available_packages)}
+fi
+assert_runtime_package_selected
+if [ -n "$ADD_PACKAGE" ] && printf '%s\n' "$INSTALLED_PACKAGES" | grep -qxF "$ADD_PACKAGE"; then
+    say "Package $ADD_PACKAGE is already installed."
+    exit 0
 fi
 ACQUIRE_PACKAGES=${ACQUIRE_PACKAGES:-$SELECTED_PACKAGES}
 REQUESTED_PACKAGE="$PACKAGE"
