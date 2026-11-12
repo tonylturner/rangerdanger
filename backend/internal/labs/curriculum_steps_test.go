@@ -41,7 +41,7 @@ func TestCurriculumEUPhasesUseScenarioInstructions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scenarios, err := resolveScenarioSources(root, dir, []ScenarioSource{{Dir: "scenarios"}})
+	scenarios, err := resolveScenarios(root, dir, "scenarios")
 	if err != nil {
 		t.Fatal(err)
 	}

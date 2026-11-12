@@ -126,9 +126,9 @@ prove application success or authorization under the current policy.
 ## Scenarios (exercises)
 
 Exercises are stored internally as "scenarios" for historical reasons - the user-facing term is "exercise".
-Scenario IDs are unique within their consuming package, not globally. Routes
-resolve IDs relative to the active package, and each row's `steps` field is a
-JSON-encoded ordered array with stable authored step IDs
+Scenario IDs are unique within a package; the same ID may appear in another
+package. Routes resolve IDs relative to the active package, and each row's
+`steps` field is a JSON-encoded ordered array with stable authored step IDs
 ([`models.go`](../backend/internal/models/models.go#L7-L23)).
 Rows expose `label` (not `order`). Lists, workshop test-suite results and workbook
 exports follow flattened course position, which is not exposed as a JSON field.

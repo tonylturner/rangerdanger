@@ -88,7 +88,7 @@ id: ` + id + `
 title: "Package ` + id + `"
 revision: 3
 topology: topology.yml
-scenarios: [{dir: scenarios}]
+scenarios: scenarios
 knowledge: knowledge/index.yml
 capabilities: [process.electrical]
 policies:
@@ -339,8 +339,7 @@ func TestSeedPrunesRemovedPackage(t *testing.T) {
 func TestSeedAllowsSameScenarioAcrossPackages(t *testing.T) {
 	definitions := t.TempDir()
 	alpha := writePackage(t, definitions, "alpha", "substation", map[string]string{"baseline.yml": validScenarioYAML})
-	writePackage(t, definitions, "beta", "beta-topology", nil)
-	writeDefinition(t, filepath.Join(definitions, "packages/beta/package.yml"), strings.Replace(packageYAML("beta"), "[{dir: scenarios}]", "[{dir: ../alpha/scenarios, include: [baseline]}]", 1))
+	writePackage(t, definitions, "beta", "beta-topology", map[string]string{"baseline.yml": validScenarioYAML})
 	database := testDatabase(t)
 	loader := seedLoader(definitions)
 	for i := 0; i < 2; i++ {
@@ -355,8 +354,7 @@ func TestSeedAllowsSameScenarioAcrossPackages(t *testing.T) {
 	if len(rows) != 2 || rows[0].PackageID != "alpha" || rows[1].PackageID != "beta" || rows[0].ID != rows[1].ID || rows[1].LabTemplateID != "beta-topology" {
 		t.Fatalf("rows = %#v", rows)
 	}
-	// Stop importing, then prune alpha's row without touching beta's same ID.
-	writeDefinition(t, filepath.Join(definitions, "packages/beta/package.yml"), packageYAML("beta"))
+	// Update and prune independently despite the same authored ID.
 	writeDefinition(t, filepath.Join(definitions, "packages/beta/scenarios/baseline.yml"), strings.Replace(validScenarioYAML, "Baseline Review", "Independent Beta", 1))
 	if _, err := loader.Seed(context.Background(), database, "alpha"); err != nil {
 		t.Fatal(err)
@@ -545,7 +543,7 @@ func TestLoadRejectsInvalidPackages(t *testing.T) {
 		{"invalid policy JSON", "firewall/weak.json", func(string) string { return "{" }, "policy weak: packages/alpha/firewall/weak.json: invalid JSON"},
 		{"missing topology", "package.yml", func(s string) string { return strings.Replace(s, "topology.yml", "missing.yml", 1) }, "topology: open"},
 		{"missing scenarios directory", "package.yml", func(s string) string {
-			return strings.Replace(s, "scenarios: [{dir: scenarios}]", "scenarios: [{dir: missing}]", 1)
+			return strings.Replace(s, "scenarios: scenarios", "scenarios: missing", 1)
 		}, "scenarios directory"},
 		{"inline scenarios", "topology.yml", func(s string) string {
 			return strings.Replace(s, "scenarios: []", "scenarios:\n  - id: inline\n", 1)

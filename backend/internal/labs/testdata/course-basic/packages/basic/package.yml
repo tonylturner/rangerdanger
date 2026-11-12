@@ -3,7 +3,7 @@ id: basic
 title: Basic course fixture
 revision: 1
 topology: topology.yml
-scenarios: [{dir: scenarios}]
+scenarios: scenarios
 knowledge: knowledge/index.yml
 capabilities: [policy.containd]
 policies:

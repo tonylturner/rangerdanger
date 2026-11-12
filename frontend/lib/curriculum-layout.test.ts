@@ -37,7 +37,7 @@ describe("curriculum section reader", () => {
   it("resolves scenario instructions for compiled-plan phase fixtures", () => {
     const root = fixture({ "implementation.yml": 'phases:\n  rules: "{{step:implement}}\\n\\n{{ruleTable}}"\n' });
     writeFileSync(resolve(root, "package.yml"), JSON.stringify({
-      topology: "topology.yml", scenarios: [{ dir: "scenarios" }],
+      topology: "topology.yml", scenarios: "scenarios",
       course: { nodes: "nodes.yml", modules: [], features: { segmentationPlan: { dir: "curriculum", activities: { implementation: "implementation" }, dynamicSteps: { implement: "rules" } } } },
     }));
     writeFileSync(resolve(root, "nodes.yml"), "nodeMap: {}\nnodeInference: []\n");

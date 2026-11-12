@@ -35,8 +35,7 @@ id: us-dnp3-substation            # slug; must match the directory name
 title: "US distribution substation (DNP3)"
 revision: 1                       # bump when step IDs or validator meaning change
 topology: ../../substation-segmentation.yml   # relative to package.yml
-scenarios:                                   # ordered sources, relative to package.yml
-  - dir: ../../scenarios                     # all *.yml, unless include lists authored IDs
+scenarios: ../../scenarios                   # directory relative to package.yml
 capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
 ```
 
@@ -107,18 +106,15 @@ The EU package serves these seven scenario files:
   topology file's directory and must stay inside `lab-definitions/`.
 - A topology must not list scenarios inline; `scenarios: []` is the
   only accepted value.
-- Scenario IDs are slugs unique within the **consuming package**. The same
-  ID may occur in different packages. `scenarios` must be a nonempty list
-  of sources: `{dir: scenarios}` loads every `*.yml`; an optional
-  `include: [lesson-id, another-id]` selects authored IDs, not filenames.
-  Every included ID must resolve exactly once; empty or duplicate includes
-  and duplicate IDs across a package's sources are errors, even for identical
-  content. Source order never selects a winner.
-- Source paths must be nonempty relative portable paths (no backslashes).
+- Scenario IDs are slugs unique within a **package**. The same ID may
+  occur in another package. `scenarios` must be one nonempty directory string
+  relative to `package.yml`; every `*.yml` file in it is loaded. Lists and
+  mappings are rejected. Duplicate IDs within that directory are errors,
+  even for identical content.
+- The scenario directory must be a relative portable path (no backslashes).
   `..` is allowed only inside `lab-definitions/`; symlink targets of directories
-  and files must also remain inside it. Imported scenarios belong to and
-  validate against the consumer's topology, capabilities, knowledge and curriculum.
-  Bump every affected consumer's revision when shared lesson semantics change.
+  and files must also remain inside it. Scenarios validate against their
+  package's topology, capabilities, knowledge and curriculum.
 - The whole catalog is seeded and pruned in one transaction: scenarios whose
   file is gone are removed, and a package directory that disappears takes its
   scenarios with it. A failed seed leaves the old rows intact.
@@ -146,7 +142,7 @@ Declare its display label (for example `"2.5"`) and position in the package
 course activity, not in this scenario document.
 
 ```yaml
-id: my-new-exercise         # slug; unique within the consuming package
+id: my-new-exercise         # slug; unique within the package
 name: "My New Exercise"
 summary: "One-line summary that appears in the card view (≤120 chars)."
 validator: us-my-new-exercise   # optional; a registered validator key (see below)

@@ -19,7 +19,7 @@ import (
 var updateKnowledgeUS = flag.Bool("update-knowledge-us", false, "regenerate US knowledge body hashes")
 
 func TestKnowledgeUSMigration(t *testing.T) {
-	scenarios, err := resolveScenarioSources("../../../lab-definitions", "../../../lab-definitions/packages/us-dnp3-substation", []ScenarioSource{{Dir: "../../scenarios"}})
+	scenarios, err := resolveScenarios("../../../lab-definitions", "../../../lab-definitions/packages/us-dnp3-substation", "../../scenarios")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -207,7 +207,7 @@ func TestCurriculumUSExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg.Scenarios, err = resolveScenarioSources(definitions, filepath.Dir(path), manifest.Scenarios)
+	pkg.Scenarios, err = resolveScenarios(definitions, filepath.Dir(path), manifest.Scenarios)
 	if err != nil {
 		t.Fatal(err)
 	}

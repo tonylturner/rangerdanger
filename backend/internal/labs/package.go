@@ -83,15 +83,15 @@ type PolicyYAML struct {
 
 // PackageYAML mirrors lab-definitions/packages/<id>/package.yml.
 type PackageYAML struct {
-	Course       *Course          `yaml:"course"`
-	Schema       int              `yaml:"schema"`
-	ID           string           `yaml:"id"`
-	Title        string           `yaml:"title"`
-	Revision     int              `yaml:"revision"`
-	Topology     string           `yaml:"topology"`  // relative to package.yml
-	Scenarios    []ScenarioSource `yaml:"scenarios"` // ordered sources, relative to package.yml
-	Knowledge    string           `yaml:"knowledge"` // required knowledge index, relative to package.yml
-	Capabilities []string         `yaml:"capabilities"`
+	Course       *Course  `yaml:"course"`
+	Schema       int      `yaml:"schema"`
+	ID           string   `yaml:"id"`
+	Title        string   `yaml:"title"`
+	Revision     int      `yaml:"revision"`
+	Topology     string   `yaml:"topology"`  // relative to package.yml
+	Scenarios    string   `yaml:"scenarios"` // directory relative to package.yml
+	Knowledge    string   `yaml:"knowledge"` // required knowledge index, relative to package.yml
+	Capabilities []string `yaml:"capabilities"`
 	// Policies maps the names the firewall buttons and actions apply
 	// ("weak", "improved") to files and wording owned by the package.
 	Policies     map[string]PolicyYAML `yaml:"policies"`
@@ -248,7 +248,7 @@ func ReadDefinition(definitionsDir, manifestPath string) (Package, error) {
 	return pkg, err
 }
 
-// readDefinition resolves one consumer and all of its content sources.
+// readDefinition resolves one package and its declared content.
 func readDefinition(definitionsDir, manifestPath string) (Package, error) {
 	var manifest PackageYAML
 	if err := decodeFile(manifestPath, &manifest); err != nil {
@@ -317,7 +317,7 @@ func readDefinition(definitionsDir, manifestPath string) (Package, error) {
 	if _, ok := pkg.PolicyName(firewallConfigPath); !ok {
 		return Package{}, fmt.Errorf("topology %s: firewall_config %s is not one of the package policies", filepath.Base(topologyPath), firewallConfigPath)
 	}
-	if pkg.Scenarios, err = resolveScenarioSources(definitionsDir, packageDir, manifest.Scenarios); err != nil {
+	if pkg.Scenarios, err = resolveScenarios(definitionsDir, packageDir, manifest.Scenarios); err != nil {
 		return Package{}, err
 	}
 	if pkg.Knowledge, err = loadKnowledge(packageDir, manifest.Knowledge, pkg.Scenarios); err != nil {
