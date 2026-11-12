@@ -421,7 +421,7 @@ if ($SkipFirewallGate) {
     if ($fwFail) {
         Die @"
 Workshop-readiness gate failed. Common causes:
-  - containd image drift (bump containd or pin a known-good tag)
+  - containd image drift (refresh the published containd :latest image)
   - mgmt subnet not in firewall input chain (CONTAIND_AUTO_LAN3_SUBNET)
   - sims still warming up (re-run setup, or wait 30s and re-probe)
 Re-run with -SkipFirewallGate to bring the stack up anyway for diagnosis.
