@@ -554,7 +554,6 @@ for DELIVERY_NET in rangerdanger_desk_corp rangerdanger_desk_vendor rangerdanger
   Stop its owner or remove the unused network, then re-run. No network was removed."
     fi
 done
-MGMT_OWNER=""
 MGMT_NET_IDS=$(docker_bounded 15 network ls -q --filter "name=^${MGMT_NET}$" 2>/dev/null) \
     || die "Could not query network $MGMT_NET. Docker returned an error; start or restart Docker Desktop or dockerd, then re-run."
 if [ -n "$MGMT_NET_IDS" ]; then
