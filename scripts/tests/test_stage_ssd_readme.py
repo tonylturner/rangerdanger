@@ -38,7 +38,7 @@ git() {
                 result = subprocess.run(
                     ["bash", "-c", script], capture_output=True, text=True,
                     env=dict(os.environ, OUT=str(bash_out), VERSION="v2",
-                             ROOT_DIR=str(ROOT), SUBJECT=subject,
+                             ROOT_DIR=str(ROOT), SUBJECT=subject, SELECTED_PACKAGES="us-dnp3-substation",
                              BINFMT_IMAGE="tonistiigi/binfmt:fixture"),
                     timeout=30,
                 )
@@ -55,6 +55,7 @@ function Invoke-StageNative($Executable, $ArgList, $TimeoutSec) {
 $OutDir = $env:OUT
 $RootDir = $env:REPO
 $Version = 'v2'
+$selected = @('us-dnp3-substation')
 $BINFMT_IMAGE = 'tonistiigi/binfmt:fixture'
 """ + ps_row + "\n" + ps_block, OUT=str(ps_out), SUBJECT=subject)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -63,5 +64,7 @@ $BINFMT_IMAGE = 'tonistiigi/binfmt:fixture'
                 self.assertIn(b"Copy the whole folder, including hidden files such as .version", actual)
                 self.assertNotIn(b"Copy the four files", actual)
                 self.assertIn(b"rangerdanger-wsl2-kernel", actual)
+                self.assertIn(b"--packages us-dnp3-substation", actual)
+                self.assertIn(b"-Packages us-dnp3-substation", actual)
                 self.assertTrue(actual.endswith(b"\n"))
                 self.assertNotIn(b"\r", actual)

@@ -34,16 +34,15 @@ Two staging flows:
 
 ## What's on the SSD
 
-A successful full stage contains the four core files and a version marker,
-plus the required Windows WSL2 kernel and checksum. The amd64 and arm64
-image archives are written one after the other, not as an atomic pair:
-if the second stage or final verification fails, earlier files may remain
-in the output directory. Distribute only after the helper reports success.
+A successful full stage contains a versioned index per architecture and one
+Docker-save archive per unique image ref, plus the repo, instructions, version
+marker and required Windows kernel assets. Distribute only after the helper
+reports success; a failed run can leave partial files.
 
 | File | What it is | Size |
 |---|---|---|
-| `images-amd64.tar` | All Docker images for Intel/AMD64 hosts, saved together | ~6 GB |
-| `images-arm64.tar` | All Docker images for Apple Silicon / arm64 hosts. `openplc` is cross-included as the amd64 image (Rosetta 2 on macOS); also bundles `tonistiigi/binfmt` so arm64 **Linux** hosts can register amd64 emulation offline. | ~6 GB |
+| `image-index-amd64.txt`, `image-index-arm64.txt` | `rangerdanger-image-index-v1`; VERSION/arch headers, then tab-separated owner (`platform` or exact package id), image ref, relative archive path and SHA-256 | small |
+| `images/<arch>/*.tar` | One archive per unique selected image ref; shared refs saved once. OpenPLC uses amd64 on arm64; its owners also receive binfmt on arm64. | varies with selection |
 | `rangerdanger.tgz` | The repo at the staged commit | ~1-2 MB |
 | `README.md` | Auto-generated per-stage instructions for the student | ~1 KB |
 | `.version` | Plain-text version marker (`vX.Y.Z` or `latest`) | <1 KB |
@@ -57,13 +56,14 @@ Wait for complete release assets and re-run the stage helper; do not
 distribute partial output. The kernel cannot remediate ARM64 Windows hosts;
 those hosts need working queue support in their existing kernel.
 
-Both `images-*.tar` cover the image references of the release Compose
-files (the platform's and every range package's), with
-different architecture-specific binaries. The arm64 archive additionally
-contains `tonistiigi/binfmt` and cross-includes the amd64-only `openplc`
-image because no arm64 manifest exists for it.
-`setup.sh --from-tarballs` auto-detects host arch and loads the matching
-archive.
+Full staging defaults to every package; `--packages us-dnp3-substation`
+(PowerShell `-Packages us-dnp3-substation`) narrows the staged closure.
+Setup selection is independent: a superset bundle supports a subset install,
+but every selected package must be present. Setup validates VERSION, architecture,
+selected membership, safe relative paths and SHA-256 checksums **before loading**,
+then loads only platform + selected archives. Unselected archives are never loaded.
+Old monolithic bundles are rejected: re-stage with `rangerdanger-image-index-v1`.
+Setup needs no Python or jq for this index.
 
 ## Initial stage
 
@@ -97,6 +97,12 @@ error aborts the run with the image or archive named.
 The `rangerdanger.tgz` is `git archive HEAD`, so whatever's committed
 in the working tree at stage time is what students get.
 
+Offline additions use `./setup.sh --add-package <id> --from-tarballs <dir>` or
+`.\setup.ps1 -AddPackage <id> -FromTarballs <dir>`. The bundle must match the
+installed VERSION and include platform + the added package; existing packages
+need not be staged again. Only the added closure is loaded, then the receipt is
+unioned without a restart. Source installs cannot consume release bundles.
+
 ## Student first-run install
 
 Documented short form in [`quickstart.md`](quickstart.md#path-c---offline--ssd-workshops).
@@ -129,11 +135,11 @@ What `setup.sh --from-tarballs` does, in order:
    recommended). Linux-native Docker can fall back to host RAM. It does
    not measure Docker's storage volume or check macOS host RAM.
    `--check-only` runs just this stage and exits.
-2. **`.env`** - writes `VERSION` (from the SSD's `.version`) and
-   `RANGERDANGER_ROOT` (the install directory) to `.env`.
-3. **`docker load`** the matching `images-<arch>.tar` every time, before
-   any destructive teardown. Docker deduplicates existing layers by content
-   hash. The archive carries the platform and every range package's images.
+2. **Validate the index, then `docker load`** only the selected closure, before
+   any destructive teardown. Inspect all required images, then atomically write
+   `data/installed-packages` and `data/install-mode`. Docker deduplicates layers.
+3. **`.env`** - after acquisition succeeds, writes `VERSION` (from the SSD's
+   `.version`) and `RANGERDANGER_ROOT` (the install directory) to `.env`.
 4. **Migration** - after images are available, an older single-project
    install (`rangerdanger` owning `rangerdanger_mgmt_net`) is taken down by
    Compose label. Foreign management/delivery network ownership is rejected.
@@ -292,12 +298,12 @@ those generated by the PowerShell stager; there is no supported native
 PowerShell apply/rollback path. Do not assume running the recipe inside WSL
 qualifies a native Windows installation. For Windows students, use a full
 bundle with `setup.ps1 -FromTarballs` until a native delta consumer is tested.
-The PowerShell-generated recipe preserves the installed `.env` daemon root
+Both generators' recipes preserve the installed `.env` daemon root
 (including the translation written by `scripts/lib/windows-root.ps1` via
 setup), rather than replacing it with a shell's `$PWD`. That preservation
 is not Windows runtime acceptance.
 
-- Compares remote digests of every first-party image at `<since>`
+- Compares remote digests of the selected first-party closure at `<since>`
   vs `<new>` and saves only the ones that differ.
 - Requires each `<new>` first-party image to resolve in the registry;
   local-only images are not a fallback.
@@ -349,8 +355,8 @@ Comparing <since> -> <new> across N candidate image(s)
              opendss-sim
 
 Saving 2 changed image(s) per arch...
-  delta-amd64.tar  (~230 MB)
-  delta-arm64.tar  (~225 MB)
+  delta-images/amd64/  (~230 MB)
+  delta-images/arm64/  (~225 MB)
   rangerdanger.tgz (~1 MB)
   rangerdanger-wsl2-kernel + .sha256 (~14 MB; tagged releases only)
   DELTA-README.md
@@ -373,6 +379,25 @@ compared as unchanged. It does not exclude changed images or make a delta
 smaller; a delta is small only when few images differ. Either name form
 works (`gps-sim` or `rangerdanger-gps-sim`), and an entry that matches no
 candidate image stops the run rather than being dropped silently.
+
+### Selected-package deltas
+
+Changed refs use `delta-image-index-<arch>.txt` and per-ref
+`delta-images/<arch>/*.tar`, with the same v1 index grammar as full bundles.
+
+`stage-ssd-delta.sh <out> <old> <new> --since-packages <ids> --packages <ids>`
+and `stage-ssd-delta.ps1 <out> <old> <new> -SincePackages <ids> -Packages <ids>`
+carry exact source and target sets (defaults: every package in each release).
+Only the target closure is compared; global release-record validation stays intact.
+Newly selected refs absent from the source install are shipped, not assumed cached.
+Apply refuses an installed-set mismatch before teardown and checks old tags,
+archive checksums and disk space. Its full-tree snapshot includes
+`data/installed-packages`, `data/install-mode` and `.env`; rollback restores all
+three together with the repository and lab data. containd stays published `:latest`,
+never locally retagged; an overwritten containd image is saved for rollback instead.
+Both stagers generate Bash recipes for macOS/Linux. ROOT remains owned by
+`.env`; Git Bash/WSL application to native Windows installs is not validated.
+Use full bundles on Windows; there is no native PowerShell delta apply command.
 
 ### Student-side delta apply
 
@@ -410,7 +435,7 @@ image at the selected new version while offline. It then updates `VERSION`
 in `.env` and finishes by restarting the lab offline.
 
 For ARM64 Linux, OpenPLC uses amd64 emulation. A delta with changed images
-includes `tonistiigi/binfmt` in `delta-arm64.tar`; a repo-only delta creates
+includes `tonistiigi/binfmt` in `delta-images/arm64/`; a repo-only delta creates
 no image archives and cannot provide that image. Ensure
 `tonistiigi/binfmt:qemu-v10.2.1` is already present before applying a
 repo-only delta offline if OpenPLC may need to restart after a host reboot.
@@ -427,7 +452,8 @@ complete saved repo tree (including `.env`, local edits, and `./data/`)
 before starting the complete lab with the old tags. It needs no network
 or second bundle. Docker images are not in the repo snapshot, so keep the
 snapshot and old image tags until the rollback window closes. Images behind
-mutable tags overwritten by the delta are parked as `:before-<new version>`;
+mutable tags overwritten by the delta are parked as `:before-<new version>`
+(except containd, saved as a Docker archive without retagging);
 deleting those parked tags forfeits rollback for those images.
 
 The complete repo backup must include both package firewall directories
@@ -506,12 +532,12 @@ restart backend.
 
 **Q: Can I host the delta on a web server / Slack / Drive instead of
 USB?**
-Yes - the bundles are static files. `delta-*.tar` and
-`rangerdanger.tgz` can go anywhere students can fetch them. Download the
+Yes - the bundles are static files. Copy `delta-image-index-*.txt`,
+`delta-images/`, `.version`, and `rangerdanger.tgz` together. Download the
 delta bundle and its generated `DELTA-README.md`, then follow that file's
 apply and rollback procedure. `--from-tarballs` consumes **full bundles**
-containing `images-<arch>.tar`, not `delta-<arch>.tar`; do not pass a delta
-directory to it.
+containing `image-index-<arch>.txt` and per-image archives, not delta indexes
+and `delta-images/`; do not pass a delta directory to it.
 
 **Q: What if I need to ship a fix five minutes before the workshop?**
 The new RangerDanger image refs must already exist in the registry.
@@ -535,14 +561,15 @@ content lets people pass them around without crowding.
 
 **Q: How do I check what's actually in the SSD bundle?**
 ```sh
-tar -xOf /Volumes/WORKSHOP_SSD/images-amd64.tar manifest.json |
+cat /Volumes/WORKSHOP_SSD/image-index-amd64.txt
+# Inspect one archive listed in that index:
+tar -xOf /Volumes/WORKSHOP_SSD/images/amd64/1.tar manifest.json |
   python3 -c 'import json,sys; [print(tag) for image in json.load(sys.stdin) for tag in (image.get("RepoTags") or [])]'
 ```
-The staging helper runs this kind of tag check for both architecture
-archives before it reports success. Or load the archive on a scratch host
+The staging helper runs this kind of tag check for every per-ref archive in both architectures before it reports success. Or load the archive on a scratch host
 and inspect the local tags:
 ```sh
-docker load -i /Volumes/WORKSHOP_SSD/images-amd64.tar
+docker load -i /Volumes/WORKSHOP_SSD/images/amd64/1.tar
 docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' | grep rangerdanger
 ```
 on a scratch host.

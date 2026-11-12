@@ -1,5 +1,6 @@
 # Package installer operations. Dot-source after docker-bounded.ps1.
 # Keep host-side Compose paths separate from the daemon-visible ROOT.
+. "$PSScriptRoot/image-index.ps1"
 
 function Invoke-SetupDocker([string[]]$DockerArgs, [int]$TimeoutSec = 30) {
     $run = Invoke-DockerBounded $DockerArgs $TimeoutSec
@@ -59,10 +60,11 @@ function Get-SetupImages($Models) {
     @($images)
 }
 
-function Invoke-SetupAcquisition($Models, [string]$Mode, [string]$Tarball) {
+function Invoke-SetupAcquisition($Models, [string]$Mode, [string]$Tarball, [string]$Architecture, [string]$Version, [string[]]$Selected) {
     # Nothing in this function tears down an existing install.
     if ($Mode -eq 'offline') {
-        Write-Host (Invoke-SetupDocker @('load', '-i', $Tarball) 1800)
+        $archives = @(Read-ImageIndex $Tarball $Architecture $Version $Selected @(Get-SetupImages $Models))
+        foreach ($archive in $archives) { Write-Host (Invoke-SetupDocker @('load', '-i', $archive) 1800) }
     } elseif ($Mode -eq 'source') {
         foreach ($model in $Models) {
             Write-Host (Invoke-SetupDocker (Get-SetupComposeArgs $model @('build')) 3600)

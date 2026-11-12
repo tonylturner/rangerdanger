@@ -237,12 +237,31 @@ The positional version selects every first-party image tag independently
 of the instructor repo's `.env`; the helper records the same value in
 `.version` and verifies the saved image tags before reporting success.
 
-This produces `images-amd64.tar`, `images-arm64.tar`,
+This produces `image-index-amd64.txt`, `image-index-arm64.txt`, per-ref `images/<arch>/*.tar`,
 `rangerdanger.tgz`, a `.version` marker, and an auto-generated SSD
 README on the volume. Tagged releases additionally bundle
 `rangerdanger-wsl2-kernel` + `rangerdanger-wsl2-kernel.sha256` so
 Windows students get ICS DPI on Labs 2.3 / 2.3-bonus without a
 separate kernel download.
+
+Offline bundles use `rangerdanger-image-index-v1`: tab-separated owner (`platform`
+or package id), image ref, relative archive path and SHA-256, after VERSION/arch
+headers. `stage-ssd.sh --packages` / `stage-ssd.ps1 -Packages` select staged packages
+(default: every package; put flags after output and version). Setup
+`--from-tarballs <dir> --packages us-dnp3-substation` (PowerShell
+`-FromTarballs <dir> -Packages us-dnp3-substation`) validates VERSION, architecture,
+selected membership, safe relative paths and checksums before loading only the
+selected closure. Unselected archives are never loaded. Old monolithic bundles
+are rejected; re-stage with `rangerdanger-image-index-v1`.
+Delta stagers accept `--since-packages` / `-SincePackages` and `--packages` /
+`-Packages`; generated apply refuses an installed-set mismatch, and rollback
+restores `data/installed-packages`, `data/install-mode` and `.env` together.
+
+Offline additions use `./setup.sh --add-package <id> --from-tarballs <dir>` or
+`.\setup.ps1 -AddPackage <id> -FromTarballs <dir>`. The bundle must match the
+installed VERSION and include platform + the added package; existing packages
+need not be staged again. Only the added closure is loaded, then the receipt is
+unioned without a restart. Source installs cannot consume release bundles.
 
 **On the workshop laptop (student):**
 

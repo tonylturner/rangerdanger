@@ -1,4 +1,5 @@
 """Installer ordering and port preflight, with isolated functions and fake tools only."""
+import hashlib
 from pathlib import Path
 import os
 import subprocess
@@ -41,12 +42,20 @@ class SetupMigrationTests(unittest.TestCase):
             for fail in (False, True):
                 with self.subTest(mode=mode, fail=fail), tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
-                    (root / "scripts").mkdir()
+                    (root / "scripts/lib").mkdir(parents=True)
+                    (root / "scripts/lib/image-index.sh").write_text((ROOT / "scripts/lib/image-index.sh").read_text())
                     down = root / "scripts/dev-down.sh"
                     down.write_text('#!/bin/bash\necho teardown >> "$CALLS"\n')
                     down.chmod(0o755)
                     archive = root / "images.tar"
                     archive.write_text("fixture")
+                    (root / "eu.tar").write_text("fixture")
+                    (root / '.version').write_text('v2\n')
+                    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+                    (root / 'image-index-amd64.txt').write_text(
+                        'rangerdanger-image-index-v1\nversion\tv2\narch\tamd64\n'
+                        f'platform\tplatform:1\timages.tar\t{digest}\n'
+                        f'eu\teu:1\teu.tar\t{digest}\n')
                     calls = root / "calls"
                     script = r'''
 set -euo pipefail
@@ -56,14 +65,14 @@ package_ids() { printf 'eu\n'; }
 docker_bounded() { shift; docker "$@"; }
 env_write() { :; }
 ensure_selected_emulation() { :; }
-ADD_PACKAGE='' SELECTED_PACKAGES=eu PACKAGE=''
+ADD_PACKAGE='' SELECTED_PACKAGES=eu ACQUIRE_PACKAGES=eu PACKAGE=''
 with_pull_retry() { "$@"; }
 platform_compose() { echo "platform $*" >> "$CALLS"; [ "${1:-}" != config ] || echo platform:1; }
 range_compose() { echo "range $*" >> "$CALLS"; [ "${2:-}" != config ] || echo eu:1; [ "$FAIL" = 0 ] || [ "$1" != eu ]; }
 docker() { echo "docker $*" >> "$CALLS"; [ "$FAIL" = 0 ]; }
 MGMT_OWNER=rangerdanger RANGE_PROJECT=rangerdanger OLD_PLATFORM=old VERSION=v2
 ''' + SOURCE[start:end]
-                    env = dict(os.environ, ROOT_DIR=tmp, MODE=mode, TARBALL=str(archive),
+                    env = dict(os.environ, ROOT_DIR=tmp, MODE=mode, TARBALL_DIR=tmp, ARCH="amd64",
                                CALLS=str(calls), FAIL=str(int(fail)), REPO=str(ROOT))
                     result = subprocess.run(["bash", "-c", script], env=env,
                                             capture_output=True, text=True, timeout=10)

@@ -1,4 +1,5 @@
 """Native host receipt/selection parity. Only extracted installer blocks run."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -246,3 +247,73 @@ ensure_selected_emulation() {
             for literal in ("--packages", "-Packages", "--add-package", "-AddPackage",
                             "data/installed-packages", "every discovered package"):
                 self.assertIn(literal, text, name)
+
+    def test_offline_add_loads_only_added_closure_preserves_mode_env_and_never_restarts(self):
+        sh_selection = SH[SH.index('# shellcheck source=scripts/lib/installed-packages.sh'):SH.index('# Platform and range Compose calls.')]
+        sh_version = SH[SH.index('# ─── resolve the offline version'):SH.index('# ─── write .env')]
+        sh_acquire = SH[SH.index('# ─── image acquisition'):SH.index('# No teardown occurs')]
+        ps_selection = PS[PS.index('$installed = @()'):PS.index('$info = ')]
+        ps_version = PS[PS.index("$Tarball = ''"):PS.index('# Setup owns these keys;')]
+        ps_acquire = PS[PS.index('$candidateImage = $env:CONTAIND_IMAGE'):PS.index('Invoke-KernelStep\n# The proxy')]
+        for language in ('bash', 'powershell'):
+            for error in ('', 'checksum', 'version', 'source'):
+                with self.subTest(language=language, error=error), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    fixture(root)
+                    (root / 'scripts/lib/image-index.sh').write_bytes((ROOT / 'scripts/lib/image-index.sh').read_bytes())
+                    record = root / 'data/installed-packages'
+                    original = (HEADER + IDS[0] + '\n').encode()
+                    record.write_bytes(original)
+                    (root / '.env').write_text('VERSION=v-installed\nRANGERDANGER_PACKAGE=eu-iec104-substation\n')
+                    mode = b'source\n' if error == 'source' else b'release\n'
+                    (root / 'data/install-mode').write_bytes(mode)
+                    before_env = (root / '.env').read_bytes()
+                    bundle = root / 'bundle'
+                    bundle.mkdir()
+                    version = 'v-installed' + ('-mismatch' if error == 'version' else '')
+                    (bundle / '.version').write_text(version + '\n')
+                    rows = [f'rangerdanger-image-index-v1\nversion\t{version}\narch\tamd64\n']
+                    for owner, image in (('platform', 'platform:v-installed'), (IDS[2], 'us:v-installed')):
+                        path = f'{owner}.tar'
+                        (bundle / path).write_bytes(image.encode())
+                        checksum = hashlib.sha256(image.encode()).hexdigest()
+                        if error == 'checksum': checksum = ('0' if checksum[0] != '0' else '1') + checksum[1:]
+                        rows.append(f'{owner}\t{image}\t{path}\t{checksum}\n')
+                    (bundle / 'image-index-amd64.txt').write_text(''.join(rows))
+                    if language == 'bash':
+                        result = bash(r'''
+banner() { :; }; ensure_selected_emulation() { :; }
+platform_compose() { printf 'platform:v-installed\n'; }
+range_compose() { [ "$1" = us-dnp3-substation ] || exit 99; printf 'us:v-installed\n'; }
+docker_bounded() { printf '%s\n' "$*" >> "$ROOT_DIR/calls"; }
+''' + sh_selection + '\n' + sh_version + '\n' + sh_acquire, root,
+                                      PACKAGES_DIR=str(root / 'lab-definitions/packages'), PACKAGES='', PACKAGES_SET='0',
+                                      PACKAGE='', ADD_PACKAGE=IDS[2], FROM_SOURCE='0', TARBALL_DIR=str(bundle),
+                                      VERSION_SET='0', ARCH='amd64')
+                    else:
+                        result = powershell('$ErrorActionPreference="Stop"\n' + LOAD_PS + r'''
+$RootDir=$env:TESTROOT; $Package=''; $FromSource=$false
+$FromTarballs=$env:BUNDLE; $AddPackage='us-dnp3-substation'; $arch='amd64'
+$PSBoundParameters=@{FromTarballs=$FromTarballs}
+function Say($m) {}
+function Invoke-DockerBounded($DockerArgs, $TimeoutSec) {
+    [IO.File]::AppendAllText((Join-Path $RootDir 'calls'), ($DockerArgs -join ' ') + "`n")
+    $text=''
+    if ($DockerArgs -contains '--images') {
+        $text=if ($DockerArgs -contains (Join-Path $RootDir 'docker-compose.release.yml')) { 'platform:v-installed' } else { 'us:v-installed' }
+    }
+    [pscustomobject]@{ExitCode=0;TimedOut=$false;StdOut=$text;StdErr=''}
+}
+''' + ps_selection + '\n' + ps_version + '\n' + ps_acquire, TESTROOT=tmp, BUNDLE=str(bundle))
+                    self.assertEqual(result.returncode == 0, not error, result.stdout + result.stderr)
+                    expected = original if error else (HEADER + IDS[0] + '\n' + IDS[2] + '\n').encode()
+                    self.assertEqual(record.read_bytes(), expected)
+                    self.assertEqual((root / '.env').read_bytes(), before_env)
+                    self.assertEqual((root / 'data/install-mode').read_bytes(), mode)
+                    calls = (root / 'calls').read_text() if (root / 'calls').exists() else ''
+                    if error:
+                        self.assertNotIn('load -i', calls)
+                    else:
+                        self.assertEqual(calls.count('load -i'), 2)
+                    for forbidden in (' pull', ' build', ' up ', ' down', 'POST', 'eu-iec104-substation.tar'):
+                        self.assertNotIn(forbidden, calls)

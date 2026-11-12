@@ -264,11 +264,38 @@ def _release_membership(
         repository for repository in refs
         if repository.startswith("ghcr.io/tonylturner/rangerdanger-")
     }
+    for repository in first_party:
+        if any(reference != f"{repository}:{expected_tag}" for reference in refs[repository]):
+            raise PlanError(f"release {expected_tag} has a first-party tag mismatch")
     if first_party != recorded_builds:
         raise PlanError(
             f"release {expected_tag} package/platform membership differs from "
             "the authored build inventory")
     return refs, owners, first_party
+
+
+def _project_membership(
+    record: Any, tag: str, packages: list[str] | None,
+) -> tuple[dict[str, set[str]], dict[str, dict[str, set[str]]], set[str]]:
+    """Project only after validating the complete release-owned inventory."""
+    _, owners, _ = _release_membership(record, tag)  # Validate the GLOBAL record first.
+    available = set(record["compose_files"]["packages"])
+    selected = available if packages is None else set(packages)
+    if (packages is not None and not selected) or not selected <= available or any(
+            not re.fullmatch(r"[a-z0-9-]+", name) for name in selected):
+        raise PlanError(f"invalid selected packages for {tag}: {sorted(selected)}")
+    projected_refs: dict[str, set[str]] = {}
+    projected_owners: dict[str, dict[str, set[str]]] = {}
+    for repository, references in owners.items():
+        for reference, services in references.items():
+            kept = {service for service in services
+                    if service.split("/", 1)[0] in selected | {"platform"}}
+            if kept:
+                projected_refs.setdefault(repository, set()).add(reference)
+                projected_owners.setdefault(repository, {})[reference] = kept
+    first_party = {repo for repo in projected_refs
+                   if repo.startswith("ghcr.io/tonylturner/rangerdanger-")}
+    return projected_refs, projected_owners, first_party
 
 
 def delta_image_candidates(
@@ -279,10 +306,12 @@ def delta_image_candidates(
     since_tag: str,
     new_tag: str,
     include_upstream: bool = False,
+    since_packages: list[str] | None = None,
+    packages: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Select new runtime images while using old/new package membership."""
-    old_refs, old_owners, _ = _release_membership(previous_record, since_tag)
-    new_refs, new_owners, new_first_party = _release_membership(new_record, new_tag)
+    old_refs, old_owners, _ = _project_membership(previous_record, since_tag, since_packages)
+    new_refs, new_owners, new_first_party = _project_membership(new_record, new_tag, packages)
     local_first_party = {
         repository for image in compose_images
         if (repository := _image_repository(image)).startswith(
@@ -339,7 +368,7 @@ def delta_image_candidates(
             "since": previous_reference,
             "repository": repository,
             "first_party": first_party,
-            "old_member": bool(old_candidates),
+            "old_member": bool(old_candidates) if first_party else reference in old_candidates,
             "owners": sorted(service_owners),
         })
     return candidates
@@ -353,6 +382,8 @@ def _delta_candidates_main(argv: list[str]) -> int:
     parser.add_argument("--since", required=True)
     parser.add_argument("--new", required=True)
     parser.add_argument("--compose-images", required=True)
+    parser.add_argument("--since-packages")
+    parser.add_argument("--packages")
     parser.add_argument("--include-upstream", action="store_true")
     parser.add_argument("--format", choices=("json", "tsv"), default="json")
     args = parser.parse_args(argv)
@@ -372,6 +403,8 @@ def _delta_candidates_main(argv: list[str]) -> int:
             since_tag=args.since,
             new_tag=args.new,
             include_upstream=args.include_upstream,
+            since_packages=args.since_packages.split(",") if args.since_packages is not None else None,
+            packages=args.packages.split(",") if args.packages is not None else None,
         )
     except (OSError, UnicodeError, json.JSONDecodeError, PlanError) as exc:
         print(f"release membership rejected: {exc}", file=sys.stderr)

@@ -5,7 +5,7 @@
 # Usage:
 #   ./setup.sh                              # pull pre-built images from GHCR (default)
 #   ./setup.sh --version v0.1.0             # pin to a specific release
-#   ./setup.sh --from-tarballs <PATH>       # offline: docker load from images-<arch>.tar
+#   ./setup.sh --from-tarballs <PATH>       # offline: checked image-index-<arch>.txt bundle
 #   ./setup.sh --from-source                # build RangerDanger; pull containd :latest
 #   ./setup.sh --package <id>               # running range (US when selected,
 #                                           # otherwise the first selected ID)
@@ -116,8 +116,8 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --version)            require_value --version "${2:-}" "a release version"; VERSION="$2"; VERSION_SET=1; shift 2 ;;
         --version=*)          require_value --version "${1#*=}" "a release version"; VERSION="${1#*=}"; VERSION_SET=1; shift ;;
-        --from-tarballs)      require_value --from-tarballs "${2:-}" "a directory (the folder containing images-<arch>.tar)"; TARBALL_DIR="$2"; shift 2 ;;
-        --from-tarballs=*)    require_value --from-tarballs "${1#*=}" "a directory (the folder containing images-<arch>.tar)"; TARBALL_DIR="${1#*=}"; shift ;;
+        --from-tarballs)      require_value --from-tarballs "${2:-}" "a directory (the folder containing image-index-<arch>.txt)"; TARBALL_DIR="$2"; shift 2 ;;
+        --from-tarballs=*)    require_value --from-tarballs "${1#*=}" "a directory (the folder containing image-index-<arch>.txt)"; TARBALL_DIR="${1#*=}"; shift ;;
         --from-source)        FROM_SOURCE=1; shift ;;
         --package)            require_value --package "${2:-}" "a package ID"; PACKAGE="$2"; shift 2 ;;
         --package=*)          require_value --package "${1#*=}" "a package ID"; PACKAGE="${1#*=}"; shift ;;
@@ -139,7 +139,7 @@ fi
 
 if [ -f "$TARBALL_DIR" ]; then
     printf -v TARBALL_FOLDER '%q' "$(dirname "$TARBALL_DIR")"
-    die "--from-tarballs expects the folder containing images-<arch>.tar, not the file; try: --from-tarballs $TARBALL_FOLDER"
+    die "--from-tarballs expects the folder containing image-index-<arch>.txt, not the file; try: --from-tarballs $TARBALL_FOLDER"
 fi
 
 # Installation root H: Compose's project directory for the platform and
@@ -163,7 +163,7 @@ if [ -e "$ROOT_DIR/data/installed-packages" ] || [ -L "$ROOT_DIR/data/installed-
     INSTALLED_PACKAGES=$(read_installed_packages) || exit 1
 fi
 if [ -n "$ADD_PACKAGE" ]; then
-    [ "$VERSION_SET" -eq 0 ] && [ "$PACKAGES_SET" -eq 0 ] && [ -z "$PACKAGE" ] && [ "$FROM_SOURCE" -eq 0 ] && [ -z "$TARBALL_DIR" ] \
+    [ "$VERSION_SET" -eq 0 ] && [ "$PACKAGES_SET" -eq 0 ] && [ -z "$PACKAGE" ] && [ "$FROM_SOURCE" -eq 0 ] \
         || die "--add-package cannot be combined with selection or mode flags."
     [ -n "$INSTALLED_PACKAGES" ] || die "Run setup before --add-package."
     validate_package "$ADD_PACKAGE"
@@ -493,12 +493,12 @@ if [ "$MODE" = offline ]; then
     # `:vX.Y.Z`-tagged images, failing with "No such image: ...:latest".
     # The student passing --version is fragile — the SSD should be
     # self-describing.
-    if [ -f "$TARBALL_DIR/.version" ] && [ "$VERSION" = "latest" ]; then
+    if [ -f "$TARBALL_DIR/.version" ] && [ "$VERSION" = "latest" ] && [ "$VERSION_SET" -eq 0 ] && [ -z "$ADD_PACKAGE" ]; then
         VERSION=$(tr -d '\n[:space:]' < "$TARBALL_DIR/.version")
         say "Auto-detected version from SSD: $VERSION"
     fi
-    TARBALL="$TARBALL_DIR/images-$ARCH.tar"
-    [ -f "$TARBALL" ] || die "Expected $TARBALL (this host is $ARCH). Have you staged the right architecture?"
+    [ -f "$TARBALL_DIR/.version" ] || die "Bundle .version is required; re-stage with rangerdanger-image-index-v1."
+    [[ "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || die "Invalid staged VERSION."
 fi
 
 # ─── write .env ─────────────────────────────────────────────────────
@@ -575,10 +575,17 @@ fi
 case "$MODE" in
     offline)
         banner "Loading images from tarballs"
-        SIZE_HUMAN=$(du -h "$TARBALL" | cut -f1)
-        say "Loading $TARBALL ($SIZE_HUMAN) - decompressing each image, ~5-15 min on a fast SSD."
-        say "Watch the 'Loaded image:' lines below - one per image, 14-19 total."
-        docker load -i "$TARBALL"
+        . "$ROOT_DIR/scripts/lib/image-index.sh"
+        required=$(platform_compose config --images) || die "Cannot resolve platform images."
+        for id in $(package_ids); do
+            images=$(range_compose "$id" config --images) || die "Cannot resolve package images."
+            required="$required
+$images"
+        done
+        archives=$(validate_image_index "$TARBALL_DIR" "$ARCH" "$VERSION" "$ACQUIRE_PACKAGES" "$required") || exit 1
+        while IFS= read -r archive; do
+            docker_bounded 1800 load -i "$archive" || die "Image load failed: $archive"
+        done <<< "$archives"
         say "Images loaded"
         ;;
     release)

@@ -16,7 +16,7 @@ reruns preserve data/installed-packages.
 .PARAMETER AddPackage
 Acquire one additional package using the installed version/mode, without restarting the range.
 .PARAMETER FromTarballs
-Offline directory containing images-<arch>.tar, .version and the WSL2 kernel.
+Offline directory containing image-index-<arch>.txt, .version and the WSL2 kernel.
 .PARAMETER CheckOnly
 Preflight only: no .env writes, image acquisition, root probe or lifecycle changes.
 .EXAMPLE
@@ -58,7 +58,7 @@ if ($FromTarballs -and (Test-Path -LiteralPath $FromTarballs -PathType Leaf)) {
     $tarballFolder = [IO.Path]::GetDirectoryName($FromTarballs)
     if (-not $tarballFolder) { $tarballFolder = '.' }
     $tarballFolder = $tarballFolder.Replace("'", "''")
-    Die "-FromTarballs expects the folder containing images-<arch>.tar, not the file; try: -FromTarballs '$tarballFolder'"
+    Die "-FromTarballs expects the folder containing image-index-<arch>.txt, not the file; try: -FromTarballs '$tarballFolder'"
 }
 Banner 'Pre-flight checks'
 $RootDir = (Get-Item -LiteralPath $PSScriptRoot).FullName
@@ -72,7 +72,7 @@ if (Test-Path -LiteralPath (Join-Path $RootDir 'data/installed-packages')) {
     $installed = @(Read-InstalledPackages $RootDir)
 }
 if ($AddPackage) {
-    foreach ($flag in 'Packages', 'Package', 'Version', 'FromSource', 'FromTarballs') {
+    foreach ($flag in 'Packages', 'Package', 'Version', 'FromSource') {
         if ($PSBoundParameters.ContainsKey($flag)) { throw "-AddPackage cannot be combined with -$flag." }
     }
     if (-not $installed.Count) { throw 'Run setup before -AddPackage.' }
@@ -87,6 +87,7 @@ if ($AddPackage) {
         'release' { }
         default { throw "Invalid $modeFile; rerun setup first." }
     }
+    if ($FromTarballs -and $FromSource) { throw 'A source install cannot add from a release bundle; use -AddPackage without -FromTarballs.' }
     if ($AddPackage -cin $installed) { Say "Package $AddPackage is already installed."; exit 0 }
     $selected = @(ConvertTo-PackageSelection $RootDir (@($installed) + $AddPackage))
     $acquire = @($AddPackage)
@@ -270,13 +271,13 @@ if ($CheckOnly) {
 $Tarball = ''
 if ($Mode -eq 'offline') {
     $versionFile = Join-Path $FromTarballs '.version'
-    if ((Test-Path -LiteralPath $versionFile) -and $Version -eq 'latest') {
+    if ((Test-Path -LiteralPath $versionFile) -and $Version -eq 'latest' -and -not $PSBoundParameters.ContainsKey('Version') -and -not $AddPackage) {
         $Version = ([IO.File]::ReadAllText((Resolve-Path -LiteralPath $versionFile).Path)).Trim()
         Say "Auto-detected version from SSD: $Version"
     }
     if ($Version -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') { throw 'Invalid staged image version.' }
-    $Tarball = Join-Path $FromTarballs "images-$arch.tar"
-    if (-not (Test-Path -LiteralPath $Tarball -PathType Leaf)) { throw "Expected $Tarball for linux/$arch." }
+    $Tarball = $FromTarballs
+    if (-not (Test-Path -LiteralPath $versionFile)) { throw "Bundle .version is required; re-stage with rangerdanger-image-index-v1." }
 }
 # Setup owns these keys; preserve all other .env lines. Explicit process
 # values must agree because Compose prefers the environment to .env.
@@ -300,7 +301,7 @@ Say 'Build/load/pull can take several minutes; output follows each bounded comma
 $candidateImage = $env:CONTAIND_IMAGE
 try {
     if (-not $candidateImage) { $env:CONTAIND_IMAGE = 'ghcr.io/tonylturner/containd:latest' }
-    Invoke-SetupAcquisition $Models $Mode $Tarball
+    Invoke-SetupAcquisition $Models $Mode $Tarball $arch $Version $acquire
 } finally { $env:CONTAIND_IMAGE = $candidateImage }
 Write-InstalledPackages $RootDir $selected
 if ($AddPackage) {

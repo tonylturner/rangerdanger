@@ -2,21 +2,20 @@
 #
 # RangerDanger SSD/airgap stage helper.
 #
-# Pulls every release image for both linux/amd64 and linux/arm64 from
-# GHCR, saves each architecture into a tarball, and copies the repo as
+# Pulls the selected release closure for linux/amd64 and linux/arm64 from
+# GHCR, saves each unique ref with a checked index, and copies the repo as
 # a tar.gz alongside. The output directory is what students plug into
 # setup.sh --from-tarballs <dir>.
 #
 # Usage:
-#   ./stage-ssd.sh <output-dir> [version]
+#   ./stage-ssd.sh <output-dir> [version] [--packages id1,id2]
 #
 # Examples:
 #   ./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.0
 #   ./stage-ssd.sh ./out latest
 #
 # Output:
-#   <output-dir>/images-amd64.tar      (~6 GB)
-#   <output-dir>/images-arm64.tar      (~6 GB)
+#   <output-dir>/image-index-<arch>.txt + images/<arch>/*.tar
 #   <output-dir>/rangerdanger.tgz      (~1 MB — repo archive at HEAD)
 #   <output-dir>/README.md             (instructions for the student)
 #
@@ -40,7 +39,19 @@ if [ $# -lt 1 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
 fi
 
 OUT="$1"
-VERSION="${2:-latest}"
+shift
+VERSION=latest
+if [ $# -gt 0 ] && [[ "$1" != --* ]]; then VERSION="$1"; shift; fi
+PACKAGES=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --packages) [ $# -gt 1 ] || { echo '--packages needs ids' >&2; exit 1; }; PACKAGES="$2"; [ -n "$PACKAGES" ] || exit 1; shift 2 ;;
+        --packages=*) PACKAGES="${1#*=}"; [ -n "$PACKAGES" ] || exit 1; shift ;;
+        *) echo "Unknown argument: $1" >&2; exit 1 ;;
+    esac
+done
+[[ "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "Invalid release version" >&2; exit 1; }
+
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
 
@@ -54,6 +65,9 @@ warn()   { printf "%s[!]%s %s\n" "$YELLOW" "$RESET" "$*" >&2; }
 die()    { printf "%s[✗]%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
 banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s─' $(seq 1 ${#1}))"; }
 . "$ROOT_DIR/scripts/lib/stage-pull.sh"
+. "$ROOT_DIR/scripts/lib/installed-packages.sh"
+. "$ROOT_DIR/scripts/lib/image-index.sh"
+SELECTED_PACKAGES=$(normalize_packages "${PACKAGES:-$(available_packages | paste -sd, -)}") || exit 1
 
 [ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE not found — run from repo root."
 command -v python3 >/dev/null 2>&1 || die "python3 is required to verify the saved Docker archive manifests."
@@ -62,28 +76,17 @@ command -v python3 >/dev/null 2>&1 || die "python3 is required to verify the sav
 # the platform model and every package model, rather than merging files
 # whose service keys can repeat between packages.
 collect_release_images() {
-    local package_dir compose_file
-    RANGERDANGER_ROOT="$ROOT_DIR" VERSION="$VERSION" \
-        docker compose --project-directory "$ROOT_DIR" \
-        -f "$COMPOSE_FILE" config --images || return 1
-    for package_dir in "$ROOT_DIR"/lab-definitions/packages/*; do
-        [ -d "$package_dir" ] || continue
-        compose_file="$package_dir/compose.release.yml"
-        [ -f "$compose_file" ] || {
-            printf 'Missing package release Compose file: %s\n' "$compose_file" >&2
-            return 1
-        }
-        RANGERDANGER_ROOT="$ROOT_DIR" VERSION="$VERSION" \
-            docker compose --project-directory "$ROOT_DIR" \
-            -f "$compose_file" config --images || return 1
+    local owner file images image
+    for owner in platform $SELECTED_PACKAGES; do
+        file="$COMPOSE_FILE"
+        [ "$owner" = platform ] || file="$ROOT_DIR/lab-definitions/packages/$owner/compose.release.yml"
+        images=$(RANGERDANGER_ROOT="$ROOT_DIR" VERSION="$VERSION" docker compose --project-directory "$ROOT_DIR" -f "$file" config --images) || return 1
+        [ -n "$images" ] || return 1
+        while IFS= read -r image; do printf '%s\t%s\n' "$owner" "$image"; done <<< "$images"
     done
 }
-
-# The root variable is part of the deployment contract. Set VERSION for
-# Compose itself so a repo .env cannot override the requested release.
-if ! ALL_IMAGES=$(collect_release_images | sort -u); then
-    die "Couldn't enumerate the platform/package release image union"
-fi
+IMAGE_MEMBERSHIP=$(collect_release_images) || die "Couldn't enumerate selected release images"
+ALL_IMAGES=$(printf '%s\n' "$IMAGE_MEMBERSHIP" | cut -f2 | LC_ALL=C sort -u)
 [ -n "$ALL_IMAGES" ] || die "Couldn't enumerate images from $COMPOSE_FILE"
 
 # The Compose interpolation above is the only version-selection
@@ -269,116 +272,28 @@ while IFS= read -r img; do
     [ -z "$img" ] && continue
     preflight_image "$img" "amd64 arm64"
 done <<< "$ALL_IMAGES"
-preflight_image "$BINFMT_IMAGE" "arm64"
+OPENPLC_OWNERS=$(printf '%s\n' "$IMAGE_MEMBERSHIP" | awk -F '\t' '$2 ~ /rangerdanger-openplc/ {print $1}' | sort -u)
+[ -z "$OPENPLC_OWNERS" ] || preflight_image "$BINFMT_IMAGE" "arm64"
 
 mkdir -p "$OUT" || die "Couldn't create $OUT"
 OUT=$(cd "$OUT" && pwd)
 say "Output:  $OUT"
 say "Version: $VERSION"
 
-AMD64_TAGS=()
-ARM64_TAGS=()
 
-stage_arch() {
-    local arch="$1" image_list="$2"
-    local tarball="$OUT/images-$arch.tar"
-
-    banner "Stage linux/$arch → $(basename "$tarball")"
-
-    local count=0
-    local i preflight_index ref cross_arch
-    local -a pulled_tags=()
-    while IFS= read -r img; do
-        [ -z "$img" ] && continue
-        count=$((count + 1))
-        say "[$count] stage $arch  $img"
-        preflight_index=""
-        for i in "${!PREFLIGHT_IMAGES[@]}"; do
-            if [ "${PREFLIGHT_IMAGES[$i]}" = "$img" ]; then
-                preflight_index="$i"
-                break
-            fi
-        done
-        [ -n "$preflight_index" ] || die "no preflight result for $img on linux/$arch"
-        if [ "$arch" = "amd64" ]; then
-            ref="${PREFLIGHT_AMD64_REFS[$preflight_index]}"
-        else
-            ref="${PREFLIGHT_ARM64_REFS[$preflight_index]}"
-        fi
-        [ -n "$ref" ] || die "no resolved manifest for $img on linux/$arch"
-        cross_arch="${PREFLIGHT_ARM64_CROSS[$preflight_index]}"
-        if [ "$arch" = "arm64" ] && [ "$cross_arch" = "yes" ]; then
-            say "    cross-arch (amd64 image, runs on arm64 via emulation): $ref"
-        elif [ "$ref" != "$img" ]; then
-            say "    -> $ref"
-        fi
-        stage_pull_image "$img" "$ref" \
-            || die "docker pull failed for $ref on $arch — see Docker's error above for the cause; refusing to write a partial bundle."
-        # Apply the user-friendly tag locally. The tag-target form
-        # cannot include @digest (docker rejects it), so strip any
-        # @sha256:... suffix from the original compose reference.
-        # After this, the tag points at the single-arch manifest we
-        # just pulled, so `docker save` walks only one platform's
-        # manifest and can't error on missing cross-platform content.
-        local target_tag="${img%@*}"
-        if [ "$ref" != "$target_tag" ]; then
-            docker tag "$ref" "$target_tag" \
-                || die "docker tag $ref → $target_tag failed"
-        fi
-        pulled_tags+=("$target_tag")
-    done <<< "$image_list"
-
-    say "save $arch → $tarball"
-    docker save -o "$tarball" "${pulled_tags[@]}" \
-        || die "docker save failed for $arch"
-    if [ "$arch" = "amd64" ]; then
-        AMD64_TAGS=("${pulled_tags[@]}")
-    else
-        ARM64_TAGS=("${pulled_tags[@]}")
-    fi
-
-    local size
-    size=$(du -h "$tarball" | awk '{print $1}')
-    say "wrote $tarball ($size)"
-}
-
-stage_arch amd64 "$ALL_IMAGES"
-stage_arch arm64 "$(printf '%s\n%s\n' "$ALL_IMAGES" "$BINFMT_IMAGE")"
-
-banner "Stage repo archive → rangerdanger.tgz"
-# --prefix=rangerdanger/ so `tar xzf rangerdanger.tgz -C ~` creates
-# ~/rangerdanger/ instead of scattering ~80 repo files into the target
-# dir. Without it, the generated README's `cd ~/rangerdanger` lands the
-# student in a dir that was never created — a real "wrong directory"
-# trap. Every extract instruction in the READMEs/docs assumes this prefix.
-git -C "$ROOT_DIR" archive --prefix=rangerdanger/ --format=tar HEAD | gzip > "$OUT/rangerdanger.tgz"
-size=$(du -h "$OUT/rangerdanger.tgz" | awk '{print $1}')
-say "wrote $OUT/rangerdanger.tgz ($size)"
-
-# Write a .version file so setup.sh --from-tarballs can auto-pick the
-# right tag without the student having to pass --version. Avoids the
-# "No such image: ...:latest" failure mode when the script's default
-# VERSION (latest) doesn't match the staged tarball's actual tag.
-echo "$VERSION" > "$OUT/.version"
-say "wrote $OUT/.version ($VERSION)"
-
-# docker save archives expose their RepoTags in manifest.json. Verify the
-# complete requested tag set, including the version marker, before the
-# bundle is reported as complete. Python is used only to parse Docker's
-# archive manifest; it never contacts Docker or the registry.
+# Docker-save RepoTags must be exactly this ref and match the staged VERSION.
+# Python only reads the archive manifest; it never contacts Docker or a registry.
 verify_archive() {
-    local arch="$1"
+    local archive="$1"
     shift
-    python3 - "$OUT/images-$arch.tar" "$OUT/.version" "$@" <<'PY'
+    python3 - "$archive" "$VERSION" "$@" <<'PY'
 import json
 import sys
 import tarfile
 
-archive_path, version_path, *expected = sys.argv[1:]
-with open(version_path, encoding="utf-8") as version_file:
-    version = version_file.read().strip()
+archive_path, version, *expected = sys.argv[1:]
 if not version:
-    raise SystemExit(f"{version_path} is empty")
+    raise SystemExit("Staged VERSION is empty")
 
 try:
     with tarfile.open(archive_path, "r:*") as archive:
@@ -395,6 +310,9 @@ actual = {
     for tag in (image.get("RepoTags") or [])
 }
 missing = sorted(set(expected) - actual)
+extra = sorted(actual - set(expected))
+if extra:
+    raise SystemExit("unexpected saved image tags: " + ", ".join(extra))
 first_party = sorted(
     tag for tag in actual
     if tag.startswith("ghcr.io/tonylturner/rangerdanger-")
@@ -420,8 +338,102 @@ print(
 PY
 }
 
-verify_archive amd64 "${AMD64_TAGS[@]}" || die "amd64 archive verification failed"
-verify_archive arm64 "${ARM64_TAGS[@]}" || die "arm64 archive verification failed"
+stage_arch() {
+    local arch="$1" image_list="$2"
+    local tarball index="$OUT/image-index-$arch.txt" relative hash owner
+    printf 'rangerdanger-image-index-v1\nversion\t%s\narch\t%s\n' "$VERSION" "$arch" > "$index.tmp"
+    mkdir -p "$OUT/images/$arch"
+
+    banner "Stage linux/$arch"
+
+    local count=0
+    local i preflight_index ref cross_arch
+    while IFS= read -r img; do
+        [ -z "$img" ] && continue
+        count=$((count + 1))
+        say "[$count] stage $arch  $img"
+        preflight_index=""
+        for i in "${!PREFLIGHT_IMAGES[@]}"; do
+            if [ "${PREFLIGHT_IMAGES[$i]}" = "$img" ]; then
+                preflight_index="$i"
+                break
+            fi
+        done
+        [ -n "$preflight_index" ] || die "no preflight result for $img on linux/$arch"
+        if [ "$arch" = "amd64" ]; then
+            ref="${PREFLIGHT_AMD64_REFS[$preflight_index]}"
+        else
+            ref="${PREFLIGHT_ARM64_REFS[$preflight_index]}"
+        fi
+        [ -n "$ref" ] || die "no resolved manifest for $img on linux/$arch"
+        cross_arch="${PREFLIGHT_ARM64_CROSS[$preflight_index]}"
+        if [ "$arch" = "arm64" ] && [ "$cross_arch" = "yes" ]; then
+            say "    cross-arch (amd64 image, runs on arm64 via emulation): $ref"
+        elif [ "$ref" != "$img" ]; then
+            say "    -> $ref"
+        fi
+        if [ "$img" = ghcr.io/tonylturner/containd:latest ]; then
+            docker pull --platform "linux/$arch" "$img" || die "containd pull failed"
+            ref="$img"
+        fi
+        [ "$img" = ghcr.io/tonylturner/containd:latest ] || stage_pull_image "$img" "$ref" \
+            || die "docker pull failed for $ref on $arch — see Docker's error above for the cause; refusing to write a partial bundle."
+        # Apply the user-friendly tag locally. The tag-target form
+        # cannot include @digest (docker rejects it), so strip any
+        # @sha256:... suffix from the original compose reference.
+        # After this, the tag points at the single-arch manifest we
+        # just pulled, so `docker save` walks only one platform's
+        # manifest and can't error on missing cross-platform content.
+        local target_tag="${img%@*}"
+        if [ "$ref" != "$target_tag" ]; then
+            docker tag "$ref" "$target_tag" \
+                || die "docker tag $ref → $target_tag failed"
+        fi
+        relative="images/$arch/$count.tar"
+        tarball="$OUT/$relative"
+        if [ "$img" = ghcr.io/tonylturner/containd:latest ]; then
+            docker save --platform "linux/$arch" -o "$tarball" "$target_tag" || die "docker save failed"
+        else
+            docker save -o "$tarball" "$target_tag" || die "docker save failed"
+        fi
+        verify_archive "$tarball" "$target_tag" || die "Archive verification failed"
+        hash=$(image_sha256 "$tarball") || die "Checksum failed"
+        if [ "$img" = "$BINFMT_IMAGE" ]; then
+            owners="$OPENPLC_OWNERS"
+        else
+            owners=$(printf '%s\n' "$IMAGE_MEMBERSHIP" | awk -F '\t' -v image="$img" '$2 == image {print $1}')
+        fi
+        for owner in $owners; do
+            printf '%s\t%s\t%s\t%s\n' "$owner" "$img" "$relative" "$hash" >> "$index.tmp"
+        done
+    done <<< "$image_list"
+
+    mv "$index.tmp" "$index"
+}
+
+
+stage_arch amd64 "$ALL_IMAGES"
+ARM64_IMAGES="$ALL_IMAGES"
+[ -z "$OPENPLC_OWNERS" ] || ARM64_IMAGES="$ARM64_IMAGES
+$BINFMT_IMAGE"
+stage_arch arm64 "$ARM64_IMAGES"
+
+banner "Stage repo archive → rangerdanger.tgz"
+# --prefix=rangerdanger/ so `tar xzf rangerdanger.tgz -C ~` creates
+# ~/rangerdanger/ instead of scattering ~80 repo files into the target
+# dir. Without it, the generated README's `cd ~/rangerdanger` lands the
+# student in a dir that was never created — a real "wrong directory"
+# trap. Every extract instruction in the READMEs/docs assumes this prefix.
+git -C "$ROOT_DIR" archive --prefix=rangerdanger/ --format=tar HEAD | gzip > "$OUT/rangerdanger.tgz"
+size=$(du -h "$OUT/rangerdanger.tgz" | awk '{print $1}')
+say "wrote $OUT/rangerdanger.tgz ($size)"
+
+# Write a .version file so setup.sh --from-tarballs can auto-pick the
+# right tag without the student having to pass --version. Avoids the
+# "No such image: ...:latest" failure mode when the script's default
+# VERSION (latest) doesn't match the staged tarball's actual tag.
+echo "$VERSION" > "$OUT/.version"
+say "wrote $OUT/.version ($VERSION)"
 
 # Bundle the WSL2 kernel asset for Windows students on offline /
 # air-gapped laptops. setup.ps1 -FromTarballs looks here for
@@ -486,11 +498,12 @@ cat > "$OUT/README.md" <<EOF
 # RangerDanger -- offline / SSD install
 
 Staged $(date -u +%FT%TZ) for version \`$VERSION\`.
+Staged packages: \`$(printf '%s\n' "$SELECTED_PACKAGES" | paste -sd, -)\`.
 
 ## Contents
 
-- \`images-amd64.tar\` -- Docker images for Intel / AMD64 hosts
-- \`images-arm64.tar\` -- Docker images for Apple Silicon / ARM64 hosts. Includes the amd64 openplc image (cross-arch; macOS runs it under Rosetta 2) plus \`$BINFMT_IMAGE\`, which \`setup.sh\` uses to register amd64 emulation on arm64 *Linux* so openplc runs fully offline.
+- \`image-index-amd64.txt\` and \`image-index-arm64.txt\` -- rangerdanger-image-index-v1, VERSION/arch headers then tab-separated owner, image ref, relative archive path, SHA-256.
+- \`images/<arch>/*.tar\` -- one Docker-save archive per unique selected ref; shared refs saved once. OpenPLC uses amd64 on arm64; its owners also get \`$BINFMT_IMAGE\` on arm64.
 - \`rangerdanger.tgz\` -- Repo archive at $(git -C "$ROOT_DIR" rev-parse --short HEAD) ($(git -C "$ROOT_DIR" log -1 --format=%s))
 $KERNEL_README_ROW
 
@@ -501,13 +514,20 @@ Copy the whole folder, including hidden files such as .version, to the student's
 \`\`\`sh
 tar xzf rangerdanger.tgz -C ~
 cd ~/rangerdanger
-./setup.sh --from-tarballs <dir-containing-the-tarballs>
+./setup.sh --from-tarballs <dir-containing-the-tarballs> --packages $(printf '%s\n' "$SELECTED_PACKAGES" | paste -sd, -)
 \`\`\`
 
-(or \`./setup.ps1 -FromTarballs <dir>\` on Windows).
+(or \`./setup.ps1 -FromTarballs <dir> -Packages $(printf '%s\n' "$SELECTED_PACKAGES" | paste -sd, -)\` on Windows).
 
 \`setup.sh\` / \`setup.ps1\` auto-detects the host architecture and
-loads the right \`images-<arch>.tar\` before bringing the stack up.
+validates VERSION, architecture, selected membership, safe relative paths and
+checksums before loading only platform + selected archives. Unselected archives
+are never loaded. Old monolithic bundles are rejected; re-stage with
+rangerdanger-image-index-v1.
+
+Staging and setup default to every package. To narrow, use --packages
+us-dnp3-substation (PowerShell: -Packages us-dnp3-substation). A superset
+bundle supports subset installs. The installed receipt is data/installed-packages.
 
 On arm64 Linux, register amd64 emulation after loading the bundle if it
 is not already enabled:

@@ -165,6 +165,25 @@ Once the stack is up:
 
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises) and start with **Lab 1.2**.
 
+Offline bundles use `rangerdanger-image-index-v1`: tab-separated owner (`platform`
+or package id), image ref, relative archive path and SHA-256, after VERSION/arch
+headers. `stage-ssd.sh --packages` / `stage-ssd.ps1 -Packages` select staged packages
+(default: every package; put flags after output and version). Setup
+`--from-tarballs <dir> --packages us-dnp3-substation` (PowerShell
+`-FromTarballs <dir> -Packages us-dnp3-substation`) validates VERSION, architecture,
+selected membership, safe relative paths and checksums before loading only the
+selected closure. Unselected archives are never loaded. Old monolithic bundles
+are rejected; re-stage with `rangerdanger-image-index-v1`.
+Delta stagers accept `--since-packages` / `-SincePackages` and `--packages` /
+`-Packages`; generated apply refuses an installed-set mismatch, and rollback
+restores `data/installed-packages`, `data/install-mode` and `.env` together.
+
+Offline additions use `./setup.sh --add-package <id> --from-tarballs <dir>` or
+`.\setup.ps1 -AddPackage <id> -FromTarballs <dir>`. The bundle must match the
+installed VERSION and include platform + the added package; existing packages
+need not be staged again. Only the added closure is loaded, then the receipt is
+unioned without a restart. Source installs cannot consume release bundles.
+
 ## What it looks like
 
 Screenshots in student-journey order. Click any image to view full size.
@@ -203,7 +222,7 @@ RangerDanger is designed for instructors and security teams who need reviewable 
 
 - **Fully open and auditable.** Apache 2.0 source for the backend (Go), frontend (TypeScript), simulators, and lab content. No closed binaries, no behavior that can't be inspected in the repo. Suitable for organizations whose security posture requires source review before a tool runs on student laptops.
 - **Source-controlled lab content.** Exercises live as YAML in the active package's declared scenarios directory: US uses [`lab-definitions/scenarios/`](lab-definitions/scenarios/); EU uses [`lab-definitions/packages/eu-iec104-substation/scenarios/`](lab-definitions/packages/eu-iec104-substation/scenarios/). Forkable, diff-reviewable, instructor-customizable: replace the substation scenario with a water-treatment or manufacturing variant, retune the labor-budget model in Lab 1.4, or rewrite the validators against your own state machine.
-- **Offline / SSD workshop-ready.** [`stage-ssd.sh`](stage-ssd.sh) stages the bundle an offline classroom needs and proves it: every image must resolve and save, and the archived first-party tags must match the bundle's `.version`. OpenPLC is amd64-only upstream, so the arm64 archive cross-includes its amd64 image. The two architecture archives are written one after the other, so never ship the output of a run that failed. [`setup.sh --from-tarballs`](setup.sh) brings the stack up with no network. Patch tooling ([`stage-ssd-delta.sh`](stage-ssd-delta.sh)) compares image digests between releases and includes changed images. `--include <image>` is additive: it force-adds a named image whose digest was unchanged; it does not exclude changed images. A delta is small only when few images differ between the two releases (v0.1.31 to v0.1.32 had 15 changed images and measured 8.1 GB). Delta rollback parks images behind overwritten mutable tags under `:before-<new version>`; deleting those tags forfeits rollback for those images.
+- **Offline / SSD workshop-ready.** [`stage-ssd.sh`](stage-ssd.sh) stages the bundle an offline classroom needs and proves it: every image must resolve and save, and the archived first-party tags must match the bundle's `.version`. OpenPLC is amd64-only upstream, so the arm64 archive cross-includes its amd64 image. The per-ref archives and architecture indexes are written incrementally, so never ship the output of a run that failed. [`setup.sh --from-tarballs`](setup.sh) brings the stack up with no network. Patch tooling ([`stage-ssd-delta.sh`](stage-ssd-delta.sh)) compares image digests between releases and includes changed images. `--include <image>` is additive: it force-adds a named image whose digest was unchanged; it does not exclude changed images. A delta is small only when few images differ between the two releases (v0.1.31 to v0.1.32 had 15 changed images and measured 8.1 GB). Delta rollback parks overwritten mutable tags under `:before-<new version>` (containd is saved as a rollback archive, never retagged); deleting these backups forfeits rollback.
 - **Segmentation and DPI-policy focused.** The firewall is the protagonist. Every lab walks toward a least-privilege containd policy with ICS DPI; the topology console shows policy state in real time; validators read active policy and audit log alongside simulator state.
 - **Physics-backed.** Attacks have measurable kinetic consequences via the OpenDSS power-flow solver. Modbus FC5/FC6 writes and DNP3 CROB commands change breaker positions, regulator taps, voltages, and load energization within ~3 seconds, surfaced in the substation process view.
 - **Native multi-architecture where the upstream supports it.** First-party images ship native `linux/amd64` and `linux/arm64` builds where available; OpenPLC remains amd64-only upstream. On Apple Silicon, use a Docker Desktop backend with working amd64 emulation enabled (Rosetta is a Docker Desktop setting); `setup.sh` does not enable it. On arm64 Linux, `setup.sh` can register a `qemu-x86_64` emulation handler via `tonistiigi/binfmt`.

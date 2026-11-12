@@ -104,6 +104,7 @@ foreach ($i in 1,2) {
                 with self.subTest(mode=mode, fail=fail):
                     result = powershell(LOAD_PACKAGE + """
 $script:calls = @()
+function Read-ImageIndex { @('selected-1.tar', 'selected-2.tar') }
 function Start-Sleep { }
 function Invoke-DockerBounded($DockerArgs, $TimeoutSec) {
     $script:calls += ,@($DockerArgs)
@@ -114,7 +115,7 @@ function Invoke-DockerBounded($DockerArgs, $TimeoutSec) {
 }
 $models = @(Get-SetupModels $env:REPO $env:MODE @(Get-AvailablePackages $env:REPO))
 $failed = $false
-try { Invoke-SetupAcquisition $models $env:MODE 'images.tar' } catch { $failed = $true }
+try { Invoke-SetupAcquisition $models $env:MODE $env:REPO amd64 v2 @('us') } catch { $failed = $true }
 if ($failed -ne [bool]$env:FAIL) { throw 'incorrect acquisition outcome' }
 ConvertTo-Json -InputObject $script:calls -Compress
 """, MODE=mode, FAIL=fail)
@@ -125,7 +126,7 @@ ConvertTo-Json -InputObject $script:calls -Compress
                         pulls = [c for c in calls if "pull" in c]
                         builds = [c for c in calls if "build" in c]
                         if mode == "offline":
-                            self.assertEqual(calls[0], ["load", "-i", "images.tar"])
+                            self.assertEqual([c for c in calls if c[0] == "load"], [["load", "-i", "selected-1.tar"], ["load", "-i", "selected-2.tar"]])
                             self.assertEqual(pulls, [])
                         else:
                             self.assertEqual(len(pulls), 1 + len(list((ROOT / "lab-definitions/packages").glob("*/package.yml"))))

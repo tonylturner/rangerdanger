@@ -8,6 +8,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Offline SSD bundles save one archive per image with a checked versioned index;
+  staging, loading and delta updates honor selected packages. Re-stage old
+  monolithic bundles with `rangerdanger-image-index-v1`. Delta rollback restores
+  package selection, install mode and environment together.
+
 - Select installed packages with `--packages` / `-Packages`; reruns retain the
   acquired set. Add a package without restarting the range using `--add-package`
   / `-AddPackage`. The package selector and range admission now require a
