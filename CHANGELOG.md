@@ -8,7 +8,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Scenario IDs are unique within a package, not across packages. A package lists its scenario sources and can include named scenarios from another directory. Scenario actions name the package they expect, so a stale browser tab cannot act on a different range.
+- Scenario IDs are unique within a package, not across packages, so two packages may use the same ID. Scenario actions name the package they expect, so a stale browser tab cannot act on a different range.
 
 ## [v0.2.7] - 2026-11-11
 
