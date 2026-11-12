@@ -138,4 +138,4 @@ if ($lines.Count -ne 2 -or $script:calls[0][2] -ne 'rangerdanger-platform' -or
         uninstall = (ROOT / "scripts/uninstall-rangerdanger.ps1").read_text()
         self.assertIn("$DaemonRoot = ConvertTo-DesktopRoot $RootDir", uninstall)
         self.assertIn("$env:RANGERDANGER_ROOT = $DaemonRoot", uninstall)
-        self.assertIn("lab-definitions\\packages\\*\\compose.source.yml", uninstall)
+        self.assertIn("Get-SetupModels $RootDir 'source' $selected", uninstall)

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -121,6 +122,13 @@ func Load() (*Config, error) {
 	}
 	if cfg.Mode != manifest.ModeSource && cfg.Mode != manifest.ModeRelease {
 		return nil, fmt.Errorf("mode (RANGERDANGER_MODE) must be %q or %q, got %q", manifest.ModeSource, manifest.ModeRelease, cfg.Mode)
+	}
+	installed, err := cfg.InstalledPackages()
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(installed, cfg.Package) {
+		return nil, fmt.Errorf("configured package %q is not in %s; run setup with --package and --packages selecting an installed default", cfg.Package, filepath.Join(cfg.Root, "data", "installed-packages"))
 	}
 
 	return cfg, nil

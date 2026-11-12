@@ -7,12 +7,14 @@ export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;
   readonly warnings: string[];
+  readonly code?: "package_not_installed";
 
-  constructor(status: number, detail: string, warnings: string[] = []) {
+  constructor(status: number, detail: string, warnings: string[] = [], code?: "package_not_installed") {
     super(detail ? `${status} ${detail}` : `Request failed: ${status}`);
     this.status = status;
     this.detail = detail;
     this.warnings = warnings;
+    this.code = code;
   }
 }
 
@@ -50,7 +52,9 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       throw notReady;
     }
     const warnings = (body as { warnings?: unknown } | null)?.warnings;
-    throw new ApiError(res.status, errorDetail(body), Array.isArray(warnings) ? warnings.filter((w): w is string => typeof w === "string") : []);
+    const code = (body as { code?: unknown } | null)?.code;
+    throw new ApiError(res.status, errorDetail(body), Array.isArray(warnings) ? warnings.filter((w): w is string => typeof w === "string") : [],
+      code === "package_not_installed" ? code : undefined);
   }
 
   if (res.status === 204) {

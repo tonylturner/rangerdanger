@@ -2,11 +2,13 @@ package server
 
 import (
 	"net/http"
+	"slices"
 	"sort"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/tturner/rangerdanger/backend/internal/config"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
@@ -112,7 +114,19 @@ func (s *Server) handleListPackages(c *gin.Context) {
 		return
 	}
 	active := s.rng.ActivePackage()
+	available := make([]string, 0, len(catalog.Packages))
 	for _, pkg := range catalog.Packages {
+		available = append(available, pkg.ID)
+	}
+	installed, err := config.ReadInstalledPackages(s.cfg.Root, available)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for _, pkg := range catalog.Packages {
+		if !slices.Contains(installed, pkg.ID) {
+			continue
+		}
 		packages = append(packages, packageSummary{
 			ID:           pkg.ID,
 			Title:        pkg.Title,

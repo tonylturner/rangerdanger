@@ -64,7 +64,7 @@ Setup defaults to US on a fresh install. Select EU with
 `./setup.sh --package eu-iec104-substation`; add `--from-source` for a local
 build before release images exist. On Windows, use
 `.\setup.ps1 -Package eu-iec104-substation` (or add `-FromSource`).
-Re-running setup acquires all images before
+Re-running setup acquires the platform and selected package images before
 migration teardown, then restarts the range and resets policy. Save evidence,
 desktop work and local changes first. US revision 4 and EU revision 8 are
 unchanged from v0.2.5: v0.2.6 reuses saved browser records for lab progress,
@@ -81,6 +81,28 @@ The v0.2.2 Windows fix was validated on Windows 11 (Docker Desktop 4.94,
 PowerShell 5.1), including online and offline installs.
 
 ## Quick start
+
+Setup installs **every discovered package** by default; `--package` / `-Package`
+selects the running range, not the installation scope. For an online US-only
+install use `./setup.sh --packages us-dnp3-substation`, or
+`.\setup.ps1 -Packages us-dnp3-substation` on Windows. Comma-separated IDs
+(`--packages=id1,id2` also works) are sorted and deduplicated; PowerShell also
+accepts a string array. The running package must belong to this set. US remains
+the initial range when selected; otherwise the first selected ID is used.
+
+Successful acquisition and image inspection atomically writes
+`data/installed-packages`. Reruns and source builds preserve this set; newly
+shipped packages are not added automatically. Existing installs without a record
+acquire every package once. An explicit selection replaces the set without
+deleting dropped images. A malformed record is an error, not an all-package default.
+
+Add a package later with `./setup.sh --add-package eu-iec104-substation` or
+`.\setup.ps1 -AddPackage eu-iec104-substation`. The add command reuses
+the installed version and mode (`.env` and `data/install-mode`); adding does not
+stop, switch or reset the running range. Refresh the portal afterwards.
+The backend lists and admits only installed packages; cached images alone do
+not enable switching. A configured or recorded runtime package outside the
+installed set is rejected at startup.
 
 **Recommended capacity:** Docker Desktop 4.42+ or Docker Engine 28.1+ with Compose 2.36+ · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free. The Docker versions are a hard floor that `setup.sh` checks; the rest are recommendations: `setup.sh` only warns on disk and Docker memory; it reads host RAM only on native Linux Docker. See [the quickstart](docs/quickstart.md#prerequisites) for what the preflight measures.
 

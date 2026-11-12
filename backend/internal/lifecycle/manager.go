@@ -12,9 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
+	"github.com/tturner/rangerdanger/backend/internal/config"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
@@ -29,7 +31,18 @@ var (
 	ErrBusy = errors.New("a range transition is already running")
 	// ErrUnknownPackage rejects a package that is not in the catalog.
 	ErrUnknownPackage = errors.New("unknown package")
+	// ErrPackageNotInstalled rejects catalog packages without an acquisition receipt.
+	ErrPackageNotInstalled = errors.New("package not installed")
 )
+
+// PackageNotInstalledError is actionable host-side installation guidance.
+type PackageNotInstalledError struct{ ID string }
+
+func (e *PackageNotInstalledError) Error() string {
+	return fmt.Sprintf("Package '%s' is not installed. On the host, run ./setup.sh --add-package %s (Windows: .\\setup.ps1 -AddPackage %s), then refresh.", e.ID, e.ID, e.ID)
+}
+
+func (e *PackageNotInstalledError) Unwrap() error { return ErrPackageNotInstalled }
 
 // Timeouts bound the lifecycle's waits. Zero fields take the defaults.
 type Timeouts struct {
@@ -130,7 +143,15 @@ func New(opts Options) (*Manager, error) {
 		opts.Now = time.Now
 	}
 	m := &Manager{opts: opts, timeouts: opts.Timeouts.withDefaults(), idle: closedChan()}
+	if err := m.requireInstalled(opts.DefaultPackage); err != nil {
+		return nil, err
+	}
 	rec, err := opts.Store.Load()
+	if err == nil && rec != nil && rec.Package != "" {
+		if err := m.requireInstalled(rec.Package); err != nil {
+			return nil, fmt.Errorf("runtime record %s: %w", opts.Store.Path, err)
+		}
+	}
 	switch {
 	case err != nil:
 		m.loadErr = err
@@ -237,6 +258,9 @@ func (m *Manager) Request(packageID string) (Status, error) {
 	if !ok {
 		return m.status, fmt.Errorf("%w %q", ErrUnknownPackage, packageID)
 	}
+	if err := m.requireInstalled(packageID); err != nil {
+		return m.status, err
+	}
 	previous := m.status
 	now := m.opts.Now()
 	m.status.Phase = PhasePreflight
@@ -246,6 +270,23 @@ func (m *Manager) Request(packageID string) (Status, error) {
 	m.status.UpdatedAt = &now
 	m.launchLocked(func() { m.transition(pkg, previous) })
 	return m.status, nil
+}
+
+func (m *Manager) requireInstalled(id string) error {
+	available := []string{}
+	if catalog := m.opts.Catalog(); catalog != nil {
+		for _, pkg := range catalog.Packages {
+			available = append(available, pkg.ID)
+		}
+	}
+	installed, err := config.ReadInstalledPackages(m.opts.Root, available)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(installed, id) {
+		return &PackageNotInstalledError{ID: id}
+	}
+	return nil
 }
 
 func (m *Manager) launchLocked(job func()) {

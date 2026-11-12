@@ -55,6 +55,13 @@ func routedServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	s := activePackageServer(database)
+	s.cfg.Root = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(s.cfg.Root, "data"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.cfg.Root, "data", "installed-packages"), []byte("rangerdanger-installed-packages-v1\nother-package\ntest-package\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	s.engine = gin.New()
 	s.registerRoutes()
 	return s

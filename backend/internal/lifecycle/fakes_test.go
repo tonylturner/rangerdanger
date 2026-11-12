@@ -313,11 +313,12 @@ func newHarness(t *testing.T) *harness {
 		catalog:   &labs.Catalog{},
 		activated: make(chan *Generation, 8),
 	}
-	for _, dir := range []string{filepath.Join(h.defs, "firewall"), h.routesDir, filepath.Dir(h.store.Path)} {
+	for _, dir := range []string{filepath.Join(h.defs, "firewall"), h.routesDir, filepath.Dir(h.store.Path), filepath.Join(h.root, "data")} {
 		mustMkdir(t, dir)
 	}
 	h.addPackage("pkg-a")
 	h.addPackage("pkg-b")
+	mustWrite(t, filepath.Join(h.root, "data", "installed-packages"), []byte("rangerdanger-installed-packages-v1\npkg-a\npkg-b\n"))
 	return h
 }
 

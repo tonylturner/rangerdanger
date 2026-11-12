@@ -8,7 +8,8 @@ function Invoke-SetupDocker([string[]]$DockerArgs, [int]$TimeoutSec = 30) {
     return $run.StdOut
 }
 
-function Get-SetupModels([string]$HostRoot, [string]$Mode) {
+function Get-SetupModels([string]$HostRoot, [string]$Mode, [string[]]$Selected) {
+    if (-not $Selected) { throw 'Resolve the installed package selection before reading Compose models.' }
     $suffix = if ($Mode -eq 'source') { 'source' } else { 'release' }
     $platform = if ($Mode -eq 'source') { 'docker-compose.yml' } else { 'docker-compose.release.yml' }
     $file = Join-Path $HostRoot $platform
@@ -18,6 +19,7 @@ function Get-SetupModels([string]$HostRoot, [string]$Mode) {
     $found = 0
     foreach ($dir in (Get-ChildItem -LiteralPath $packages -Directory | Sort-Object Name)) {
         if (-not (Test-Path -LiteralPath (Join-Path $dir.FullName 'package.yml'))) { continue }
+        if ($Selected -and $dir.Name -cnotin $Selected) { continue }
         if ($dir.Name -cnotmatch '^[a-z0-9-]+$') { throw "Invalid package directory: $($dir.Name)" }
         $file = Join-Path $dir.FullName "compose.$suffix.yml"
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing $file" }
@@ -46,13 +48,15 @@ function Invoke-SetupPull($Model, [string[]]$PullArgs) {
 }
 
 function Get-SetupImages($Models) {
-    @(
-        foreach ($model in $Models) {
-            $text = Invoke-SetupDocker (Get-SetupComposeArgs $model @('config', '--images'))
-            if (-not $text.Trim()) { throw "No images resolved for $($model.File)" }
-            $text -split '\r?\n' | Where-Object { $_ }
+    $images = New-Object 'Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal)
+    foreach ($model in $Models) {
+        $text = Invoke-SetupDocker (Get-SetupComposeArgs $model @('config', '--images'))
+        if (-not $text.Trim()) { throw "No images resolved for $($model.File)" }
+        foreach ($image in ($text -split '\r?\n')) {
+            if ($image) { $null = $images.Add($image) }
         }
-    ) | Sort-Object -Unique
+    }
+    @($images)
 }
 
 function Invoke-SetupAcquisition($Models, [string]$Mode, [string]$Tarball) {

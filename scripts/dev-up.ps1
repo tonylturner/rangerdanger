@@ -4,7 +4,7 @@ RangerDanger dev-up -- Windows sibling of scripts/dev-up.sh.
 
 .DESCRIPTION
 Windows sibling of dev-up.sh: setup -FromSource -SkipFirewallGate.
-Builds the platform and every package, then starts the range through the
+Builds the platform and selected packages, then starts the range through the
 backend. Named options pass to setup, including -Package. Skips the
 workshop apply/reset gate so dev bring-up preserves policy.
 
@@ -24,6 +24,7 @@ which silently breaks the whole help block for the script.)
 param(
     [string]$Version,
     [string]$Package,
+    [string[]]$Packages,
     [switch]$CheckOnly,
     [switch]$SkipKernelFix
 )

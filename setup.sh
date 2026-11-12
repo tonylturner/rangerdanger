@@ -7,8 +7,11 @@
 #   ./setup.sh --version v0.1.0             # pin to a specific release
 #   ./setup.sh --from-tarballs <PATH>       # offline: docker load from images-<arch>.tar
 #   ./setup.sh --from-source                # build RangerDanger; pull containd :latest
-#   ./setup.sh --package <id>               # first-start range package (default:
-#                                           # us-dnp3-substation)
+#   ./setup.sh --package <id>               # running range (US when selected,
+#                                           # otherwise the first selected ID)
+#   ./setup.sh --packages id1,id2           # installed set (default: every package)
+#   ./setup.sh --add-package <id>           # acquire later without restarting the range
+#   Record: data/installed-packages; reruns keep the recorded set.
 #   ./setup.sh --check-only                 # run pre-flight only and exit (no install)
 #   ./setup.sh --skip-firewall-gate         # bring the lab up without the workshop
 #                                           # firewall apply/reset gate (developer
@@ -59,9 +62,13 @@ amd64_emulation_present() {
 
 # ─── arg parsing ────────────────────────────────────────────────────
 VERSION="${VERSION:-latest}"
+VERSION_SET=0
 TARBALL_DIR=""
 FROM_SOURCE=0
 PACKAGE=""
+PACKAGES=""
+PACKAGES_SET=0
+ADD_PACKAGE=""
 SHOW_HELP=0
 CHECK_ONLY=0
 SKIP_FW_GATE=0
@@ -74,13 +81,17 @@ require_value() {
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --version)            require_value --version "${2:-}" "a release version"; VERSION="$2"; shift 2 ;;
-        --version=*)          require_value --version "${1#*=}" "a release version"; VERSION="${1#*=}"; shift ;;
+        --version)            require_value --version "${2:-}" "a release version"; VERSION="$2"; VERSION_SET=1; shift 2 ;;
+        --version=*)          require_value --version "${1#*=}" "a release version"; VERSION="${1#*=}"; VERSION_SET=1; shift ;;
         --from-tarballs)      require_value --from-tarballs "${2:-}" "a directory (the folder containing images-<arch>.tar)"; TARBALL_DIR="$2"; shift 2 ;;
         --from-tarballs=*)    require_value --from-tarballs "${1#*=}" "a directory (the folder containing images-<arch>.tar)"; TARBALL_DIR="${1#*=}"; shift ;;
         --from-source)        FROM_SOURCE=1; shift ;;
         --package)            require_value --package "${2:-}" "a package ID"; PACKAGE="$2"; shift 2 ;;
         --package=*)          require_value --package "${1#*=}" "a package ID"; PACKAGE="${1#*=}"; shift ;;
+        --packages)           require_value --packages "${2:-}" "package IDs"; PACKAGES="$2"; PACKAGES_SET=1; shift 2 ;;
+        --packages=*)         PACKAGES="${1#*=}"; PACKAGES_SET=1; shift ;;
+        --add-package)        require_value --add-package "${2:-}" "a package ID"; ADD_PACKAGE="$2"; shift 2 ;;
+        --add-package=*)      require_value --add-package "${1#*=}" "a package ID"; ADD_PACKAGE="${1#*=}"; shift ;;
         --check-only)         CHECK_ONLY=1; shift ;;
         --skip-firewall-gate) SKIP_FW_GATE=1; shift ;;
         -h|--help)            SHOW_HELP=1; shift ;;
@@ -111,8 +122,50 @@ PLATFORM_PROJECT="rangerdanger-platform"
 RANGE_PROJECT="rangerdanger"
 MGMT_NET="rangerdanger_mgmt_net"
 
-# Mode: source builds RangerDanger and pulls containd, release pulls from GHCR, offline loads
-# the SSD tarball. Offline is release plus `--pull never`.
+# shellcheck source=scripts/lib/installed-packages.sh
+. "$ROOT_DIR/scripts/lib/installed-packages.sh"
+[ -n "$(available_packages)" ] || die "No range packages under $PACKAGES_DIR."
+INSTALLED_PACKAGES=""
+if [ -e "$ROOT_DIR/data/installed-packages" ] || [ -L "$ROOT_DIR/data/installed-packages" ]; then
+    INSTALLED_PACKAGES=$(read_installed_packages) || exit 1
+fi
+if [ -n "$ADD_PACKAGE" ]; then
+    [ "$VERSION_SET" -eq 0 ] && [ "$PACKAGES_SET" -eq 0 ] && [ -z "$PACKAGE" ] && [ "$FROM_SOURCE" -eq 0 ] && [ -z "$TARBALL_DIR" ] \
+        || die "--add-package cannot be combined with selection or mode flags."
+    [ -n "$INSTALLED_PACKAGES" ] || die "Run setup before --add-package."
+    validate_package "$ADD_PACKAGE"
+    VERSION=$(installed_env_value VERSION)
+    [ -f "$ROOT_DIR/data/install-mode" ] || die "Missing $ROOT_DIR/data/install-mode; rerun setup first."
+    INSTALLED_MODE=$(cat "$ROOT_DIR/data/install-mode")
+    case "$INSTALLED_MODE" in
+        source) FROM_SOURCE=1 ;;
+        release) ;;
+        *) die "Invalid $ROOT_DIR/data/install-mode; rerun setup first." ;;
+    esac
+    SELECTED_PACKAGES=$(printf '%s\n%s\n' "$INSTALLED_PACKAGES" "$ADD_PACKAGE" | LC_ALL=C sort -u)
+    ACQUIRE_PACKAGES="$ADD_PACKAGE"
+    if printf '%s\n' "$INSTALLED_PACKAGES" | grep -qxF "$ADD_PACKAGE"; then
+        say "Package $ADD_PACKAGE is already installed."
+        exit 0
+    fi
+elif [ "$PACKAGES_SET" -eq 1 ]; then
+    SELECTED_PACKAGES=$(normalize_packages "$PACKAGES") || exit 1
+else
+    SELECTED_PACKAGES=${INSTALLED_PACKAGES:-$(available_packages)}
+fi
+ACQUIRE_PACKAGES=${ACQUIRE_PACKAGES:-$SELECTED_PACKAGES}
+REQUESTED_PACKAGE="$PACKAGE"
+if [ -n "$PACKAGE" ]; then
+    validate_package "$PACKAGE"
+    printf '%s\n' "$SELECTED_PACKAGES" | grep -qxF "$PACKAGE" || die "--package '$PACKAGE' is outside --packages."
+else
+    PACKAGE=us-dnp3-substation
+    if ! printf '%s\n' "$SELECTED_PACKAGES" | grep -qxF "$PACKAGE"; then
+        PACKAGE=$(printf '%s\n' "$SELECTED_PACKAGES" | head -1)
+    fi
+fi
+
+# Offline uses the release Compose models, with --pull never on startup.
 if [ "$FROM_SOURCE" -eq 1 ] && [ -n "$TARBALL_DIR" ]; then
     die "--from-source and --from-tarballs are exclusive."
 fi
@@ -130,14 +183,7 @@ else
     RANGE_FILE_NAME="compose.release.yml"
 fi
 
-# Every package directory: the range images of all of them are fetched,
-# so a later switch in the UI finds its images on this host.
-package_ids() {
-    local d
-    for d in "$PACKAGES_DIR"/*/; do
-        if [ -f "$d/package.yml" ]; then basename "$d"; fi
-    done
-}
+package_ids() { printf '%s\n' "$ACQUIRE_PACKAGES"; }
 
 # Platform and range Compose calls. Both always run with H as the project
 # directory and their explicit file, so relative paths resolve against H
@@ -192,12 +238,6 @@ for id in $(package_ids); do
     [ -f "$PACKAGES_DIR/$id/$RANGE_FILE_NAME" ] \
         || die "Package $id has no $RANGE_FILE_NAME — the checkout is incomplete."
 done
-case "$PACKAGE" in
-    *[!a-z0-9-]*) die "Package ids are lowercase letters, digits and '-': '$PACKAGE'." ;;
-esac
-if [ -n "$PACKAGE" ] && [ ! -f "$PACKAGES_DIR/$PACKAGE/package.yml" ]; then
-    die "Unknown package '$PACKAGE'. Available: $(package_ids | tr '\n' ' ')"
-fi
 # H goes into .env unquoted and into the backend's `H:H:ro` bind, so it
 # must not hold characters either syntax treats specially.
 case "$ROOT_DIR" in
@@ -434,7 +474,7 @@ fi
 # these keys; any other line in .env is kept. .env is gitignored.
 #   VERSION                release image tag
 #   RANGERDANGER_ROOT      H; the platform file refuses to start without it
-#   RANGERDANGER_PACKAGE   only with --package: the first-start range
+#   RANGERDANGER_PACKAGE   selected first-start default; runtime record wins
 #   CONTAIND_JWT_SECRET    only when set in this environment
 #   CONTAIND_IMAGE         source-mode candidate only; cleared on normal setup
 env_write() { # <key> [value]: drop the key, then append key=value if given
@@ -447,26 +487,12 @@ env_write() { # <key> [value]: drop the key, then append key=value if given
     if [ $# -eq 2 ]; then printf '%s=%s\n' "$1" "$2" >> "$tmp"; fi
     mv "$tmp" "$ENV_FILE"
 }
-env_write VERSION "$VERSION"
-env_write RANGERDANGER_ROOT "$ROOT_DIR"
-if [ -n "$PACKAGE" ]; then
-    env_write RANGERDANGER_PACKAGE "$PACKAGE"
-else
-    env_write RANGERDANGER_PACKAGE
-fi
-if [ -n "${CONTAIND_JWT_SECRET:-}" ]; then
-    env_write CONTAIND_JWT_SECRET "$CONTAIND_JWT_SECRET"
-fi
-# The backend's range Compose reads .env, not this host's environment.
-if [ "$MODE" = source ] && [ -n "${CONTAIND_IMAGE:-}" ]; then
-    env_write CONTAIND_IMAGE "$CONTAIND_IMAGE"
-else
-    env_write CONTAIND_IMAGE
-fi
 # The shell environment overrides .env in Compose; make both agree.
 export VERSION RANGERDANGER_ROOT="$ROOT_DIR"
+# An unset candidate must not resurrect a stale value from .env during acquisition.
+export CONTAIND_IMAGE="${CONTAIND_IMAGE:-}"
 if [ -n "$PACKAGE" ]; then export RANGERDANGER_PACKAGE="$PACKAGE"; else unset RANGERDANGER_PACKAGE; fi
-say "Wrote VERSION=$VERSION, RANGERDANGER_ROOT=$ROOT_DIR${PACKAGE:+, RANGERDANGER_PACKAGE=$PACKAGE} to $ENV_FILE"
+say "Acquiring VERSION=$VERSION, RANGERDANGER_ROOT=$ROOT_DIR${PACKAGE:+, RANGERDANGER_PACKAGE=$PACKAGE}"
 
 # The proxy includes the active range's routes from here, and the backend
 # installs them; both bind it, so it must exist before the platform up.
@@ -481,6 +507,9 @@ mkdir -p "$ROOT_DIR/data/proxy-routes"
 # under it). Any owner other than these two is someone else's network.
 # Delivery bridges never belonged to the pre-split range. Refuse foreign
 # ownership before any migration/teardown; Compose otherwise reuses them.
+MGMT_OWNER=""
+OLD_PLATFORM=""
+if [ -z "$ADD_PACKAGE" ]; then
 for DELIVERY_NET in rangerdanger_desk_corp rangerdanger_desk_vendor rangerdanger_desk_eng; do
     DELIVERY_NET_IDS=$(docker_bounded 15 network ls -q --filter "name=^${DELIVERY_NET}$" 2>/dev/null) \
         || die "Could not query network $DELIVERY_NET. Docker returned an error; start or restart Docker Desktop or dockerd, then re-run."
@@ -508,6 +537,7 @@ fi
 # fixed container names would collide with them.
 OLD_PLATFORM=$(docker_bounded 15 ps -aq --filter "label=com.docker.compose.project=$RANGE_PROJECT" \
     --filter "label=com.docker.compose.service=backend")
+fi
 # ─── image acquisition ──────────────────────────────────────────────
 case "$MODE" in
     offline)
@@ -547,6 +577,51 @@ case "$MODE" in
         ;;
 esac
 
+# Inspect the exact selected closure before publishing the receipt or stopping anything.
+REQUIRED_IMAGES=$({
+    images=$(platform_compose config --images) || exit 1
+    [ -n "$images" ] || exit 1
+    printf '%s\n' "$images"
+    for id in $(package_ids); do
+        images=$(range_compose "$id" config --images) || exit 1
+        [ -n "$images" ] || exit 1
+        printf '%s\n' "$images"
+    done
+}) || die "Could not resolve required images."
+[ -n "$REQUIRED_IMAGES" ] || die "No required images resolved."
+while IFS= read -r image; do
+    [ -z "$image" ] || docker_bounded 15 image inspect "$image" >/dev/null \
+        || die "Required image $image is missing; acquisition failed."
+done <<< "$(printf '%s\n' "$REQUIRED_IMAGES" | LC_ALL=C sort -u)"
+OPENPLC_SELECTED=0
+case "$REQUIRED_IMAGES" in *rangerdanger-openplc*) OPENPLC_SELECTED=1 ;; esac
+write_installed_packages
+if [ -n "$ADD_PACKAGE" ]; then
+    say "Installed $ADD_PACKAGE; refresh the package list. The running range was not changed."
+    exit 0
+fi
+MODE_TMP=$(mktemp "$ROOT_DIR/data/install-mode.tmp.XXXXXX")
+INSTALL_MODE=release
+[ "$MODE" != source ] || INSTALL_MODE=source
+printf '%s\n' "$INSTALL_MODE" > "$MODE_TMP"
+mv -f "$MODE_TMP" "$ROOT_DIR/data/install-mode"
+env_write VERSION "$VERSION"
+env_write RANGERDANGER_ROOT "$ROOT_DIR"
+if [ -n "$PACKAGE" ]; then
+    env_write RANGERDANGER_PACKAGE "$PACKAGE"
+else
+    env_write RANGERDANGER_PACKAGE
+fi
+if [ -n "${CONTAIND_JWT_SECRET:-}" ]; then
+    env_write CONTAIND_JWT_SECRET "$CONTAIND_JWT_SECRET"
+fi
+# The backend's range Compose reads .env, not this host's environment.
+if [ "$MODE" = source ] && [ -n "${CONTAIND_IMAGE:-}" ]; then
+    env_write CONTAIND_IMAGE "$CONTAIND_IMAGE"
+else
+    env_write CONTAIND_IMAGE
+fi
+
 # No teardown occurs until every platform/package image is available.
 if [ "$MGMT_OWNER" = "$RANGE_PROJECT" ] || [ -n "$OLD_PLATFORM" ]; then
     banner "Migrating the pre-split stack"
@@ -570,7 +645,7 @@ BINFMT_MARKER="$ROOT_DIR/.setup-binfmt-amd64"
 # pull. Bump deliberately to pick up newer qemu. Keep in sync with
 # stage-ssd.sh, stage-ssd-delta.sh, and uninstall-rangerdanger.sh.
 BINFMT_REF="tonistiigi/binfmt:qemu-v10.2.1"
-if [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ] && ! amd64_emulation_present; then
+if [ "$OPENPLC_SELECTED" -eq 1 ] && [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ] && ! amd64_emulation_present; then
     banner "Registering amd64 emulation (OpenPLC)"
     say "OpenPLC is amd64-only; registering a qemu-x86_64 handler via tonistiigi/binfmt..."
     if docker run --privileged --rm "$BINFMT_REF" --install amd64 >/dev/null 2>&1 \
@@ -619,7 +694,7 @@ done
 # package, or RANGERDANGER_PACKAGE on first start.
 banner "Starting the range"
 RANGE_BODY='{}'
-[ -n "$PACKAGE" ] && RANGE_BODY="{\"package\":\"$PACKAGE\"}"
+[ -n "$REQUESTED_PACKAGE" ] && RANGE_BODY="{\"package\":\"$REQUESTED_PACKAGE\"}"
 range_settled() { # <status json>: no transition in flight
     case "$(range_field "$1" phase)" in
         none|ready|failed) return 0 ;;
