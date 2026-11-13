@@ -14,7 +14,8 @@ Directory to write the delta into. Created if it does not exist.
 The version the student already has (e.g. v0.1.6).
 
 .PARAMETER New
-The new version to ship (e.g. v0.1.7).
+The new RangerDanger release Git tag to ship (e.g. v0.1.7). HEAD must
+be exactly this tag in a clean working tree.
 
 .PARAMETER Packages
 Target installed package IDs; default every package in the new release.
@@ -43,8 +44,9 @@ changed upstream references are included automatically.
 .NOTES
 See stage-ssd.ps1 for the rationale on resolve_platform_ref (long
 comment in the .sh version explains the manifest-list trap that this
-indirection avoids). ASCII-only, BOM-free. See setup.ps1 for the
-encoding rationale.
+indirection avoids). The mutable RangerDanger image tag 'latest' is not
+a Git release tag and is rejected. ASCII-only, BOM-free. See setup.ps1
+for the encoding rationale.
 #>
 
 [CmdletBinding()]
@@ -79,6 +81,34 @@ $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 . "$PSScriptRoot/scripts/lib/windows-root.ps1"
 . "$PSScriptRoot/scripts/lib/release-membership.ps1"
 . "$PSScriptRoot/scripts/lib/stage-bounded.ps1"
+
+function Assert-ReleaseCheckout([string]$ReleaseVersion) {
+    if ($ReleaseVersion -ceq 'latest') {
+        Die "'latest' is mutable and has no single RangerDanger Git tag; pass an explicit release tag and check it out."
+    }
+    $head = Invoke-NativeBounded 'git' @('-C', $RootDir, 'rev-parse', '--verify', 'HEAD') 30
+    if (-not $head -or $head.TimedOut -or $head.ExitCode -ne 0) {
+        Die "Cannot resolve Git HEAD in $RootDir; check out the RangerDanger release tag before staging."
+    }
+    $tagRef = "refs/tags/$($ReleaseVersion)^{commit}"
+    $tag = Invoke-NativeBounded 'git' @('-C', $RootDir, 'rev-parse', '--verify', '--quiet', $tagRef) 30
+    if (-not $tag -or $tag.TimedOut -or $tag.ExitCode -ne 0) {
+        Die "RangerDanger release tag $ReleaseVersion is unavailable; fetch it and check out that tag before staging."
+    }
+    if ($head.StdOut.Trim() -cne $tag.StdOut.Trim()) {
+        Die "HEAD does not match RangerDanger release tag $ReleaseVersion; check out that tag (for example, in a worktree) before staging."
+    }
+    $status = Invoke-NativeBounded 'git' @('-C', $RootDir, 'status', '--porcelain', '--untracked-files=all') 30
+    if (-not $status -or $status.TimedOut -or $status.ExitCode -ne 0) {
+        Die "Cannot verify the Git working tree in $RootDir; check out the RangerDanger release tag before staging."
+    }
+    if ($status.StdOut.Length -gt 0) {
+        Die "The Git working tree must be clean before staging release tag $ReleaseVersion; commit or remove changes and untracked files."
+    }
+}
+
+Assert-ReleaseCheckout $New
+
 . "$PSScriptRoot/scripts/lib/installed-packages.ps1"
 $selected = if ($PSBoundParameters.ContainsKey('Packages')) { @(ConvertTo-PackageSelection $RootDir $Packages) } else { @(Get-AvailablePackages $RootDir) }
 

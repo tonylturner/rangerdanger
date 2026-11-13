@@ -30,6 +30,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Full and delta SSD bundles now require a clean checkout exactly at the
+  requested RangerDanger release tag, preventing repo archives from being
+  paired with image tags from another release. Mutable `latest` is refused.
 - The workbook introduction lists segmentation requirements before
   remediation planning, matching the lab order.
 

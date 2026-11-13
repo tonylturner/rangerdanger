@@ -8,11 +8,14 @@
 # setup.sh --from-tarballs <dir>.
 #
 # Usage:
-#   ./stage-ssd.sh <output-dir> [version] [--packages id1,id2]
+#   ./stage-ssd.sh <output-dir> <release-tag> [--packages id1,id2]
 #
 # Examples:
 #   ./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.0
-#   ./stage-ssd.sh ./out latest
+#   ./stage-ssd.sh ./out v0.1.0
+#
+# The release tag must match HEAD exactly, and the working tree must be clean.
+# RangerDanger's mutable `latest` image tag is not a release Git tag.
 #
 # Output:
 #   <output-dir>/image-index-<arch>.txt + images/<arch>/*.tar
@@ -40,7 +43,7 @@ fi
 
 OUT="$1"
 shift
-VERSION=latest
+VERSION=""
 if [ $# -gt 0 ] && [[ "$1" != --* ]]; then VERSION="$1"; shift; fi
 PACKAGES=""
 while [ $# -gt 0 ]; do
@@ -50,10 +53,8 @@ while [ $# -gt 0 ]; do
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
+[[ -n "$VERSION" ]] || { echo "An explicit RangerDanger release tag is required; pass a version such as v0.2.7." >&2; exit 1; }
 [[ "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "Invalid release version" >&2; exit 1; }
-
-ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
 
 if [ -t 1 ]; then
     GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
@@ -64,6 +65,31 @@ say()    { printf "%s[+]%s %s\n" "$GREEN" "$RESET" "$*"; }
 warn()   { printf "%s[!]%s %s\n" "$YELLOW" "$RESET" "$*" >&2; }
 die()    { printf "%s[✗]%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
 banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s─' $(seq 1 ${#1}))"; }
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
+
+assert_release_checkout() {
+    local version="$1" head tag status
+    [ "$version" != latest ] \
+        || die "'latest' is mutable and has no single RangerDanger Git tag; pass an explicit release tag and check it out."
+    if ! head=$(git -C "$ROOT_DIR" rev-parse --verify HEAD 2>/dev/null); then
+        die "Cannot resolve Git HEAD in $ROOT_DIR; check out the RangerDanger release tag before staging."
+    fi
+    if ! tag=$(git -C "$ROOT_DIR" rev-parse --verify --quiet "refs/tags/${version}^{commit}" 2>/dev/null); then
+        die "RangerDanger release tag $version is unavailable; fetch it and check out that tag before staging."
+    fi
+    [ "$head" = "$tag" ] \
+        || die "HEAD does not match RangerDanger release tag $version; check out that tag (for example, in a worktree) before staging."
+    if ! status=$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all 2>/dev/null); then
+        die "Cannot verify the Git working tree in $ROOT_DIR; check out the RangerDanger release tag before staging."
+    fi
+    [ -z "$status" ] \
+        || die "The Git working tree must be clean before staging release tag $version; commit or remove changes and untracked files."
+}
+
+assert_release_checkout "$VERSION"
+
 . "$ROOT_DIR/scripts/lib/stage-pull.sh"
 . "$ROOT_DIR/scripts/lib/installed-packages.sh"
 . "$ROOT_DIR/scripts/lib/image-index.sh"
@@ -429,9 +455,7 @@ size=$(du -h "$OUT/rangerdanger.tgz" | awk '{print $1}')
 say "wrote $OUT/rangerdanger.tgz ($size)"
 
 # Write a .version file so setup.sh --from-tarballs can auto-pick the
-# right tag without the student having to pass --version. Avoids the
-# "No such image: ...:latest" failure mode when the script's default
-# VERSION (latest) doesn't match the staged tarball's actual tag.
+# right tag without the student having to pass --version.
 echo "$VERSION" > "$OUT/.version"
 say "wrote $OUT/.version ($VERSION)"
 
@@ -443,13 +467,8 @@ say "wrote $OUT/.version ($VERSION)"
 KERNEL_README_ROW=""
 banner "Bundle WSL2 kernel asset (Windows offline support)"
 GH_OWNER_REPO="${GH_OWNER_REPO:-tonylturner/rangerdanger}"
-if [ "$VERSION" = "latest" ]; then
-    KERNEL_URL="https://github.com/${GH_OWNER_REPO}/releases/latest/download/rangerdanger-wsl2-kernel"
-    KERNEL_SHA_URL="https://github.com/${GH_OWNER_REPO}/releases/latest/download/rangerdanger-wsl2-kernel.sha256"
-else
-    KERNEL_URL="https://github.com/${GH_OWNER_REPO}/releases/download/${VERSION}/rangerdanger-wsl2-kernel"
-    KERNEL_SHA_URL="https://github.com/${GH_OWNER_REPO}/releases/download/${VERSION}/rangerdanger-wsl2-kernel.sha256"
-fi
+KERNEL_URL="https://github.com/${GH_OWNER_REPO}/releases/download/${VERSION}/rangerdanger-wsl2-kernel"
+KERNEL_SHA_URL="${KERNEL_URL}.sha256"
 if ! kernel_http=$(curl -sSL --connect-timeout 10 --max-time 30 -o /dev/null \
     --head -w '%{http_code}' "$KERNEL_URL"); then
     die "WSL2 kernel availability request failed (not confirmed absent). Bundle incomplete; check the connection and re-stage; do not distribute."

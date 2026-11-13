@@ -24,10 +24,13 @@
 #   ./stage-ssd-delta.sh ./out v0.1.6 v0.1.7-rc1 --include backend,frontend
 #   ./stage-ssd-delta.sh ./out v0.1.5 v0.1.7 --all
 #
+# The working tree must be clean, with HEAD exactly at the <new-version>
+# RangerDanger release tag. The mutable `latest` image tag is not a Git tag.
+#
 # Output:
 #   <output-dir>/delta-images/amd64/       changed images only, amd64
 #   <output-dir>/delta-images/arm64/       changed images only, arm64
-#   <output-dir>/rangerdanger.tgz      repo archive at HEAD (always included)
+#   <output-dir>/rangerdanger.tgz      repo archive at the <new-version> tag
 #   <output-dir>/DELTA-README.md       per-stage student-facing apply instructions
 #
 # Runtime: ~5-15 min depending on how many images changed and how
@@ -100,6 +103,27 @@ done
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
+
+assert_release_checkout() {
+    local version="$1" head tag status
+    [ "$version" != latest ] \
+        || die "'latest' is mutable and has no single RangerDanger Git tag; pass an explicit release tag and check it out."
+    if ! head=$(git -C "$ROOT_DIR" rev-parse --verify HEAD 2>/dev/null); then
+        die "Cannot resolve Git HEAD in $ROOT_DIR; check out the RangerDanger release tag before staging."
+    fi
+    if ! tag=$(git -C "$ROOT_DIR" rev-parse --verify --quiet "refs/tags/${version}^{commit}" 2>/dev/null); then
+        die "RangerDanger release tag $version is unavailable; fetch it and check out that tag before staging."
+    fi
+    [ "$head" = "$tag" ] \
+        || die "HEAD does not match RangerDanger release tag $version; check out that tag (for example, in a worktree) before staging."
+    if ! status=$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all 2>/dev/null); then
+        die "Cannot verify the Git working tree in $ROOT_DIR; check out the RangerDanger release tag before staging."
+    fi
+    [ -z "$status" ] \
+        || die "The Git working tree must be clean before staging release tag $version; commit or remove changes and untracked files."
+}
+
+assert_release_checkout "$NEW"
 
 # Cross-included into the arm64 delta (see stage_arch): the qemu-x86_64
 # binfmt helper that runs amd64-only OpenPLC on arm64 Linux.

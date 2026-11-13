@@ -233,12 +233,18 @@ isn't realistic. The instructor stages an SSD; students load from it.
 **On a machine with internet (instructor):**
 
 ```bash
+git fetch origin tag v0.2.7
+git worktree add --detach ../rangerdanger-v0.2.7 v0.2.7
+cd ../rangerdanger-v0.2.7
 ./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.7
 ```
 
-The positional version selects every first-party image tag independently
-of the instructor repo's `.env`; the helper records the same value in
-`.version` and verifies the saved image tags before reporting success.
+Run staging from a clean checkout whose `HEAD` exactly matches the supplied
+RangerDanger release tag; tracked changes and untracked files are refused
+(ignored local files such as `.env` are allowed). The positional version
+selects every first-party image tag independently of `.env`; the helper records
+the same value in `.version` and verifies the saved image tags before reporting
+success. `latest` is rejected because it is mutable and has no single Git tag.
 
 This produces `image-index-amd64.txt`, `image-index-arm64.txt`, per-ref `images/<arch>/*.tar`,
 `rangerdanger.tgz`, a `.version` marker, and an auto-generated SSD

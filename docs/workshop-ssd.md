@@ -45,7 +45,7 @@ reports success; a failed run can leave partial files.
 | `images/<arch>/*.tar` | One archive per unique selected image ref; shared refs saved once. OpenPLC uses amd64 on arm64; its owners also receive binfmt on arm64. | varies with selection |
 | `rangerdanger.tgz` | The repo at the staged commit | ~1-2 MB |
 | `README.md` | Auto-generated per-stage instructions for the student | ~1 KB |
-| `.version` | Plain-text version marker (`vX.Y.Z` or `latest`) | <1 KB |
+| `.version` | Plain-text RangerDanger release tag (`vX.Y.Z`; not mutable `latest`) | <1 KB |
 | `rangerdanger-wsl2-kernel` + `.sha256` | Required x86_64 WSL2 kernel for Windows DPI detection and logging. The release's `build-wsl-kernel.yml` workflow must have published both assets before staging can succeed. `setup.ps1 -FromTarballs` picks it up automatically. | ~14 MB |
 
 Full staging fails if the kernel is absent (HTTP 404) or its availability
@@ -67,11 +67,23 @@ Setup needs no Python or jq for this index.
 
 ## Initial stage
 
-On a machine with internet, from the repo root:
+On a machine with internet, stage from a clean checkout whose `HEAD` is
+exactly the RangerDanger release tag. A detached worktree keeps the current
+checkout untouched:
 
 ```sh
+git fetch origin tag v0.2.7
+git worktree add --detach ../rangerdanger-v0.2.7 v0.2.7
+cd ../rangerdanger-v0.2.7
 ./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.7
 ```
+
+The stager refuses `latest`: it is a mutable image tag, not one Git release
+tag. It also refuses a missing/mismatched release tag or a dirty working tree
+(including untracked files). Ignored local files such as `.env` are allowed.
+Use the matching tag for both the checkout and the positional version.
+On Windows, run `.\stage-ssd.ps1 D:\WORKSHOP_SSD v0.2.7` from this same
+worktree.
 
 The positional version selects the first-party image tags through Compose
 interpolation even if the repo's `.env` contains another `VERSION`; `.version`
@@ -94,8 +106,10 @@ Do not distribute files unless the script reaches its successful final
 summary. A manifest-resolution, pull, save, or final archive-verification
 error aborts the run with the image or archive named.
 
-The `rangerdanger.tgz` is `git archive HEAD`, so whatever's committed
-in the working tree at stage time is what students get.
+The `rangerdanger.tgz` is `git archive HEAD`; the required tag/clean-tree
+check ensures its repository content and the first-party image tag refer
+to the same release. Containd remains on its independent mutable `latest`
+image tag.
 
 Offline additions use `./setup.sh --add-package <id> --from-tarballs <dir>` or
 `.\setup.ps1 -AddPackage <id> -FromTarballs <dir>`. The bundle must match the
@@ -291,6 +305,12 @@ and snapshots the complete installed tree, including both package stores.
 ## Delta staging
 
 `stage-ssd-delta.sh <output-dir> <since-version> <new-version>`
+
+Run the delta stager from a clean worktree with `HEAD` exactly at the
+`<new-version>` RangerDanger release tag. The archive is always taken from
+that checkout; `<since-version>` selects the prior image set only. `latest`
+is not accepted as `<new-version>` because it has no single Git tag. See
+[Initial stage](#initial-stage) for the detached-worktree setup.
 
 Delta creation is instructor tooling: `stage-ssd-delta.ps1` can also produce
 a bundle. **Delta apply and rollback are Bash procedures today**, including

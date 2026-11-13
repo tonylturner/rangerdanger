@@ -137,7 +137,7 @@ cd rangerdanger
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
 ```
 
-Use `./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.7` to populate the SSD. The version argument selects the image tags whatever the repo's `.env` says, and the helper verifies both archives against it before reporting success. GitHub releases carry the WSL2 kernel asset, not image tarballs, so students install from an instructor-staged bundle. Full install walkthrough including the offline path and common errors: [`docs/quickstart.md`](docs/quickstart.md). Workshop operators running multi-laptop classroom deployments: [`docs/workshop-ssd.md`](docs/workshop-ssd.md) covers initial staging, mid-workshop delta patches, and recovery.
+Use `./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.7` from a clean checkout of the `v0.2.7` tag to populate the SSD; the stager refuses any other checkout. The version argument selects the image tags whatever the repo's `.env` says, and the helper verifies both archives against it before reporting success. GitHub releases carry the WSL2 kernel asset, not image tarballs, so students install from an instructor-staged bundle. Full install walkthrough including the offline path and common errors: [`docs/quickstart.md`](docs/quickstart.md). Workshop operators running multi-laptop classroom deployments: [`docs/workshop-ssd.md`](docs/workshop-ssd.md) covers initial staging, mid-workshop delta patches, and recovery.
 
 RangerDanger uses the published `ghcr.io/tonylturner/containd:latest` image
 in every mode; source mode builds only RangerDanger.
