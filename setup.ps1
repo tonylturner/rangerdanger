@@ -385,8 +385,7 @@ if ($SkipFirewallGate) {
         }
     }
     try {
-        $resetTimeout = if ($RangePackage -eq 'us-sra-substation') { 180 } else { 60 }
-        $resetResp = Invoke-WebRequest -Uri "http://localhost:8088/api/workshop/reset" -Method POST -UseBasicParsing -TimeoutSec $resetTimeout -ErrorAction Stop
+        $resetResp = Invoke-WebRequest -Uri "http://localhost:8088/api/workshop/reset" -Method POST -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
         $resetResult = $resetResp.Content | ConvertFrom-Json -ErrorAction Stop
         Assert-ContaindProtection $resetResult
         # Check the TOP-LEVEL success, not a substring. The response embeds a
@@ -434,8 +433,11 @@ Re-run with -SkipFirewallGate to bring the stack up anyway for diagnosis.
 }
 
 
-# OpenPLC is used by both US and EU packages. Like setup.sh this is diagnostic, not a lifecycle gate.
-if ($RangePackage -in @('us-dnp3-substation', 'eu-iec104-substation')) {
+# OpenPLC is used by both US and EU packages when their release Compose declares it.
+# Like setup.sh this is diagnostic, not a lifecycle gate.
+$openPlcCompose = Join-Path $RootDir "lab-definitions/packages/$RangePackage/compose.release.yml"
+if ((Test-Path -LiteralPath $openPlcCompose -PathType Leaf) -and
+    (Select-String -LiteralPath $openPlcCompose -Pattern '^\s*container_name:\s*rangerdanger-openplc\s*$' -Quiet)) {
 $openplcOk = $false
 for ($i = 0; $i -lt 8; $i++) {
     $run = Invoke-DockerBounded @('inspect', '-f', '{{.State.Status}}', 'rangerdanger-openplc') 5
@@ -446,7 +448,7 @@ for ($i = 0; $i -lt 8; $i++) {
 }
 if ($openplcOk) { Say 'OpenPLC container is running' }
 else { Warn 'OpenPLC is not running. Check docker logs rangerdanger-openplc.' }
-} # packages with OpenPLC
+}
 Banner 'RangerDanger is up'
 @"
   Web UI:        http://localhost:8088
