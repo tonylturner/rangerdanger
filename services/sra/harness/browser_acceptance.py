@@ -48,7 +48,7 @@ def api(browser, path, token):
 
 
 def main(mode):
-    if mode == 'session':
+    if mode == 'browser':
         assert os.getuid() == 911
         assert 'Seccomp:\t2' in Path('/proc/self/status').read_text()
         print('BROWSER abc UID 911; Docker default seccomp active;',
@@ -58,7 +58,7 @@ def main(mode):
         environment = dict(os.environ, HOME=home)
         log = open('/tmp/chromium.log', 'w')
         subprocess.Popen(['/usr/bin/chromium', '--headless', '--disable-gpu', '--disable-dev-shm-usage',
-                          '--remote-debugging-port=9222', '--user-data-dir=' + home + '/profile', BASE],
+                          '--remote-debugging-port=9222', '--user-data-dir=' + home + '/profile', BASE + 'images/logo-64.png'],
                          env=environment, stdout=log, stderr=log)
         for _ in range(50):
             try:
@@ -68,12 +68,24 @@ def main(mode):
                 time.sleep(.1)
         else:
             raise RuntimeError(Path('/tmp/chromium.log').read_text())
+        browser.wait('location.pathname === "/guacamole/images/logo-64.png" && document.readyState === "complete"')
+    elif mode == 'vendor-login':
+        browser = CDP()
         auth = login(browser, 'vendor')
-        token = auth['authToken']
+        Path('/tmp/vendor-auth.json').write_text(json.dumps(auth))
+    elif mode == 'one-connection':
+        browser = CDP()
+        token = json.loads(Path('/tmp/vendor-auth.json').read_text())['authToken']
         connections = api(browser, 'session/data/postgresql/connections', token)
         assert len(connections) == 1 and next(iter(connections.values()))['name'] == 'RTAC SSH (brokered)', connections
+    elif mode == 'password-refused':
+        browser = CDP()
         direct = browser.js('''(async()=>{const r=await fetch('api/tokens',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'username=vendor&password=rangerdanger'});return {status:r.status,body:await r.text()}})()''')
         assert direct['status'] == 403, direct
+    elif mode == 'ssh-session':
+        browser = CDP()
+        token = json.loads(Path('/tmp/vendor-auth.json').read_text())['authToken']
+        connections = api(browser, 'session/data/postgresql/connections', token)
         identifier = next(iter(connections))
         encoded = base64.b64encode((identifier + '\0c\0postgresql').encode()).decode()
         browser.call('Page.navigate', url=BASE + '#/client/' + encoded)
@@ -86,9 +98,7 @@ def main(mode):
         browser.call('Input.dispatchKeyEvent', type='keyUp', key='Enter', code='Enter', windowsVirtualKeyCode=13)
         time.sleep(2)
         print('CLIENT TEXT', browser.js('document.body.innerText'), flush=True)
-        Path('/tmp/vendor-auth.json').write_text(json.dumps(auth))
-        print('SESSION ACCEPTED', flush=True)
-    elif mode == 'audit':
+    elif mode == 'token-rejected':
         browser = CDP()
         old = json.loads(Path('/tmp/vendor-auth.json').read_text())['authToken']
         # The disconnected client's SAML redirect may already be on Keycloak.
@@ -97,7 +107,11 @@ def main(mode):
         browser.wait('location.pathname === "/guacamole/images/logo-64.png" && document.readyState === "complete"')
         result = browser.js(f'''(async()=>{{const r=await fetch({json.dumps(BASE+'api/session/data/postgresql/connections?token='+old)});return r.status}})()''')
         assert result in (401, 403), result
-        print('PASS: pre-reset auth token rejected', result, flush=True)
+        print('Pre-reset auth token rejected', result, flush=True)
+    elif mode == 'audit-history':
+        browser = CDP()
+        browser.call('Page.navigate', url=BASE + 'images/logo-64.png')
+        browser.wait('location.pathname === "/guacamole/images/logo-64.png" && document.readyState === "complete"')
         browser.js('localStorage.clear()')
         browser.call('Network.clearBrowserCookies')
         auth = login(browser, 'auditor')
@@ -106,6 +120,10 @@ def main(mode):
         history = api(browser, 'session/data/postgresql/history/connections', token)
         print('HISTORY', history, flush=True)
         assert history and all(h.get('endDate') is not None for h in history), history
+        Path('/tmp/auditor-history.json').write_text(json.dumps(history))
+    elif mode == 'playback':
+        browser = CDP()
+        history = json.loads(Path('/tmp/auditor-history.json').read_text())
         recordings = [h for h in history if h.get('logs')]
         if not recordings:
             raise RuntimeError('Contract blocker: auditor with system AUDIT and no connection '
