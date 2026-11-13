@@ -1,28 +1,28 @@
 package labs
 
-// CurriculumBinding is the small package.yml binding. Roles are scenario IDs;
-// dynamicSteps are step IDs in the implementation scenario, never title matches.
+// CurriculumBinding is the typed segmentation-plan feature.
 type CurriculumBinding struct {
-	Dir          string                        `yaml:"dir" json:"-"`
-	Roles        map[string]string             `yaml:"roles" json:"roles"`
-	Activities   map[string]CurriculumActivity `yaml:"activities" json:"activities"`
-	DynamicSteps map[string]string             `yaml:"dynamicSteps" json:"dynamicSteps"`
+	Dir          string               `yaml:"dir" json:"-"`
+	Activities   CurriculumActivities `yaml:"activities" json:"activities"`
+	DynamicSteps map[string]string    `yaml:"dynamicSteps" json:"dynamicSteps"`
+	Model        *Curriculum          `yaml:"-" json:"model"`
 }
 
-// CurriculumActivity controls the planning surfaces for one scenario.
+// CurriculumActivity is one ordered scenario occurrence, with tri-state flags.
 type CurriculumActivity struct {
-	PolicyActions bool  `yaml:"policyActions" json:"policyActions"`
-	HideBanner    bool  `yaml:"hideBanner" json:"hideBanner"`
-	Validate      *bool `yaml:"validate" json:"validate,omitempty"`
+	Scenario      string `yaml:"scenario" json:"scenario"`
+	Label         string `yaml:"label" json:"label"`
+	PolicyActions *bool  `yaml:"policyActions,omitempty" json:"policyActions,omitempty"`
+	HideBanner    *bool  `yaml:"hideBanner,omitempty" json:"hideBanner,omitempty"`
+	Validate      *bool  `yaml:"validate,omitempty" json:"validate,omitempty"`
 }
 
 // Curriculum is a strictly decoded, topology-resolved package planning model.
 type Curriculum struct {
-	Plan              *CurriculumPlan `yaml:"plan" json:"-"`
-	RequirementOrder  []string        `yaml:"requirementOrder" json:"requirementOrder"`
-	GroupOrder        []string        `yaml:"groupOrder" json:"groupOrder"`
-	ImpactOrder       []string        `yaml:"impactOrder" json:"impactOrder"`
-	CurriculumBinding `yaml:"-"`
+	Plan              *CurriculumPlan                  `yaml:"plan" json:"-"`
+	RequirementOrder  []string                         `yaml:"requirementOrder" json:"requirementOrder"`
+	GroupOrder        []string                         `yaml:"groupOrder" json:"groupOrder"`
+	ImpactOrder       []string                         `yaml:"impactOrder" json:"impactOrder"`
 	Schema            int                              `yaml:"schema" json:"schema"`
 	ICSRules          string                           `yaml:"-" json:"icsRules"`
 	Requirements      map[string]CurriculumRequirement `yaml:"requirements" json:"requirements"`
@@ -37,8 +37,6 @@ type Curriculum struct {
 	PlanningOnly      []string                         `yaml:"planningOnly" json:"planningOnly"`
 	Phases            map[string]string                `yaml:"phases" json:"phases"`
 	NoPlan            string                           `yaml:"noPlan" json:"noPlan"`
-	NodeMap           map[string]CurriculumNodes       `yaml:"nodeMap" json:"nodeMap"`
-	NodeInference     []CurriculumNodeInference        `yaml:"nodeInference" json:"nodeInference"`
 }
 
 type CurriculumRequirement struct {

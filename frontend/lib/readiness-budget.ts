@@ -47,7 +47,7 @@ export function usesDefaultBudget(scope: CurriculumScope): boolean {
 }
 
 export function readBudgetModel(scope: CurriculumScope) {
-  return scope.curriculum
-    ? computeBudgetAdjustments(readReadiness(scope), scope.curriculum, usesDefaultBudget(scope))
+  return scope.course?.features.segmentationPlan?.model
+    ? computeBudgetAdjustments(readReadiness(scope), scope.course?.features.segmentationPlan?.model, usesDefaultBudget(scope))
     : null;
 }

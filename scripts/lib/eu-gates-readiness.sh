@@ -96,6 +96,9 @@ eu_gate_preflight() {
     exit 1
   fi
 
+  # shellcheck disable=SC2034 # consumed by eu_api_post in eu-range.sh
+  EU_READY_PACKAGE="$PACKAGE_ID"
+
   TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/eu-iec104-smoke.XXXXXX") || {
     echo "FAIL cannot create a temporary directory" >&2
     exit 1

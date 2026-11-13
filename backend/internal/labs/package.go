@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -40,7 +39,6 @@ const (
 const (
 	packagesDirName     = "packages"
 	packageManifestName = "package.yml"
-	scenarioFilePattern = "*.yml"
 	// slugRule describes slugPattern in error messages.
 	slugRule = "lowercase letters and digits separated by single hyphens"
 )
@@ -62,10 +60,14 @@ var knownOperatorViews = map[string]bool{
 // slugPattern is the shape of package IDs, scenario IDs and step IDs.
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-// ValidatorRequirements maps each registered validator key to the package
-// capabilities it needs. The server owns the validator code; the loader
-// only checks that declared keys exist and that the package can serve them.
-type ValidatorRequirements map[string][]string
+// ValidatorRequirement declares the capabilities and teaching features a validator needs.
+type ValidatorRequirement struct {
+	Capabilities     []string
+	SegmentationPlan bool
+}
+
+// ValidatorRequirements is the server-owned registry used for package validation.
+type ValidatorRequirements map[string]ValidatorRequirement
 
 // PolicyWording is the package-owned presentation of a named policy.
 type PolicyWording struct {
@@ -81,15 +83,15 @@ type PolicyYAML struct {
 
 // PackageYAML mirrors lab-definitions/packages/<id>/package.yml.
 type PackageYAML struct {
-	Curriculum   *CurriculumBinding `yaml:"curriculum"`
-	Schema       int                `yaml:"schema"`
-	ID           string             `yaml:"id"`
-	Title        string             `yaml:"title"`
-	Revision     int                `yaml:"revision"`
-	Topology     string             `yaml:"topology"`  // relative to package.yml
-	Scenarios    string             `yaml:"scenarios"` // directory, relative to package.yml
-	Knowledge    string             `yaml:"knowledge"` // required knowledge index, relative to package.yml
-	Capabilities []string           `yaml:"capabilities"`
+	Course       *Course  `yaml:"course"`
+	Schema       int      `yaml:"schema"`
+	ID           string   `yaml:"id"`
+	Title        string   `yaml:"title"`
+	Revision     int      `yaml:"revision"`
+	Topology     string   `yaml:"topology"`  // relative to package.yml
+	Scenarios    string   `yaml:"scenarios"` // directory relative to package.yml
+	Knowledge    string   `yaml:"knowledge"` // required knowledge index, relative to package.yml
+	Capabilities []string `yaml:"capabilities"`
 	// Policies maps the names the firewall buttons and actions apply
 	// ("weak", "improved") to files and wording owned by the package.
 	Policies     map[string]PolicyYAML `yaml:"policies"`
@@ -100,7 +102,7 @@ type PackageYAML struct {
 
 // Package is one fully parsed and validated curriculum package.
 type Package struct {
-	Curriculum *Curriculum
+	Course *Course
 	// Captured at definition load so compilation needs no filesystem access
 	// and retains the package's exact non-rule policy envelope.
 	planEnvelope json.RawMessage
@@ -217,23 +219,15 @@ func decodeFile(path string, out any) error {
 	return nil
 }
 
-// loadPackage parses one package.yml plus the topology, policies and
+// LoadPackage parses one package.yml plus the topology, policies and
 // scenarios it references, and validates all of it. It performs no
 // database writes.
-func (l *Loader) loadPackage(manifestPath string) (Package, error) {
-	pkg, scenarios, err := readDefinition(l.DefinitionsDir, manifestPath)
+func (l *Loader) LoadPackage(manifestPath string) (Package, error) {
+	pkg, err := readDefinition(l.DefinitionsDir, manifestPath)
 	if err != nil {
 		return Package{}, err
 	}
-	scenarioDir := filepath.Join(filepath.Dir(manifestPath), scenarios)
-	info, err := os.Stat(scenarioDir)
-	if err != nil {
-		return Package{}, fmt.Errorf("scenarios directory: %w", err)
-	}
-	if !info.IsDir() {
-		return Package{}, fmt.Errorf("scenarios %s is not a directory", scenarios)
-	}
-	if pkg.Scenarios, err = loadScenarioFiles(scenarioDir); err != nil {
+	if err := validateFeatureUsage(pkg, l.Validators); err != nil {
 		return Package{}, err
 	}
 	if err := ValidateLab(&pkg.Template, pkg.Scenarios, pkg.Capabilities, pkg.Policies, l.Validators); err != nil {
@@ -246,22 +240,23 @@ func (l *Loader) loadPackage(manifestPath string) (Package, error) {
 }
 
 // ReadDefinition parses and validates the parts of a package that need no
-// validator registry: package.yml, its topology and its policies. The
-// package lint uses it; the loader adds the scenarios.
+// validator registry, resolving scenarios for knowledge and curriculum links.
+// Use Loader.LoadPackage for full scenario and curriculum validation.
 func ReadDefinition(definitionsDir, manifestPath string) (Package, error) {
-	pkg, _, err := readDefinition(definitionsDir, manifestPath)
+	pkg, err := readDefinition(definitionsDir, manifestPath)
+	pkg.Scenarios = nil
 	return pkg, err
 }
 
-// readDefinition is ReadDefinition plus the package.yml scenarios value.
-func readDefinition(definitionsDir, manifestPath string) (Package, string, error) {
+// readDefinition resolves one package and its declared content.
+func readDefinition(definitionsDir, manifestPath string) (Package, error) {
 	var manifest PackageYAML
 	if err := decodeFile(manifestPath, &manifest); err != nil {
-		return Package{}, "", err
+		return Package{}, err
 	}
 	packageDir := filepath.Dir(manifestPath)
 	if err := validateManifest(manifest, filepath.Base(packageDir)); err != nil {
-		return Package{}, "", err
+		return Package{}, err
 	}
 	icsRules := manifest.ICSRules
 	if icsRules == "" {
@@ -270,33 +265,33 @@ func readDefinition(definitionsDir, manifestPath string) (Package, string, error
 
 	topologyPath := filepath.Join(packageDir, manifest.Topology)
 	if _, err := definitionsRelative(definitionsDir, topologyPath); err != nil {
-		return Package{}, "", fmt.Errorf("topology %q %w", manifest.Topology, err)
+		return Package{}, fmt.Errorf("topology %q %w", manifest.Topology, err)
 	}
 	var def LabYAML
 	if err := decodeFile(topologyPath, &def); err != nil {
-		return Package{}, "", fmt.Errorf("topology: %w", err)
+		return Package{}, fmt.Errorf("topology: %w", err)
 	}
 	if def.ID == "" {
-		return Package{}, "", fmt.Errorf("topology %s: missing id", filepath.Base(topologyPath))
+		return Package{}, fmt.Errorf("topology %s: missing id", filepath.Base(topologyPath))
 	}
 	if len(def.Scenarios) > 0 {
-		return Package{}, "", fmt.Errorf("topology %s: inline scenarios are not supported; put each scenario in the package's scenarios directory", filepath.Base(topologyPath))
+		return Package{}, fmt.Errorf("topology %s: inline scenarios are not supported; put each scenario in the package's scenarios directory", filepath.Base(topologyPath))
 	}
 
 	if err := ValidateNetworks(def.Networks); err != nil {
-		return Package{}, "", fmt.Errorf("topology %s: %w", filepath.Base(topologyPath), err)
+		return Package{}, fmt.Errorf("topology %s: %w", filepath.Base(topologyPath), err)
 	}
 	if err := ValidateTopologyFlows(&def); err != nil {
-		return Package{}, "", fmt.Errorf("topology %s: %w", filepath.Base(topologyPath), err)
+		return Package{}, fmt.Errorf("topology %s: %w", filepath.Base(topologyPath), err)
 	}
 
 	firewallConfigPath, err := resolveFirewallConfig(definitionsDir, filepath.Dir(topologyPath), def.FirewallConfig)
 	if err != nil {
-		return Package{}, "", fmt.Errorf("topology %s: %w", filepath.Base(topologyPath), err)
+		return Package{}, fmt.Errorf("topology %s: %w", filepath.Base(topologyPath), err)
 	}
 	policies, err := resolvePolicies(definitionsDir, packageDir, manifest.Policies, icsRules)
 	if err != nil {
-		return Package{}, "", err
+		return Package{}, err
 	}
 	wording := make(map[string]PolicyWording, len(manifest.Policies))
 	for name, policy := range manifest.Policies {
@@ -314,31 +309,34 @@ func readDefinition(definitionsDir, manifestPath string) (Package, string, error
 		OperatorView:       manifest.OperatorView,
 		ICSRules:           icsRules,
 	}
-	if manifest.Curriculum != nil {
-		improved, exists := policies["improved"]
-		if !exists {
-			return Package{}, "", fmt.Errorf("curriculum requires an improved policy envelope")
-		}
-		pkg.planEnvelope, err = os.ReadFile(filepath.Join(definitionsDir, improved))
-		if err != nil {
-			return Package{}, "", fmt.Errorf("improved policy envelope: %w", err)
-		}
-	}
 	if slices.Contains(pkg.Capabilities, CapabilityProtocolIEC104) {
 		if pkg.StationPoints, err = loadIEC104Points(packageDir); err != nil {
-			return Package{}, "", err
+			return Package{}, err
 		}
 	}
 	if _, ok := pkg.PolicyName(firewallConfigPath); !ok {
-		return Package{}, "", fmt.Errorf("topology %s: firewall_config %s is not one of the package policies", filepath.Base(topologyPath), firewallConfigPath)
+		return Package{}, fmt.Errorf("topology %s: firewall_config %s is not one of the package policies", filepath.Base(topologyPath), firewallConfigPath)
 	}
-	if pkg.Knowledge, err = loadKnowledge(packageDir, manifest.Knowledge, manifest.Scenarios); err != nil {
-		return Package{}, "", fmt.Errorf("knowledge: %w", err)
+	if pkg.Scenarios, err = resolveScenarios(definitionsDir, packageDir, manifest.Scenarios); err != nil {
+		return Package{}, err
 	}
-	if pkg.Curriculum, err = loadCurriculum(packageDir, manifest.Curriculum, pkg); err != nil {
-		return Package{}, "", fmt.Errorf("curriculum: %w", err)
+	if pkg.Knowledge, err = loadKnowledge(packageDir, manifest.Knowledge, pkg.Scenarios); err != nil {
+		return Package{}, fmt.Errorf("knowledge: %w", err)
 	}
-	return pkg, manifest.Scenarios, nil
+	if pkg.Course, err = loadCourse(packageDir, manifest.Course, pkg); err != nil {
+		return Package{}, fmt.Errorf("course: %w", err)
+	}
+	if pkg.Course.Features.SegmentationPlan != nil {
+		improved, exists := policies["improved"]
+		if !exists {
+			return Package{}, fmt.Errorf("curriculum requires an improved policy envelope")
+		}
+		pkg.planEnvelope, err = os.ReadFile(filepath.Join(definitionsDir, improved))
+		if err != nil {
+			return Package{}, fmt.Errorf("improved policy envelope: %w", err)
+		}
+	}
+	return pkg, nil
 }
 
 func validateManifest(manifest PackageYAML, dirName string) error {
@@ -360,7 +358,7 @@ func validateManifest(manifest PackageYAML, dirName string) error {
 	if manifest.Topology == "" {
 		problems = append(problems, "topology must not be empty")
 	}
-	if manifest.Scenarios == "" {
+	if len(manifest.Scenarios) == 0 {
 		problems = append(problems, "scenarios must not be empty")
 	}
 	if !knownOperatorViews[manifest.OperatorView] {
@@ -401,22 +399,4 @@ func resolveFirewallConfig(definitionsDir, topologyDir, value string) (string, e
 		return "", fmt.Errorf("firewall_config %q %w", value, err)
 	}
 	return relative, nil
-}
-
-func loadScenarioFiles(dir string) ([]ScenarioYAML, error) {
-	files, err := filepath.Glob(filepath.Join(dir, scenarioFilePattern))
-	if err != nil {
-		return nil, fmt.Errorf("find scenario YAML files: %w", err)
-	}
-	sort.Strings(files)
-
-	scenarios := make([]ScenarioYAML, 0, len(files))
-	for _, file := range files {
-		var scenario ScenarioYAML
-		if err := decodeFile(file, &scenario); err != nil {
-			return nil, fmt.Errorf("scenario: %w", err)
-		}
-		scenarios = append(scenarios, scenario)
-	}
-	return scenarios, nil
 }

@@ -54,7 +54,7 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		return
 	}
 
-	scenario, err := s.findActiveScenario(scenarioID)
+	scenario, err := s.findPackageScenario(gen.Package.ID, scenarioID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return

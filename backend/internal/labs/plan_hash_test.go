@@ -19,11 +19,11 @@ func TestFullPlanFirewallHashOracle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			actions := make([]string, 0, len(pkg.Curriculum.Catalog))
-			for _, action := range pkg.Curriculum.Catalog {
+			actions := make([]string, 0, len(pkg.SegmentationPlan().Catalog))
+			for _, action := range pkg.SegmentationPlan().Catalog {
 				actions = append(actions, action.ID)
 			}
-			plan, err := labs.CompilePlan(pkg, pkg.Curriculum, actions)
+			plan, err := labs.CompilePlan(pkg, pkg.Course.Features.SegmentationPlan.Model, actions)
 			if err != nil {
 				t.Fatal(err)
 			}

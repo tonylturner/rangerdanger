@@ -50,7 +50,7 @@ func TestCurriculumDirectoryBinding(t *testing.T) {
 		}
 	}
 	var manifest PackageYAML
-	if err := decodeStrict([]byte("curriculum:\n  file: curriculum.yml\n"), &manifest); err == nil || !strings.Contains(err.Error(), "field file") {
+	if err := decodeStrict([]byte("curriculum:\n  file: curriculum.yml\n"), &manifest); err == nil || !strings.Contains(err.Error(), "field curriculum") {
 		t.Fatalf("retired file binding: %v", err)
 	}
 	dir := t.TempDir()

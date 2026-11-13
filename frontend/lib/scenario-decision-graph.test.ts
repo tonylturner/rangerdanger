@@ -23,13 +23,12 @@
 // devDep — the fences are line-anchored so regex is robust enough.
 
 import { describe, it, expect } from "vitest";
-import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-const SCENARIOS_DIRS = [
-  resolve(__dirname, "..", "..", "lab-definitions", "scenarios"),
-  resolve(__dirname, "..", "..", "lab-definitions", "packages", "eu-iec104-substation", "scenarios"),
-];
+import { scenarioFiles } from "./scenario-sources.test-util";
+
+const PACKAGES = resolve(__dirname, "../../lab-definitions/packages");
 
 type ScenarioFile = {
   file: string;
@@ -43,12 +42,10 @@ type ScenarioFile = {
   defaultFromRefs: Array<{ sourceScenario: string; sourceId: string }>;
 };
 
-function readScenarios(SCENARIOS_DIR: string): ScenarioFile[] {
-  if (!existsSync(SCENARIOS_DIR)) return [];
+function readScenarios(packageDir: string): ScenarioFile[] {
   const out: ScenarioFile[] = [];
-  for (const file of readdirSync(SCENARIOS_DIR)) {
-    if (!file.endsWith(".yml") && !file.endsWith(".yaml")) continue;
-    const raw = readFileSync(join(SCENARIOS_DIR, file), "utf8");
+  for (const file of scenarioFiles(packageDir)) {
+    const raw = readFileSync(file, "utf8");
 
     // YAML id field — anchored to start of line, single-quoted /
     // double-quoted / unquoted all accepted.
@@ -124,79 +121,84 @@ function readScenarios(SCENARIOS_DIR: string): ScenarioFile[] {
   return out;
 }
 
-const SCENARIOS = SCENARIOS_DIRS.flatMap(readScenarios);
-const BY_ID = new Map(SCENARIOS.map((s) => [s.id, s]));
+for (const packageId of readdirSync(PACKAGES)) {
+  const SCENARIOS = readScenarios(resolve(PACKAGES, packageId));
+  const BY_ID = new Map(SCENARIOS.map((s) => [s.id, s]));
 
-describe("scenario decision-graph contract", () => {
-  it("loads at least the seven workshop scenarios", () => {
-    // Sanity guard — if the directory layout moves, this test
-    // would silently pass with zero scenarios. Pin the floor.
-    for (const dir of SCENARIOS_DIRS) expect(readScenarios(dir)).toHaveLength(7);
-  });
+  describe(`scenario decision-graph contract: ${packageId}`, () => {
+    it("keeps shipped inventories and package-local IDs", () => {
+      // Sanity guard — if the directory layout moves, this test
+      // would silently pass with zero scenarios. Pin the floor.
+      if (["us-dnp3-substation", "eu-iec104-substation"].includes(packageId)) {
+        expect(SCENARIOS).toHaveLength(7);
+      }
+      expect(BY_ID.size).toBe(SCENARIOS.length);
+    });
 
-  it("every scenario file declares an id at the top", () => {
-    for (const s of SCENARIOS) {
-      expect(s.id, `${s.file}: missing 'id:' field`).not.toBe("");
-    }
-  });
+    it("every scenario file declares an id at the top", () => {
+      for (const s of SCENARIOS) {
+        expect(s.id, `${s.file}: missing 'id:' field`).not.toBe("");
+      }
+    });
 
-  it("every findings-panel reference resolves to a real upstream decision", () => {
-    const orphans: string[] = [];
-    for (const s of SCENARIOS) {
-      for (const ref of s.findingsRefs) {
-        const upstream = BY_ID.get(ref.sourceScenario);
-        if (!upstream) {
-          orphans.push(`${s.file}: findings-panel from=${ref.sourceScenario} — no scenario with that id`);
-          continue;
-        }
-        if (!upstream.defines.has(ref.itemId)) {
-          orphans.push(
-            `${s.file}: findings-panel item "${ref.itemId}" not defined in ${ref.sourceScenario} ` +
-              `(${upstream.file} defines: ${Array.from(upstream.defines).sort().join(", ") || "<none>"})`
-          );
+    it("every findings-panel reference resolves to a real upstream decision", () => {
+      const orphans: string[] = [];
+      for (const s of SCENARIOS) {
+        for (const ref of s.findingsRefs) {
+          const upstream = BY_ID.get(ref.sourceScenario);
+          if (!upstream) {
+            orphans.push(`${s.file}: findings-panel from=${ref.sourceScenario} — no scenario with that id`);
+            continue;
+          }
+          if (!upstream.defines.has(ref.itemId)) {
+            orphans.push(
+              `${s.file}: findings-panel item "${ref.itemId}" not defined in ${ref.sourceScenario} ` +
+                `(${upstream.file} defines: ${Array.from(upstream.defines).sort().join(", ") || "<none>"})`
+            );
+          }
         }
       }
-    }
-    expect(orphans, orphans.join("\n")).toEqual([]);
-  });
+      expect(orphans, orphans.join("\n")).toEqual([]);
+    });
 
-  it("every default-from reference resolves to a real upstream decision", () => {
-    const orphans: string[] = [];
-    for (const s of SCENARIOS) {
-      for (const ref of s.defaultFromRefs) {
-        const upstream = BY_ID.get(ref.sourceScenario);
-        if (!upstream) {
-          orphans.push(`${s.file}: default-from=${ref.sourceScenario}:${ref.sourceId} — no upstream scenario`);
-          continue;
-        }
-        if (!upstream.defines.has(ref.sourceId)) {
-          orphans.push(
-            `${s.file}: default-from=${ref.sourceScenario}:${ref.sourceId} — upstream doesn't define that id ` +
-              `(${upstream.file} defines: ${Array.from(upstream.defines).sort().join(", ") || "<none>"})`
-          );
+    it("every default-from reference resolves to a real upstream decision", () => {
+      const orphans: string[] = [];
+      for (const s of SCENARIOS) {
+        for (const ref of s.defaultFromRefs) {
+          const upstream = BY_ID.get(ref.sourceScenario);
+          if (!upstream) {
+            orphans.push(`${s.file}: default-from=${ref.sourceScenario}:${ref.sourceId} — no upstream scenario`);
+            continue;
+          }
+          if (!upstream.defines.has(ref.sourceId)) {
+            orphans.push(
+              `${s.file}: default-from=${ref.sourceScenario}:${ref.sourceId} — upstream doesn't define that id ` +
+                `(${upstream.file} defines: ${Array.from(upstream.defines).sort().join(", ") || "<none>"})`
+            );
+          }
         }
       }
-    }
-    expect(orphans, orphans.join("\n")).toEqual([]);
-  });
+      expect(orphans, orphans.join("\n")).toEqual([]);
+    });
 
-  it("decision ids inside one scenario are unique", () => {
-    // The graph builder uses a Set, so duplicate definitions in
-    // raw YAML would dedupe silently and the second definition's
-    // attributes (correct, options) would be lost. Walk the raw
-    // file once more to catch repeats.
-    const dups: string[] = [];
-    for (const s of SCENARIOS) {
-      const seen = new Map<string, number>();
-      for (const m of s.raw.matchAll(/^\s*:::decision\b[^\n]*\bid=([A-Za-z0-9_-]+)/gm)) {
-        seen.set(m[1], (seen.get(m[1]) ?? 0) + 1);
-      }
-      for (const [id, n] of seen) {
-        if (n > 1) {
-          dups.push(`${s.file}: decision id "${id}" defined ${n} times`);
+    it("decision ids inside one scenario are unique", () => {
+      // The graph builder uses a Set, so duplicate definitions in
+      // raw YAML would dedupe silently and the second definition's
+      // attributes (correct, options) would be lost. Walk the raw
+      // file once more to catch repeats.
+      const dups: string[] = [];
+      for (const s of SCENARIOS) {
+        const seen = new Map<string, number>();
+        for (const m of s.raw.matchAll(/^\s*:::decision\b[^\n]*\bid=([A-Za-z0-9_-]+)/gm)) {
+          seen.set(m[1], (seen.get(m[1]) ?? 0) + 1);
+        }
+        for (const [id, n] of seen) {
+          if (n > 1) {
+            dups.push(`${s.file}: decision id "${id}" defined ${n} times`);
+          }
         }
       }
-    }
-    expect(dups, dups.join("\n")).toEqual([]);
+      expect(dups, dups.join("\n")).toEqual([]);
+    });
   });
-});
+}

@@ -95,7 +95,7 @@ function ExerciseCard({
   const cardText = exercise.summary || exercise.description;
   const isBonus = exercise.tags.includes("bonus");
   const pct = completionPercent(scope, exercise);
-  const section = exercise.order;
+  const section = exercise.label;
 
   const handleExportPDF = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -131,7 +131,7 @@ function ExerciseCard({
 
           <div className="min-w-0">
             <h2 className="text-sm font-bold text-white">
-              Exercise {exercise.order}: {exercise.name}
+              Exercise {exercise.label}: {exercise.name}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">{stripTimeEstimate(cardText)}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">

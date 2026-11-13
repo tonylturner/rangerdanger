@@ -12,8 +12,8 @@ import { RangeControl, RangeControlView, currentPackageId, rangeRequestErrorText
 import { RangeProvider } from "./range-context";
 
 const PACKAGES: PackageSummary[] = [
-  { id: "us-dnp3-substation", title: "US DNP3 Substation", revision: 3, active: true, operator_view: "us-dnp3-substation", policies: US_PACKAGE.policies },
-  { id: "eu-iec104-substation", title: "EU IEC 104 Substation", revision: 1, active: false, operator_view: "eu-iec104", policies: EU_PACKAGE.policies },
+  { course: US_PACKAGE.course, id: "us-dnp3-substation", title: "US DNP3 Substation", revision: 3, active: true, operator_view: "us-dnp3-substation", policies: US_PACKAGE.policies },
+  { course: EU_PACKAGE.course, id: "eu-iec104-substation", title: "EU IEC 104 Substation", revision: 1, active: false, operator_view: "eu-iec104", policies: EU_PACKAGE.policies },
 ];
 
 function status(phase: RangePhase, extra: Partial<RangeStatus> = {}): RangeStatus {

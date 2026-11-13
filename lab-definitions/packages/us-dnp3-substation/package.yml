@@ -23,25 +23,48 @@ policies:
     label: Hardened Segmentation
     description: The reference segmentation policy for this range.
 operator_view: us-dnp3-substation
-curriculum:
-  dir: curriculum
-  roles:
-    baseline: baseline-assessment
-    requirements: segmentation-requirements
-    planning: remediation-planning
-    implementation: firewall-implementation
-    hardening: hardening-configurations
-    vendor: vendor-rdp-compromise
-    validation: validation-evidence
-  activities:
-    baseline-assessment: {hideBanner: true, validate: false}
-    segmentation-requirements: {hideBanner: true, validate: false}
-    remediation-planning: {hideBanner: true, validate: false}
-    firewall-implementation: {policyActions: true, hideBanner: true}
-    hardening-configurations: {policyActions: true}
-    vendor-rdp-compromise: {policyActions: true}
-    validation-evidence: {policyActions: true}
-  dynamicSteps:
-    phase-3-create-minimal-required-rules: rules
-    phase-5-validate-allowed-traffic: positive
-    phase-6-validate-blocked-traffic: negative
+course:
+  nodes: nodes.yml
+  modules:
+  - id: section-1
+    title: Section 1
+    activities:
+    - scenario: baseline-assessment
+      label: '1.2'
+      hideBanner: true
+      validate: false
+    - scenario: segmentation-requirements
+      label: '1.3'
+      hideBanner: true
+      validate: false
+    - scenario: remediation-planning
+      label: '1.4'
+      hideBanner: true
+      validate: false
+  - id: section-2
+    title: Section 2
+    activities:
+    - scenario: firewall-implementation
+      label: '2.2'
+      policyActions: true
+      hideBanner: true
+    - scenario: hardening-configurations
+      label: '2.3'
+      policyActions: true
+    - scenario: vendor-rdp-compromise
+      label: 2.3-bonus
+      policyActions: true
+    - scenario: validation-evidence
+      label: '2.4'
+      policyActions: true
+  features:
+    segmentationPlan:
+      dir: curriculum
+      activities:
+        requirements: segmentation-requirements
+        planning: remediation-planning
+        implementation: firewall-implementation
+      dynamicSteps:
+        phase-3-create-minimal-required-rules: rules
+        phase-5-validate-allowed-traffic: positive
+        phase-6-validate-blocked-traffic: negative

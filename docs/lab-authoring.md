@@ -13,12 +13,29 @@ file an issue or PR.
 
 ## File location and naming
 
-Each lab is one YAML file in the scenarios directory its package
-names (`lab-definitions/packages/<package>/package.yml`, key
-`scenarios:`). For the US package that is `lab-definitions/scenarios/`.
-By convention the filename matches the scenario `id` (e.g.
-`baseline-assessment.yml` contains `id: baseline-assessment`).
-Scenario IDs must be unique across every package. The package layout
+Each lab is one YAML file in the scenario directory its package names
+(`lab-definitions/packages/<package>/package.yml`, key `scenarios:`).
+For the US package that is `lab-definitions/scenarios/`; EU uses its own
+`scenarios/` directory beside `package.yml`. By convention the filename
+matches the scenario `id` (e.g. `baseline-assessment.yml` contains
+`id: baseline-assessment`). Scenario IDs must be unique within a package;
+the same ID may appear in another package. Declare one directory string
+(lists and mappings are rejected):
+
+```yaml
+scenarios: ../../scenarios  # US; EU uses scenarios: scenarios
+```
+
+Every `*.yml` file in that directory is loaded; duplicate IDs are errors even
+when content is identical. The path is relative to `package.yml`, must not be
+absolute or contain backslashes, and may use `..` only while staying inside
+`lab-definitions/`, including all directory and file symlink targets. Scenarios
+validate against their package's topology, capabilities, knowledge and
+curriculum. Bump the package revision when step IDs or validator meaning change.
+Scenario routes resolve IDs relative to the active package; mutations and
+test-suite runs require the verified ready
+package in `X-RangerDanger-Package` (missing or mismatched returns HTTP 412,
+`package_precondition`). The package layout
 is described in [`lab-definitions/README.md`](../lab-definitions/README.md#packages).
 
 Backend loads them at startup - restart `backend` after changes. Any
@@ -39,7 +56,7 @@ catalog, team capacities or budget. Mark that step with
 `action: {type: decision}`; the panel reads the budget, teams and action
 catalog from the active package's `curriculum/`.
 
-The EU package binds that directory and its exercise roles in
+The EU package binds that directory and its three planning activities in
 `lab-definitions/packages/eu-iec104-substation/package.yml`; its
 `curriculum/` owns the 500-hour budget, four teams and shared action
 catalog for the requirements and planning exercises. The requirements
@@ -56,13 +73,52 @@ served on `GET /api/packages` by
 and consumed by the frontend
 [`DecisionPanel`](../frontend/components/decision-panel.tsx#L31-L36).
 
-### Curriculum sections
+### Course and segmentation sections
 
-Both packages use `curriculum: {dir: curriculum}` in `package.yml`.
-The directory must be an immediate sibling with a lowercase hyphenated name;
-the former `file:` binding is not accepted. Keep exercise `roles`, `activities`
-and `dynamicSteps` in the package binding. Author the remaining top-level keys
-once each, in these seven single-purpose section files (each under 1000 lines):
+Both packages declare an ordered course and opt into segmentation planning:
+
+```yaml
+course:
+  nodes: nodes.yml
+  modules:
+    - id: section-1
+      title: Section 1
+      activities:
+        - {scenario: baseline-assessment, label: "1.2", validate: false}
+        - {scenario: segmentation-requirements, label: "1.3", validate: false, hideBanner: true}
+        - {scenario: remediation-planning, label: "1.4", validate: false, hideBanner: true}
+    - id: section-2
+      title: Section 2
+      activities:
+        - {scenario: firewall-implementation, label: "2.2", policyActions: true, hideBanner: true}
+  features:
+    segmentationPlan:
+      dir: curriculum
+      activities:
+        requirements: segmentation-requirements
+        planning: remediation-planning
+        implementation: firewall-implementation
+      dynamicSteps: {} # declare the implementation step-to-phase mapping here
+```
+
+The example shows the shape; every loaded scenario must occur exactly once in
+its course. Module IDs and labels must be unique; titles and labels must be
+nonblank, and every module needs an activity. Flattened module/activity position
+controls the inventory, test-suite and workbook sequence, never the label or
+filename. Module titles are not rendered. `validate` defaults to true when
+omitted. Scenario YAML has no `order` or `label` field.
+
+`nodes.yml` lives beside `package.yml`, contains `nodeMap` and `nodeInference`,
+and resolves `${ip:...}` topology references independently of planning.
+`features: {}` declares a course without a planner. Such courses may use named
+policies but cannot declare `policyActions`/`hideBanner` (even false), decision
+actions, improved firewall checks, plan-coverage fences or plan-dependent
+validators. The three feature bindings must be distinct course scenario IDs.
+
+The feature directory must be an immediate sibling with a lowercase hyphenated
+name. Keep feature `activities` and `dynamicSteps` in the package binding. Author
+the remaining top-level keys once each, in these six single-purpose section files
+(each under 1000 lines):
 
 | File | Content |
 | --- | --- |
@@ -71,8 +127,11 @@ once each, in these seven single-purpose section files (each under 1000 lines):
 | `readiness.yml` | Readiness answers, flags and budget adjustments |
 | `coverage.yml` | Impacts, groups, planning-only IDs and display orders |
 | `implementation.yml` | Phase templates, test text and empty-plan guidance |
-| `nodes.yml` | Exercise node mappings and inference |
 | `plan.yml` | Policy compiler and proof model |
+
+Proof memberships use `activities: [scenario-id]`, not roles: each ID must be a
+course activity. Validators select explicit membership; displayed proofs include
+unassigned proofs as well as members, and the probe matrix uses every proof.
 
 The loader merges disjoint top-level keys, then resolves topology references in
 scalar values and strictly validates the complete model. Directory order does
@@ -123,8 +182,7 @@ snapshot, not arbitrary files. A failed load or reseed publishes no new content.
 ## Top-level shape
 
 ```yaml
-id: my-new-lab               # required slug, unique across packages; by convention the filename stem
-order: "1.5"                 # required, string. Sorts in the inventory; matches workshop deck numbering.
+id: my-new-lab               # required slug, unique within this package; by convention the filename stem
 name: "Human-readable name"  # required
 summary: "One-line summary." # shown in the lab list
 validator: us-my-new-lab     # optional. Registered validator key; see lab-definitions/README.md
@@ -150,7 +208,7 @@ steps:
       ...
 ```
 
-The loader requires `id`, `order` and `name` on the scenario, and `id`
+The loader requires `id` and `name` on the scenario, and `id`
 and `title` on each step; write a `description` for both anyway.
 Unknown fields are rejected.
 
@@ -238,7 +296,7 @@ description: |
 ```
 
 The Run button targets the nearest preceding source marker, then the step's
-`node`, then prose inference, curriculum primary and the first exercise node.
+`node`, then prose inference, course primary and the first exercise node.
 Use **per-section "From the X terminal" headers** above commands. Markers
 are case-insensitive `From`, `On` or `Via`, optional `the`, then a node ID
 or short name (Kali, vendor-jump, eng-ws, RTAC, RTU, CC, firewall, historian,
@@ -587,8 +645,9 @@ Before opening a PR with a new or modified lab:
    ./scripts/firewall-smoke.sh
    ```
 4. **Update the package's declared topology and manifest** if you added a new container the lab needs. For US the topology is `lab-definitions/substation-segmentation.yml`; EU owns `lab-definitions/packages/eu-iec104-substation/topology.yml`.
-5. **Update the package curriculum `nodes.yml`** so terminal tabs and source inference surface the right hosts.
-6. **Update `CHANGELOG.md`** under `[Unreleased]` for any user-visible change.
+5. **Add the scenario to its course module**, with a unique label and the intended position.
+6. **Update the package-root `nodes.yml`** so terminal tabs and source inference surface the right hosts.
+7. **Update `CHANGELOG.md`** under `[Unreleased]` for any user-visible change.
 
 ## Patterns that work well
 

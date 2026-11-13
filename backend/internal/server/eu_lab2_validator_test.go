@@ -19,7 +19,7 @@ import (
 
 func TestConduitsRegistration(t *testing.T) {
 	want := []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth}
-	if !slices.Equal(ValidatorRequirements()["eu-firewall-implementation"], want) || scenarioValidators["eu-firewall-implementation"].run == nil {
+	if !slices.Equal(ValidatorRequirements()["eu-firewall-implementation"].Capabilities, want) || scenarioValidators["eu-firewall-implementation"].run == nil {
 		t.Fatal("missing conduit registration or wrong capability contract")
 	}
 }
@@ -34,7 +34,7 @@ func TestConduitsShippedCurriculum(t *testing.T) {
 		if pkg.ID != euPackageID {
 			continue
 		}
-		if pkg.Curriculum == nil || len(pkg.Curriculum.Roles) != 7 || len(pkg.Scenarios) != 7 {
+		if pkg.Course.Features.SegmentationPlan.Model == nil || len(pkg.Course.Activities()) != 7 || len(pkg.Scenarios) != 7 {
 			t.Fatal("incomplete EU curriculum")
 		}
 		for _, scenario := range pkg.Scenarios {

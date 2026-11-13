@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import * as api from "../lib/api";
 import type { PackageSummary, Scenario, ValidationResult } from "../lib/api";
+import { US_PACKAGE, EU_PACKAGE } from "../lib/operator-fixtures.test-util";
 import { CurriculumScopeProvider } from "../lib/curriculum-scope";
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { loadProgress, loadValidation, saveProgress } from "../lib/scenario-runner-storage";
@@ -36,7 +37,7 @@ vi.mock("./ui/tooltip", () => ({
 
 const packageIds = ["us-dnp3-substation", "eu-iec104-substation"] as const;
 const scenario: Scenario = {
-  id: "persistence-fixture", order: "2.3", name: "Persistence fixture", description: "Test",
+  id: "persistence-fixture", label: "2.3", name: "Persistence fixture", description: "Test",
   package_id: "fixture", lab_template_id: "fixture", validator: "state", tags: [], nodes: [],
   steps: [
     { id: "first", title: "First instruction", description: "", action: { type: "manual" } },
@@ -68,7 +69,7 @@ function mount(initialPackage: string, activity = scenario) {
   clients.push(client);
   let packageId = initialPackage, generation = 0;
   const content = () => {
-    const pkg: PackageSummary = { id: packageId, revision: 1, title: packageId, active: true, operator_view: "", policies: [] };
+    const pkg: PackageSummary = { course: (packageId === "us-dnp3-substation" ? US_PACKAGE : EU_PACKAGE).course, id: packageId, revision: 1, title: packageId, active: true, operator_view: "", policies: [] };
     return <QueryClientProvider client={client}><CurriculumScopeProvider pkg={pkg}>
       {/* Match the package/revision/exercise key used by the exercise page. */}
       <ScenarioRunner key={`${packageId}:1:${scenario.id}:${generation}`} scenario={activity} onExit={() => {}} />

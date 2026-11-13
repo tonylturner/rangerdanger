@@ -1,4 +1,5 @@
 "use client";
+import { planActivityOf } from "../lib/course";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -274,16 +275,16 @@ function DecisionInput({ scenarioId, decisionId, options, body, explanation = ""
 // lab wasn't done, the panel says so and links back.
 type FindingsPanelProps = {
   sourceScenario: string;
-  sourceScenarioOrder?: string;
+  sourceScenarioLabel?: string;
   title: string;
   items: FindingsPanelItem[];
 };
 
-function orderForScenario(scenarios: Scenario[] | undefined, scenarioId: string): string | undefined {
-  return scenarios?.find((scenario) => scenario.id === scenarioId)?.order;
+function labelForScenario(scenarios: Scenario[] | undefined, scenarioId: string): string | undefined {
+  return scenarios?.find((scenario) => scenario.id === scenarioId)?.label;
 }
 
-export function FindingsPanel({ sourceScenario, sourceScenarioOrder, title, items }: FindingsPanelProps) {
+export function FindingsPanel({ sourceScenario, sourceScenarioLabel, title, items }: FindingsPanelProps) {
   const scope = useCurriculumScope();
   const hydrated = useHydrated();
   const values = useMemo(() => {
@@ -327,7 +328,7 @@ export function FindingsPanel({ sourceScenario, sourceScenarioOrder, title, item
           You haven&apos;t recorded findings in <a target="_blank" rel="noopener noreferrer"
             href={`/exercises/${sourceScenario}`}
             className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
-          >{sourceScenarioOrder ? `Lab ${sourceScenarioOrder}` : "the earlier lab"}</a> yet - your design verdicts below will be made without that context.
+          >{sourceScenarioLabel ? `Lab ${sourceScenarioLabel}` : "the earlier lab"}</a> yet - your design verdicts below will be made without that context.
         </div>
       )}
     </div>
@@ -345,19 +346,19 @@ export function PlanCoveragePanel({ title }: { title: string }) {
   const requirements = readRequirements(scope);
   const { effective: plan, excluded } = readRemediationPlanState(scope);
   const selected = new Set(plan?.selectedActionIds ?? []);
-  const coverage = computeCoverage(requirements, selected, scope.curriculum);
+  const coverage = computeCoverage(requirements, selected, scope.course?.features.segmentationPlan?.model);
   const summary = summariseCoverage(coverage);
   const hasPlan = !!plan && plan.selectedActionIds.length > 0;
 
-  if (!scope.curriculum) return null;
+  if (!scope.course?.features.segmentationPlan?.model) return null;
 
   if (!hasPlan && coverage.length === 0) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-500 italic">
         No remediation plan recorded yet. Visit <Link target="_blank" rel="noopener noreferrer"
-          href={`/exercises/${scope.curriculum?.roles.planning}`}
+          href={`/exercises/${scope.course?.features.segmentationPlan?.activities.planning}`}
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
-        >Lab 1.4 (Remediation Planning)</Link> to select actions and your plan coverage will appear here.
+        >Lab {planActivityOf(scope.course, "planning")?.label} (Remediation Planning)</Link> to select actions and your plan coverage will appear here.
       </div>
     );
   }
@@ -435,9 +436,9 @@ export function PlanCoveragePanel({ title }: { title: string }) {
       </div>
       <div className="mt-2 text-[10px] text-slate-500 italic">
         Current selection coverage only, not firewall proof. Change selections in your <Link target="_blank" rel="noopener noreferrer"
-          href={`/exercises/${scope.curriculum?.roles.planning}`}
+          href={`/exercises/${scope.course?.features.segmentationPlan?.activities.planning}`}
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
-        >Lab 1.4 plan</Link>.
+        >Lab {planActivityOf(scope.course, "planning")?.label} plan</Link>.
       </div>
     </div>
   );
@@ -563,7 +564,7 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
                 <FindingsPanel
                   key={si}
                   sourceScenario={seg.sourceScenario}
-                  sourceScenarioOrder={orderForScenario(scenarios, seg.sourceScenario)}
+                  sourceScenarioLabel={labelForScenario(scenarios, seg.sourceScenario)}
                   title={seg.title}
                   items={seg.items}
                 />
@@ -574,7 +575,7 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
             }
             if (seg.type === "generateTrafficButton" || seg.type === "icon") return null;
             if (seg.type === "notesPanel") {
-              return <NotesPanel key={si} {...seg} sourceScenarioOrder={orderForScenario(scenarios, seg.sourceScenario)} />;
+              return <NotesPanel key={si} {...seg} sourceScenarioLabel={labelForScenario(scenarios, seg.sourceScenario)} />;
             }
             if (seg.type === "hint") {
               // Nested hints aren't expected, but render them flat
@@ -640,8 +641,8 @@ export function DescriptionSegments({
     <>
             {/* Description with inline command blocks and hint panels */}
             {step?.description && (() => {
-              const effectiveDesc = scope.curriculum && dynamicPlan
-                ? injectDynamicContent(step.description, stepId, dynamicPlan, scope.curriculum, Object.keys(scope.curriculum.roles).find((role) => scope.curriculum?.roles[role] === scenarioId))
+              const effectiveDesc = scope.course?.features.segmentationPlan?.model && dynamicPlan
+                ? injectDynamicContent(step.description, stepId, dynamicPlan, scope.course, scenarioId)
                 : step.description;
               const segments = splitDescription(effectiveDesc, targetNode);
               let bodyCmdIdx = 0;
@@ -696,14 +697,14 @@ export function DescriptionSegments({
                         <FindingsPanel
                           key={`${scenario.id}-${currentStep}-${si}`}
                           sourceScenario={seg.sourceScenario}
-                          sourceScenarioOrder={orderForScenario(scenarios, seg.sourceScenario)}
+                          sourceScenarioLabel={labelForScenario(scenarios, seg.sourceScenario)}
                           title={seg.title}
                           items={seg.items}
                         />
                       );
                     }
                     if (seg.type === "notesPanel") {
-                      return <NotesPanel key={`${scenario.id}-${currentStep}-${si}`} {...seg} sourceScenarioOrder={orderForScenario(scenarios, seg.sourceScenario)} />;
+                      return <NotesPanel key={`${scenario.id}-${currentStep}-${si}`} {...seg} sourceScenarioLabel={labelForScenario(scenarios, seg.sourceScenario)} />;
                     }
                     if (seg.type === "planCoverage") {
                       return (

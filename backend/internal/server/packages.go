@@ -15,11 +15,11 @@ import (
 
 // packageSummary is one row of GET /api/packages.
 type packageSummary struct {
-	Curriculum *labs.Curriculum `json:"curriculum,omitempty"`
-	ID         string           `json:"id"`
-	Title      string           `json:"title"`
-	Revision   int              `json:"revision"`
-	Active     bool             `json:"active"`
+	Course   *labs.Course `json:"course"`
+	ID       string       `json:"id"`
+	Title    string       `json:"title"`
+	Revision int          `json:"revision"`
+	Active   bool         `json:"active"`
 	// OperatorView selects the frontend operator page for the package.
 	OperatorView string `json:"operator_view"`
 	// Policies list package-owned wording, default first, then by name.
@@ -94,15 +94,14 @@ func (s *Server) activePackage() labs.PackageInfo {
 	return info
 }
 
-// activeScenarios scopes a scenario query to the active package.
-func (s *Server) activeScenarios() *gorm.DB {
-	return s.db.Model(&models.Scenario{}).Where("package_id = ?", s.activePackage().ID)
+// packageScenarios scopes every query explicitly to its captured package.
+func (s *Server) packageScenarios(packageID string) *gorm.DB {
+	return s.db.Model(&models.Scenario{}).Where("package_id = ?", packageID)
 }
 
-// findActiveScenario loads a scenario only if the active package owns it.
-func (s *Server) findActiveScenario(id string) (models.Scenario, error) {
+func (s *Server) findPackageScenario(packageID, id string) (models.Scenario, error) {
 	var scenario models.Scenario
-	err := s.activeScenarios().Where("id = ?", id).First(&scenario).Error
+	err := s.packageScenarios(packageID).Where("id = ?", id).First(&scenario).Error
 	return scenario, err
 }
 
@@ -134,7 +133,7 @@ func (s *Server) handleListPackages(c *gin.Context) {
 			Active:       pkg.ID == active,
 			OperatorView: pkg.OperatorView,
 			Policies:     packagePolicies(pkg),
-			Curriculum:   pkg.Curriculum,
+			Course:       pkg.Course,
 		})
 	}
 	c.JSON(http.StatusOK, packages)

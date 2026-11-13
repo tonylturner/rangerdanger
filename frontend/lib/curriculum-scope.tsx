@@ -15,7 +15,10 @@ export function useActiveCurriculum(): {
   const pkg = useQuery({ queryKey: ["packages", "active"], queryFn: getActivePackage });
   const scenarios = useQuery({
     queryKey: ["scenarios", pkg.data?.id],
-    queryFn: listScenarios,
+    queryFn: () => {
+      if (!pkg.data) throw new Error("No active package");
+      return listScenarios(pkg.data.id);
+    },
     enabled: pkg.data !== undefined,
   });
   return {
@@ -25,16 +28,16 @@ export function useActiveCurriculum(): {
   };
 }
 
-export function scopeOf(pkg: Pick<PackageSummary, "id" | "revision" | "curriculum">): CurriculumScope {
-  return { packageId: pkg.id, revision: pkg.revision, curriculum: pkg.curriculum };
+export function scopeOf(pkg: Pick<PackageSummary, "id" | "revision" | "course">): CurriculumScope {
+  return { packageId: pkg.id, revision: pkg.revision, course: pkg.course };
 }
 
 const CurriculumScopeContext = createContext<CurriculumScope | null>(null);
 
 // Provides the storage scope to everything rendered inside an exercise.
 export function CurriculumScopeProvider({ pkg, children }: { pkg: PackageSummary; children: ReactNode }) {
-  const { id, revision, curriculum } = pkg;
-  const scope = useMemo(() => scopeOf({ id, revision, curriculum }), [id, revision, curriculum]);
+  const { id, revision, course } = pkg;
+  const scope = useMemo(() => scopeOf({ id, revision, course }), [id, revision, course]);
   return <CurriculumScopeContext.Provider value={scope}>{children}</CurriculumScopeContext.Provider>;
 }
 

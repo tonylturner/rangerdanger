@@ -1,7 +1,8 @@
 "use client";
+import { planActivityOf } from "../lib/course";
 
 import { Shield, ShieldOff, FileCheck2, FileEdit, AlertTriangle, Loader2 } from "lucide-react";
-import type { PolicySource, PlanProvenance } from "../lib/api";
+import type { Course, PolicySource, PlanProvenance } from "../lib/api";
 import {
   CUSTOM_POLICY,
   planLabel,
@@ -156,12 +157,14 @@ function StateIcon({ kind, className }: { kind: Kind; className?: string }) {
 }
 
 export function PolicyStatusBanner({
+  course,
   activeConfig,
   policySource,
   expectedConfig,
   policies,
   plan,
 }: {
+  course: Course | undefined;
   activeConfig: string | null;
   policySource: PolicySource;
   plan?: PlanProvenance;
@@ -223,7 +226,7 @@ export function PolicyStatusBanner({
             </span>
             {(kind === "plan" || kind === "manual-custom") && (
               <span className={`text-[10px] ${style.subColor}`}>
-                {kind === "plan" ? "(Lab 1.4 plan)" : "(your containd commit)"}
+                {kind === "plan" ? `(Lab ${planActivityOf(course, "planning")?.label} plan)` : "(your containd commit)"}
               </span>
             )}
           </div>

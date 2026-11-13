@@ -45,7 +45,7 @@ func TestProbeExecuteStepJudgingTargetAndResponse(t *testing.T) {
 				t.Fatal(err)
 			}
 			var all []string
-			for _, action := range gen.Package.Curriculum.Catalog {
+			for _, action := range gen.Package.SegmentationPlan().Catalog {
 				all = append(all, action.ID)
 			}
 			empty := compileProbePlan(t, gen, nil)
@@ -146,13 +146,13 @@ func TestSuiteProbeJudgesDeclaredWeakBaseline(t *testing.T) {
 				t.Fatal(err)
 			}
 			var all []string
-			for _, action := range gen.Package.Curriculum.Catalog {
+			for _, action := range gen.Package.SegmentationPlan().Catalog {
 				all = append(all, action.ID)
 			}
 			full := compileProbePlan(t, gen, all)
 			for _, scenarioID := range []string{"baseline-assessment", "firewall-implementation", "vendor-rdp-compromise"} {
 				t.Run(scenarioID, func(t *testing.T) {
-					scenario, err := s.findActiveScenario(prefix + scenarioID)
+					scenario, err := s.findPackageScenario(s.activePackage().ID, prefix+scenarioID)
 					if err != nil {
 						t.Fatal(err)
 					}

@@ -19,6 +19,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   earlier releases must be staged again. Delta rollback restores the package
   selection, install mode and environment together.
 
+### Changed
+
+- Scenario IDs are unique within a package, not across packages, so two packages may use the same ID. Scenario actions name the package they expect, so a stale browser tab cannot act on a different range.
+- Each package declares its course as ordered modules of lessons, and
+  segmentation planning is an optional course feature instead of seven fixed
+  lesson roles. A package without the planner is rejected if a lesson needs
+  it. Lesson numbers come from the course; the scenario API field `order` is
+  now `label`. Lessons, numbering and saved progress are unchanged.
+
+### Fixed
+
+- The workbook introduction lists segmentation requirements before
+  remediation planning, matching the lab order.
+
 ## [v0.2.7] - 2026-11-11
 
 Maintenance release refreshing build tools, dependencies and image bases,

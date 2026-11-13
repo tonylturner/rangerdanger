@@ -3,7 +3,8 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Scenario } from "./api";
-import { fixtureCurriculum } from "./curriculum-storage.test-util";
+import { scenarioFiles } from "./scenario-sources.test-util";
+import { fixtureCourse } from "./curriculum-storage.test-util";
 import { getExerciseNodes, inferNodeFromDescription } from "./exercise-nodes";
 import { splitDescription, type Segment } from "./scenario-description";
 
@@ -21,7 +22,6 @@ describe("reviewed smoke contracts match UI dispatch", () => {
   for (const id of readdirSync(resolve(root, "lab-definitions/packages"))) {
     it(`checks every command and all three dispatch classes in ${id}`, () => {
       const base = resolve(root, "lab-definitions/packages", id);
-      const pkg = load(readFileSync(resolve(base, "package.yml"), "utf8")) as { scenarios: string };
       const manifest = JSON.parse(readFileSync(resolve(base, "manifest.json"), "utf8")) as {
         services: { node?: string; container: string }[];
       };
@@ -30,10 +30,10 @@ describe("reviewed smoke contracts match UI dispatch", () => {
       const contracts = (JSON.parse(readFileSync(resolve(root, `scripts/lab-commands-expectations${suffix}.json`), "utf8")) as {
         commands: Record<string, Contract>;
       }).commands;
-      const binding = fixtureCurriculum(`lab-definitions/packages/${id}`);
+      const binding = fixtureCourse(`lab-definitions/packages/${id}`);
       const seen = new Set<string>();
-      for (const file of readdirSync(resolve(base, pkg.scenarios)).filter((f) => f.endsWith(".yml"))) {
-        const scenario = load(readFileSync(resolve(base, pkg.scenarios, file), "utf8")) as Scenario;
+      for (const file of scenarioFiles(base)) {
+        const scenario = load(readFileSync(file, "utf8")) as Scenario;
         scenario.steps.forEach((step, index) => {
           const fallback = step.node || inferNodeFromDescription(step.description, binding)
             || binding.nodeMap[scenario.id]?.primary || getExerciseNodes(scenario.id, scenario.nodes, binding)[0];

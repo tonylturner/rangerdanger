@@ -54,7 +54,7 @@ func TestLoadIEC104Inventory(t *testing.T) {
 
 func TestNonIEC104PackageNeedsNoInventory(t *testing.T) {
 	definitions := t.TempDir()
-	writePackage(t, definitions, "alpha", "substation", nil)
+	writePackage(t, definitions, "alpha", "substation", map[string]string{"baseline.yml": validScenarioYAML})
 	catalog, err := seedLoader(definitions).Load()
 	if err != nil {
 		t.Fatal(err)

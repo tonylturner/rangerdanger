@@ -88,7 +88,7 @@ func TestUSVendorOTDenyPreservesVerdicts(t *testing.T) {
 		t.Fatal("Hardened must log the deny immediately after its management allow")
 	}
 	all := []string{}
-	for _, action := range pkg.Curriculum.Catalog {
+	for _, action := range pkg.SegmentationPlan().Catalog {
 		all = append(all, action.ID)
 	}
 	for _, tc := range []struct {
@@ -107,7 +107,7 @@ func TestUSVendorOTDenyPreservesVerdicts(t *testing.T) {
 				rules = append(rules, entry.Rule)
 			}
 			auth, unauth := 0, 0
-			for i, proof := range pkg.Curriculum.Plan.Proof {
+			for i, proof := range pkg.SegmentationPlan().Plan.Proof {
 				route, err := ResolvePlanTuple(pkg, proof)
 				if err != nil {
 					t.Fatal(err)

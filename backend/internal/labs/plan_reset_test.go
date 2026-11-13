@@ -37,8 +37,8 @@ func TestAuthoredPlansRequireDenyNotReset(t *testing.T) {
 			t.Run(pkgID+"/"+field, func(t *testing.T) {
 				pkg := planPackage(t, pkgID)
 				if field == "rule" {
-					for i := range pkg.Curriculum.Plan.Rules {
-						slot := &pkg.Curriculum.Plan.Rules[i]
+					for i := range pkg.SegmentationPlan().Plan.Rules {
+						slot := &pkg.SegmentationPlan().Plan.Rules[i]
 						if slot.Required != nil {
 							slot.Required.Action = "RESET"
 							break
@@ -49,9 +49,9 @@ func TestAuthoredPlansRequireDenyNotReset(t *testing.T) {
 						}
 					}
 				} else {
-					pkg.Curriculum.Plan.Proof[0].Expect = VerdictReset
+					pkg.SegmentationPlan().Plan.Proof[0].Expect = VerdictReset
 				}
-				_, err := validatePlan(pkg, pkg.Curriculum)
+				_, err := validatePlan(pkg, pkg.SegmentationPlan())
 				if err == nil || !strings.Contains(err.Error(), "invalid") {
 					t.Fatalf("authored RESET accepted: %v", err)
 				}

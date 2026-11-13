@@ -1,5 +1,4 @@
 id: vendor-rdp-compromise
-order: "2.3-bonus"
 name: "Vendor Remote Access Compromise (Bonus)"
 summary: "Optional - Compromised vendor RDP/VNC credentials let an enterprise attacker pivot through the DMZ to OT field devices."
 estimated_minutes: 25

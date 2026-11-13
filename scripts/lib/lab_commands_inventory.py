@@ -1,9 +1,13 @@
 """Offline package discovery and the shared description command grammar."""
 import json
 import re
+import sys
 from pathlib import Path
 
 import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.lib.scenario_sources import scenario_files as resolve_scenario_files
 
 ROOT = Path(__file__).resolve().parents[2]
 US = "us-dnp3-substation"
@@ -40,16 +44,16 @@ def package(root, package_id):
     for node in topo["nodes"]:
         if nodes.get(node["id"]) != node["container"]:
             raise ValueError(f"{package_id}: topology/manifest mismatch: {node['id']}")
-    curriculum = yaml.safe_load((base / doc["curriculum"]["dir"] / "nodes.yml").read_text())
+    routing = yaml.safe_load((base / doc["course"]["nodes"]).read_text())
     ips = {n["id"]: n.get("ip", "") for n in topo["nodes"]}
-    for rule in curriculum["nodeInference"]:
+    for rule in routing["nodeInference"]:
         rule["ip"] = re.sub(r"\$\{ip:([^}]+)}", lambda m: ips[m[1]], rule["ip"])
-    return base, doc, nodes, curriculum
+    return base, doc, nodes, routing
 
 
 def scenario_files(root=ROOT, package_id=US):
-    base, doc, _, _ = package(root, package_id)
-    files = sorted((base / doc["scenarios"]).glob("*.yml"))
+    base, _, _, _ = package(root, package_id)
+    files = resolve_scenario_files(base, Path(root) / "lab-definitions")
     if not files:
         raise ValueError(f"{package_id}: no scenario YAML files")
     return files
@@ -112,7 +116,7 @@ def infer_node_per_command(desc, line):
 
 
 def extract(root=ROOT, target="", package_id=US):
-    _, _, nodes, curriculum = package(root, package_id)
+    _, _, nodes, routing = package(root, package_id)
     rows, found = [], False
     for path in scenario_files(root, package_id):
         doc = yaml.safe_load(path.read_text())
@@ -122,11 +126,11 @@ def extract(root=ROOT, target="", package_id=US):
         if target and scenario != target:
             continue
         found = True
-        default = curriculum["nodeMap"].get(doc["id"], {}).get("primary")
+        default = routing["nodeMap"].get(doc["id"], {}).get("primary")
         default = default or (doc.get("nodes") or [""])[0]
         for idx, step in enumerate(doc["steps"], 1):
             desc = step.get("description") or ""
-            inferred = next((r["node"] for r in curriculum["nodeInference"]
+            inferred = next((r["node"] for r in routing["nodeInference"]
                              if r["ip"] in desc or re.search(r["pattern"], desc, re.I)), "")
             fallback = step.get("node") or inferred or default
             occurrences = {}

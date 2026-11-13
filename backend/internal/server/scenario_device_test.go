@@ -27,7 +27,7 @@ func seedEUScenario(t *testing.T, s *Server) []labs.ScenarioStep {
 		t.Fatal(err)
 	}
 	s.db, s.catalog = database, catalog
-	scenario, err := s.findActiveScenario("eu-hardening-configurations")
+	scenario, err := s.findPackageScenario(s.activePackage().ID, "eu-hardening-configurations")
 	if err != nil {
 		t.Fatal(err)
 	}

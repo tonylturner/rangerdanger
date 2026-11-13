@@ -99,9 +99,9 @@ export function tupleLabel(row: PlanExpectation): string {
   return `${row.id}: ${row.from} (${row.fromIp}) → ${row.to} (${row.toIp}) TCP/${row.port}`;
 }
 
-export function renderPlanTests(plan: CompiledPlan, binding: CurriculumBinding, role: string, phase: "positive" | "negative"): string {
+export function renderPlanTests(plan: CompiledPlan, binding: CurriculumBinding, activity: string, phase: "positive" | "negative"): string {
   const category = phase === "positive" ? "authorized" : "unauthorized";
-  const rows = plan.expectations.filter((r) => r.category === category && (!r.labs?.length || r.labs.includes(role)));
+  const rows = plan.expectations.filter((r) => r.category === category && (!r.activities?.length || r.activities.includes(activity)));
   return [
     "| Tuple | Expected result | Hardened reference | Owners | Route | Note |",
     "|---|---|---|---|---|---|",

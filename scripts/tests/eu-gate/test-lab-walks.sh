@@ -172,7 +172,7 @@ eu_api_get() {
   HTTP_STATUS=200
   case "$1" in
     /api/packages)
-      API_BODY='[{"id":"eu-iec104-substation","active":true,"curriculum":{"budgetHours":500,"teams":[{},{},{},{}],"catalog":[{}],"roles":{"requirements":"eu-segmentation-requirements","planning":"eu-remediation-planning"}}}]'
+      API_BODY='[{"id":"eu-iec104-substation","active":true,"course":{"features":{"segmentationPlan":{"model":{"budgetHours":500,"teams":[{},{},{},{}],"catalog":[{}]},"activities":{"requirements":"eu-segmentation-requirements","planning":"eu-remediation-planning"}}}}}]'
       ;;
     /api/scenarios/eu-segmentation-requirements)
       API_BODY=$(jq -nc --argjson steps "$REQ_STEPS" '{steps:($steps|tojson)}')

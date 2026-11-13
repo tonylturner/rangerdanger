@@ -24,7 +24,7 @@ func TestNetworkMetadataReadDefinition(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
-			dir := writePackage(t, root, "example", "substation", nil)
+			dir := writePackage(t, root, "example", "substation", map[string]string{"baseline.yml": validScenarioYAML})
 			topology := strings.Replace(validTopologyYAML, "    purdue: Level 3\n", test.fields, 1)
 			writeDefinition(t, filepath.Join(dir, "topology.yml"), topology)
 			// ReadDefinition is also packagelint's topology validation boundary.

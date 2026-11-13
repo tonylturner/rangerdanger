@@ -138,7 +138,7 @@ jobs:
 
       - name: Validate lab inventory
         # 6 workshop labs + 1 bonus, deck-aligned ordering. The list
-        # of (order, id) pairs is the canonical workshop inventory -
+        # of (label, id) pairs is the canonical workshop inventory -
         # add/remove rows here in lockstep with lab YAML files.
         run: |
           set -euo pipefail
@@ -155,19 +155,19 @@ jobs:
           n=$(echo "$inv" | jq '.scenarios | length')
           if [ "$n" != "${#expected[@]}" ]; then
             echo "::error::expected ${#expected[@]} scenarios, got $n"
-            echo "$inv" | jq -r '.scenarios[] | "  \(.order // "-")  \(.id)"'
+            echo "$inv" | jq -r '.scenarios[] | "  \(.label // "-")  \(.id)"'
             exit 1
           fi
           fail=0
           for entry in "${expected[@]}"; do
-            order="${entry%%|*}"
+            label="${entry%%|*}"
             id="${entry##*|}"
-            found=$(echo "$inv" | jq -r --arg id "$id" --arg ord "$order" \
-                '.scenarios[] | select(.id == $id and .order == $ord) | .id')
+            found=$(echo "$inv" | jq -r --arg id "$id" --arg ord "$label" \
+                '.scenarios[] | select(.id == $id and .label == $ord) | .id')
             if [ "$found" = "$id" ]; then
-              echo "  Lab $order  $id"
+              echo "  Lab $label  $id"
             else
-              echo "::error::Lab $order $id missing or has wrong order"
+              echo "::error::Lab $label $id missing or has wrong label"
               fail=1
             fi
           done

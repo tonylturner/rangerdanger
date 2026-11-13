@@ -119,7 +119,7 @@ export function ExerciseSummary({
   const timestamp = new Date().toLocaleString();
 
   const summaryText = [
-    `Lab ${scenario.order}: ${scenario.name}`,
+    `Lab ${scenario.label}: ${scenario.name}`,
     `Steps marked complete: ${completedStepIds.size}/${scenario.steps.length} (${completionPct}%)`,
     `Firewall Config: ${policyLabel}`,
     `Date: ${timestamp}`,

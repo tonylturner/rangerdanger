@@ -83,7 +83,10 @@ func TestPlanSemanticValidation(t *testing.T) {
 			c.Plan.Proof[0].Owners = []string{"pin-rtac-to-field", "pin-rtac-to-field"}
 		}, "duplicate owner"},
 		{"bridged owner", func(_ *Package, c *Curriculum) { c.Plan.Proof[3].Owners = []string{"pin-rtac-to-field"} }, "bridged proof"},
-		{"unknown lab", func(_ *Package, c *Curriculum) { c.Plan.Proof[0].Labs = []string{"foreign"} }, "unknown lab role"},
+		{"unknown activity", func(_ *Package, c *Curriculum) { c.Plan.Proof[0].Activities = []string{"foreign"} }, "unknown or duplicate course activity"},
+		{"duplicate proof activity", func(_ *Package, c *Curriculum) {
+			c.Plan.Proof[0].Activities = []string{"firewall-implementation", "firewall-implementation"}
+		}, "unknown or duplicate course activity"},
 		{"unknown source", func(_ *Package, c *Curriculum) { c.Plan.Proof[0].From = "foreign" }, "unknown source or destination"},
 		{"unknown destination", func(_ *Package, c *Curriculum) { c.Plan.Proof[0].To = "foreign" }, "unknown source or destination"},
 		{"unknown network", func(_ *Package, c *Curriculum) { c.Plan.Proof[0].Network = "foreign" }, "destination network"},
@@ -99,8 +102,8 @@ func TestPlanSemanticValidation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pkg := planPackage(t, "us-dnp3-substation")
-			tc.change(&pkg, pkg.Curriculum)
-			if _, err := validatePlan(pkg, pkg.Curriculum); err == nil || !strings.Contains(err.Error(), tc.want) {
+			tc.change(&pkg, pkg.SegmentationPlan())
+			if _, err := validatePlan(pkg, pkg.SegmentationPlan()); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want %q", err, tc.want)
 			}
 		})

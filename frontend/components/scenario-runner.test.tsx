@@ -3,13 +3,10 @@ import { fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { Scenario, CurriculumBinding, CompiledPlan } from "../lib/api";
+import type { Scenario, Course, CompiledPlan } from "../lib/api";
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { loadProgress, saveProgress } from "../lib/scenario-runner-storage";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { resolve } from "node:path";
-import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test-util";
+import { fixtureCourse, fixtureScenarios, US_COURSE } from "../lib/curriculum-storage.test-util";
 import { loadSavedRemediationPlan, saveRemediationPlan } from "../lib/remediation-plan";
 import { decisionName, writeCurriculum } from "../lib/curriculum-storage";
 import { EU_PLANS, US_PLANS } from "../lib/plan-fixtures.test-util";
@@ -18,7 +15,7 @@ import * as api from "../lib/api";
 import { ScenarioRunner } from "./scenario-runner";
 
 const { scope, compiled } = vi.hoisted(() => ({
-  scope: { packageId: "us-dnp3-substation", revision: 1, curriculum: undefined as CurriculumBinding | undefined },
+  scope: { packageId: "us-dnp3-substation", revision: 1, course: undefined as Course | undefined },
   compiled: { data: undefined as CompiledPlan | undefined },
 }));
 vi.mock("../lib/use-compiled-plan", () => ({ useCompiledPlan: vi.fn(() => compiled) }));
@@ -47,7 +44,7 @@ vi.mock("./ui/tooltip", () => ({
 }));
 
 const scenario: Scenario = {
-  id: "reset-fixture", order: "1.2", name: "Reset fixture", description: "Test",
+  id: "reset-fixture", label: "1.2", name: "Reset fixture", description: "Test",
   package_id: "fixture", lab_template_id: "fixture", validator: "", tags: [], nodes: [],
   steps: [
     { id: "first", title: "First instruction", description: "Start here", action: { type: "decision" } },
@@ -55,11 +52,11 @@ const scenario: Scenario = {
     { id: "third", title: "Third instruction", description: "Run this", action: { type: "probe" } },
   ],
 };
-const EU = fixtureCurriculum("lab-definitions/packages/eu-iec104-substation");
+const EU = fixtureCourse("lab-definitions/packages/eu-iec104-substation");
 
 const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
 afterEach(() => {
-  scope.curriculum = undefined;
+  scope.course = undefined;
   compiled.data = undefined;
   vi.mocked(useCompiledPlan).mockClear();
   vi.unstubAllGlobals();
@@ -107,16 +104,16 @@ describe("Reset Progress", () => {
 
 describe("empty remediation plan completion", () => {
   it.each([
-    ["US", US_CURRICULUM, "us-dnp3-substation"],
+    ["US", US_COURSE, "us-dnp3-substation"],
     ["EU", EU, "eu-iec104-substation"],
   ] as const)("records an empty %s plan when its decision step is completed", (_, binding, packageId) => {
     scope.packageId = packageId;
     scope.revision = 1;
-    scope.curriculum = binding;
+    scope.course = binding;
     Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
     const planningScenario: Scenario = {
       ...scenario,
-      id: binding.roles.planning,
+      id: binding.features.segmentationPlan!.activities.planning,
       steps: [{ ...scenario.steps[0], action: { type: "decision" } }],
     };
     const client = new QueryClient();
@@ -137,17 +134,17 @@ describe("empty remediation plan completion", () => {
   it("does not replace a saved plan when the decision step is completed", () => {
     scope.packageId = "us-dnp3-substation";
     scope.revision = 1;
-    scope.curriculum = US_CURRICULUM;
+    scope.course = US_COURSE;
     Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
     const plan = {
-      exerciseId: US_CURRICULUM.roles.planning,
+      exerciseId: US_COURSE.features.segmentationPlan!.activities.planning,
       selectedActionIds: ["existing-action"],
       savedAt: "existing timestamp",
     };
     saveRemediationPlan(scope, plan);
     const planningScenario: Scenario = {
       ...scenario,
-      id: US_CURRICULUM.roles.planning,
+      id: US_COURSE.features.segmentationPlan!.activities.planning,
       steps: [{ ...scenario.steps[0], action: { type: "decision" } }],
     };
     const client = new QueryClient();
@@ -161,15 +158,16 @@ describe("empty remediation plan completion", () => {
   });
 });
 
-const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
 function authoredScenario(name: string, eu = true): Scenario {
-  const directory = eu ? "lab-definitions/packages/eu-iec104-substation/scenarios" : "lab-definitions/scenarios";
-  return load(readFileSync(resolve(__dirname, "../..", directory, `${name}.yml`), "utf8")) as Scenario;
+  const directory = eu ? "eu-iec104-substation" : "us-dnp3-substation";
+  const scenario = fixtureScenarios(`lab-definitions/packages/${directory}`).find((activity) => activity.id === name);
+  if (!scenario) throw new Error(`Missing authored scenario ${name}`);
+  return scenario;
 }
 
-function renderStep(authored: Scenario, stepId: string, binding: CurriculumBinding, cmdLog: string[] = []) {
+function renderStep(authored: Scenario, stepId: string, binding: Course, cmdLog: string[] = []) {
   scope.packageId = binding === EU ? "eu-iec104-substation" : "us-dnp3-substation";
-  scope.curriculum = binding;
+  scope.course = binding;
   Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
   saveProgress(scope, authored.id, { completedStepIds: [], skippedStepIds: [], notes: "", cmdLog });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -180,7 +178,7 @@ function renderStep(authored: Scenario, stepId: string, binding: CurriculumBindi
 }
 
 describe("Execute Step command log", () => {
-  it.each([US_CURRICULUM, EU])("logs failed checks as amber NOT MET in $roles.implementation", async (binding) => {
+  it.each([US_COURSE, EU])("logs failed checks as amber NOT MET in $features.segmentationPlan.activities.implementation", async (binding) => {
     const authored: Scenario = {
       ...scenario,
       steps: [{ id: "check", title: "Check breaker", description: "Read device state", action: { type: "check" } }],
@@ -194,7 +192,7 @@ describe("Execute Step command log", () => {
     try {
       fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
       const line = await tree.findByText(/^\[NOT MET\] Step 1: Check breaker — breaker_closed: Expected false; observed true$/);
-      expect(execute).toHaveBeenCalledWith(authored.id, 0, undefined);
+      expect(execute).toHaveBeenCalledWith(authored.package_id, authored.id, 0, undefined);
       expect(line.classList.contains("text-amber-400")).toBe(true);
       expect(line.textContent).not.toContain("BLOCKED");
       expect(loadProgress(scope, authored).cmdLog).toEqual([line.textContent]);
@@ -204,9 +202,9 @@ describe("Execute Step command log", () => {
 });
 
 describe("interactive grading change requests", () => {
-  it.each([US_CURRICULUM, EU])("sends effective saved intent on Execute and Validate in $roles.implementation", async (binding) => {
+  it.each([US_COURSE, EU])("sends effective saved intent on Execute and Validate in $features.segmentationPlan.activities.implementation", async (binding) => {
     const authored: Scenario = {
-      ...scenario, id: binding.roles.implementation, validator: "policy",
+      ...scenario, id: binding.features.segmentationPlan!.activities.implementation, validator: "policy",
       steps: [{ id: "policy", title: "Policy", description: "Read policy", action: { type: "check" } }],
     };
     const execute = vi.spyOn(api, "executeScenarioStep").mockResolvedValue({
@@ -228,25 +226,25 @@ describe("interactive grading change requests", () => {
       };
       const expectRequest = (actionIds?: string[]) => {
         const request = actionIds ? { packageId: scope.packageId, revision: scope.revision, actionIds } : undefined;
-        expect(execute).toHaveBeenLastCalledWith(authored.id, 0, request);
-        expect(validate).toHaveBeenLastCalledWith(authored.id, request);
+        expect(execute).toHaveBeenLastCalledWith(authored.package_id, authored.id, 0, request);
+        expect(validate).toHaveBeenLastCalledWith(authored.package_id, authored.id, request);
       };
       // Empty effective intent is no request: never grade manual work against Weak.
       await clickBoth();
       expectRequest();
-      saveRemediationPlan(scope, { exerciseId: binding.roles.planning, selectedActionIds: [], savedAt: "now" });
+      saveRemediationPlan(scope, { exerciseId: binding.features.segmentationPlan!.activities.planning, selectedActionIds: [], savedAt: "now" });
       await clickBoth();
       expectRequest();
       saveRemediationPlan(scope, {
-        exerciseId: binding.roles.planning,
+        exerciseId: binding.features.segmentationPlan!.activities.planning,
         selectedActionIds: ["block-enterprise-to-field", "block-vendor-to-field"],
         savedAt: "now",
       });
-      writeCurriculum(scope, decisionName(binding.roles.requirements, "vendor-change-window"), "NOT_DISCUSSED");
+      writeCurriculum(scope, decisionName(binding.features.segmentationPlan!.activities.requirements, "vendor-change-window"), "NOT_DISCUSSED");
       await clickBoth();
       expectRequest(["block-enterprise-to-field"]);
       expect(loadSavedRemediationPlan(scope)?.selectedActionIds).toEqual(["block-enterprise-to-field", "block-vendor-to-field"]);
-      saveRemediationPlan(scope, { exerciseId: binding.roles.planning, selectedActionIds: ["block-vendor-to-field"], savedAt: "now" });
+      saveRemediationPlan(scope, { exerciseId: binding.features.segmentationPlan!.activities.planning, selectedActionIds: ["block-vendor-to-field"], savedAt: "now" });
       await clickBoth();
       expectRequest(); // The only saved choice is readiness-blocked.
       // Browser storage is namespaced; old revisions never become a request.
@@ -262,12 +260,12 @@ describe("interactive grading change requests", () => {
 
 describe("authored description → Run → node exec", () => {
   it.each([
-    { binding: US_CURRICULUM, plan: US_PLANS[2], eu: false },
+    { binding: US_COURSE, plan: US_PLANS[2], eu: false },
     { binding: EU, plan: EU_PLANS[2], eu: true },
   ])("keeps the complete six-column rule reference in the $plan.packageId implementation body", ({ binding, plan, eu }) => {
     compiled.data = plan;
-    const stepId = Object.entries(binding.dynamicSteps).find(([, phase]) => phase === "rules")![0];
-    const tree = renderStep(authoredScenario(binding.roles.implementation, eu), stepId, binding);
+    const stepId = Object.entries(binding.features.segmentationPlan!.dynamicSteps).find(([, phase]) => phase === "rules")![0];
+    const tree = renderStep(authoredScenario(binding.features.segmentationPlan!.activities.implementation, eu), stepId, binding);
     try {
       const table = tree.getAllByRole("table").find((candidate) =>
         Array.from(candidate.querySelectorAll("th")).map((header) => header.textContent).join(",") === "Rule,From,To,Port,Action,Log");
@@ -295,7 +293,7 @@ describe("authored description → Run → node exec", () => {
     } finally { tree.close(); }
   });
 
-  it.each([US_CURRICULUM, EU])("logs package-neutral scenario generation", async (binding) => {
+  it.each([US_COURSE, EU])("logs package-neutral scenario generation", async (binding) => {
     vi.spyOn(api, "startTrafficGeneration").mockResolvedValue({
       status: "started", duration_sec: 45, run_id: "fixture", started_at: "2026-11-04T00:00:00Z",
     });
@@ -389,7 +387,7 @@ describe("authored description → Run → node exec", () => {
     const exec = vi.spyOn(api, "execOnNode").mockResolvedValue({ exit_code: 0, stdout: "ok", stderr: "", duration_ms: 1 });
     const authored = authoredScenario("validation-evidence", false);
     const step = authored.steps.find((s) => s.description.includes("### Prepared positive test commands"))!;
-    const tree = renderStep(authored, step.id, US_CURRICULUM);
+    const tree = renderStep(authored, step.id, US_COURSE);
     try {
       const hint = tree.getAllByRole("button", { name: /Optional catch-up — for less technical students or teams behind schedule/ })[0];
       fireEvent.click(hint);
@@ -406,9 +404,9 @@ describe("authored description → Run → node exec", () => {
 
 describe("manual evidence surfaces", () => {
   it.each([false, true])("has no one-click evidence controls on hardening or validation (EU=%s)", (eu) => {
-    const binding = eu ? EU : US_CURRICULUM;
+    const binding = eu ? EU : US_COURSE;
     for (const role of ["hardening", "validation"] as const) {
-      const authored = authoredScenario(binding.roles[role], eu);
+      const authored = authoredScenario(binding.modules[1].activities[role === "hardening" ? 1 : 3].scenario, eu);
       for (const step of authored.steps) {
         const tree = renderStep(authored, step.id, binding);
         try {
@@ -460,7 +458,7 @@ const walkthroughResults = [
 ];
 
 describe("Run output evidence", () => {
-  it.each([EU, US_CURRICULUM])("retains both real command streams in $roles.implementation", async (binding) => {
+  it.each([EU, US_COURSE])("retains both real command streams in $features.segmentationPlan.activities.implementation", async (binding) => {
     const authored = { ...scenario, nodes: ["kali-1"], steps: [{ id: "run", title: "Run evidence", description: "From Kali:\n    curl fixture" }] };
     const exec = vi.spyOn(api, "execOnNode");
     const tree = renderStep(authored, "run", binding);
@@ -498,4 +496,24 @@ describe("Run output evidence", () => {
       expect(tree.container.textContent).not.toContain("more lines");
     } finally { tree.close(); }
   });
+});
+
+
+it("renders a featureless course command without planning surfaces", () => {
+  const directory = "backend/internal/labs/testdata/course-basic/packages/basic";
+  const root = "backend/internal/labs/testdata/course-basic";
+  scope.packageId = "basic";
+  scope.course = fixtureCourse(directory, undefined, root);
+  Object.defineProperty(window, "localStorage", { configurable: true, value: memoryStorage() });
+  const authored = fixtureScenarios(directory, root)[0];
+  const client = new QueryClient();
+  const tree = render(<QueryClientProvider client={client}><ScenarioRunner scenario={authored} onExit={() => {}} /></QueryClientProvider>);
+  try {
+    expect(tree.container.textContent).toContain("Inspect interfaces");
+    expect(tree.container.textContent).toContain("ls /sys/class/net");
+    expect(tree.getByRole("button", { name: "Run" })).toBeTruthy();
+    expect(tree.container.textContent).not.toContain("Apply Your Plan");
+    expect(tree.container.textContent).not.toContain("Lab undefined");
+    expect(vi.mocked(useCompiledPlan).mock.calls.at(-1)?.[1]).toBe(false);
+  } finally { tree.unmount(); client.clear(); }
 });

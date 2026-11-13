@@ -9,6 +9,8 @@ import (
 // handleSeedDefinitions reloads every package. It fails with the same
 // error startup would, and keeps the previous catalog when it does.
 func (s *Server) handleSeedDefinitions(c *gin.Context) {
+	s.seedMu.Lock()
+	defer s.seedMu.Unlock()
 	catalog, err := s.loader.Seed(c.Request.Context(), s.db, s.rng.ActivePackage())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

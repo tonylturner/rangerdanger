@@ -19,7 +19,7 @@ func TestUSValidationMatrixUsesPlanProof(t *testing.T) {
 	if err != nil || len(got) != 21 {
 		t.Fatalf("matrix: %d %v", len(got), err)
 	}
-	for i, proof := range gen.Package.Curriculum.Plan.Proof {
+	for i, proof := range gen.Package.SegmentationPlan().Plan.Proof {
 		if got[i].ID != proof.ID || got[i].Expected != string(proof.Expect) {
 			t.Fatalf("row %d: %+v", i, got[i])
 		}

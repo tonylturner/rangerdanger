@@ -4,16 +4,16 @@ import (
 	"time"
 )
 
-// Scenario defines a training scenario. IDs are plain slugs, unique across
-// every package; PackageID names the owning package and LabTemplateID its
-// topology's id.
+// Scenario defines a training scenario. IDs are plain slugs, unique within
+// the consuming PackageID; LabTemplateID names its topology.
 type Scenario struct {
-	ID               string    `gorm:"primaryKey" json:"id"`
-	PackageID        string    `gorm:"index" json:"package_id"`
+	PackageID        string    `gorm:"primaryKey;not null" json:"package_id"`
+	ID               string    `gorm:"primaryKey;not null" json:"id"`
 	Name             string    `json:"name"`
 	Summary          string    `json:"summary"`
 	Description      string    `json:"description"`
-	Order            string    `json:"order"`
+	Label            string    `json:"label"`
+	Position         int       `json:"-"`
 	LabTemplateID    string    `json:"lab_template_id"`
 	Tags             string    `json:"tags"`
 	Steps            string    `json:"steps"`

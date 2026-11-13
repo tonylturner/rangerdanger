@@ -16,7 +16,7 @@ compiled. A broken package stops the backend from starting, and
 | `packages/<id>/compose.release.yml` | Complete range model using published images |
 | `packages/<id>/nginx.routes.conf` | Package-specific proxy locations included by the platform nginx config |
 | `substation-segmentation.yml` | Lab topology of the US package - nodes, networks, IPs, container names |
-| `scenarios/*.yml` | One file per exercise; numbered via the `order` field |
+| `scenarios/*.yml` | One file per exercise; labeled and sequenced by the package course |
 | `firewall/*.json` | Containd firewall policies (weak baseline + improved hardened state) |
 
 ## Packages
@@ -35,28 +35,32 @@ id: us-dnp3-substation            # slug; must match the directory name
 title: "US distribution substation (DNP3)"
 revision: 1                       # bump when step IDs or validator meaning change
 topology: ../../substation-segmentation.yml   # relative to package.yml
-scenarios: ../../scenarios                    # directory of <slug>.yml; the only scenario source
+scenarios: ../../scenarios                   # directory relative to package.yml
 capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
 ```
 
-Both packages bind `curriculum: {dir: curriculum}` through `package.yml`.
-The binding's `curriculum.roles` names the seven exercises, and the
-curriculum directory owns the package-level budget, teams, action catalog, requirements and
-readiness mappings. In particular, `eu-segmentation-requirements.yml`
-holds the design/readiness prompt fences while
-`eu-remediation-planning.yml` has a single `action.type: decision` step;
-neither embeds a second labor/action catalog. The package binding is
-defined by [`backend/internal/labs/package.go`](../backend/internal/labs/package.go#L68-L78),
-and the active package's curriculum is included by
-[`backend/internal/server/packages.go`](../backend/internal/server/packages.go#L14-L26).
+Both packages declare `course: {nodes: nodes.yml, modules: [...], features: {...}}`.
+Modules and their activities are ordered. Each activity supplies a package-unique
+`label` and references one local scenario; every loaded scenario appears exactly
+once. This order drives the inventory, workshop test suite and workbook, regardless
+of filenames or labels. Module titles are data only, not rendered headings.
+Activity flags are `validate` (omitted means true), `policyActions` and `hideBanner`.
 
-- `packages/eu-iec104-substation/curriculum/` is bound by
-  `packages/eu-iec104-substation/package.yml`; the binding's `roles` map design,
-  planning, implementation and validator roles to their served EU
-  exercises. The loader validates required roles and decision options
-  against the requirements exercise
-  ([`curriculum_load.go`](../backend/internal/labs/curriculum_load.go#L131-L139),
-  [`curriculum_load.go`](../backend/internal/labs/curriculum_load.go#L171-L191)).
+Runner routing lives in each package-root `nodes.yml` (`nodeMap`, `nodeInference`),
+independent of teaching features. US and EU opt into
+`course.features.segmentationPlan`, whose `activities` bind distinct requirements,
+planning and implementation scenario IDs. Its `dir: curriculum` loads six section
+files: catalog, requirements, readiness, coverage, implementation and plan.
+`dynamicSteps` stays in the feature binding. Proof `activities` lists scenario IDs.
+The active package's course, routing and resolved optional feature model are served
+by `GET /api/packages` (no legacy `curriculum` or exercise-role fields).
+
+The EU requirements exercise supplies design/readiness prompts and its planning
+exercise has one decision action. The loader checks those prompts against the
+resolved feature model. A featureless course uses `features: {}` and may still use
+named policies. It must not contain decision actions, planning flags (even false),
+improved firewall checks, plan-coverage fences or plan-dependent validators.
+See the [course authoring contract](../docs/lab-authoring.md#course-and-segmentation-sections).
 
 The EU package serves these seven scenario files:
 
@@ -102,15 +106,25 @@ The EU package serves these seven scenario files:
   topology file's directory and must stay inside `lab-definitions/`.
 - A topology must not list scenarios inline; `scenarios: []` is the
   only accepted value.
-- Scenario IDs are slugs unique across **all** packages; a duplicate
-  is a load error.
-- Each package loads in its own transaction: scenarios whose file is
-  gone are removed, and a package directory that disappears takes its
-  scenarios with it.
+- Scenario IDs are slugs unique within a **package**. The same ID may
+  occur in another package. `scenarios` must be one nonempty directory string
+  relative to `package.yml`; every `*.yml` file in it is loaded. Lists and
+  mappings are rejected. Duplicate IDs within that directory are errors,
+  even for identical content.
+- The scenario directory must be a relative portable path (no backslashes).
+  `..` is allowed only inside `lab-definitions/`; symlink targets of directories
+  and files must also remain inside it. Scenarios validate against their
+  package's topology, capabilities, knowledge and curriculum.
+- The whole catalog is seeded and pruned in one transaction: scenarios whose
+  file is gone are removed, and a package directory that disappears takes its
+  scenarios with it. A failed seed leaves the old rows intact.
 - The backend serves one active package, chosen by the
   `RANGERDANGER_PACKAGE` environment variable (default
   `us-dnp3-substation`). Scenario routes answer for the active package
-  only. `GET /api/packages` lists packages and marks the active one.
+  only; IDs in routes are relative to that package. Mutating scenario requests
+  and test-suite runs require `X-RangerDanger-Package` matching the serving
+  generation, or return 412 `package_precondition`. `GET /api/packages` lists
+  packages and marks the active one.
 - Known capabilities: `process.electrical` (substation state and the
   device-command / check vocabulary for `sequence` and `check`
   actions), `policy.containd` (validators read the active
@@ -124,12 +138,11 @@ Create `<package scenarios dir>/<id>.yml` with the schema below. For
 the US package that is `scenarios/<id>.yml`; it is exposed via
 `GET /api/scenarios`.
 
+Declare its display label (for example `"2.5"`) and position in the package
+course activity, not in this scenario document.
+
 ```yaml
-id: my-new-exercise         # slug; unique across every package
-order: "2.5"                # quoted string; sorts lexicographically.
-                            # Use the deck numbering (e.g. "1.2",
-                            # "2.3-bonus"); the loader unmarshals
-                            # this field as `string`.
+id: my-new-exercise         # slug; unique within the package
 name: "My New Exercise"
 summary: "One-line summary that appears in the card view (≤120 chars)."
 validator: us-my-new-exercise   # optional; a registered validator key (see below)

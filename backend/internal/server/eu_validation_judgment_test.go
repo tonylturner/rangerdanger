@@ -71,12 +71,12 @@ func TestEUValidationJudgesRunningPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scenario, err := s.findActiveScenario(slot)
+	scenario, err := s.findPackageScenario(s.activePackage().ID, slot)
 	if err != nil {
 		t.Fatal(err)
 	}
 	selection := planSelection{gen.Package.ID, gen.Package.Revision, []string{"pin-rtu-to-field"}}
-	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, selection.ActionIDs)
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, selection.ActionIDs)
 	if err != nil {
 		t.Fatal(err)
 	}

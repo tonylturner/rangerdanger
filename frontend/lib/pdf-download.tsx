@@ -24,12 +24,12 @@ async function renderAndDownload(
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export async function downloadExercisePDF(scenarioId: string, scenarioName: string): Promise<void> {
+export async function downloadExercisePDF(packageId: string, scenarioId: string, scenarioName: string): Promise<void> {
   const [{ listScenarios }, { ExercisePDF }] = await Promise.all([
     import("./api"),
     import("./exercise-pdf"),
   ]);
-  const res = await listScenarios();
+  const res = await listScenarios(packageId);
   const scenario = res.scenarios.find((s) => s.id === scenarioId);
   if (!scenario) throw new Error(`Exercise ${scenarioId} not found`);
   const safeName = scenarioName.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
@@ -40,11 +40,12 @@ export async function downloadExercisePDF(scenarioId: string, scenarioName: stri
 }
 
 export async function downloadWorkbookPDF(): Promise<void> {
-  const [{ listScenarios }, { WorkbookPDF }] = await Promise.all([
+  const [{ listScenarios, getActivePackage }, { WorkbookPDF }] = await Promise.all([
     import("./api"),
     import("./exercise-pdf"),
   ]);
-  const res = await listScenarios();
+  const pkg = await getActivePackage();
+  const res = await listScenarios(pkg.id);
   const generatedAt = new Date().toLocaleString();
   await renderAndDownload(
     <WorkbookPDF scenarios={res.scenarios} generatedAt={generatedAt} />,

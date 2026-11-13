@@ -98,16 +98,16 @@ type PlanDetect struct {
 
 // PlanProof identifies a TCP tuple by topology identities, not copied addresses.
 type PlanProof struct {
-	ID       string   `yaml:"id" json:"id"`
-	From     string   `yaml:"from" json:"from"`
-	To       string   `yaml:"to" json:"to"`
-	Network  string   `yaml:"network" json:"network"`
-	Port     int      `yaml:"port" json:"port"`
-	Category string   `yaml:"category" json:"category"`
-	Expect   Verdict  `yaml:"expect" json:"expect"`
-	Owners   []string `yaml:"owners" json:"owners"`
-	Labs     []string `yaml:"labs,omitempty" json:"labs,omitempty"`
-	Note     string   `yaml:"note" json:"note"`
+	ID         string   `yaml:"id" json:"id"`
+	From       string   `yaml:"from" json:"from"`
+	To         string   `yaml:"to" json:"to"`
+	Network    string   `yaml:"network" json:"network"`
+	Port       int      `yaml:"port" json:"port"`
+	Category   string   `yaml:"category" json:"category"`
+	Expect     Verdict  `yaml:"expect" json:"expect"`
+	Owners     []string `yaml:"owners" json:"owners"`
+	Activities []string `yaml:"activities,omitempty" json:"activities,omitempty"`
+	Note       string   `yaml:"note" json:"note"`
 }
 
 // PlanActionKind separates enforcement, detection and planning-only work.
@@ -147,7 +147,7 @@ type PlanExpectation struct {
 	Port            int      `json:"port"`
 	Category        string   `json:"category"`
 	Owners          []string `json:"owners"`
-	Labs            []string `json:"labs,omitempty"`
+	Activities      []string `json:"activities,omitempty"`
 	Note            string   `json:"note"`
 	PlanVerdict     Verdict  `json:"planVerdict"`
 	HardenedVerdict Verdict  `json:"hardenedVerdict"`

@@ -79,11 +79,11 @@ func TestRetainedCommandSources(t *testing.T) {
 		t.Run(target, func(t *testing.T) {
 			ids := []string{}
 			if target != "plan-deferred" {
-				for _, action := range gen.Package.Curriculum.Catalog {
+				for _, action := range gen.Package.SegmentationPlan().Catalog {
 					ids = append(ids, action.ID)
 				}
 			}
-			compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, ids)
+			compiled, err := labs.CompilePlan(gen.Package, gen.Package.Course.Features.SegmentationPlan.Model, ids)
 			if err != nil {
 				t.Fatal(err)
 			}

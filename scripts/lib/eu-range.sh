@@ -73,10 +73,20 @@ eu_api_get() {
 
 eu_api_post() {
   local path="$1" body="$2" budget="${3:-30}"
+  local headers=(-H 'Content-Type: application/json')
+  case "$path" in
+    /api/scenarios/*|/api/workshop/test-suite)
+      if [ -z "${EU_READY_PACKAGE:-}" ]; then
+        printf 'POST %s requires a verified ready package\n' "$path" >&2
+        return 1
+      fi
+      headers+=(-H "X-RangerDanger-Package: $EU_READY_PACKAGE")
+      ;;
+  esac
   API_BODY=""
   HTTP_STATUS=""
   HTTP_STATUS=$(curl -sS --max-time "$budget" -o "$TMP_DIR/api-response.json" \
-    -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+    -w '%{http_code}' -X POST "${headers[@]}" \
     -d "$body" "$API$path" 2>"$TMP_DIR/curl.err") || {
       printf 'POST %s failed: %s\n' "$path" "$(cat "$TMP_DIR/curl.err")" >&2
       return 1

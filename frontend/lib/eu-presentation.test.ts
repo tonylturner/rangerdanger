@@ -40,21 +40,21 @@ describe("EU presentation vocabulary", () => {
   });
 });
 
-import { fixtureCurriculum, US_CURRICULUM } from "./curriculum-storage.test-util";
+import { fixtureCourse, US_COURSE } from "./curriculum-storage.test-util";
 import { EU_PLANS } from "./plan-fixtures.test-util";
 import { renderRuleTable, renderPlanTests, actionEffectLabel } from "./plan-presentation";
 import { computeCoverage } from "./requirement-coverage";
 import { injectDynamicContent, showsValidateButton } from "./scenario-runner-logic";
 import { getExerciseNodes, inferNodeFromDescription } from "./exercise-nodes";
 
-const EU = fixtureCurriculum("lab-definitions/packages/eu-iec104-substation");
+const EU = fixtureCourse("lab-definitions/packages/eu-iec104-substation");
 describe("EU curriculum example — shared machinery, EU facts", () => {
   it("keeps the budget and teams", () => {
-    expect(EU.budgetHours).toBe(500);
-    expect(EU.teams).toEqual(US_CURRICULUM.teams);
+    expect(EU.features.segmentationPlan!.model.budgetHours).toBe(500);
+    expect(EU.features.segmentationPlan!.model.teams).toEqual(US_COURSE.features.segmentationPlan!.model.teams);
   });
   it("keeps the frozen catalog including remote access and its effort estimates", () => {
-    expect(EU.catalog.map((a) => [a.id, a.effort_hours])).toEqual([
+    expect(EU.features.segmentationPlan!.model.catalog.map((a) => [a.id, a.effort_hours])).toEqual([
       ["restrict-enterprise-to-vendor", 30],
       ["block-enterprise-to-field", 40], ["block-enterprise-to-station", 30],
       ["restrict-vendor-to-station", 50], ["block-vendor-to-field", 30],
@@ -66,13 +66,13 @@ describe("EU curriculum example — shared machinery, EU facts", () => {
   });
   it("distinguishes planning-only Modbus review from IEC 104 monitoring", () => {
     const suffix = "Planning-only protocol review; this range emits no protocol rule. The L4 source pin enforces; DPI detects and logs.";
-    expect(EU.catalog.find((action) => action.id === "modbus-dpi")?.why).toBe(
+    expect(EU.features.segmentationPlan!.model.catalog.find((action) => action.id === "modbus-dpi")?.why).toBe(
       `Plan function-code restrictions for southbound Modbus. ${suffix}`,
     );
-    expect(EU.catalog.find((action) => action.id === "iec104-dpi")?.why).toBe(
+    expect(EU.features.segmentationPlan!.model.catalog.find((action) => action.id === "iec104-dpi")?.why).toBe(
       "Observe CC breaker and OLTC commands with three explicit monitor rules; compare lower and raise matches. Monitoring never blocks or satisfies a BLOCK requirement. The L4 source pin enforces; DPI detects and logs.",
     );
-    expect(EU.icsRules).toBe("monitor");
+    expect(EU.features.segmentationPlan!.model.icsRules).toBe("monitor");
   });
   it.each(EU_PLANS)("renders server-owned $label observations only when selected", (plan) => {
     const observations = plan.rules.filter(({ rule }) => rule.ics);
@@ -87,37 +87,37 @@ describe("EU curriculum example — shared machinery, EU facts", () => {
       expect(observations).toEqual([]);
       expect(JSON.stringify(plan.config)).not.toMatch(/"ics"\s*:/);
     }
-    const rules = renderRuleTable(plan, EU);
+    const rules = renderRuleTable(plan, EU.features.segmentationPlan!.model);
     expect(rules).toContain("control-centre-to-rtu-iec104");
     expect(rules).toContain("rtu-to-feeder-modbus");
     expect(rules).toContain("plc-to-oltc-modbus");
-    expect(renderPlanTests(plan, EU, "implementation", "negative")).toContain("TCP/3389");
-    expect(renderPlanTests(plan, EU, "hardening", "negative")).not.toContain("TCP/3389");
-    expect(renderPlanTests(plan, EU, "hardening", "negative")).toContain("TCP/2404");
+    expect(renderPlanTests(plan, EU.features.segmentationPlan!.model, EU.features.segmentationPlan!.activities.implementation, "negative")).toContain("TCP/3389");
+    expect(renderPlanTests(plan, EU.features.segmentationPlan!.model, "eu-hardening-configurations", "negative")).not.toContain("TCP/3389");
+    expect(renderPlanTests(plan, EU.features.segmentationPlan!.model, "eu-hardening-configurations", "negative")).toContain("TCP/2404");
     expect(actionEffectLabel(plan.actions.find((a) => a.id === "iec104-dpi")!.kind)).toBe("detects and logs or inspects; changes no verdict");
     expect(actionEffectLabel(plan.actions.find((a) => a.id === "modbus-dpi")!.kind)).toBe("planning only: no firewall change");
   });
 
   it("requires both enterprise and vendor field closures for the combined EU requirement", () => {
     const req = [{ id: "enterprise-to-field", label: "Enterprise/vendor field", verdict: "BLOCK" }];
-    expect(computeCoverage(req, new Set(["block-enterprise-to-field"]), EU)[0]).toMatchObject({ status: "partial", missingActions: ["block-vendor-to-field"] });
-    expect(computeCoverage(req, new Set(["block-enterprise-to-field", "block-vendor-to-field"]), EU)[0]).toMatchObject({ status: "covered" });
+    expect(computeCoverage(req, new Set(["block-enterprise-to-field"]), EU.features.segmentationPlan!.model)[0]).toMatchObject({ status: "partial", missingActions: ["block-vendor-to-field"] });
+    expect(computeCoverage(req, new Set(["block-enterprise-to-field", "block-vendor-to-field"]), EU.features.segmentationPlan!.model)[0]).toMatchObject({ status: "covered" });
   });
 
-  it("uses stable EU step IDs and planning-role deep links without title matching", () => {
+  it("uses stable EU step IDs and planning-activity deep links without title matching", () => {
     const plan = EU_PLANS[0];
-    expect(injectDynamicContent("original", "implement-rules", plan, EU)).toContain("/exercises/eu-remediation-planning");
-    expect(injectDynamicContent("original", "Phase 3", plan, EU)).toBe("original");
-    expect(injectDynamicContent("original", "test-positive", plan, EU)).toContain("Expected result");
-    expect(getExerciseNodes(EU.roles.hardening, undefined, EU)).toEqual(["kali-1"]);
+    expect(injectDynamicContent("original", "implement-rules", plan, EU, EU.features.segmentationPlan!.activities.implementation)).toContain("/exercises/eu-remediation-planning");
+    expect(injectDynamicContent("original", "Phase 3", plan, EU, EU.features.segmentationPlan!.activities.implementation)).toBe("original");
+    expect(injectDynamicContent("original", "test-positive", plan, EU, EU.features.segmentationPlan!.activities.implementation)).toContain("Expected result");
+    expect(getExerciseNodes(EU.modules[1].activities[1].scenario, undefined, EU)).toEqual(["kali-1"]);
     expect(inferNodeFromDescription("from the RTU", EU)).toBe("rtu-1");
     expect(inferNodeFromDescription("RTAC 10.30.30.20")).toBeNull();
   });
 
   it("has no planner or US node fallback without a binding; Validate follows the declared validator", () => {
     expect(getExerciseNodes("baseline-assessment")).toEqual([]);
-    expect(showsValidateButton({ id: EU.roles.planning, package_id: "eu", validator: "" }, EU)).toBe(false);
-    expect(showsValidateButton({ id: EU.roles.implementation, package_id: "eu", validator: "eu-check" }, EU)).toBe(true);
+    expect(showsValidateButton({ id: EU.features.segmentationPlan!.activities.planning, package_id: "eu", validator: "" }, EU)).toBe(false);
+    expect(showsValidateButton({ id: EU.features.segmentationPlan!.activities.implementation, package_id: "eu", validator: "eu-check" }, EU)).toBe(true);
     // No package-ID special case: even a US-looking ID without a binding
     // cannot activate planning machinery or override a validator declaration.
     expect(showsValidateButton({ id: "baseline-assessment", package_id: "us-dnp3-substation", validator: "check" })).toBe(true);

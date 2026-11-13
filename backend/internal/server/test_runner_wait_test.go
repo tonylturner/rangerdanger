@@ -218,7 +218,7 @@ func TestWaitForFirewallPolicyCustomCanaryUsesCommittedPolicy(t *testing.T) {
 				gen := s.rng.(*fakeRange).gen
 				s.policySource = "manual-custom"
 				var all []string
-				for _, action := range gen.Package.Curriculum.Catalog {
+				for _, action := range gen.Package.SegmentationPlan().Catalog {
 					all = append(all, action.ID)
 				}
 				var requestIDs []string
@@ -322,7 +322,7 @@ func TestWaitForFirewallPolicyCanaryRejectsChangedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	// No curriculum is needed for reconciliation of a committed manual policy.
-	s.rng.(*fakeRange).gen.Package.Curriculum = nil
+	s.rng.(*fakeRange).gen.Package.Course.Features.SegmentationPlan = nil
 	calls := scriptedFirewallCanary(t, s, []canaryObservation{{rc: 0}})
 	if err := s.waitForFirewallPolicy(t.Context(), s.rng.(*fakeRange).gen); err == nil || !strings.Contains(err.Error(), "policy changed") {
 		t.Fatalf("accepted observation across a running-policy change: %v", err)

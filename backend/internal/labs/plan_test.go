@@ -71,8 +71,8 @@ func TestPlanRouteResolution(t *testing.T) {
 		{"A4", true}, {"A5", true}, {"A6", true}, {"U10", false},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
-			i := slices.IndexFunc(pkg.Curriculum.Plan.Proof, func(p PlanProof) bool { return p.ID == tc.id })
-			route, err := ResolvePlanTuple(pkg, pkg.Curriculum.Plan.Proof[i])
+			i := slices.IndexFunc(pkg.SegmentationPlan().Plan.Proof, func(p PlanProof) bool { return p.ID == tc.id })
+			route, err := ResolvePlanTuple(pkg, pkg.SegmentationPlan().Plan.Proof[i])
 			if err != nil || route.Bridged != tc.bridged || route.SourceNetwork != "ot_ops_net" {
 				t.Fatalf("route = %+v, %v", route, err)
 			}
@@ -85,11 +85,11 @@ func TestPlanRouteResolution(t *testing.T) {
 
 func TestCompilePlanSelectionsAndOwnership(t *testing.T) {
 	pkg := planPackage(t, "us-dnp3-substation")
-	before, err := json.Marshal(pkg.Curriculum)
+	before, err := json.Marshal(pkg.SegmentationPlan())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CompilePlan(pkg, pkg.Curriculum, []string{"not-an-action"}); err == nil {
+	if _, err := CompilePlan(pkg, pkg.Course.Features.SegmentationPlan.Model, []string{"not-an-action"}); err == nil {
 		t.Fatal("unknown action accepted")
 	}
 	none := mustCompilePlan(t, pkg, nil)
@@ -100,7 +100,7 @@ func TestCompilePlanSelectionsAndOwnership(t *testing.T) {
 		t.Fatal("detect-only selection must be Partial")
 	}
 	ids := []string{}
-	for _, action := range pkg.Curriculum.Catalog {
+	for _, action := range pkg.SegmentationPlan().Catalog {
 		ids = append(ids, action.ID)
 	}
 	all := mustCompilePlan(t, pkg, ids)
@@ -111,7 +111,7 @@ func TestCompilePlanSelectionsAndOwnership(t *testing.T) {
 		t.Fatal("canonicalization must ignore input order and duplicates")
 	}
 	for i, action := range all.Actions {
-		if action.ID != pkg.Curriculum.Catalog[i].ID || !action.Chosen {
+		if action.ID != pkg.SegmentationPlan().Catalog[i].ID || !action.Chosen {
 			t.Fatal("actions must retain catalog order and chosen flags")
 		}
 	}
@@ -151,7 +151,7 @@ func TestCompilePlanSelectionsAndOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := json.Marshal(pkg.Curriculum)
+	after, err := json.Marshal(pkg.SegmentationPlan())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,8 +162,8 @@ func TestCompilePlanSelectionsAndOwnership(t *testing.T) {
 		t.Fatalf("compilation aliases mutable result data:\n%s\nwant:\n%s", fresh, snapshot)
 	}
 	// Resource feasibility is advisory; a technically valid plan still compiles.
-	pkg.Curriculum.BudgetHours = 1
-	if _, err := CompilePlan(pkg, pkg.Curriculum, ids); err != nil {
+	pkg.SegmentationPlan().BudgetHours = 1
+	if _, err := CompilePlan(pkg, pkg.Course.Features.SegmentationPlan.Model, ids); err != nil {
 		t.Fatalf("budget overrun rejected: %v", err)
 	}
 }
@@ -171,7 +171,7 @@ func TestCompilePlanSelectionsAndOwnership(t *testing.T) {
 func TestPlanRequiredPredicateIndependentOfLogging(t *testing.T) {
 	pkg := planPackage(t, "us-dnp3-substation")
 	const id = "rtac-to-field-http"
-	for action, detect := range pkg.Curriculum.Plan.Detect {
+	for action, detect := range pkg.SegmentationPlan().Plan.Detect {
 		if _, exists := detect.ICS[id]; exists {
 			t.Fatalf("%s owns the required HTTP rule's predicate", action)
 		}
@@ -221,7 +221,7 @@ func TestCompileShippedUSICSOverlaysUnchanged(t *testing.T) {
 	}
 	checked := 0
 	for _, action := range []string{"modbus-dpi", "dnp3-dpi"} {
-		for id, predicate := range pkg.Curriculum.Plan.Detect[action].ICS {
+		for id, predicate := range pkg.SegmentationPlan().Plan.Detect[action].ICS {
 			if predicate.Mode != "" {
 				t.Fatalf("shipped overlay %s no longer inherits mode", id)
 			}
@@ -240,32 +240,32 @@ func TestCompileShippedUSICSOverlaysUnchanged(t *testing.T) {
 func TestPlanDoesNotReadDisplayFields(t *testing.T) {
 	pkg := planPackage(t, "eu-iec104-substation")
 	want := mustCompilePlan(t, pkg, nil)
-	pkg.Curriculum.Groups = nil
-	pkg.Curriculum.PlanningOnly = nil
+	pkg.SegmentationPlan().Groups = nil
+	pkg.SegmentationPlan().PlanningOnly = nil
 	if got := mustCompilePlan(t, pkg, nil); !reflect.DeepEqual(got, want) {
 		t.Fatal("display fields influence shared plan compilation")
 	}
 }
 
-func TestPlanProofLabSelections(t *testing.T) {
+func TestPlanProofActivitySelections(t *testing.T) {
 	pkg := planPackage(t, "eu-iec104-substation")
 	want := map[string][]string{
-		"implementation": {
+		"eu-firewall-implementation": {
 			"U1", "U2", "U3", "U4", "U5", "U6", "U7", "U8", "U9", "U10",
 			"U11", "U12", "U13", "U14", "U15", "U16", "U17", "U18", "U19",
 		},
-		"hardening": {"U1"},
-		"vendor":    {"U3", "U4", "U6", "U9", "U12", "U15", "U18"},
+		"eu-hardening-configurations": {"U1"},
+		"eu-vendor-rdp-compromise":    {"U3", "U4", "U6", "U9", "U12", "U15", "U18"},
 	}
-	for role, ids := range want {
+	for activity, ids := range want {
 		got := []string{}
-		for _, proof := range pkg.Curriculum.Plan.Proof {
-			if slices.Contains(proof.Labs, role) {
+		for _, proof := range pkg.SegmentationPlan().Plan.Proof {
+			if slices.Contains(proof.Activities, activity) {
 				got = append(got, proof.ID)
 			}
 		}
 		if !slices.Equal(got, ids) {
-			t.Errorf("%s proofs = %v, want preserved selections %v", role, got, ids)
+			t.Errorf("%s proofs = %v, want preserved selections %v", activity, got, ids)
 		}
 	}
 }

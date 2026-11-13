@@ -3,7 +3,7 @@ import { fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ReactNode } from "react";
 import { CurriculumScopeProvider, scopeOf } from "../lib/curriculum-scope";
-import { US_CURRICULUM } from "../lib/curriculum-storage.test-util";
+import { US_COURSE } from "../lib/curriculum-storage.test-util";
 import { decisionName, readCurriculum, writeCurriculum } from "../lib/curriculum-storage";
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { US_PACKAGE } from "../lib/operator-fixtures.test-util";
@@ -16,7 +16,7 @@ vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
 }));
 
-const pkg = { ...US_PACKAGE, curriculum: US_CURRICULUM };
+const pkg = { ...US_PACKAGE, course: US_COURSE };
 const scope = scopeOf(pkg);
 const wrap = (children: ReactNode, revision = pkg.revision) =>
   <CurriculumScopeProvider pkg={{ ...pkg, revision }}>{children}</CurriculumScopeProvider>;
@@ -85,22 +85,22 @@ describe("curriculum restoration", () => {
   });
 
   it("restores the remediation plan and reloads it when the exercise or scope changes", () => {
-    const plan = { exerciseId: US_CURRICULUM.roles.planning, selectedActionIds: ["block-enterprise-to-field"], savedAt: "saved" };
+    const plan = { exerciseId: US_COURSE.features.segmentationPlan!.activities.planning, selectedActionIds: ["block-enterprise-to-field"], savedAt: "saved" };
     saveRemediationPlan(scope, plan);
     const banner = (id: string) => <RemediationPlanBanner currentExerciseId={id} />;
-    const mounted = mount(banner(US_CURRICULUM.roles.hardening));
+    const mounted = mount(banner(US_COURSE.modules[1].activities[1].scenario));
     const actionCount = () => [...mounted.container.querySelectorAll("div")].find((node) => /^\d+ actions? planned$/.test(node.textContent ?? ""))!.textContent;
     expect(output(mounted)).toContain("Your Remediation Plan");
     expect(actionCount()).toBe("1 action planned");
     expect(output(mounted)).not.toContain("No remediation plan on file");
     saveRemediationPlan(scope, { ...plan, selectedActionIds: [] });
-    const nextExercise = Object.entries(US_CURRICULUM.activities)
-      .find(([id, activity]) => !activity.hideBanner && id !== US_CURRICULUM.roles.hardening)![0];
+    const nextExercise = US_COURSE.modules.flatMap((module) => module.activities)
+      .find((activity) => !activity.hideBanner && activity.scenario !== US_COURSE.modules[1].activities[1].scenario)!.scenario;
     mounted.rerender(wrap(banner(nextExercise)));
     expect(actionCount()).toBe("0 actions planned");
-    mounted.rerender(wrap(banner(US_CURRICULUM.roles.hardening), pkg.revision + 1));
+    mounted.rerender(wrap(banner(US_COURSE.modules[1].activities[1].scenario), pkg.revision + 1));
     expect(output(mounted)).toContain("No remediation plan on file");
-    mounted.rerender(wrap(banner(US_CURRICULUM.roles.planning)));
+    mounted.rerender(wrap(banner(US_COURSE.features.segmentationPlan!.activities.planning)));
     expect(mounted.container.innerHTML).toBe("");
   });
 });

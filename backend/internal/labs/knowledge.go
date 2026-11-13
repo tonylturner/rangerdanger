@@ -83,7 +83,7 @@ func validateKnowledgeLinks(text string, ids map[string]bool) error {
 	return nil
 }
 
-func loadKnowledge(packageDir, index, scenarios string) ([]KnowledgeSection, error) {
+func loadKnowledge(packageDir, index string, scenarios []ScenarioYAML) ([]KnowledgeSection, error) {
 	// The index and every body belong to this package's knowledge subtree.
 	if !strings.HasPrefix(index, "knowledge/") {
 		return nil, fmt.Errorf("knowledge must name an index under knowledge/")
@@ -141,11 +141,7 @@ func loadKnowledge(packageDir, index, scenarios string) ([]KnowledgeSection, err
 			}
 		}
 	}
-	scenarioFiles, err := loadScenarioFiles(filepath.Join(packageDir, scenarios))
-	if err != nil {
-		return nil, err
-	}
-	for _, scenario := range scenarioFiles {
+	for _, scenario := range scenarios {
 		text, err := yaml.Marshal(scenario)
 		if err != nil {
 			return nil, err

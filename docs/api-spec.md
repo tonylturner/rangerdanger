@@ -50,7 +50,7 @@ The range is the one Compose project (`rangerdanger`) that runs the active packa
 |--------|------|-------------|
 | `GET` | `/range` | Lifecycle status, `200` with the status body below. |
 | `POST` | `/range` | Start a switch to a package. Body `{"package":"<id>"}`; the body or the field may be omitted, which restarts the active package. Returns `202` with the status body (phase `preflight`). `409 {"error","phase"}` while a switch or the startup reconcile runs; `400 {"error"}` for an unknown package or a malformed body (unknown fields are rejected). Poll `GET /range` until `ready` or `failed`. |
-| `GET` | `/packages` | Package summaries: `[{"id","title","revision","active","operator_view","policies","curriculum"?}]`. `policies` is `[{"name","label","description"}]`, default policy first, then alphabetical by name; the labels and descriptions come from `package.yml`. `active` marks the range's recorded package, or `RANGERDANGER_PACKAGE` before any range was started. `curriculum` is optional and, when present, includes that package's planning model and binding (including `roles`, `budgetHours`, `teams` and `catalog`). Scenario, workshop and seed routes serve the same package. The response fields are defined in [`packages.go`](../backend/internal/server/packages.go#L14-L26) and populated from the active catalog at [`packages.go`](../backend/internal/server/packages.go#L82-L101). |
+| `GET` | `/packages` | Package summaries: `[{"id","title","revision","active","operator_view","policies","course"}]`. `policies` is `[{"name","label","description"}]`, default policy first, then alphabetical by name; the labels and descriptions come from `package.yml`. `active` marks the range's recorded package, or `RANGERDANGER_PACKAGE` before any range was started. `course` contains ordered `modules` (`id`, `title`, `activities`), generic `nodeMap`/`nodeInference`, and `features`. Each activity has `scenario`, `label` and optional `validate`, `policyActions`, `hideBanner`; omitted `validate` means true. `features.segmentationPlan`, when declared, contains three typed activity IDs (`requirements`, `planning`, `implementation`), `dynamicSteps` and the resolved `model` (budget, teams, catalog, requirements, readiness, coverage, phases and plan). Private filesystem paths are not exposed; there are no legacy `curriculum` or exercise-role fields. Scenario, workshop and seed routes serve the same package. The response fields are defined in [`packages.go`](../backend/internal/server/packages.go#L14-L26) and populated from the active catalog at [`packages.go`](../backend/internal/server/packages.go#L82-L101). |
 
 Status body:
 
@@ -126,9 +126,13 @@ prove application success or authorization under the current policy.
 ## Scenarios (exercises)
 
 Exercises are stored internally as "scenarios" for historical reasons - the user-facing term is "exercise".
-Scenario rows belong to the active package, and their `steps` field is a
-JSON-encoded ordered array with stable authored step IDs
+Scenario IDs are unique within a package; the same ID may appear in another
+package. Routes resolve IDs relative to the active package, and each row's
+`steps` field is a JSON-encoded ordered array with stable authored step IDs
 ([`models.go`](../backend/internal/models/models.go#L7-L23)).
+Rows expose `label` (not `order`). Lists, workshop test-suite results and workbook
+exports follow flattened course position, which is not exposed as a JSON field.
+Labels need not sort into course order. Module titles are not rendered.
 The IDs are curriculum identities; step execution remains index-based,
 so automation should look up the ID in the served array before posting.
 The API applies the supplied index to that same active-package scenario
@@ -141,6 +145,14 @@ The API applies the supplied index to that same active-package scenario
 | `GET` | `/scenarios/:id` | Get exercise detail with steps |
 | `POST` | `/scenarios/:id/steps/:stepIdx/execute` | Execute the action at zero-based `stepIdx` in the served scenario's ordered `steps` array. The route takes an array index, not a step ID; callers that start from an authored ID must resolve its current index from `GET /scenarios/:id`. The response includes `step_index`, `step_title`, `action_type`, `success`, `results` and `timestamp` (see [`scenario_execute.go`](../backend/internal/server/scenario_execute.go#L20-L38)). |
 | `POST` | `/scenarios/:id/validate` | Cross-check the current system against the judging target below; this does not grade the student’s written test plan or signed record. Returns `{"scenario_id", "outcome", "checks": [...], "timestamp"}` |
+
+All scenario mutations (`POST /scenarios/...`) and `POST /workshop/test-suite`
+require `X-RangerDanger-Package: <package id>` from the package the caller
+verified ready. The server compares it with the request's bound generation,
+not a later active-package read. A missing or mismatched header returns
+HTTP 412 before work: `{"error":"...expected and bound package IDs...","code":"package_precondition"}`.
+Execute, validate, test-suite and workshop status always select scenarios from
+that bound generation; a draining request never selects a switch target's row.
 
 ### Interactive policy grading
 
@@ -467,6 +479,11 @@ The transparent containd UI proxy preserves upstream revision headers,
 statuses and response bodies; it does not wrap manual UI commits in the
 backend receipt format or synthesize revisions. UI clients remain responsible
 for their native containd revision/readiness contract.
+
+Packages without `course.features.segmentationPlan` return `404` (not supported
+by this package) from `/plan/compile`, `/firewall/apply-plan` and
+`/workshop/probe-matrix`, before parsing any plan request body. Named-policy
+routes remain independent of this optional teaching feature.
 
 The compile response's `label` is `weak`, `partial` or `hardened`.
 `actions` lists `{id, kind, chosen}` in catalog order (`kind` is `enforce`,

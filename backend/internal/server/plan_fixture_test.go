@@ -29,16 +29,16 @@ func TestPlanFixtures(t *testing.T) {
 			s := newTestServer(t, "")
 			s.rng = rangeServer(tc.gen, "weak").rng
 			all := []string{}
-			for _, action := range tc.gen.Package.Curriculum.Catalog {
+			for _, action := range tc.gen.Package.SegmentationPlan().Catalog {
 				all = append(all, action.ID)
 			}
 			kinds := map[string]string{}
-			for _, slot := range tc.gen.Package.Curriculum.Plan.Rules {
+			for _, slot := range tc.gen.Package.SegmentationPlan().Plan.Rules {
 				if slot.Action != "" {
 					kinds[slot.Action] = "enforce"
 				}
 			}
-			for id := range tc.gen.Package.Curriculum.Plan.Detect {
+			for id := range tc.gen.Package.SegmentationPlan().Plan.Detect {
 				kinds[id] = "detect"
 			}
 			selections := []struct {
@@ -49,7 +49,7 @@ func TestPlanFixtures(t *testing.T) {
 				{"partial", []string{"restrict-enterprise-to-vendor"}},
 				{"full", all},
 			}
-			for _, action := range tc.gen.Package.Curriculum.Catalog {
+			for _, action := range tc.gen.Package.SegmentationPlan().Catalog {
 				if kinds[action.ID] == "enforce" || kinds[action.ID] == "detect" {
 					selections = append(selections, struct {
 						name string

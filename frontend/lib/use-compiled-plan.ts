@@ -24,7 +24,7 @@ export function useCompiledPlan(scope: CurriculumScope, enabled: boolean, applie
   // No effective request means the same full-reference target used by the server.
   const fullReference = target === "request" && actionIds.length === 0;
   const ids = appliedOnly ? appliedPlan?.actionIds ?? []
-    : fullReference ? scope.curriculum?.catalog.map((action) => action.id) ?? [] : actionIds;
+    : fullReference ? scope.course?.features.segmentationPlan?.model?.catalog.map((action) => action.id) ?? [] : actionIds;
   return useQuery({
     queryKey: ["compiled-plan", scope.packageId, scope.revision, ids, target, appliedOnly ? appliedPlan?.policyHash : undefined],
     queryFn: async () => {
@@ -35,7 +35,7 @@ export function useCompiledPlan(scope: CurriculumScope, enabled: boolean, applie
         expectations: plan.expectations.map((row) => ({ ...row, planVerdict: row.hardenedVerdict })),
       } : plan;
     },
-    enabled: enabled && !!scope.curriculum && (!appliedOnly || !!appliedPlan),
+    enabled: enabled && !!scope.course?.features.segmentationPlan?.model && (!appliedOnly || !!appliedPlan),
     retry: false,
   });
 }

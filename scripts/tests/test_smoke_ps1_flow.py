@@ -25,10 +25,10 @@ $Keep = $false
 $script:fail = 0
 $script:events = @()
 $Expected = @(
-    @{order='1.2'; id='baseline-assessment'}, @{order='1.3'; id='segmentation-requirements'},
-    @{order='1.4'; id='remediation-planning'}, @{order='2.2'; id='firewall-implementation'},
-    @{order='2.3'; id='hardening-configurations'}, @{order='2.3-bonus'; id='vendor-rdp-compromise'},
-    @{order='2.4'; id='validation-evidence'}
+    @{label='1.2'; id='baseline-assessment'}, @{label='1.3'; id='segmentation-requirements'},
+    @{label='1.4'; id='remediation-planning'}, @{label='2.2'; id='firewall-implementation'},
+    @{label='2.3'; id='hardening-configurations'}, @{label='2.3-bonus'; id='vendor-rdp-compromise'},
+    @{label='2.4'; id='validation-evidence'}
 )
 function Get-ChildItem { return @() }
 function ConvertTo-DesktopRoot($Path) { return '/daemon/root' }
@@ -47,7 +47,7 @@ function Invoke-RestMethod($Uri, $TimeoutSec, $ErrorAction) {
         }
         '/api/scenarios' {
             return @{scenarios=@($Expected | ForEach-Object {
-                @{order=$_.order; id=$_.id; steps='{"description":1,"description":2,"description":3}'}
+                @{label=$_.label; id=$_.id; steps='{"description":1,"description":2,"description":3}'}
             })}
         }
         default { return @{ok=$true} }
