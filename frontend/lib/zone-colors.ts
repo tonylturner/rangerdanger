@@ -10,6 +10,8 @@ export const zoneColors: Record<string, { border: string; bg: string; text: stri
   station_net:        { border: "#f97316", bg: "rgba(249, 115, 22, 0.1)", text: "#f97316" },  // orange
   control_centre_net: { border: "#2dd4bf", bg: "rgba(45, 212, 191, 0.1)", text: "#2dd4bf" },  // teal
   ops_dmz_net: { border: "#facc15", bg: "rgba(250, 204, 21, 0.1)", text: "#facc15" },
+  // SRA package: the broker DMZ is containd lan4 there.
+  sra_dmz_net: { border: "#2dd4bf", bg: "rgba(45, 212, 191, 0.1)", text: "#2dd4bf" },  // teal
   lan5: { border: "#facc15", bg: "rgba(250, 204, 21, 0.1)", text: "#facc15" },
   // Containd zone names (from firewall config)
   wan:        { border: "#38bdf8", bg: "rgba(56, 189, 248, 0.1)", text: "#38bdf8" },
