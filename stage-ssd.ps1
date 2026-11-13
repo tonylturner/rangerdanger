@@ -12,15 +12,14 @@ archive alongside. The output directory is what students plug into
 Directory to write the staged bundle into. Created if it does not exist.
 
 .PARAMETER Version
-Image tag to stage. Default: latest. Pin to e.g. 'v0.1.16' for a
-release.
+RangerDanger release Git tag to stage, e.g. 'v0.2.7'. Required.
 
 .PARAMETER Packages
 Exact package IDs (comma-separated or array). Default: every discovered package.
 
 .EXAMPLE
 .\stage-ssd.ps1 D:\WORKSHOP_SSD v0.1.16
-.\stage-ssd.ps1 .\out latest
+.\stage-ssd.ps1 .\out v0.2.7
 
 .NOTES
 Runtime: ~25-45 min on a fast connection (pulls every image twice,
@@ -40,11 +39,12 @@ param(
     [Parameter(Mandatory=$true, Position=0)]
     [string]$OutDir,
     [Parameter(Position=1)]
-    [string]$Version = "latest",
+    [string]$Version = "",
     [string[]]$Packages = @()
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $Version) { throw 'An explicit RangerDanger release tag is required; pass a version such as v0.2.7.' }
 if ($Version -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') { throw 'Invalid release version.' }
 
 function Say($m)    { Write-Host "[+] $m" -ForegroundColor Green }
@@ -62,6 +62,34 @@ $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 . "$PSScriptRoot/scripts/lib/docker-bounded.ps1"
 . "$PSScriptRoot/scripts/lib/windows-root.ps1"
 . "$PSScriptRoot/scripts/lib/stage-bounded.ps1"
+
+function Assert-ReleaseCheckout([string]$ReleaseVersion) {
+    if ($ReleaseVersion -ceq 'latest') {
+        Die "'latest' is mutable and has no single RangerDanger Git tag; pass an explicit release tag and check it out."
+    }
+    $head = Invoke-NativeBounded 'git' @('-C', $RootDir, 'rev-parse', '--verify', 'HEAD') 30
+    if (-not $head -or $head.TimedOut -or $head.ExitCode -ne 0) {
+        Die "Cannot resolve Git HEAD in $RootDir; check out the RangerDanger release tag before staging."
+    }
+    $tagRef = "refs/tags/$($ReleaseVersion)^{commit}"
+    $tag = Invoke-NativeBounded 'git' @('-C', $RootDir, 'rev-parse', '--verify', '--quiet', $tagRef) 30
+    if (-not $tag -or $tag.TimedOut -or $tag.ExitCode -ne 0) {
+        Die "RangerDanger release tag $ReleaseVersion is unavailable; fetch it and check out that tag before staging."
+    }
+    if ($head.StdOut.Trim() -cne $tag.StdOut.Trim()) {
+        Die "HEAD does not match RangerDanger release tag $ReleaseVersion; check out that tag (for example, in a worktree) before staging."
+    }
+    $status = Invoke-NativeBounded 'git' @('-C', $RootDir, 'status', '--porcelain', '--untracked-files=all') 30
+    if (-not $status -or $status.TimedOut -or $status.ExitCode -ne 0) {
+        Die "Cannot verify the Git working tree in $RootDir; check out the RangerDanger release tag before staging."
+    }
+    if ($status.StdOut.Length -gt 0) {
+        Die "The Git working tree must be clean before staging release tag $ReleaseVersion; commit or remove changes and untracked files."
+    }
+}
+
+Assert-ReleaseCheckout $Version
+
 . "$PSScriptRoot/scripts/lib/installed-packages.ps1"
 $selected = if ($PSBoundParameters.ContainsKey('Packages')) { @(ConvertTo-PackageSelection $RootDir $Packages) } else { @(Get-AvailablePackages $RootDir) }
 
@@ -400,11 +428,7 @@ Say "wrote $verPath ($Version)"
 # assets are required; a partial bundle must never report Done.
 Banner "Bundle WSL2 kernel asset (Windows offline support)"
 $ghOwnerRepo = if ($env:GH_OWNER_REPO) { $env:GH_OWNER_REPO } else { "tonylturner/rangerdanger" }
-$kernelUrl = if ($Version -eq 'latest') {
-    "https://github.com/$ghOwnerRepo/releases/latest/download/rangerdanger-wsl2-kernel"
-} else {
-    "https://github.com/$ghOwnerRepo/releases/download/$Version/rangerdanger-wsl2-kernel"
-}
+$kernelUrl = "https://github.com/$ghOwnerRepo/releases/download/$Version/rangerdanger-wsl2-kernel"
 $kernelShaUrl = "$kernelUrl.sha256"
 $kernelReadmeRow = ""
 $kernelPath = Join-Path $OutDir "rangerdanger-wsl2-kernel"

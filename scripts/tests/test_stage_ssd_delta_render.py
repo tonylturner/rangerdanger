@@ -103,6 +103,17 @@ esac
         self._write_executable("docker", docker)
         self._write_executable("curl", "#!/bin/sh\nexit 22\n")
         self._write_executable("dot_clean", "#!/bin/sh\nexit 0\n")
+        self._write_executable(
+            "git",
+            """#!/bin/sh
+case "$*" in
+    *"rev-parse --verify HEAD"*) printf 'fixture-release-commit\\n' ;;
+    *"rev-parse --verify --quiet refs/tags/v2^{commit}"*) printf 'fixture-release-commit\\n' ;;
+    *"status --porcelain --untracked-files=all"*) exit 0 ;;
+    *) exec "$RD_REAL_GIT" "$@" ;;
+esac
+""",
+        )
 
         sitecustomize = r"""
 import os
@@ -139,6 +150,7 @@ urllib.request.urlopen = urlopen
             RD_RECORD_DIR=str(self.record_dir),
             RD_COMPOSE_IMAGES=str(self.root / "compose-images.txt"),
             GH_OWNER_REPO="fixture/rangerdanger",
+            RD_REAL_GIT=shutil.which("git"),
         )
 
     def _write_executable(self, name: str, content: str) -> None:
