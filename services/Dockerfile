@@ -173,7 +173,7 @@ CMD ["sh", "-c", "set -e; set-gateway.sh; rtac-harden.sh; rtac-mgmt-init.sh; rta
 
 FROM sim-base AS capbank-sim
 COPY --from=capbank-sim-builder /bin/capbank-sim /usr/local/bin/capbank-sim
-EXPOSE 8080 502
+EXPOSE 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && capbank-sim"]
 
 FROM sim-base AS historian-sim
