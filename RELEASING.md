@@ -243,8 +243,10 @@ of class can shift behavior under you. **Mitigations for instructors:**
    `managementReservation` (or `managementReservationError`) in that response;
    degraded diagnostics do not change liveness to an outage.
 
-3. **Stage to SSD** for an offline class. `stage-ssd.sh` snapshots
-   whatever is currently `:latest` and produces a tarball that
+3. **Stage to SSD** for an offline class. Run `stage-ssd.sh <dir> vX.Y.Z`
+   from a clean checkout of that release tag (for example a detached
+   worktree); it refuses any other checkout and `latest`. It saves that
+   release's images with the matching repo archive, which
    `setup.sh --from-tarballs` loads and starts with `--pull never`.
    Once staged, the SSD is immutable.
 
