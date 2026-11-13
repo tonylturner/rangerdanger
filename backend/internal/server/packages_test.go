@@ -474,21 +474,28 @@ func TestEUWorkshopStepParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	all := map[string]labs.ScenarioYAML{}
-	labels := map[string]string{}
-	positions := map[string]int{}
+	type packageScenarioKey struct {
+		packageID  string
+		scenarioID string
+	}
+	all := map[packageScenarioKey]labs.ScenarioYAML{}
+	labels := map[packageScenarioKey]string{}
+	positions := map[packageScenarioKey]int{}
 	for _, pkg := range catalog.Packages {
 		for position, activity := range pkg.Course.Activities() {
-			labels[activity.Scenario], positions[activity.Scenario] = activity.Label, position
+			key := packageScenarioKey{packageID: pkg.ID, scenarioID: activity.Scenario}
+			labels[key], positions[key] = activity.Label, position
 		}
 		for _, sc := range pkg.Scenarios {
-			all[sc.ID] = sc
+			all[packageScenarioKey{packageID: pkg.ID, scenarioID: sc.ID}] = sc
 		}
 	}
 	for _, id := range []string{"baseline-assessment", "segmentation-requirements", "remediation-planning", "firewall-implementation", "hardening-configurations", "vendor-rdp-compromise", "validation-evidence"} {
 		t.Run(id, func(t *testing.T) {
-			us, eu := all[id], all["eu-"+id]
-			if labels[eu.ID] != labels[us.ID] || positions[eu.ID] != positions[us.ID] || len(eu.Steps) != len(us.Steps) {
+			usKey := packageScenarioKey{packageID: "us-dnp3-substation", scenarioID: id}
+			euKey := packageScenarioKey{packageID: "eu-iec104-substation", scenarioID: "eu-" + id}
+			us, eu := all[usKey], all[euKey]
+			if labels[euKey] != labels[usKey] || positions[euKey] != positions[usKey] || len(eu.Steps) != len(us.Steps) {
 				t.Fatalf("break points differ: %s/%d vs %s/%d", us.ID, len(us.Steps), eu.ID, len(eu.Steps))
 			}
 			usDecisions, euDecisions := 0, 0
