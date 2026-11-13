@@ -1,0 +1,12 @@
+FROM registry.access.redhat.com/ubi9/ubi:9.7@sha256:e9a31af6530caffa3551f266c51a0d43b602e8f76a0dc12826dbeebceb487c92 AS routing-tools
+RUN mkdir /rootfs && dnf install --installroot /rootfs --releasever 9 --setopt install_weak_deps=false --nodocs -y iproute util-linux-core util-linux && dnf --installroot /rootfs clean all && rm -f /rootfs/etc/passwd* /rootfs/etc/group* /rootfs/etc/shadow* /rootfs/etc/gshadow*
+FROM openziti/ziti-router:2.0.8@sha256:540e5450f2ecd72cdc0db94bb7d969814f826e19d3bd4bbde192483c38bb5423
+USER root
+COPY --from=routing-tools /rootfs/ /
+COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
+COPY services/sra/common/ /opt/sra/common/
+COPY services/sra/ziti-router/ /opt/sra/ziti-router/
+RUN mkdir -p /var/lib/sra /ziti-router /run/sra/enrollment && chown -R 2171:2171 /var/lib/sra /ziti-router && chmod +x /usr/local/bin/set-gateway.sh /opt/sra/common/*.sh /opt/sra/ziti-router/*.sh
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=24 CMD ["/opt/sra/ziti-router/health.sh"]
+ENTRYPOINT ["/opt/sra/ziti-router/entrypoint.sh"]
+CMD []

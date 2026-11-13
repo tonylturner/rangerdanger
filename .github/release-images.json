@@ -319,6 +319,88 @@
         {"kind": "file", "path": "scripts/openplc-eu-entrypoint.sh"},
         {"kind": "file", "path": "scripts/set-gateway.sh"}
       ]
+    },
+    {
+      "image": "rangerdanger-sra-keycloak",
+      "dockerfile": "Dockerfile.sra-keycloak",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "services/sra/common"},
+        {"kind": "dir", "path": "services/sra/keycloak"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-sra-guacamole",
+      "dockerfile": "Dockerfile.sra-guacamole",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "services/sra/common"},
+        {"kind": "dir", "path": "services/sra/guacamole"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-sra-guacd",
+      "dockerfile": "Dockerfile.sra-guacd",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "services/sra/common"},
+        {"kind": "dir", "path": "services/sra/guacd"}
+      ]
+    },
+    {
+      "image": "rangerdanger-sra-postgres",
+      "dockerfile": "Dockerfile.sra-postgres",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "services/sra/common"},
+        {"kind": "dir", "path": "services/sra/postgres"}
+      ]
+    },
+    {
+      "image": "rangerdanger-sra-ziti-controller",
+      "dockerfile": "Dockerfile.sra-ziti-controller",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "services/sra/common"},
+        {"kind": "dir", "path": "services/sra/ziti-controller"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-sra-ziti-router",
+      "dockerfile": "Dockerfile.sra-ziti-router",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "services/sra/common"},
+        {"kind": "dir", "path": "services/sra/ziti-router"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-sra-ziti-host",
+      "dockerfile": "Dockerfile.sra-ziti-host",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "services/sra/common"},
+        {"kind": "dir", "path": "services/sra/ziti-host"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"}
+      ]
     }
   ]
 }

@@ -1,0 +1,16 @@
+FROM registry.access.redhat.com/ubi9/ubi:9.7@sha256:e9a31af6530caffa3551f266c51a0d43b602e8f76a0dc12826dbeebceb487c92 AS routing-tools
+RUN mkdir /rootfs && dnf install --installroot /rootfs --releasever 9 --setopt install_weak_deps=false --nodocs -y iproute util-linux-core util-linux && dnf --installroot /rootfs clean all && rm -f /rootfs/etc/passwd* /rootfs/etc/group* /rootfs/etc/shadow* /rootfs/etc/gshadow*
+FROM quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0
+USER root
+COPY --from=routing-tools /rootfs/ /
+COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
+COPY services/sra/common/ /opt/sra/common/
+COPY services/sra/keycloak/ /opt/sra/keycloak/
+RUN mkdir -p /var/lib/sra /opt/keycloak/data /run/sra/enrollment && chown -R 1000:0 /var/lib/sra /opt/keycloak/data && chmod +x /usr/local/bin/set-gateway.sh /opt/sra/common/*.sh /opt/sra/keycloak/*.sh
+ENV KC_DB=dev-file KC_CACHE=local KC_HTTP_ENABLED=true JAVA_OPTS_KC_HEAP="-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=25.0"
+USER 1000
+RUN /opt/keycloak/bin/kc.sh build --db=dev-file
+USER root
+HEALTHCHECK --interval=5s --timeout=3s --start-period=120s --retries=24 CMD ["/opt/sra/keycloak/health.sh"]
+ENTRYPOINT ["/opt/sra/keycloak/entrypoint.sh"]
+CMD []
