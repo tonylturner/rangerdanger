@@ -1,0 +1,11 @@
+nodeMap:
+  sra-direct-vendor-access:
+    primary: vendor-jump-1
+    others: [fw-1, rtac-1]
+nodeInference:
+  - node: vendor-jump-1
+    ip: ${ip:vendor-jump-1}
+    pattern: \bvendor\b
+  - node: rtac-1
+    ip: ${ip:rtac-1}
+    pattern: \brtac\b
