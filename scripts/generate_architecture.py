@@ -24,6 +24,9 @@ REGIONS = {
         "compose-us", "compose-eu", "network-us", "wiring-us",
         "network-eu", "wiring-eu", "request-flow",
     ),
+    "docs/architecture/us-sra-substation.md": (
+        "compose-us-sra-substation", "network-us-sra-substation", "wiring-us-sra-substation",
+    ),
 }
 MARKER = re.compile(r"<!-- (BEGIN|END) GENERATED: ([\w-]+) -->")
 
@@ -168,7 +171,9 @@ class Package:
         self.directory = directory
         self.config = read_yaml(directory / "package.yml")
         self.key = self.config["id"]
-        self.short = self.key.split("-")[0]
+        # Preserve the published US/EU marker names; other packages use their
+        # complete identity, never a country prefix that can silently collide.
+        self.short = {"us-dnp3-substation": "us", "eu-iec104-substation": "eu"}.get(self.key, self.key)
         self.topology_path = (directory / self.config["topology"]).resolve()
         self.topology_path.relative_to(root.resolve())
         self.topology = read_yaml(self.topology_path)
@@ -206,8 +211,10 @@ def load(root):
         ("source", "docker-compose.yml"), ("release", "docker-compose.release.yml"))}
     packages = [Package(root, path.parent, platform) for path in
                 sorted((root / "lab-definitions/packages").glob("*/package.yml"))]
-    if {p.short for p in packages} != {"us", "eu"} or len(packages) != 2:
-        raise ValueError("expected US and EU packages; declare new diagram regions for new packages")
+    declared = {name.removeprefix("compose-") for names in REGIONS.values()
+                for name in names if name.startswith("compose-")}
+    if len({p.short for p in packages}) != len(packages) or {p.short for p in packages} != declared:
+        raise ValueError("package identities differ from declared diagram regions")
     overlay = read_yaml(root / "docs/architecture/overlay.yml")
     if overlay["schema"] != 1:
         raise ValueError("unsupported overlay schema")

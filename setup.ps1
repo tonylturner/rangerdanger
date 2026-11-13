@@ -385,7 +385,8 @@ if ($SkipFirewallGate) {
         }
     }
     try {
-        $resetResp = Invoke-WebRequest -Uri "http://localhost:8088/api/workshop/reset" -Method POST -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
+        $resetTimeout = if ($RangePackage -eq 'us-sra-substation') { 180 } else { 60 }
+        $resetResp = Invoke-WebRequest -Uri "http://localhost:8088/api/workshop/reset" -Method POST -UseBasicParsing -TimeoutSec $resetTimeout -ErrorAction Stop
         $resetResult = $resetResp.Content | ConvertFrom-Json -ErrorAction Stop
         Assert-ContaindProtection $resetResult
         # Check the TOP-LEVEL success, not a substring. The response embeds a
@@ -434,6 +435,7 @@ Re-run with -SkipFirewallGate to bring the stack up anyway for diagnosis.
 
 
 # OpenPLC is used by both US and EU packages. Like setup.sh this is diagnostic, not a lifecycle gate.
+if ($RangePackage -in @('us-dnp3-substation', 'eu-iec104-substation')) {
 $openplcOk = $false
 for ($i = 0; $i -lt 8; $i++) {
     $run = Invoke-DockerBounded @('inspect', '-f', '{{.State.Status}}', 'rangerdanger-openplc') 5
@@ -444,6 +446,7 @@ for ($i = 0; $i -lt 8; $i++) {
 }
 if ($openplcOk) { Say 'OpenPLC container is running' }
 else { Warn 'OpenPLC is not running. Check docker logs rangerdanger-openplc.' }
+} # packages with OpenPLC
 Banner 'RangerDanger is up'
 @"
   Web UI:        http://localhost:8088

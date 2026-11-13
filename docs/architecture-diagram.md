@@ -451,7 +451,7 @@ flowchart LR
     n_request_proxy_d5396709ea["nginx proxy"]
     n_request_dockerd_cf96c2c4a4["Docker daemon"]
     n_request_debug_b17dc22a94["Host debug client"]
-    n_request_terminals_7613155371["WebSocket exec →<br/>manifest topology nodes<br/>(US 14, EU 14)"]
+    n_request_terminals_7613155371["WebSocket exec →<br/>manifest topology nodes<br/>(US-SRA-SUBSTATION 18, US 14, EU 14)"]
     n_request_browser_d6e04625c6 -->|"127.0.0.1:8088:8080"| n_request_proxy_d5396709ea
     n_request_debug_b17dc22a94 -->|"127.0.0.1:2222:2222<br/>127.0.0.1:9080:8080<br/>127.0.0.1:9443:8443"| n_request_firewall_22a261f7f5
     n_request_backend_876df1baf6["backend:8080"]
@@ -464,7 +464,7 @@ flowchart LR
     n_request_proxy_d5396709ea -->|"/icons/<br/>/containd/"| n_request_firewall_22a261f7f5
     n_request_frontend_9cb0e3cb45["frontend:3000"]
     n_request_proxy_d5396709ea -->|"/"| n_request_frontend_9cb0e3cb45
-    n_request_fuxa_hmi_7e1bbc1a2d["fuxa_hmi:1881 (US)"]
+    n_request_fuxa_hmi_7e1bbc1a2d["fuxa_hmi:1881"]
     n_request_proxy_d5396709ea -->|"/apps/hmi/<br/>/apps/fuxa-hmi/<br/>/apps/hmi-view/<br/>+20 more"| n_request_fuxa_hmi_7e1bbc1a2d
     n_request_openplc_ba916b5bd4["openplc:8080 (US)"]
     n_request_proxy_d5396709ea -->|"/apps/plc/<br/>/apps/openplc/"| n_request_openplc_ba916b5bd4
@@ -478,8 +478,8 @@ flowchart LR
     n_request_backend_876df1baf6 -.->|"JWT REST · management"| n_request_firewall_22a261f7f5
     %% source: backend/internal/server/terminal.go:connectTerminal
     n_request_backend_876df1baf6 -.->|"Docker exec"| n_request_terminals_7613155371
-    n_request_rtac_sim_97d59c80a1["rtac_sim (US)"]
-    n_request_opendss_sim_81c6f46d2f["opendss_sim (US)"]
+    n_request_rtac_sim_97d59c80a1["rtac_sim (US/US-SRA-SUBSTATION)"]
+    n_request_opendss_sim_81c6f46d2f["opendss_sim (US/US-SRA-SUBSTATION)"]
     %% source: services/rtac-sim/main.go:132
     n_request_rtac_sim_97d59c80a1 -.->|"HTTP push"| n_request_opendss_sim_81c6f46d2f
 ```

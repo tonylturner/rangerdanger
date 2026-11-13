@@ -1,0 +1,55 @@
+id: sra-direct-vendor-access
+name: Observe direct vendor access
+summary: Record the direct SSH and HTTPS path that brokered access will replace.
+estimated_minutes: 10
+description: >
+  Under the weak policy, the vendor desktop reaches RTAC management directly.
+  Observe that path without changing the feeder. Read
+  [Remote access boundaries](/knowledge#sra-access-boundaries) before beginning.
+nodes: [vendor-jump-1, fw-1, rtac-1]
+tags: [remote-access, observation, baseline]
+steps:
+  - id: apply-weak
+    title: Apply the weak baseline
+    expected_config: weak
+    description: |
+      Apply **Weak Baseline** using Execute Step. This replaces the current
+      firewall policy; collect fresh evidence after applying it.
+      Open the vendor desktop from the Network Map. Its vendor address is
+      `10.20.20.10`; RTAC management is `10.30.30.20` in OT Operations.
+    action:
+      type: firewall
+      config: weak
+  - id: observe-management-listeners
+    title: Observe direct SSH and HTTPS
+    node: vendor-jump-1
+    expected_config: weak
+    description: |
+      From the vendor desktop terminal:
+
+          nmap -Pn -sT -p 22,443 10.30.30.20
+
+          curl -ksS --max-time 10 https://10.30.30.20/
+
+      Expect SSH and HTTPS to be open, and the **RTAC Management Console** page.
+      `-k` accepts this disposable lab's self-signed certificate; it is not
+      production certificate validation. `-Pn` avoids relying on ICMP discovery.
+      These packets cross the firewall, but terminate directly on RTAC.
+  - id: inspect-direct-session
+    title: Inspect a direct SSH session
+    node: vendor-jump-1
+    expected_config: weak
+    description: |
+      From the vendor desktop terminal, run this interactive command manually:
+
+          ssh rangerdanger@10.30.30.20
+
+      Accept the disposable lab host key after checking the destination address.
+      The lab password is `rangerdanger`. Observe the management banner, then
+      type `exit` to close the session. Do not change any device state.
+
+      Record the source, destination, ports and policy name in your notes.
+      Neither this login nor the HTTPS page required the identity provider,
+      TOTP, session broker or overlay. This is the direct path that the
+      **Brokered Vendor Access** policy removes; it is not an MFA demonstration.
+      See [Session lifecycle](/knowledge#sra-session-lifecycle).

@@ -208,6 +208,11 @@ func (c *fakeCompose) Images(_ context.Context, file string) ([]string, error) {
 	return c.images, nil
 }
 
+func (c *fakeCompose) Restart(_ context.Context, file string, services []string) error {
+	c.record("restart " + packageOf(file) + " " + strings.Join(services, " "))
+	return nil
+}
+
 func (c *fakeCompose) Up(_ context.Context, file string) error {
 	c.record("up " + packageOf(file))
 	c.mu.Lock()
