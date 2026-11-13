@@ -106,6 +106,34 @@ func TestComposeErrorCarriesStderr(t *testing.T) {
 	}
 }
 
+func TestComposeRestart(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "argv")
+	cli := &ComposeCLI{
+		Binary:  fakeComposeBinary(t, `printf '%s\n' "$@" > "`+out+`"`),
+		Project: "rangerdanger", Root: "/H", Dir: t.TempDir(),
+	}
+	if err := cli.Restart(t.Context(), "/H/pkg/compose.source.yml", []string{"broker", "gateway"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "-p\nrangerdanger\n--project-directory\n/H\n-f\n/H/pkg/compose.source.yml\nrestart\n--no-deps\nbroker\ngateway\n"
+	if string(data) != want {
+		t.Fatalf("restart argv = %s", data)
+	}
+	for _, services := range [][]string{nil, {""}, {"--all"}} {
+		if err := cli.Restart(t.Context(), "x.yml", services); err == nil {
+			t.Fatalf("accepted unsafe services %q", services)
+		}
+	}
+	cli.Binary = fakeComposeBinary(t, "echo restart-failed >&2; exit 7")
+	if err := cli.Restart(t.Context(), "x.yml", []string{"broker"}); err == nil || !strings.Contains(err.Error(), "restart-failed") {
+		t.Fatalf("restart failure = %v", err)
+	}
+}
+
 func TestComposeCancelKillsProcessGroup(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
 	// The child stands in for anything Compose spawns.

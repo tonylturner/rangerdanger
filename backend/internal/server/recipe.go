@@ -33,6 +33,9 @@ type packageRecipe struct {
 	sessionCuts map[string]sessionCutSpec
 	// resetCommands are RTAC device commands the reset replays.
 	resetCommands []deviceCommand
+	// resetRestartNodes ends package sessions after policy and device reset.
+	// These are topology identities, never container names.
+	resetRestartNodes []string
 	// resetTruth restores simulation truth and waits for consistent delivery.
 	resetTruth func(context.Context, *lifecycle.Generation, *packageRecipe) []resetAction
 	canary     canaryProbe
@@ -97,7 +100,7 @@ func (c *compareSpec) label(src, dst string) string {
 	return s + " → " + d
 }
 
-var packageRecipes = map[string]*packageRecipe{usPackageID: usRecipe, euPackageID: euRecipe}
+var packageRecipes = map[string]*packageRecipe{usPackageID: usRecipe, euPackageID: euRecipe, sraPackageID: sraRecipe}
 
 // recipeFor returns the recipe of the generation's package.
 func recipeFor(gen *lifecycle.Generation) (*packageRecipe, error) {
