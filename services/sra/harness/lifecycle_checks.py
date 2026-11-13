@@ -24,47 +24,86 @@ def check_recordings(containers):
     assert sessions, recordings
     for path in sessions:
         docker('exec', web, 'setpriv', '--reuid=1001', '--regid=1001', '--init-groups', 'sh', '-ec', 'test -s "$1"; cat "$1" >/dev/null', 'check', path)
-    print('PASS: recordings nonempty and readable as web runtime UID 1001', sessions, flush=True)
+    return 'recordings nonempty and readable as web UID 1001: ' + ', '.join(sessions)
 
 
-def check_lifecycle(r, containers, images, enrollment):
-    guacd = containers['guacd']
+def closed_history(containers):
     assert docker('exec', containers['postgres'], 'psql', '-U', 'guacamole', '-d', 'guacamole', '-Atqc', 'SELECT count(*) FROM guacamole_connection_history WHERE end_date IS NULL') == '0'
-    # Container-local markers survive ordinary restarts. Binds must not be wiped.
-    marker = docker('exec', containers['ziti-controller'], 'stat', '-c', '%Y', '/var/lib/sra/seed-complete')
-    jwt = docker('exec', containers['ziti-controller'], 'sha256sum', '/run/sra/enrollment/router.jwt', '/run/sra/enrollment/ot-host.jwt')
-    before = docker('exec', guacd, 'find', '/recordings', '-type', 'f')
-    for name in ('ziti-controller', 'ziti-router', 'ziti-host', 'postgres', 'keycloak', 'guacd', 'guacamole'):
-        docker('restart', '-t', '10', containers[name], timeout=30)
-        r.healthy(containers[name], 60)
-    assert marker == docker('exec', containers['ziti-controller'], 'stat', '-c', '%Y', '/var/lib/sra/seed-complete')
-    assert jwt == docker('exec', containers['ziti-controller'], 'sha256sum', '/run/sra/enrollment/router.jwt', '/run/sra/enrollment/ot-host.jwt')
-    assert before == docker('exec', guacd, 'find', '/recordings', '-type', 'f')
-    for name in ('ziti-controller', 'guacd'):
-        mounts = []
-        info = json.loads(docker('inspect', containers[name]))[0]
-        for mount in info['Mounts']:
-            if mount['Destination'] in ('/recordings', '/run/sra/enrollment'):
-                mounts += ['-v', mount['Name'] + ':' + mount['Destination']]
-        bad = r.start('interrupted-' + name, images[name], '--network', 'none', *mounts,
-                      '--entrypoint', '/bin/sh', command=('-ec', 'touch /var/lib/sra/cleanup-complete; exec /opt/sra/' + name + '/entrypoint.sh'))
-        wait_exit(bad)
-    assert before == docker('exec', guacd, 'find', '/recordings', '-type', 'f')
-    isolated = r.start('isolated-host', images['ziti-host'], '--network', 'none', '--memory', '128m', '-v', enrollment + ':/run/sra/enrollment:ro')
-    r.healthy(isolated, 15)
-    first = docker('exec', isolated, 'cat', '/var/lib/sra/attempt-time')
-    time.sleep(23)
-    r.healthy(isolated, 5)
-    assert first != docker('exec', isolated, 'cat', '/var/lib/sra/attempt-time')
-    assert docker('exec', isolated, 'cat', '/var/lib/sra/phase') == 'enrolling'
+
+
+def snapshot(containers):
+    files = {
+        'ziti-controller': ['/run/sra/enrollment/router.jwt', '/run/sra/enrollment/ot-host.jwt',
+                            '/ziti-controller/pki/root/certs/root.cert'],
+        'ziti-router': ['/ziti-router/sra-router.cert', '/ziti-router/sra-router.key'],
+        'ziti-host': ['/ziti-edge-tunnel/ot-host.json'],
+        'keycloak': ['/opt/keycloak/data/import/sra-realm.json'],
+    }
+    result = {name: docker('exec', containers[name], 'sha256sum', *paths)
+              for name, paths in files.items()}
+    for name in ('ziti-controller', 'ziti-router', 'guacd', 'guacamole', 'postgres'):
+        result[name + '-marker'] = docker('exec', containers[name], 'stat', '-c', '%Y', '/var/lib/sra/seed-complete')
+    result['recordings'] = docker('exec', containers['guacd'], 'find', '/recordings', '-type', 'f')
+    return result
+
+
+def check_retained(before, containers):
+    after = snapshot(containers)
+    assert before == after, {name: (before.get(name), after.get(name))
+                             for name in before if before.get(name) != after.get(name)}
+
+
+def interrupted(r, containers, images, name):
+    before = snapshot(containers)
+    mounts = []
+    info = json.loads(docker('inspect', containers[name]))[0]
+    for mount in info['Mounts']:
+        if mount['Destination'] in ('/recordings', '/run/sra/enrollment'):
+            mounts += ['-v', mount['Name'] + ':' + mount['Destination']]
+    bad = r.start('interrupted-' + name, images[name], '--network', 'none', *mounts,
+                  '--entrypoint', '/bin/sh', command=('-ec', 'touch /var/lib/sra/cleanup-complete; exec /opt/sra/' + name + '/entrypoint.sh'))
+    wait_exit(bad)
+    assert 'interrupted initialization' in docker('logs', bad)
+    check_retained(before, containers)
+
+
+def offline_host(r, containers, images, net):
     ctrl = containers['ziti-controller']
+    docker('exec', '-u', '2171', ctrl, 'ziti', 'edge', 'create', 'identity', 'retry-host',
+           '--role-attributes', 'sra-hosts', '--jwt-output-file', '/run/sra/enrollment/retry-host.jwt')
+    jwt = docker('exec', ctrl, 'cat', '/run/sra/enrollment/retry-host.jwt')
+    volume = r.volume('retry-enrollment')
+    helper = r.start('retry-seed', images['ziti-host'], '--network', 'none', '--user', '0',
+                     '-v', volume + ':/run/sra/enrollment', '--entrypoint', '/bin/sleep', command=('infinity',))
+    docker('exec', helper, '/bin/sh', '-ec',
+           'printf %s "$1" > /run/sra/enrollment/ot-host.jwt; chmod 644 /run/sra/enrollment/ot-host.jwt',
+           'seed', jwt)
     docker('pause', ctrl)
     try:
-        time.sleep(7)
+        isolated = r.start('retry-host', images['ziti-host'], '--network', net, '--ip', '172.31.250.61',
+                           '--cap-add', 'NET_ADMIN', '-e', 'GATEWAY=172.31.250.1', '--memory', '128m',
+                           '-v', volume + ':/run/sra/enrollment:ro')
+        r.healthy(isolated, 15)
+        first = docker('exec', isolated, 'cat', '/var/lib/sra/attempt-time')
+        deadline = time.monotonic() + 60
+        while docker('exec', isolated, 'cat', '/var/lib/sra/attempt-time') == first:
+            assert time.monotonic() < deadline, 'no second enrollment attempt'
+            state = json.loads(docker('inspect', isolated))[0]['State']
+            assert state['Running'] and state['Health']['Status'] == 'healthy', state
+            time.sleep(1)
+        assert docker('exec', isolated, 'cat', '/var/lib/sra/phase') == 'enrolling'
+        r.healthy(isolated, 5)
         r.healthy(containers['ziti-host'], 5)
     finally:
         docker('unpause', ctrl)
-    print('PASS: first-boot interruption, plain restart, bind retention, offline enrollment retry', flush=True)
+    deadline = time.monotonic() + 90
+    while docker('exec', isolated, 'cat', '/var/lib/sra/phase') != 'running':
+        assert time.monotonic() < deadline, 'did not enroll when controller returned'
+        time.sleep(1)
+    r.healthy(isolated, 10)
+    docker('exec', isolated, 'test', '-s', '/ziti-edge-tunnel/ot-host.json')
+    assert docker('exec', isolated, 'cat', '/proc/1/comm').startswith('ziti-edge-tunne')
+    return 'healthy during two enrollment attempts; enrolled and execed run-host after controller returned'
 
 
 def inventory(containers):

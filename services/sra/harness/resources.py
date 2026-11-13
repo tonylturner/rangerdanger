@@ -35,9 +35,11 @@ class Resources:
         start = time.monotonic()
         recipe = recipe or 'Dockerfile.sra-' + name
         self.images.append(tag)
-        docker('buildx', 'build', '--platform', 'linux/' + arch, '--load',
-               '-t', tag, '-f', recipe, '.', timeout=900)
-        self.timings[tag] = round(time.monotonic() - start, 2)
+        try:
+            docker('buildx', 'build', '--platform', 'linux/' + arch, '--load',
+                   '-t', tag, '-f', recipe, '.', timeout=900)
+        finally:
+            self.timings[tag] = round(time.monotonic() - start, 2)
         self.sizes[tag] = int(docker('image', 'inspect', tag, '--format', '{{.Size}}'))
         print(f'BUILD {tag}: {self.timings[tag]}s {self.sizes[tag]} bytes', flush=True)
         return tag
@@ -104,8 +106,10 @@ class Resources:
             for name in reversed(names):
                 try:
                     docker(resource, 'rm', name)
-                except subprocess.CalledProcessError as exc:
-                    if resource != 'image' or 'No such image' not in exc.stderr:
+                except subprocess.SubprocessError as exc:
+                    absent_image = (resource == 'image' and isinstance(exc, subprocess.CalledProcessError)
+                                    and 'No such image' in (exc.stderr or ''))
+                    if not absent_image:
                         failures.append(str(exc))
         print(json.dumps({'build_seconds': self.timings, 'image_bytes': self.sizes, 'cleanup_errors': failures}))
         if failures:
