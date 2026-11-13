@@ -25,6 +25,9 @@ gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 
 
+SRA = "us-sra-substation"
+
+
 class Lifecycle:
     def __init__(self, package_id, api, directory):
         self.package = package_id
@@ -67,6 +70,11 @@ class Lifecycle:
     def reset(self):
         if self.eu:
             self.eu.helper("reset")
+        else:
+            receipt = request(self.api, "/api/workshop/reset", {}, timeout=180)
+            require_backend_protection(receipt)
+            if receipt.get("success") is not True:
+                raise ValueError(f"workshop reset failed: {receipt}")
 
     def execute(self, row, oracle, directory, timeout, positive=False, control=False):
         if self.eu:
@@ -93,7 +101,7 @@ def run(package_id, target, api, directory, timeout):
     rows = extract(target=target, package_id=package_id)
     data = json.loads(gate.expectations_path(ROOT, package_id).read_text())
     minimum = gate.validate_inventory(rows, data, target, package_id=package_id)
-    if package_id not in (US, EU):
+    if package_id not in (US, EU, SRA):
         raise ValueError(f"no reviewed live lifecycle adapter for {package_id}")
     preflight(package_id, api)
     lifecycle = Lifecycle(package_id, api, directory)

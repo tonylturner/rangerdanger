@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G3 simulator API isolation for either package; offline inspection with --list."""
+"""G3 simulator API isolation for a range package; offline inspection with --list."""
 import argparse
 import json
 import os
@@ -17,7 +17,7 @@ def interrupted(signum, _frame):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("package", choices=("us-dnp3-substation", "eu-iec104-substation"))
+    parser.add_argument("package", choices=("us-dnp3-substation", "eu-iec104-substation", "us-sra-substation"))
     parser.add_argument("--base-url", default="http://localhost:8088")
     parser.add_argument("--evidence-dir")
     parser.add_argument("--list", action="store_true", help="print tuples without Docker or HTTP")

@@ -808,7 +808,10 @@ else
             dpi_degraded=1
         fi
     done
-    reset_resp=$(curl -fsS --connect-timeout 3 --max-time 60 -X POST http://localhost:8088/api/workshop/reset 2>/dev/null) || reset_resp=""
+    reset_timeout=60
+    # SRA also restarts its broker/gateway to terminate active sessions.
+    [ "$RANGE_PACKAGE" != "us-sra-substation" ] || reset_timeout=180
+    reset_resp=$(curl -fsS --connect-timeout 3 --max-time "$reset_timeout" -X POST http://localhost:8088/api/workshop/reset 2>/dev/null) || reset_resp=""
     reset_protection_ok=0
     if [ -n "$reset_resp" ] && range_has_protection "$reset_resp"; then
         reset_protection_ok=1
@@ -852,6 +855,7 @@ fi
 # rather than crash-looping with "exec format error" (the silent failure
 # mode when emulation is missing). Non-fatal: OpenPLC is isolated (nothing
 # depends on it), so warn loudly with the fix instead of blocking install.
+if [ "$RANGE_PACKAGE" = "us-dnp3-substation" ] || [ "$RANGE_PACKAGE" = "eu-iec104-substation" ]; then
 say "Workshop-readiness: OpenPLC (protection-logic lab)..."
 openplc_ok=0
 for _ in $(seq 1 8); do
@@ -878,6 +882,8 @@ else
         warn "  Check: docker logs rangerdanger-openplc"
     fi
 fi
+
+fi # packages with OpenPLC
 
 # ─── done ────────────────────────────────────────────────────────────
 banner "RangerDanger is up"

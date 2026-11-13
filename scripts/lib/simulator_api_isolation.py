@@ -452,8 +452,12 @@ class Gate:
             self.peer_control(d)
         # Portal routes specifically exercise the proxy's management aliases,
         # not a hypothetical direct backend->PLC/HMI application path.
-        for path in (["/apps/openplc/"] if self.package.startswith("eu-")
-                     else ["/apps/openplc/", "/apps/fuxa-hmi/"]):
+        portal_paths = {
+            "us-dnp3-substation": ["/apps/openplc/", "/apps/fuxa-hmi/"],
+            "eu-iec104-substation": ["/apps/openplc/"],
+            "us-sra-substation": ["/apps/fuxa-hmi/"],
+        }
+        for path in portal_paths[self.package]:
             body = self.io.http(path, json_body=False).lower()
             require(("openplc" if "openplc" in path else "fuxa") in body,
                     f"portal response is not the upstream application: {path}")
