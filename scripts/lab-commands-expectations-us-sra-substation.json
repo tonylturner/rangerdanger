@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "inventory": {
+    "sra-direct-vendor-access": {
+      "RUN": 2,
+      "SKIP": 1
+    }
+  },
+  "minimum_executed": 2,
+  "commands": {
+    "sra-direct-vendor-access|2|nmap -Pn -sT -p 22,443 10.30.30.20|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)22/tcp\\s+open.*443/tcp\\s+open"
+      },
+      "reason": null
+    },
+    "sra-direct-vendor-access|2|curl -ksS --max-time 10 https://10.30.30.20/|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "RTAC Management Console"
+      },
+      "reason": null
+    },
+    "sra-direct-vendor-access|3|ssh rangerdanger@10.30.30.20|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Interactive SSH login and host-key confirmation are performed manually; the smoke verifies both management listeners with nmap and HTTPS with curl."
+    }
+  }
+}

@@ -1,0 +1,332 @@
+id: sra-substation
+name: 'US distribution substation: secure remote access'
+description: Observe direct vendor access and the brokered alternative on the US distribution
+  feeder.
+firewall_config: firewall/weak.json
+networks:
+- id: enterprise_net
+  purdue: Level 4
+  target_sl: 1
+  name: Enterprise Zone
+  subnet: 10.10.10.0/24
+  zone: wan
+  description: Corporate IT environment - lowest trust, common attacker foothold
+- id: vendor_net
+  purdue: Level 3.5
+  target_sl: 2
+  name: Vendor Zone
+  subnet: 10.20.20.0/24
+  zone: dmz
+  description: Vendor desktop for remote maintenance
+- id: sra_dmz_net
+  purdue: Level 3.5
+  target_sl: 2
+  name: Secure Remote Access DMZ
+  subnet: 10.25.25.0/24
+  zone: lan4
+  description: Identity, session brokering and overlay infrastructure
+- id: ot_ops_net
+  purdue: Level 3
+  target_sl: 3
+  name: OT Operations Zone
+  subnet: 10.30.30.0/24
+  zone: lan1
+  description: Substation operational services - HMI, RTAC, supervisory control
+- id: field_net
+  purdue: Level 1
+  target_sl: 2
+  name: Field Device Zone
+  subnet: 10.40.40.0/24
+  zone: lan2
+  description: Substation and feeder control endpoints - relay, recloser, regulator
+nodes:
+- id: fw-1
+  type: containd_ngfw
+  name: Containd Firewall
+  container: rangerdanger-firewall
+  networks:
+  - enterprise_net
+  - vendor_net
+  - ot_ops_net
+  - field_net
+  - sra_dmz_net
+  ip: 10.10.10.2
+- id: kali-1
+  type: kali_pentest
+  name: Kali Attacker
+  container: rangerdanger-kali
+  networks:
+  - enterprise_net
+  ip: 10.10.10.50
+- id: vendor-jump-1
+  type: vendor_jumpbox
+  name: Vendor Jump Box
+  container: rangerdanger-vendor-jump
+  networks:
+  - vendor_net
+  ip: 10.20.20.10
+- id: hmi-1
+  type: fuxa_hmi
+  name: Substation HMI
+  container: rangerdanger-fuxa-hmi
+  networks:
+  - ot_ops_net
+  ip: 10.30.30.10
+- id: rtac-1
+  type: rtac_sim
+  name: RTAC / Supervisory Controller
+  container: rangerdanger-rtac-sim
+  networks:
+  - ot_ops_net
+  - field_net
+  ip: 10.30.30.20
+- id: historian-1
+  type: historian_sim
+  name: Data Historian
+  container: rangerdanger-historian-sim
+  networks:
+  - ot_ops_net
+  ip: 10.30.30.40
+- id: gps-1
+  type: gps_sim
+  name: GPS Time Server
+  container: rangerdanger-gps-sim
+  networks:
+  - ot_ops_net
+  ip: 10.30.30.50
+- id: relay-1
+  type: relay_sim
+  name: Feeder Breaker / Relay
+  container: rangerdanger-relay-sim
+  networks:
+  - field_net
+  ip: 10.40.40.20
+- id: recloser-1
+  type: recloser_sim
+  name: Mid-Feeder Recloser
+  container: rangerdanger-recloser-sim
+  networks:
+  - field_net
+  ip: 10.40.40.21
+- id: regulator-1
+  type: regulator_sim
+  name: Voltage Regulator
+  container: rangerdanger-regulator-sim
+  networks:
+  - field_net
+  ip: 10.40.40.22
+- id: capbank-1
+  type: capbank_sim
+  name: Capacitor Bank
+  container: rangerdanger-capbank-sim
+  networks:
+  - field_net
+  ip: 10.40.40.23
+- id: sra-idp-1
+  type: sra_idp
+  name: Identity Provider
+  container: rangerdanger-sra-keycloak
+  networks:
+  - sra_dmz_net
+  ip: 10.25.25.10
+- id: sra-broker-1
+  type: sra_broker
+  name: Session Broker
+  container: rangerdanger-sra-guacamole
+  networks:
+  - sra_dmz_net
+  ip: 10.25.25.20
+- id: sra-guacd-1
+  type: sra_gateway
+  name: Session Gateway
+  container: rangerdanger-sra-guacd
+  networks:
+  - sra_dmz_net
+  ip: 10.25.25.30
+- id: sra-db-1
+  type: sra_database
+  name: Session Database
+  container: rangerdanger-sra-postgres
+  networks:
+  - sra_dmz_net
+  ip: 10.25.25.31
+- id: ziti-ctrl-1
+  type: ziti_controller
+  name: Overlay Controller
+  container: rangerdanger-sra-ziti-controller
+  networks:
+  - sra_dmz_net
+  ip: 10.25.25.40
+- id: ziti-router-1
+  type: ziti_router
+  name: Overlay Router
+  container: rangerdanger-sra-ziti-router
+  networks:
+  - sra_dmz_net
+  ip: 10.25.25.50
+- id: ziti-host-1
+  type: ziti_host
+  name: OT Overlay Host
+  container: rangerdanger-sra-ziti-host
+  networks:
+  - ot_ops_net
+  ip: 10.30.30.60
+scenarios: []
+flows:
+- id: rtac-1-relay-1-modbus
+  source: rtac-1
+  target: relay-1
+  protocol: Modbus
+  port: 502
+  cadence: ~3s
+  category: baseline
+  liveness_key: rtac-relay
+- id: rtac-1-recloser-1-modbus
+  source: rtac-1
+  target: recloser-1
+  protocol: Modbus
+  port: 502
+  cadence: ~3s
+  category: baseline
+  liveness_key: rtac-recloser
+- id: rtac-1-regulator-1-modbus
+  source: rtac-1
+  target: regulator-1
+  protocol: Modbus
+  port: 502
+  cadence: ~3s
+  category: baseline
+  liveness_key: rtac-regulator
+- id: rtac-1-relay-1-dnp3
+  source: rtac-1
+  target: relay-1
+  protocol: DNP3
+  port: 20000
+  cadence: ~5s
+  category: baseline
+  liveness_key: rtac-relay
+- id: rtac-1-recloser-1-dnp3
+  source: rtac-1
+  target: recloser-1
+  protocol: DNP3
+  port: 20000
+  cadence: ~5s
+  category: baseline
+  liveness_key: rtac-recloser
+- id: rtac-1-regulator-1-dnp3
+  source: rtac-1
+  target: regulator-1
+  protocol: DNP3
+  port: 20000
+  cadence: ~5s
+  category: baseline
+  liveness_key: rtac-regulator
+- id: gps-1-relay-1-ntp
+  source: gps-1
+  target: relay-1
+  protocol: NTP
+  port: 123
+  cadence: ~30s
+  category: baseline
+  liveness_key: gps
+- id: gps-1-recloser-1-ntp
+  source: gps-1
+  target: recloser-1
+  protocol: NTP
+  port: 123
+  cadence: ~30s
+  category: baseline
+  liveness_key: gps
+- id: gps-1-regulator-1-ntp
+  source: gps-1
+  target: regulator-1
+  protocol: NTP
+  port: 123
+  cadence: ~30s
+  category: baseline
+  liveness_key: gps
+- id: rtac-1-capbank-1-modbus
+  source: rtac-1
+  target: capbank-1
+  protocol: Modbus
+  port: 502
+  cadence: ~3s
+  category: baseline
+  liveness_key: rtac-capbank
+- id: rtac-1-capbank-1-dnp3
+  source: rtac-1
+  target: capbank-1
+  protocol: DNP3
+  port: 20000
+  cadence: ~5s
+  category: baseline
+  liveness_key: rtac-capbank
+- id: gps-1-capbank-1-ntp
+  source: gps-1
+  target: capbank-1
+  protocol: NTP
+  port: 123
+  cadence: ~30s
+  category: baseline
+  liveness_key: gps
+- id: hmi-1-rtac-1-modbus
+  source: hmi-1
+  target: rtac-1
+  protocol: Modbus
+  port: 502
+  cadence: ~2s
+  category: baseline
+  liveness_key: rtac
+- id: historian-1-rtac-1-http
+  source: historian-1
+  target: rtac-1
+  protocol: HTTP
+  port: 8080
+  cadence: ~5s
+  category: baseline
+  liveness_key: rtac
+- id: vendor-jump-1-hmi-1-fuxa
+  source: vendor-jump-1
+  target: hmi-1
+  protocol: FUXA
+  port: 1881
+  cadence: burst
+  category: scenario
+  liveness_key: scenario
+- id: vendor-jump-1-rtac-1-ssh
+  source: vendor-jump-1
+  target: rtac-1
+  protocol: SSH
+  port: 22
+  cadence: manual
+  category: scenario
+  liveness_key: direct-vendor
+- id: vendor-jump-1-rtac-1-https
+  source: vendor-jump-1
+  target: rtac-1
+  protocol: HTTPS
+  port: 443
+  cadence: manual
+  category: scenario
+  liveness_key: direct-vendor
+liveness:
+  rtac-relay:
+    provider: workshop-device
+    device: relay
+  rtac-recloser:
+    provider: workshop-device
+    device: recloser
+  rtac-regulator:
+    provider: workshop-device
+    device: regulator
+  rtac-capbank:
+    provider: workshop-device
+    device: capbank
+  rtac:
+    provider: workshop-supervisor
+  gps:
+    provider: workshop-supervisor
+  scenario:
+    provider: traffic-generator
+  direct-vendor:
+    provider: unobserved
