@@ -99,7 +99,7 @@ flowchart TB
     n_us_compose_backend_498c6eb888 -.->|"POST /api/range · lifecycle start, routes, seed policy"| n_us_range_0321fc2186
 ```
 
-Release inventory: **20 first-party images**, including **9 shared-service targets**.
+Release inventory: **27 first-party images**, including **9 shared-service targets**.
 amd64-only: `rangerdanger-openplc`, `rangerdanger-openplc-eu`.
 Source build bases are not the same inventory as upstream service pulls.
 <!-- END GENERATED: compose-us -->
