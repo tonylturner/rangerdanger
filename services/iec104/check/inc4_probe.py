@@ -7,24 +7,150 @@ import json
 import socket
 import sys
 import time
+from datetime import datetime
 
-from ccprobe import get_json, good, pt, request
+from ccprobe import get_json as _get_json, good, pt, request
 
 CC = "http://172.28.105.21:8080"
 HIST = "http://172.28.105.30:8081"
+_LAST_STATE = {"value": None}
 
 
 def fixture(ip, query=""):
     return get_json(f"http://172.28.104.{ip}:8081", "/set?" + query)
 
 
-def until(predicate, seconds=10):
+def get_json(base, path):
+    body = _get_json(base, path)
+    if path == "/api/state":
+        _LAST_STATE["value"] = body
+    return body
+
+
+def until(predicate, seconds=10, diagnostic=None):
     deadline = time.monotonic() + seconds
+    last_summary = None
     while time.monotonic() < deadline:
         if predicate():
             return
+        last_summary = (
+            diagnostic()
+            if diagnostic is not None
+            else state_summary(_LAST_STATE["value"])
+        )
         time.sleep(0.05)
-    raise AssertionError("condition did not hold in attempt window")
+    raise AssertionError(
+        "condition did not hold in attempt window; last state: "
+        + json.dumps(last_summary, sort_keys=True)
+    )
+
+
+def _parse_time(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def state_summary(state):
+    if state is None:
+        return {"state": "no /api/state observation"}
+    link = state.get("link", {})
+    gi = link.get("gi", {})
+    points = state.get("points", [])
+    return {
+        "snapshot_seq": state.get("snapshot_seq"),
+        "link": {
+            "state": link.get("state"),
+            "connection_seq": link.get("connection_seq"),
+            "gi": {
+                "state": gi.get("state"),
+                "trigger": gi.get("trigger"),
+                "started_at": gi.get("started_at"),
+                "last_complete_at": gi.get("last_complete_at"),
+            },
+        },
+        "point_count": len(points),
+        "points": [
+            {
+                "id": point.get("id"),
+                "value": point.get("value"),
+                "cot": point.get("cot"),
+                "good": good(point),
+                "quality": point.get("quality"),
+                "stale_reason": point.get("stale_reason"),
+                "received_at": point.get("received_at"),
+            }
+            for point in points
+        ],
+    }
+
+
+def operator_gi_status(state, requested_at):
+    link = state.get("link", {})
+    gi = link.get("gi", {})
+    points = state.get("points", [])
+    gi_started = _parse_time(gi.get("started_at"))
+    request_time = _parse_time(requested_at)
+    not_good_points = []
+    not_refreshed = []
+    cot_counts = {}
+    for point in points:
+        cot = str(point.get("cot"))
+        cot_counts[cot] = cot_counts.get(cot, 0) + 1
+        received_at = _parse_time(point.get("received_at"))
+        detail = {
+            "id": point.get("id"),
+            "value": point.get("value"),
+            "cot": point.get("cot"),
+            "good": good(point),
+            "quality": point.get("quality"),
+            "stale_reason": point.get("stale_reason"),
+            "received_at": point.get("received_at"),
+        }
+        if gi_started is None or received_at is None or received_at <= gi_started:
+            not_refreshed.append(detail)
+        if not good(point):
+            not_good_points.append(detail)
+
+    # COT is only the latest report cause; cyclic or spontaneous reports can
+    # replace 20 after the operator GI without making its refreshed data stale.
+    complete_operator_gi = (
+        gi.get("state") == "complete"
+        and gi.get("trigger") == "operator"
+        and request_time is not None
+        and gi_started is not None
+        and gi_started > request_time
+    )
+    exact_point_count = len(points) == 44
+    all_good = exact_point_count and not not_good_points
+    all_refreshed = exact_point_count and not not_refreshed
+    return {
+        "ready": complete_operator_gi and all_good and all_refreshed,
+        "conditions": {
+            "new_operator_gi_complete": complete_operator_gi,
+            "exactly_44_points": exact_point_count,
+            "all_points_good": all_good,
+            "all_points_refreshed_after_gi_started": all_refreshed,
+        },
+        "link": {
+            "state": link.get("state"),
+            "connection_seq": link.get("connection_seq"),
+            "gi": {
+                "state": gi.get("state"),
+                "trigger": gi.get("trigger"),
+                "started_at": gi.get("started_at"),
+                "last_complete_at": gi.get("last_complete_at"),
+            },
+        },
+        "point_count": len(points),
+        "good_count": len(points) - len(not_good_points),
+        "cot_counts": cot_counts,
+        "not_refreshed_points": not_refreshed,
+        "not_good_points": not_good_points,
+    }
 
 
 def command(point, operation, status=200, result="completed"):
@@ -196,12 +322,18 @@ def main():
     until(f2_lost)
     fixture(25, "read_lost=false")
     until(lambda: all(good(p) for p in get_json(CC, "/api/state")["points"]))
-    code, _ = request(CC, "POST", "/api/gi")
-    assert code == 202
-    until(lambda: (lambda state: state["link"]["gi"]["state"] == "complete"
-        and state["link"]["gi"]["trigger"] == "operator" and len(state["points"]) == 44
-        and all(good(p) and p["cot"] == 20 for p in state["points"]))(
-            get_json(CC, "/api/state")))
+    code, text = request(CC, "POST", "/api/gi")
+    assert code == 202, (code, text)
+    accepted = json.loads(text)
+    assert accepted.get("trigger") == "operator" and accepted.get("requested_at"), accepted
+    gi_status = {"value": None}
+
+    def operator_gi_complete():
+        state = get_json(CC, "/api/state")
+        gi_status["value"] = operator_gi_status(state, accepted["requested_at"])
+        return gi_status["value"]["ready"]
+
+    until(operator_gi_complete, diagnostic=lambda: gi_status["value"])
     assert not fixture(25)["writes"]
     print("PASS F2 loss retains all five values IV+NT, healthy peers GOOD, recovery/new GI, no F2 writes")
 

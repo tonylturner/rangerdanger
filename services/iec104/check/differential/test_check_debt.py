@@ -2,6 +2,7 @@
 """Offline regressions for first-party check helpers; never invokes Docker."""
 
 import ast
+from datetime import datetime
 from pathlib import Path
 import subprocess
 import tempfile
@@ -132,6 +133,114 @@ class NegativeConfirmationTests(unittest.TestCase):
     def test_positive_confirmation_is_rejected(self):
         with self.assertRaises(AssertionError):
             self.select(7)
+
+
+class OperatorGICoverageTests(unittest.TestCase):
+    def setUp(self):
+        self.good = helper("ccprobe.py", "good")
+        parse_time = helper("inc4_probe.py", "_parse_time", datetime=datetime)
+        self.status = helper(
+            "inc4_probe.py",
+            "operator_gi_status",
+            _parse_time=parse_time,
+            good=self.good,
+        )
+
+    def state(self):
+        started_at = "2026-11-12T03:42:00.000000000Z"
+        return {
+            "link": {
+                "state": "started",
+                "connection_seq": 4,
+                "gi": {
+                    "state": "complete",
+                    "trigger": "operator",
+                    "started_at": started_at,
+                    "last_complete_at": "2026-11-12T03:42:00.010000000Z",
+                },
+            },
+            "points": [
+                {
+                    "id": f"point-{index}",
+                    "value": index,
+                    "cot": 20,
+                    "quality": {
+                        "iv": False,
+                        "nt": False,
+                        "sb": False,
+                        "bl": False,
+                        "ov": False,
+                    },
+                    "stale_reason": None,
+                    "received_at": "2026-11-12T03:42:00.001000000Z",
+                }
+                for index in range(44)
+            ],
+        }
+
+    def test_fresh_operator_gi_passes_after_latest_cot_was_replaced(self):
+        state = self.state()
+        state["points"][0]["cot"] = 1
+        state["points"][1]["cot"] = 3
+
+        status = self.status(state, "2026-11-12T03:41:59.000000000Z")
+
+        self.assertTrue(status["ready"])
+        self.assertEqual(status["cot_counts"], {"1": 1, "3": 1, "20": 42})
+
+    def test_good_cot20_point_is_not_covered_if_not_refreshed_after_gi_start(self):
+        state = self.state()
+        state["points"][17]["received_at"] = "2026-11-12T03:41:59.000000000Z"
+
+        status = self.status(state, "2026-11-12T03:41:59.000000000Z")
+
+        self.assertFalse(status["ready"])
+        self.assertFalse(status["conditions"]["all_points_refreshed_after_gi_started"])
+        self.assertEqual(
+            [point["id"] for point in status["not_refreshed_points"]],
+            ["point-17"],
+        )
+
+    def test_operator_gi_requires_exactly_44_points(self):
+        state = self.state()
+        state["points"].pop()
+
+        status = self.status(state, "2026-11-12T03:41:59.000000000Z")
+
+        self.assertFalse(status["ready"])
+        self.assertFalse(status["conditions"]["exactly_44_points"])
+
+    def test_operator_gi_must_be_new_complete_and_leave_all_points_good(self):
+        state = self.state()
+        state["link"]["gi"]["trigger"] = "periodic"
+        state["points"][3]["quality"]["iv"] = True
+
+        status = self.status(state, "2026-11-12T03:41:59.000000000Z")
+
+        self.assertFalse(status["ready"])
+        self.assertFalse(status["conditions"]["new_operator_gi_complete"])
+        self.assertFalse(status["conditions"]["all_points_good"])
+        self.assertEqual(status["not_good_points"][0]["id"], "point-3")
+
+    def test_until_timeout_reports_the_last_state_values(self):
+        elapsed = [0.0]
+        fake_time = types.SimpleNamespace(
+            monotonic=lambda: elapsed[0],
+            sleep=lambda seconds: elapsed.__setitem__(0, elapsed[0] + seconds),
+        )
+        state = self.state()
+        state["snapshot_seq"] = 9
+        until = helper(
+            "inc4_probe.py",
+            "until",
+            time=fake_time,
+            json=__import__("json"),
+            _LAST_STATE={"value": state},
+            state_summary=helper("inc4_probe.py", "state_summary", good=self.good),
+        )
+
+        with self.assertRaisesRegex(AssertionError, "snapshot_seq"):
+            until(lambda: False, seconds=0.1)
 
 
 if __name__ == "__main__":
