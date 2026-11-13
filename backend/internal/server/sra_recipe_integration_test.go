@@ -1,5 +1,3 @@
-//go:build sra_package
-
 package server
 
 import (
@@ -12,8 +10,7 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
-// Run after the package lane lands: go test -tags sra_package -run
-// '^TestSRAShippedPackage$' ./internal/server.
+// TestSRAShippedPackage checks the SRA recipe against the shipped package.
 func TestSRAShippedPackage(t *testing.T) {
 	man, err := manifest.Load(repoRoot(), sraPackageID)
 	if err != nil {
