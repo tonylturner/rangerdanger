@@ -26,22 +26,22 @@ Commands go via POST to `/api/command`:
 # Trip the relay breaker
 curl -s -X POST http://10.40.40.20:8080/api/command \
   -H "Content-Type: application/json" \
-  -d '{"action": "trip"}'
+  -d '{"command": "trip"}'
 
 # Close the relay breaker
 curl -s -X POST http://10.40.40.20:8080/api/command \
   -H "Content-Type: application/json" \
-  -d '{"action": "close"}'
+  -d '{"command": "close"}'
 
 # Disable recloser auto-reclose
 curl -s -X POST http://10.40.40.21:8080/api/command \
   -H "Content-Type: application/json" \
-  -d '{"action": "disable-reclose"}'
+  -d '{"command": "disable-reclose"}'
 
 # Set regulator tap position
 curl -s -X POST http://10.40.40.22:8080/api/command \
   -H "Content-Type: application/json" \
-  -d '{"action": "set-tap", "value": 10}'
+  -d '{"command": "set-tap", "value": 10}'
 ```
 
 ### Health Checks

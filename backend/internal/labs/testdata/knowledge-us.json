@@ -180,7 +180,7 @@
       {
         "id": "tool-curl",
         "title": "curl - HTTP REST API Interaction",
-        "sha256": "50a6870826c404f9f6a6287e89303474eb52951c2fc1747958e19244ee757216"
+        "sha256": "917da4069aec2d5bc57d3d9e2b70a9cb86a06bf84c4327614f51f3a5344b0801"
       },
       {
         "id": "tool-nmap",
