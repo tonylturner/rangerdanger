@@ -105,6 +105,11 @@ function Die($Message) { throw $Message }
 $OutDir=$env:WORK
 $sample='ghcr.io/tonylturner/rangerdanger-backend:v2'
 $resolved=@($sample)
+$allImages=@($sample)
+$imageMembership=@([pscustomobject]@{Owner='platform'; Image=$sample})
+$candidateRows=@([pscustomobject]@{image=$sample; owners=@('platform/backend')})
+$Version='v2'; $New='v2'
+function Verify-Archive($path, $expected) { if (-not (Test-Path $path)) { throw 'missing saved archive' } }
 $changed=New-Object 'System.Collections.Generic.List[string]'
 $changed.Add($sample)
 $BINFMT_IMAGE='binfmt:fixture'
@@ -119,8 +124,9 @@ function Invoke-DockerBounded($DockerArgs, $TimeoutSec, [switch]$StreamOutput) {
     $budget=switch ($verb) { 'pull' {3600} 'tag' {60} 'save' {7200} default {throw 'unexpected call'} }
     if ($TimeoutSec -ne $budget -or [bool]$StreamOutput -ne ($verb -ne 'tag')) { throw 'budget/progress lost' }
     if ($verb -eq 'save') {
-        [IO.File]::WriteAllText($DockerArgs[2], 'fixture archive')
-        if ($DockerArgs -notcontains $sample -or ($env:ARCH -eq 'arm64' -and $DockerArgs -notcontains $BINFMT_IMAGE)) { throw 'save image union lost' }
+        $path=$DockerArgs[[Array]::IndexOf($DockerArgs, '-o') + 1]
+        [IO.File]::WriteAllText($path, 'fixture archive')
+        if ($DockerArgs -notcontains $sample -or $DockerArgs -contains $BINFMT_IMAGE) { throw 'save image union lost' }
     }
     $bad=$env:MODE -eq "$verb-error" -or ($verb -eq 'save' -and $env:MODE -eq 'save-timeout')
     [pscustomobject]@{ExitCode=([int]$bad); TimedOut=($env:MODE -eq 'save-timeout' -and $verb -eq 'save'); StdOut=''; StdErr='fixture'}
@@ -128,11 +134,11 @@ function Invoke-DockerBounded($DockerArgs, $TimeoutSec, [switch]$StreamOutput) {
 $failed=$false
 try { Invoke-StageArch $env:ARCH } catch { $failed=$true }
 if ($failed -ne ($env:MODE -ne 'ok')) { throw 'incorrect outcome' }
-$files=@(Get-ChildItem -LiteralPath $OutDir -File)
+$files=@(Get-ChildItem -LiteralPath $OutDir -File -Recurse | Where-Object { $_.Extension -eq '.tar' })
 if ($files.Count -ne [int]($env:MODE -eq 'ok')) { throw 'partial archive left behind or successful save lost' }
 $expected=if ($env:MODE -eq 'pull-error') { 'pull' }
     elseif ($env:MODE -eq 'tag-error') { 'pull,tag' }
-    elseif ($env:ARCH -eq 'arm64') { 'pull,tag,pull,tag,save' } else { 'pull,tag,save' }
+    else { 'pull,tag,save' }
 if (($script:calls -join ',') -cne $expected) { throw 'operation ordering changed or failure ignored' }
 """, STAGER=stager, ARCH=arch, MODE=mode, WORK=tmp,
                        RD_STAGE_PULL_ATTEMPTS="1", RD_STAGE_PULL_DELAY_S="0")
@@ -160,7 +166,7 @@ ConvertTo-Json -Compress -InputObject @($commands | Where-Object {
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 if name.startswith("stage-ssd"):
                     commands = json.loads(result.stdout)
-                    expected_count = 12 if name == "stage-ssd.ps1" else 10
+                    expected_count = 13 if name == "stage-ssd.ps1" else 11
                     self.assertEqual(len(commands), expected_count)
                     for command in commands:
                         text = command["text"]
@@ -173,7 +179,7 @@ ConvertTo-Json -Compress -InputObject @($commands | Where-Object {
                                 3600 if command["name"] == "Invoke-StagePull" else
                                 30 if "'compose'" in text else 120 if "'buildx'" in text else
                                 3600 if "'pull'" in text else 60 if "'tag'" in text else
-                                7200 if "'save'" in text else 600 if "'archive'" in text else
+                                7200 if "'save'" in text or "$saveArgs" in text else 600 if "'archive'" in text else
                                 1800 if "'-xf'" in text else 30
                             )
                             self.assertRegex(text, rf"\s{budget}(?:\s+-StreamOutput)?$")
@@ -230,6 +236,7 @@ if ($archive.Count -ne 1) { throw 'archive invocation not found' }
 $RootDir='C:\Users\A B\rd'
 $tgzPath=Join-Path $env:WORK 'rangerdanger.tgz'
 $OutDir=$env:WORK; $TarExe='tar-fixture'
+$Version='v2'
 $verPath=Join-Path $env:WORK '.version'
 Set-Content -LiteralPath $verPath -Value 'v2'
 $script:extract=''
@@ -253,7 +260,7 @@ if ($env:STAGER -eq 'stage-ssd.ps1') {
     $f=$ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Verify-Archive'}, $true)[0]
     Invoke-Expression $f.Extent.Text
     $failed=$false
-    try { Verify-Archive 'amd64' @('fixture:v2') } catch { $failed=$true }
+    try { Verify-Archive (Join-Path $OutDir 'images/amd64/1.tar') @('fixture:v2') } catch { $failed=$true }
     if ($failed -ne ($env:MODE -ne 'ok')) { throw 'tar verification outcome changed' }
     if (-not $script:extract -or (Test-Path $script:extract)) { throw 'tar verification temp directory leaked' }
 }

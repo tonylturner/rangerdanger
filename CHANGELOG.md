@@ -6,6 +6,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Setup installs only the packages you select with `--packages` /
+  `-Packages`; the default is every package. Reruns keep the installed set,
+  and `--add-package` / `-AddPackage` adds a package without restarting the
+  range. The backend lists and starts only installed packages. Setup
+  refuses a selection that drops the running range's package; switch the
+  range first.
+- Offline SSD bundles store one archive per image with a checked index, and
+  an offline install loads only the selected packages. Bundles staged by
+  earlier releases must be staged again. Delta rollback restores the package
+  selection, install mode and environment together.
+
 ### Changed
 
 - Scenario IDs are unique within a package, not across packages, so two packages may use the same ID. Scenario actions name the package they expect, so a stale browser tab cannot act on a different range.

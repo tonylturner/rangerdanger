@@ -48,7 +48,7 @@ if ($env:PREEXIST -eq '1') {
     if ($env:RANGERDANGER_ROOT -cne 'prior root' -or $env:VERSION -cne 'prior-version') { throw 'environment not restored' }
 } elseif ((Test-Path Env:RANGERDANGER_ROOT) -or (Test-Path Env:VERSION)) { throw 'environment leaked' }
 if ($failed -ne ($env:MODE -ne 'ok')) { throw 'incorrect outcome' }
-$expectedCalls = if ($env:MODE -eq 'badpath') { 0 } elseif ($env:MODE -in @('error', 'timeout', 'missing', 'throw')) { 1 } else { 3 }
+$expectedCalls = if ($env:MODE -eq 'badpath') { 0 } elseif ($env:MODE -in @('error', 'timeout', 'missing', 'throw', 'empty')) { 1 } else { 3 }
 if ($script:calls -ne $expectedCalls) { throw 'enumeration did not visit expected models' }
 if (-not $failed -and ($allImages -join ',') -cne 'image-1,image-2,image-3,shared') { throw 'union/deduplication changed' }
 """

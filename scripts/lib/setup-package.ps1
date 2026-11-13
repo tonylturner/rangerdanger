@@ -1,5 +1,6 @@
 # Package installer operations. Dot-source after docker-bounded.ps1.
 # Keep host-side Compose paths separate from the daemon-visible ROOT.
+. "$PSScriptRoot/image-index.ps1"
 
 function Invoke-SetupDocker([string[]]$DockerArgs, [int]$TimeoutSec = 30) {
     $run = Invoke-DockerBounded $DockerArgs $TimeoutSec
@@ -8,7 +9,8 @@ function Invoke-SetupDocker([string[]]$DockerArgs, [int]$TimeoutSec = 30) {
     return $run.StdOut
 }
 
-function Get-SetupModels([string]$HostRoot, [string]$Mode) {
+function Get-SetupModels([string]$HostRoot, [string]$Mode, [string[]]$Selected) {
+    if (-not $Selected) { throw 'Resolve the installed package selection before reading Compose models.' }
     $suffix = if ($Mode -eq 'source') { 'source' } else { 'release' }
     $platform = if ($Mode -eq 'source') { 'docker-compose.yml' } else { 'docker-compose.release.yml' }
     $file = Join-Path $HostRoot $platform
@@ -18,6 +20,7 @@ function Get-SetupModels([string]$HostRoot, [string]$Mode) {
     $found = 0
     foreach ($dir in (Get-ChildItem -LiteralPath $packages -Directory | Sort-Object Name)) {
         if (-not (Test-Path -LiteralPath (Join-Path $dir.FullName 'package.yml'))) { continue }
+        if ($Selected -and $dir.Name -cnotin $Selected) { continue }
         if ($dir.Name -cnotmatch '^[a-z0-9-]+$') { throw "Invalid package directory: $($dir.Name)" }
         $file = Join-Path $dir.FullName "compose.$suffix.yml"
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing $file" }
@@ -46,19 +49,22 @@ function Invoke-SetupPull($Model, [string[]]$PullArgs) {
 }
 
 function Get-SetupImages($Models) {
-    @(
-        foreach ($model in $Models) {
-            $text = Invoke-SetupDocker (Get-SetupComposeArgs $model @('config', '--images'))
-            if (-not $text.Trim()) { throw "No images resolved for $($model.File)" }
-            $text -split '\r?\n' | Where-Object { $_ }
+    $images = New-Object 'Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal)
+    foreach ($model in $Models) {
+        $text = Invoke-SetupDocker (Get-SetupComposeArgs $model @('config', '--images'))
+        if (-not $text.Trim()) { throw "No images resolved for $($model.File)" }
+        foreach ($image in ($text -split '\r?\n')) {
+            if ($image) { $null = $images.Add($image) }
         }
-    ) | Sort-Object -Unique
+    }
+    @($images)
 }
 
-function Invoke-SetupAcquisition($Models, [string]$Mode, [string]$Tarball) {
+function Invoke-SetupAcquisition($Models, [string]$Mode, [string]$Tarball, [string]$Architecture, [string]$Version, [string[]]$Selected) {
     # Nothing in this function tears down an existing install.
     if ($Mode -eq 'offline') {
-        Write-Host (Invoke-SetupDocker @('load', '-i', $Tarball) 1800)
+        $archives = @(Read-ImageIndex $Tarball $Architecture $Version $Selected @(Get-SetupImages $Models))
+        foreach ($archive in $archives) { Write-Host (Invoke-SetupDocker @('load', '-i', $archive) 1800) }
     } elseif ($Mode -eq 'source') {
         foreach ($model in $Models) {
             Write-Host (Invoke-SetupDocker (Get-SetupComposeArgs $model @('build')) 3600)

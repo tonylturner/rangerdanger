@@ -391,7 +391,6 @@ func TestReconcileReadyMissing(t *testing.T) {
 			mustWrite(h.t, filepath.Join(h.routesDir, RoutesFile), []byte("# edited\n"))
 		}, "proxy routes"},
 		{"mode changed", func(_ *harness, opts *Options) { opts.Mode = "source" }, "source mode"},
-		{"package gone", func(h *harness, _ *Options) { h.catalog.Packages = h.catalog.Packages[1:] }, "not in the catalog"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -419,6 +418,18 @@ func TestReconcileReadyMissing(t *testing.T) {
 			default:
 			}
 		})
+	}
+}
+
+func TestStartupRejectsRemovedCatalogPackage(t *testing.T) {
+	h := newHarness(t)
+	h.ready(h.options(), "pkg-a")
+	h.catalog.Packages = h.catalog.Packages[1:]
+	if _, err := New(h.options()); err == nil || !strings.Contains(err.Error(), "installed-packages") {
+		t.Fatalf("removed catalog package accepted: %v", err)
+	}
+	if got := h.compose.callLog(); len(got) != 0 {
+		t.Fatalf("startup admission performed compose operations: %v", got)
 	}
 }
 

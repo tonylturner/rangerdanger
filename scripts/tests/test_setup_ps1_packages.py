@@ -10,14 +10,23 @@ from .test_setup_ps1_root import LOAD, ROOT, powershell
 LOAD_PACKAGE = LOAD + """
 . "$env:REPO/scripts/lib/setup-package.ps1"
 . "$env:REPO/scripts/lib/setup-range.ps1"
+. "$env:REPO/scripts/lib/installed-packages.ps1"
 """
 
 
 class WindowsPackageTests(unittest.TestCase):
+    def test_image_union_deduplicates_exact_refs_not_case_distinct_tags(self):
+        result = powershell(LOAD_PACKAGE + """
+function Invoke-SetupDocker($DockerArgs) { "repo:a`nrepo:A`nrepo:a`n" }
+ConvertTo-Json -InputObject @(Get-SetupImages @([pscustomobject]@{Project='p';Root='r';File='f'})) -Compress
+""")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), ["repo:A", "repo:a"])
+
     def test_candidate_reaches_backend_env_and_normal_setup_clears_it(self):
         source = (ROOT / "setup.ps1").read_text()
         start = source.index("$envFile = Join-Path")
-        end = source.index("$env:VERSION =", start)
+        end = source.index("Invoke-KernelStep\n# The proxy", start)
         for mode in ("source", "release", "offline"):
             for image in ("", "example.invalid/containd:candidate"):
                 with self.subTest(mode=mode, image=image), tempfile.TemporaryDirectory() as tmp:
@@ -41,14 +50,14 @@ $Mode = $env:MODE
         for mode, suffix in (("release", "release"), ("offline", "release"), ("source", "source")):
             with self.subTest(mode=mode):
                 result = powershell(LOAD_PACKAGE + """
-$models = @(Get-SetupModels $env:REPO $env:MODE)
+$models = @(Get-SetupModels $env:REPO $env:MODE @(Get-AvailablePackages $env:REPO))
 $commands = @(foreach ($m in $models) { ,@(Get-SetupComposeArgs $m @('config', '--images')) })
 ConvertTo-Json -InputObject $commands -Compress
 """, MODE=mode)
                 if result.returncode:
                     self.fail(result.stderr)
                 args = json.loads(result.stdout)
-                self.assertEqual(len(args), 3)
+                self.assertEqual(len(args), 1 + len(list((ROOT / "lab-definitions/packages").glob("*/package.yml"))))
                 self.assertEqual(args[0][2], "rangerdanger-platform")
                 for command in args:
                     self.assertEqual(command[4], str(ROOT))
@@ -95,6 +104,7 @@ foreach ($i in 1,2) {
                 with self.subTest(mode=mode, fail=fail):
                     result = powershell(LOAD_PACKAGE + """
 $script:calls = @()
+function Read-ImageIndex { @('selected-1.tar', 'selected-2.tar') }
 function Start-Sleep { }
 function Invoke-DockerBounded($DockerArgs, $TimeoutSec) {
     $script:calls += ,@($DockerArgs)
@@ -103,9 +113,9 @@ function Invoke-DockerBounded($DockerArgs, $TimeoutSec) {
     $text = if ($DockerArgs -contains '--images') { "shared:1`npackage:2`n" } else { '' }
     [pscustomobject]@{ ExitCode=([int]$failed); TimedOut=($env:FAIL -eq 'timeout'); StdOut=$text; StdErr='fixture' }
 }
-$models = @(Get-SetupModels $env:REPO $env:MODE)
+$models = @(Get-SetupModels $env:REPO $env:MODE @(Get-AvailablePackages $env:REPO))
 $failed = $false
-try { Invoke-SetupAcquisition $models $env:MODE 'images.tar' } catch { $failed = $true }
+try { Invoke-SetupAcquisition $models $env:MODE $env:REPO amd64 v2 @('us') } catch { $failed = $true }
 if ($failed -ne [bool]$env:FAIL) { throw 'incorrect acquisition outcome' }
 ConvertTo-Json -InputObject $script:calls -Compress
 """, MODE=mode, FAIL=fail)
@@ -116,11 +126,11 @@ ConvertTo-Json -InputObject $script:calls -Compress
                         pulls = [c for c in calls if "pull" in c]
                         builds = [c for c in calls if "build" in c]
                         if mode == "offline":
-                            self.assertEqual(calls[0], ["load", "-i", "images.tar"])
+                            self.assertEqual([c for c in calls if c[0] == "load"], [["load", "-i", "selected-1.tar"], ["load", "-i", "selected-2.tar"]])
                             self.assertEqual(pulls, [])
                         else:
-                            self.assertEqual(len(pulls), 3)
-                            self.assertEqual(len(builds), 3 if mode == "source" else 0)
+                            self.assertEqual(len(pulls), 1 + len(list((ROOT / "lab-definitions/packages").glob("*/package.yml"))))
+                            self.assertEqual(len(builds), len(pulls) if mode == "source" else 0)
                             if mode == "source":
                                 self.assertTrue(all("--ignore-buildable" in c for c in pulls))
 

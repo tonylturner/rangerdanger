@@ -79,8 +79,11 @@ if (Test-VersionAtLeast $env:HAVE $env:WANT) { exit 0 } else { exit 1 }
                 lib = root / "scripts/lib"
                 lib.mkdir(parents=True)
                 shutil.copyfile(ROOT / "setup.ps1", root / "setup.ps1")
-                for name in ("docker-bounded.ps1", "docker-floor.ps1", "setup-range.ps1", "range.ps1", "containd-readiness.ps1"):
+                for name in ("docker-bounded.ps1", "docker-floor.ps1", "setup-range.ps1", "range.ps1", "containd-readiness.ps1", "installed-packages.ps1"):
                     shutil.copyfile(ROOT / "scripts/lib" / name, lib / name)
+                package = root / "lab-definitions/packages/us-dnp3-substation"
+                package.mkdir(parents=True)
+                (package / "package.yml").write_text("id: us-dnp3-substation\n")
                 # Mock only Windows host/path discovery and external dependencies.
                 # The whole installer and its bounded Docker wrapper run unchanged.
                 (lib / "windows-root.ps1").write_text("""

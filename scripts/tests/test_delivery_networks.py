@@ -49,7 +49,8 @@ class DeliveryNetworks(unittest.TestCase):
     def test_ownership_preflight(self) -> None:
         script = (ROOT / "setup.sh").read_text()
         # Only extract the ownership loop: no installer or live CLI is run.
-        loop = script[script.index("for DELIVERY_NET in "):script.index('MGMT_OWNER=""')]
+        start = script.index("for DELIVERY_NET in ")
+        loop = script[start:script.index("MGMT_NET_IDS=", start)]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             docker = root / "docker"

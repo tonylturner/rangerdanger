@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OPTIONS = (
     ("setup.sh", [], "--version", "a release version", "v0.2.1"),
     ("setup.sh", [], "--from-tarballs",
-     "a directory (the folder containing images-<arch>.tar)", "./images"),
+     "a directory (the folder containing image-index-<arch>.txt)", "./images"),
     ("setup.sh", [], "--package", "a package ID", "us-dnp3-substation"),
     ("stage-ssd-delta.sh", ["./out", "v1", "v2"], "--include",
      "a comma-separated image list", "backend,frontend"),
@@ -105,7 +105,7 @@ class InstallerArgumentTests(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn(
                         "--from-tarballs expects the folder containing "
-                        "images-<arch>.tar, not the file; try: ",
+                        "image-index-<arch>.txt, not the file; try: ",
                         result.stderr,
                     )
                     suggestion = result.stderr.split("try: ", 1)[1].strip()
@@ -122,7 +122,7 @@ class InstallerArgumentTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(
                     "-FromTarballs expects the folder containing "
-                    "images-<arch>.tar, not the file; try: ",
+                    "image-index-<arch>.txt, not the file; try: ",
                     result.stdout,
                 )
                 quoted_folder = str(folder).replace("'", "''")

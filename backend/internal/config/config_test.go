@@ -48,13 +48,14 @@ func isolateConfigEnv(t *testing.T) {
 
 func TestLoadEnvironmentAndLegacyPrecedence(t *testing.T) {
 	isolateConfigEnv(t)
+	root, defs := configInstall(t)
 	for key, value := range map[string]string{
 		"RANGERDANGER_HTTP_PORT":            "9123",
 		"RANGERDANGER_DB_PATH":              "var/test.sqlite",
 		"RANGERDANGER_ALLOWED_ORIGINS":      "https://portal.example",
-		"RANGERDANGER_LAB_DEFINITIONS_PATH": "fixtures/labs",
+		"RANGERDANGER_LAB_DEFINITIONS_PATH": defs,
 		"RANGERDANGER_PACKAGE":              "eu-iec104-substation",
-		"RANGERDANGER_ROOT":                 "/srv/rangerdanger",
+		"RANGERDANGER_ROOT":                 root,
 		"RANGERDANGER_MODE":                 "release",
 		"OTLAB_HTTP_PORT":                   "9999",
 		"OTLAB_DB_PATH":                     "legacy.sqlite",
@@ -75,9 +76,9 @@ func TestLoadEnvironmentAndLegacyPrecedence(t *testing.T) {
 		HTTPPort:           9123,
 		DBPath:             "var/test.sqlite",
 		AllowedOrigins:     []string{"https://portal.example"},
-		LabDefinitionsPath: "fixtures/labs",
+		LabDefinitionsPath: defs,
 		Package:            "eu-iec104-substation",
-		Root:               "/srv/rangerdanger",
+		Root:               root,
 		Mode:               "release",
 	}
 	if !reflect.DeepEqual(cfg, want) {
@@ -88,7 +89,9 @@ func TestLoadEnvironmentAndLegacyPrecedence(t *testing.T) {
 // setRange sets the two variables the platform Compose file always provides.
 func setRange(t *testing.T) {
 	t.Helper()
-	t.Setenv("RANGERDANGER_ROOT", "/srv/rangerdanger")
+	root, defs := configInstall(t)
+	t.Setenv("RANGERDANGER_ROOT", root)
+	t.Setenv("RANGERDANGER_LAB_DEFINITIONS_PATH", defs)
 	t.Setenv("RANGERDANGER_MODE", "source")
 }
 
@@ -104,9 +107,9 @@ func TestLoadDefaults(t *testing.T) {
 		HTTPPort:           8080,
 		DBPath:             "backend/data/rangerdanger.db",
 		AllowedOrigins:     []string{"*"},
-		LabDefinitionsPath: "lab-definitions",
+		LabDefinitionsPath: os.Getenv("RANGERDANGER_LAB_DEFINITIONS_PATH"),
 		Package:            DefaultPackage,
-		Root:               "/srv/rangerdanger",
+		Root:               os.Getenv("RANGERDANGER_ROOT"),
 		Mode:               "source",
 	}
 	if !reflect.DeepEqual(cfg, want) {

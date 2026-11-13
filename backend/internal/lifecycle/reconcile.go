@@ -21,6 +21,16 @@ func (m *Manager) reconcile() {
 		rec = *m.rec
 	}
 	m.mu.Unlock()
+	if rec.Package != "" {
+		if err := m.requireInstalled(rec.Package); err != nil {
+			// An admission conflict must not tear down or adopt a running range.
+			m.mu.Lock()
+			m.status.Phase = PhaseFailed
+			m.status.Error = err.Error()
+			m.mu.Unlock()
+			return
+		}
+	}
 
 	switch {
 	case loadErr != nil:

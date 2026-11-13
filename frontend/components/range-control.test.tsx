@@ -248,6 +248,9 @@ describe("helpers", () => {
 
   it("words request failures for students", () => {
     expect(rangeRequestErrorText(new ApiError(409, "busy"))).toBe("Another range change is already running.");
+    expect(rangeRequestErrorText(new ApiError(422, "Run setup --add-package eu, then refresh.", [], "package_not_installed")))
+      .toBe("Run setup --add-package eu, then refresh.");
+    expect(rangeRequestErrorText(new ApiError(422, "", [], "package_not_installed"))).toBe("Request failed: 422");
     expect(rangeRequestErrorText(new ApiError(400, "unknown package \"x\""))).toBe('unknown package "x"');
     expect(rangeRequestErrorText(new ApiError(500, ""))).toBe("Request failed: 500");
     expect(rangeRequestErrorText(new RangeNotReadyError("starting"))).toMatch(/being replaced/);

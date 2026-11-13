@@ -3,6 +3,15 @@ import { request, listScenarios, ApiError, compilePlan, applyPlan, executeScenar
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("retains typed package installation guidance on 422", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+    '{"code":"package_not_installed","error":"Run setup --add-package eu, then refresh."}', { status: 422 },
+  )));
+  await expect(sendFieldAction({ device: "rmu-1", action: "reset_fault_passage" })).rejects.toMatchObject({
+    status: 422, code: "package_not_installed", detail: "Run setup --add-package eu, then refresh.",
+  });
+});
+
 it("posts a simulation action only to the field endpoint and returns physical state", async () => {
   const state = { schema: 3, position: "open", lockout: false };
   const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(state)));

@@ -2,15 +2,21 @@
 .SYNOPSIS
 RangerDanger package installer -- Windows PowerShell 5.1 / 7.
 .DESCRIPTION
-Acquires every platform/package image before migration. Starts the platform,
+Acquires platform and selected package images before migration. Starts the platform,
 then asks the backend to restart the selected or recorded range.
 Supports only Docker Desktop WSL2 and a physical local-drive checkout.
 .PARAMETER FromSource
 Build RangerDanger images; pull the published containd image.
 .PARAMETER Package
-First-start package (default US). Omit to restart the backend's recorded package.
+First-start package (US when selected, otherwise the first selected ID).
+Omit to restart the backend's recorded package.
+.PARAMETER Packages
+Installed IDs, as comma-separated string or array. Default: every package on first install;
+reruns preserve data/installed-packages.
+.PARAMETER AddPackage
+Acquire one additional package using the installed version/mode, without restarting the range.
 .PARAMETER FromTarballs
-Offline directory containing images-<arch>.tar, .version and the WSL2 kernel.
+Offline directory containing image-index-<arch>.txt, .version and the WSL2 kernel.
 .PARAMETER CheckOnly
 Preflight only: no .env writes, image acquisition, root probe or lifecycle changes.
 .EXAMPLE
@@ -28,6 +34,8 @@ param(
     [string]$FromTarballs = '',
     [switch]$FromSource,
     [string]$Package = '',
+    [string[]]$Packages,
+    [string]$AddPackage = '',
     [switch]$CheckOnly,
     [switch]$SkipFirewallGate,
     [switch]$SkipKernelFix
@@ -43,27 +51,65 @@ function Banner($msg) { Write-Host "`n$msg`n$('-' * $msg.Length)`n" -ForegroundC
 . "$PSScriptRoot/scripts/lib/windows-root.ps1"
 . "$PSScriptRoot/scripts/lib/setup-package.ps1"
 . "$PSScriptRoot/scripts/lib/setup-range.ps1"
+. "$PSScriptRoot/scripts/lib/installed-packages.ps1"
 
 trap { Die $_ }
 if ($FromTarballs -and (Test-Path -LiteralPath $FromTarballs -PathType Leaf)) {
     $tarballFolder = [IO.Path]::GetDirectoryName($FromTarballs)
     if (-not $tarballFolder) { $tarballFolder = '.' }
     $tarballFolder = $tarballFolder.Replace("'", "''")
-    Die "-FromTarballs expects the folder containing images-<arch>.tar, not the file; try: -FromTarballs '$tarballFolder'"
+    Die "-FromTarballs expects the folder containing image-index-<arch>.txt, not the file; try: -FromTarballs '$tarballFolder'"
 }
 Banner 'Pre-flight checks'
 $RootDir = (Get-Item -LiteralPath $PSScriptRoot).FullName
 $DaemonRoot = ConvertTo-DesktopRoot $RootDir
 Assert-LocalRepoDrive $RootDir
 if ($FromSource -and $FromTarballs) { throw '-FromSource and -FromTarballs are exclusive.' }
+$installed = @()
+if ($PSBoundParameters.ContainsKey('Package') -and -not $Package) { throw '-Package needs an exact package ID.' }
+if ($PSBoundParameters.ContainsKey('AddPackage') -and -not $AddPackage) { throw '-AddPackage needs an exact package ID.' }
+if (Test-Path -LiteralPath (Join-Path $RootDir 'data/installed-packages')) {
+    $installed = @(Read-InstalledPackages $RootDir)
+}
+if ($AddPackage) {
+    foreach ($flag in 'Packages', 'Package', 'Version', 'FromSource') {
+        if ($PSBoundParameters.ContainsKey($flag)) { throw "-AddPackage cannot be combined with -$flag." }
+    }
+    if (-not $installed.Count) { throw 'Run setup before -AddPackage.' }
+    $null = ConvertTo-PackageSelection $RootDir @($AddPackage)
+    if ($AddPackage.Contains(',')) { throw '-AddPackage takes one exact package ID.' }
+    $Version = Get-InstalledEnvValue $RootDir VERSION
+    $modeFile = Join-Path $RootDir 'data/install-mode'
+    if (-not (Test-Path -LiteralPath $modeFile)) { throw "Missing $modeFile; rerun setup first." }
+    $installedMode = [IO.File]::ReadAllText($modeFile).Trim()
+    switch -CaseSensitive ($installedMode) {
+        'source' { $FromSource = $true }
+        'release' { }
+        default { throw "Invalid $modeFile; rerun setup first." }
+    }
+    if ($FromTarballs -and $FromSource) { throw 'A source install cannot add from a release bundle; use -AddPackage without -FromTarballs.' }
+    $selected = @(ConvertTo-PackageSelection $RootDir (@($installed) + $AddPackage))
+    $acquire = @($AddPackage)
+} else {
+    $selected = @(
+        if ($PSBoundParameters.ContainsKey('Packages')) { ConvertTo-PackageSelection $RootDir $Packages }
+        elseif ($installed.Count) { $installed } else { Get-AvailablePackages $RootDir }
+    )
+    $acquire = @($selected)
+}
+if (-not $selected.Count) { throw 'Select at least one package.' }
+Assert-RuntimePackageSelected $RootDir $selected
+if ($AddPackage -and $AddPackage -cin $installed) { Say "Package $AddPackage is already installed."; exit 0 }
+$RequestedPackage = $Package
+if ($Package) {
+    if ($Package -cnotin $selected) { throw "-Package '$Package' is outside -Packages." }
+} else {
+    $Package = if ('us-dnp3-substation' -cin $selected) { 'us-dnp3-substation' } else { $selected[0] }
+}
 if ($Version -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') { throw 'Version must be a Docker image tag.' }
 $Mode = if ($FromSource) { 'source' } elseif ($FromTarballs) { 'offline' } else { 'release' }
-$Models = @(Get-SetupModels $RootDir $Mode)
+$Models = @(Get-SetupModels $RootDir $Mode $acquire)
 $Platform = $Models[0]
-$ids = @($Models | Where-Object { $_.Package } | ForEach-Object { $_.Package })
-if ($Package -and ($Package -cnotmatch '^[a-z0-9-]+$' -or $Package -cnotin $ids)) {
-    throw "Unknown package '$Package'. Available: $($ids -join ', ')"
-}
 $info = (Invoke-SetupDocker @('info', '--format', '{{json .}}') 30) | ConvertFrom-Json
 Assert-DesktopWsl2 $info
 Say "Docker Desktop WSL2 reachable; root: $DaemonRoot (mode: $Mode)"
@@ -226,16 +272,46 @@ if ($CheckOnly) {
 $Tarball = ''
 if ($Mode -eq 'offline') {
     $versionFile = Join-Path $FromTarballs '.version'
-    if ((Test-Path -LiteralPath $versionFile) -and $Version -eq 'latest') {
+    if ((Test-Path -LiteralPath $versionFile) -and $Version -eq 'latest' -and -not $PSBoundParameters.ContainsKey('Version') -and -not $AddPackage) {
         $Version = ([IO.File]::ReadAllText((Resolve-Path -LiteralPath $versionFile).Path)).Trim()
         Say "Auto-detected version from SSD: $Version"
     }
     if ($Version -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') { throw 'Invalid staged image version.' }
-    $Tarball = Join-Path $FromTarballs "images-$arch.tar"
-    if (-not (Test-Path -LiteralPath $Tarball -PathType Leaf)) { throw "Expected $Tarball for linux/$arch." }
+    $Tarball = $FromTarballs
+    if (-not (Test-Path -LiteralPath $versionFile)) { throw "Bundle .version is required; re-stage with rangerdanger-image-index-v1." }
 }
 # Setup owns these keys; preserve all other .env lines. Explicit process
 # values must agree because Compose prefers the environment to .env.
+$env:VERSION = $Version
+$env:RANGERDANGER_ROOT = $DaemonRoot
+$env:RANGERDANGER_PACKAGE = $Package
+$null = New-Item -ItemType Directory -Path (Join-Path $RootDir 'data/proxy-routes') -Force
+
+# Check every network owner before any migration, including delivery
+# networks even when the management network belongs to the old project.
+$migrate = $false
+$oldPlatform = ''
+if (-not $AddPackage) {
+$migrate = Assert-SetupNetworkOwners
+$oldPlatform = (Invoke-SetupDocker @('ps', '-aq', '--filter', 'label=com.docker.compose.project=rangerdanger',
+    '--filter', 'label=com.docker.compose.service=backend') 15).Trim()
+
+}
+Banner 'Acquiring platform and selected package images'
+Say 'Build/load/pull can take several minutes; output follows each bounded command.'
+$candidateImage = $env:CONTAIND_IMAGE
+try {
+    if (-not $candidateImage) { $env:CONTAIND_IMAGE = 'ghcr.io/tonylturner/containd:latest' }
+    Invoke-SetupAcquisition $Models $Mode $Tarball $arch $Version $acquire
+} finally { $env:CONTAIND_IMAGE = $candidateImage }
+Write-InstalledPackages $RootDir $selected
+if ($AddPackage) {
+    Say "Installed $AddPackage; refresh the package list. The running range was not changed."
+    exit 0
+}
+$installMode = if ($Mode -eq 'source') { 'source' } else { 'release' }
+[IO.File]::WriteAllText((Join-Path $RootDir 'data/install-mode.tmp'), "$installMode`n", (New-Object Text.UTF8Encoding $false))
+Move-Item -LiteralPath (Join-Path $RootDir 'data/install-mode.tmp') -Destination (Join-Path $RootDir 'data/install-mode') -Force
 $envFile = Join-Path $RootDir '.env'
 Write-SetupEnv $envFile 'VERSION' $Version
 Write-SetupEnv $envFile 'RANGERDANGER_ROOT' $DaemonRoot
@@ -247,20 +323,6 @@ if ($Mode -eq 'source' -and $env:CONTAIND_IMAGE) {
 } else {
     Write-SetupEnv $envFile 'CONTAIND_IMAGE' ''
 }
-$env:VERSION = $Version
-$env:RANGERDANGER_ROOT = $DaemonRoot
-$env:RANGERDANGER_PACKAGE = $Package
-$null = New-Item -ItemType Directory -Path (Join-Path $RootDir 'data/proxy-routes') -Force
-
-# Check every network owner before any migration, including delivery
-# networks even when the management network belongs to the old project.
-$migrate = Assert-SetupNetworkOwners
-$oldPlatform = (Invoke-SetupDocker @('ps', '-aq', '--filter', 'label=com.docker.compose.project=rangerdanger',
-    '--filter', 'label=com.docker.compose.service=backend') 15).Trim()
-
-Banner 'Acquiring all platform and package images'
-Say 'Build/load/pull can take several minutes; output follows each bounded command.'
-Invoke-SetupAcquisition $Models $Mode $Tarball
 Invoke-KernelStep
 # The proxy image is in every platform image union and has /bin/cat;
 # derive the exact tag from Compose, not a separately maintained pin.
@@ -282,7 +344,7 @@ if ($Mode -eq 'offline') { $up += @('--pull', 'never') }
 Write-Host (Invoke-SetupDocker (Get-SetupComposeArgs $Platform $up) 180)
 Wait-SetupHealth 'http://localhost:8088'
 Banner 'Starting the range'
-$RangePackage = Start-SetupRange 'http://localhost:8088' $Package
+$RangePackage = Start-SetupRange 'http://localhost:8088' $RequestedPackage
 Say "Range $RangePackage is ready"
 # Workshop-critical surfaces. /api/health alone returned green in past
 # audits while firewall apply/reset were broken -- students hit the
@@ -361,7 +423,7 @@ if ($SkipFirewallGate) {
     if ($fwFail) {
         Die @"
 Workshop-readiness gate failed. Common causes:
-  - containd image drift (bump containd or pin a known-good tag)
+  - containd image drift (refresh the published containd :latest image)
   - mgmt subnet not in firewall input chain (CONTAIND_AUTO_LAN3_SUBNET)
   - sims still warming up (re-run setup, or wait 30s and re-probe)
 Re-run with -SkipFirewallGate to bring the stack up anyway for diagnosis.

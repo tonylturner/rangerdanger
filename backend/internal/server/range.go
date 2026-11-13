@@ -148,6 +148,8 @@ func (s *Server) handlePostRange(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "phase": status.Phase})
 	case errors.Is(err, lifecycle.ErrUnknownPackage):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, lifecycle.ErrPackageNotInstalled):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"code": "package_not_installed", "error": err.Error()})
 	case err != nil:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	default:

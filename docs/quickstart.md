@@ -127,8 +127,9 @@ filesystem (not Docker's storage volume), and low memory is reported
 when Docker reports less than 7 whole GiB. On Linux-native Docker, the
 memory check can fall back to host RAM. Ports already held by this
 install's own containers (a re-run) do not fail the check. It then
-writes `.env` (`VERSION`, `RANGERDANGER_ROOT`), pulls the images of the
-platform and of every range package, starts the platform (backend,
+pulls and inspects the images of the platform and selected range packages,
+writes `.env` (`VERSION`, `RANGERDANGER_ROOT`, `RANGERDANGER_PACKAGE`),
+then starts the platform (backend,
 frontend, proxy), asks the backend to start the range
 (`POST /api/range`), waits until `GET /api/range` reports `ready`, and
 runs the workshop-readiness checks.
@@ -145,6 +146,52 @@ re-running setup, restarts the range and resets the firewall policy to
 the package default; package-scoped browser progress is kept. Without an
 explicit package, a rerun restarts the recorded package (US is the
 fresh-install default).
+
+#### Selecting installed packages
+
+The default install set is **every discovered package**. To fetch or build only
+US, pass `./setup.sh --packages us-dnp3-substation` or
+`.\setup.ps1 -Packages us-dnp3-substation`. Bash accepts `--packages=id1,id2`
+too; PowerShell accepts comma-separated strings or a string array. IDs must
+match exactly; empty items and unknown IDs are rejected before acquisition.
+Selections are sorted and deduplicated. `--package` / `-Package` must be in
+the set: US is the initial default when selected, otherwise the first selected ID.
+
+After every required image is acquired and inspected, setup atomically writes
+`data/installed-packages` (header `rangerdanger-installed-packages-v1`, then sorted
+IDs, one per LF-terminated line). Reruns, upgrades and `scripts/dev-up.sh` /
+`scripts/dev-up.ps1` retain this selection. New package directories do not expand
+an existing record. Pre-selection installs without a record acquire every package
+once. An explicit selection replaces the set but does not delete dropped images.
+If the record is corrupt or names unknown packages, repair it or remove it and
+rerun setup with an explicit selection. Before narrowing the set, switch to a
+package you will retain: the backend refuses a recorded runtime package outside
+the installed set, even when `--package` names a different first-start default.
+Setup refuses before any changes if `backend/data/range.json` names a package
+the new set drops, in any phase; switch to a retained package in the range
+switcher (or `POST /api/range`) first, then rerun.
+
+Add a package online (or build it for a source installation) without restarting
+or resetting anything:
+
+```bash
+./setup.sh --add-package eu-iec104-substation
+```
+
+```powershell
+.\setup.ps1 -AddPackage eu-iec104-substation
+```
+
+This uses the installed VERSION from `.env` and mode from `data/install-mode`,
+acquires only the added package's closure plus the platform, and unions the
+receipt after image inspection. Repeating an add is harmless. Refresh the portal
+to see the new package. Missing or malformed installation records require setup
+first. Only installed packages appear in the selector; a direct request for an
+uninstalled catalog package returns `422 package_not_installed` with the host
+command to install it. Missing cached images remain a separate lifecycle check.
+Uninstall reads the receipt before removing it, and optional image cleanup
+targets only exact platform and installed-package references, never a global
+repository-name match. Student bind data is retained.
 
 Each `lab-definitions/packages/<id>/` directory owns `package.yml`,
 `curriculum/`, `manifest.json`, `compose.source.yml`,
@@ -193,12 +240,31 @@ The positional version selects every first-party image tag independently
 of the instructor repo's `.env`; the helper records the same value in
 `.version` and verifies the saved image tags before reporting success.
 
-This produces `images-amd64.tar`, `images-arm64.tar`,
+This produces `image-index-amd64.txt`, `image-index-arm64.txt`, per-ref `images/<arch>/*.tar`,
 `rangerdanger.tgz`, a `.version` marker, and an auto-generated SSD
 README on the volume. Tagged releases additionally bundle
 `rangerdanger-wsl2-kernel` + `rangerdanger-wsl2-kernel.sha256` so
 Windows students get ICS DPI on Labs 2.3 / 2.3-bonus without a
 separate kernel download.
+
+Offline bundles use `rangerdanger-image-index-v1`: tab-separated owner (`platform`
+or package id), image ref, relative archive path and SHA-256, after VERSION/arch
+headers. `stage-ssd.sh --packages` / `stage-ssd.ps1 -Packages` select staged packages
+(default: every package; put flags after output and version). Setup
+`--from-tarballs <dir> --packages us-dnp3-substation` (PowerShell
+`-FromTarballs <dir> -Packages us-dnp3-substation`) validates VERSION, architecture,
+selected membership, safe relative paths and checksums before loading only the
+selected closure. Unselected archives are never loaded. Old monolithic bundles
+are rejected; re-stage with `rangerdanger-image-index-v1`.
+Delta stagers accept `--since-packages` / `-SincePackages` and `--packages` /
+`-Packages`; generated apply refuses an installed-set mismatch, and rollback
+restores `data/installed-packages`, `data/install-mode` and `.env` together.
+
+Offline additions use `./setup.sh --add-package <id> --from-tarballs <dir>` or
+`.\setup.ps1 -AddPackage <id> -FromTarballs <dir>`. The bundle must match the
+installed VERSION and include platform + the added package; existing packages
+need not be staged again. Only the added closure is loaded, then the receipt is
+unioned without a restart. Source installs cannot consume release bundles.
 
 **On the workshop laptop (student):**
 
@@ -345,7 +411,7 @@ git checkout --detach v0.2.7 &&
 
 If a migration backup was required, do not tear down again before image
 acquisition. Setup accepts ports owned by
-both RangerDanger projects, pulls/loads all package images first, then migrates
+both RangerDanger projects, acquires and inspects the selected package images first, then migrates
 an old single-project install and restarts through `POST /api/range`. Foreign
 port listeners or network owners stop setup. `--check-only` never migrates or
 restarts, including on an existing or partly running install.

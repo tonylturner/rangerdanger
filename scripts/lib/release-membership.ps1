@@ -93,18 +93,54 @@ function Read-ReleaseMembership([string]$Json, [string]$ExpectedTag) {
             $null = $firstParty.Add($repository)
         }
     }
+    foreach ($repository in $firstParty) {
+        foreach ($reference in $refs[$repository]) {
+            if ($reference -cne "${repository}:$ExpectedTag") { throw "Release $ExpectedTag has a first-party tag mismatch" }
+        }
+    }
     if (-not $firstParty.SetEquals($builds)) {
         throw "Release $ExpectedTag package/platform membership differs from the authored build inventory"
     }
     return @{Refs=$refs; Owners=$owners; FirstParty=$firstParty}
 }
 
+function Select-ReleaseMembership($Membership, [string]$Json, [string[]]$Packages) {
+    $record = ConvertFrom-Json -InputObject $Json
+    $available = @($record.compose_files.packages.PSObject.Properties | ForEach-Object { $_.Name })
+    $explicit = $null -ne $Packages
+    if (-not $explicit) { $Packages = $available }
+    if ($explicit -and -not $Packages.Count) { throw 'Select at least one package.' }
+    foreach ($id in $Packages) {
+        if ($id -cnotmatch '^[a-z0-9-]+$' -or $id -cnotin $available) { throw "Invalid selected package: $id" }
+    }
+    $refs = New-ReleaseMap
+    $owners = New-ReleaseMap
+    $firstParty = New-ReleaseSet
+    foreach ($repo in $Membership.Owners.Keys) {
+        foreach ($reference in $Membership.Owners[$repo].Keys) {
+            $kept = New-ReleaseSet
+            foreach ($service in $Membership.Owners[$repo][$reference]) {
+                if (($service -split '/', 2)[0] -cin (@('platform') + $Packages)) { $null = $kept.Add($service) }
+            }
+            if (-not $kept.Count) { continue }
+            if (-not $refs.ContainsKey($repo)) { $refs[$repo] = New-ReleaseSet; $owners[$repo] = New-ReleaseMap }
+            $null = $refs[$repo].Add($reference)
+            $owners[$repo][$reference] = $kept
+            if ($repo.StartsWith('ghcr.io/tonylturner/rangerdanger-', [StringComparison]::Ordinal)) { $null = $firstParty.Add($repo) }
+        }
+    }
+    @{Refs=$refs; Owners=$owners; FirstParty=$firstParty}
+}
+
 function Get-DeltaImageCandidates(
     [string]$PreviousJson, [string]$NewJson, [string[]]$ComposeImages,
-    [string]$SinceTag, [string]$NewTag, [switch]$IncludeUpstream
+    [string]$SinceTag, [string]$NewTag, [switch]$IncludeUpstream,
+    [string[]]$SincePackages = $null, [string[]]$Packages = $null
 ) {
     $old = Read-ReleaseMembership $PreviousJson $SinceTag
     $new = Read-ReleaseMembership $NewJson $NewTag
+    $old = Select-ReleaseMembership $old $PreviousJson $SincePackages
+    $new = Select-ReleaseMembership $new $NewJson $Packages
     $local = New-ReleaseSet
     $localFirstParty = New-ReleaseSet
     foreach ($image in $ComposeImages) {
@@ -143,7 +179,7 @@ function Get-DeltaImageCandidates(
         if (-not $firstParty -and -not $IncludeUpstream -and $previous -ceq $reference -and $oldCandidates.Count) { continue }
         [pscustomobject]@{
             image=$reference; since=$previous; repository=$repository
-            first_party=$firstParty; old_member=($oldCandidates.Count -gt 0)
+            first_party=$firstParty; old_member=($(if ($firstParty) { $oldCandidates.Count -gt 0 } else { $oldCandidates.Contains($reference) }))
             owners=(Get-ReleaseSorted $serviceOwners)
         }
     }

@@ -299,7 +299,7 @@ docker_bounded() {
             '. "$ROOT/scripts/lib/docker-bounded.sh"\n'
             'die() { echo "$*" >&2; exit 1; }\n'
             'PLATFORM_PROJECT=rangerdanger-platform RANGE_PROJECT=rangerdanger\n'
-            'MGMT_NET=rangerdanger_mgmt_net\n'
+            'ADD_PACKAGE="" MGMT_NET=rangerdanger_mgmt_net\n'
             + SOURCE[start:end]
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -332,7 +332,7 @@ docker_bounded() {
 
     def test_setup_migration_ps_call_site_uses_15_second_budget(self):
         start = SOURCE.index("OLD_PLATFORM=$(docker_bounded")
-        end = SOURCE.index("\n# ─── image acquisition", start)
+        end = SOURCE.index("\nfi\n# ─── image acquisition", start)
         script = (
             '. "$ROOT/scripts/lib/docker-bounded.sh"\n'
             'RANGE_PROJECT=rangerdanger\n'
@@ -380,7 +380,7 @@ HEALTH_URL=http://fixture
         helpers = """
 say() { :; }; die() { echo "$*" >&2; exit 1; }
 sleep() { SECONDS=$((SECONDS + 300)); }
-API=http://fixture PACKAGE=eu
+API=http://fixture PACKAGE=eu REQUESTED_PACKAGE=eu
 . "$ROOT/scripts/lib/range.sh"
 curl() {
     [[ "$*" = *"--connect-timeout 3 --max-time "* ]] || exit 99

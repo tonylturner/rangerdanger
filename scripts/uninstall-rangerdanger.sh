@@ -18,6 +18,7 @@
 #   ./scripts/uninstall-rangerdanger.sh --yes --purge       # clean slate
 #
 # Image categories this script knows about:
+#   Only exact platform + installed-package references are considered.
 #   A. release  -- pulled ghcr.io/tonylturner/rangerdanger-*, containd
 #   B. dev      -- locally-built rangerdanger-platform-<service> and
 #                  rangerdanger-<service> images, plus the pre-split
@@ -127,67 +128,55 @@ say "Networks found: $N_NETWORKS"
 
 PRESENT_IMAGES=$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
 
-# Category A -- pulled release images (ghcr.io/tonylturner/rangerdanger-*, containd).
-ALL_IMAGES=$(echo "$PRESENT_IMAGES" \
-    | grep -E '^ghcr\.io/tonylturner/(rangerdanger-|containd)' || true)
-N_IMAGES=$(echo "$ALL_IMAGES" | grep -c . || true)
-
-# Categories B + C are derived from the source Compose files (the
-# platform's and every range package's) as the single source of truth.
-# `docker compose config --images` prints locally-built images WITHOUT a
-# tag (e.g. "rangerdanger-platform-backend", "rangerdanger-rtac_sim") and
-# pulled images WITH one (e.g. "nginx:1.27-alpine"), which lets us split
-# them apart without hard-coding service lists.
-COMPOSE_IMAGES=""
-if [ -f "$ROOT_DIR/docker-compose.yml" ]; then
-    COMPOSE_IMAGES=$(RANGERDANGER_ROOT="$ROOT_DIR" docker compose -p rangerdanger-platform \
-        --project-directory "$ROOT_DIR" -f "$ROOT_DIR/docker-compose.yml" config --images 2>/dev/null || true)
+# Only exact references in the installed package closure belong to this install.
+# shellcheck source=scripts/lib/installed-packages.sh
+. "$ROOT_DIR/scripts/lib/installed-packages.sh"
+die() { warn "$*"; exit 3; }
+SELECTED_PACKAGES=""
+if [ -e "$ROOT_DIR/data/installed-packages" ] || [ -L "$ROOT_DIR/data/installed-packages" ]; then
+    SELECTED_PACKAGES=$(read_installed_packages) || exit 3
+elif [ "$REMOVE_IMAGES$REMOVE_DEV_IMAGES$REMOVE_BASE_IMAGES" != 000 ]; then
+    die "Missing $ROOT_DIR/data/installed-packages; run setup before removing images."
 fi
-for _file in "$ROOT_DIR"/lab-definitions/packages/*/compose.source.yml; do
-    [ -f "$_file" ] || continue
-    COMPOSE_IMAGES="${COMPOSE_IMAGES}"$'\n'"$(RANGERDANGER_ROOT="$ROOT_DIR" docker compose -p rangerdanger \
-        --project-directory "$ROOT_DIR" -f "$_file" config --images 2>/dev/null || true)"
-done
-COMPOSE_IMAGES=$(echo "$COMPOSE_IMAGES" | grep . | sort -u || true)
-
-# Category B -- locally-built dev images (rangerdanger-<service>:latest).
-DEV_REPOS=$(echo "$COMPOSE_IMAGES" | grep -v ':' | grep . || true)
-[ -z "$DEV_REPOS" ] && DEV_REPOS=$(echo "$PRESENT_IMAGES" | sed 's/:.*//' \
-    | grep -E '^rangerdanger-[a-z]' | grep -v '/' | sort -u || true)
-# The pre-split single project built the platform as rangerdanger-backend
-# and rangerdanger-frontend; the platform project now builds
-# rangerdanger-platform-<service>, so the old names are in no Compose file.
-DEV_REPOS="${DEV_REPOS}"$'\n'"rangerdanger-backend"$'\n'"rangerdanger-frontend"
-DEV_IMAGES=""
-while IFS= read -r _repo; do
-    [ -z "$_repo" ] && continue
-    _m=$(echo "$PRESENT_IMAGES" | grep -E "^${_repo}:" || true)
-    [ -n "$_m" ] && DEV_IMAGES="${DEV_IMAGES}${_m}"$'\n'
-done <<EOF
-$DEV_REPOS
-EOF
-DEV_IMAGES=$(echo "$DEV_IMAGES" | grep . | sort -u || true)
+compose_refs() {
+    local mode="$1" file project id
+    case "$mode" in source) file="$ROOT_DIR/docker-compose.yml" ;; release) file="$ROOT_DIR/docker-compose.release.yml" ;; esac
+    project=rangerdanger-platform
+    VERSION="$INSTALLED_VERSION" RANGERDANGER_ROOT="$ROOT_DIR" docker compose -p "$project" --project-directory "$ROOT_DIR" -f "$file" config --images || return 1
+    for id in $SELECTED_PACKAGES; do
+        file="$ROOT_DIR/lab-definitions/packages/$id/compose.$mode.yml"
+        VERSION="$INSTALLED_VERSION" RANGERDANGER_ROOT="$ROOT_DIR" docker compose -p rangerdanger --project-directory "$ROOT_DIR" -f "$file" config --images || return 1
+    done
+}
+ALL_IMAGES="" DEV_IMAGES="" BASE_IMAGES=""
+if [ -n "$SELECTED_PACKAGES" ]; then
+    INSTALLED_VERSION=$(installed_env_value VERSION) || exit 3
+    RELEASE_REFS=$(compose_refs release) || die "Could not resolve installed release images; nothing was removed."
+    COMPOSE_IMAGES=$(compose_refs source) || die "Could not resolve installed source images; nothing was removed."
+    while IFS= read -r _img; do
+        [ -n "$_img" ] || continue
+        if ! echo "$PRESENT_IMAGES" | grep -qxF "$_img"; then continue; fi
+        case "$_img" in ghcr.io/tonylturner/*) ALL_IMAGES="${ALL_IMAGES}${_img}"$'\n' ;; esac
+    done <<< "$RELEASE_REFS"
+    while IFS= read -r _img; do
+        [ -n "$_img" ] || continue
+        case "$_img" in
+            *:*)
+                case "$_img" in ghcr.io/tonylturner/*|rangerdanger-*) continue ;; esac
+                echo "$PRESENT_IMAGES" | grep -qxF "$_img" && BASE_IMAGES="${BASE_IMAGES}${_img}"$'\n'
+                ;;
+            *)
+                _img="$_img:latest"
+                echo "$PRESENT_IMAGES" | grep -qxF "$_img" && DEV_IMAGES="${DEV_IMAGES}${_img}"$'\n'
+                ;;
+        esac
+    done <<< "$COMPOSE_IMAGES"
+fi
+ALL_IMAGES=$(printf '%s' "$ALL_IMAGES" | sort -u)
+DEV_IMAGES=$(printf '%s' "$DEV_IMAGES" | sort -u)
+BASE_IMAGES=$(printf '%s' "$BASE_IMAGES" | sort -u)
+N_IMAGES=$(echo "$ALL_IMAGES" | grep -c . || true)
 N_DEV_IMAGES=$(echo "$DEV_IMAGES" | grep -c . || true)
-
-# Category C -- shared third-party base images (tagged, non-ghcr, non-built).
-BASE_REFS=$(echo "$COMPOSE_IMAGES" | grep ':' \
-    | grep -vE '^ghcr\.io/tonylturner/' | grep -vE '^rangerdanger-' \
-    | sed -E 's/@sha256:[0-9a-f]+//' | sort -u | grep . || true)
-[ -z "$BASE_REFS" ] && BASE_REFS=$(printf '%s\n' \
-    'alpine:3.21' 'nginx:1.27-alpine' 'linuxserver/webtop:ubuntu-mate')
-# The Windows WSL2 kernel probe pulls this image when the containd image is
-# absent (scripts/install-wsl-kernel.ps1 $AlpineImage; keep in sync). It is
-# in no compose file. Listed here too because a Docker Desktop engine that
-# setup.ps1 used can be reached from a WSL distro running this script.
-BASE_REFS=$(printf '%s\nalpine:3.20\n' "$BASE_REFS" | grep . | sort -u)
-BASE_IMAGES=""
-while IFS= read -r _img; do
-    [ -z "$_img" ] && continue
-    echo "$PRESENT_IMAGES" | grep -qxF "$_img" && BASE_IMAGES="${BASE_IMAGES}${_img}"$'\n'
-done <<EOF
-$BASE_REFS
-EOF
-BASE_IMAGES=$(echo "$BASE_IMAGES" | grep . | sort -u || true)
 N_BASE_IMAGES=$(echo "$BASE_IMAGES" | grep -c . || true)
 
 say "Release images (ghcr):    $N_IMAGES"
@@ -201,7 +190,7 @@ BINFMT_FOUND=0
 [ -f "$BINFMT_MARKER" ] && { BINFMT_FOUND=1; say "amd64 emulation: registered by setup (will revert)"; }
 
 # Nothing to do?
-if [ "$N_CONTAINERS" = "0" ] && [ "$N_NETWORKS" = "0" ] && [ "$N_IMAGES" = "0" ] && [ "$N_DEV_IMAGES" = "0" ] && [ "$ENV_FOUND" = "0" ] && [ "$BINFMT_FOUND" = "0" ]; then
+if [ "$N_CONTAINERS" = "0" ] && [ "$N_NETWORKS" = "0" ] && [ "$N_IMAGES" = "0" ] && [ "$N_DEV_IMAGES" = "0" ] && [ "$ENV_FOUND" = "0" ] && [ "$BINFMT_FOUND" = "0" ] && [ -z "$SELECTED_PACKAGES" ]; then
     banner "Nothing to uninstall"
     echo "  No RangerDanger state detected on this machine."
     exit 2
@@ -221,6 +210,7 @@ if [ "$REMOVE_BASE_IMAGES" = "1" ] && [ "$N_BASE_IMAGES" != "0" ]; then
     echo "  - Remove $N_BASE_IMAGES shared base image(s) -- any in use are skipped"
 fi
 [ "$ENV_FOUND" = "1" ] && echo "  - Remove $ENV_FILE"
+[ -z "$SELECTED_PACKAGES" ] || echo "  - Remove the installation receipt and saved mode"
 [ "$BINFMT_FOUND" = "1" ] && echo "  - Revert the amd64 emulation handler setup registered (qemu-x86_64)"
 echo ""
 
@@ -275,6 +265,8 @@ if [ "$ENV_FOUND" = "1" ]; then
     fi
 fi
 
+rm -f "$ROOT_DIR/data/installed-packages" "$ROOT_DIR/data/install-mode"
+
 # --- 4. amd64 emulation (revert only what setup installed) ----------
 # setup.sh writes the marker only when IT registered the qemu-x86_64
 # binfmt handler on an arm64 Linux host (for OpenPLC). Reverting returns
@@ -320,7 +312,6 @@ if [ "$REMOVE_BASE_IMAGES" = "0" ] && [ "$N_BASE_IMAGES" != "0" ]; then
     echo ""
     warn "Shared base images left in place (other projects may use them):"
     echo "    docker image rm $(echo "$BASE_IMAGES" | tr '\n' ' ' | sed 's/ *$//')"
-    echo "  or re-run with --remove-base-images (in-use images are skipped)."
 fi
 echo ""
 echo "To reinstall later: ./setup.sh"

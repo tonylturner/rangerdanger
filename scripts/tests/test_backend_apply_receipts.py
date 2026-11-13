@@ -77,7 +77,7 @@ say() { :; }
 warn() { printf '%s\n' "$*" >&2; }
 die() { printf '%s\n' "$*" >&2; exit 1; }
 sleep() { SECONDS=$((SECONDS + 600)); }
-API=http://fixture PACKAGE=fixture SKIP_FW_GATE=0
+API=http://fixture PACKAGE=fixture REQUESTED_PACKAGE=fixture SKIP_FW_GATE=0
 curl() {
     case "$*" in
         *api/range*)

@@ -16,6 +16,12 @@ The version the student already has (e.g. v0.1.6).
 .PARAMETER New
 The new version to ship (e.g. v0.1.7).
 
+.PARAMETER Packages
+Target installed package IDs; default every package in the new release.
+
+.PARAMETER SincePackages
+Source installed package IDs; default every package in the old release.
+
 .PARAMETER Include
 Comma-separated image names to force into the delta even if their
 digest matches. Either form works (gps-sim or rangerdanger-gps-sim);
@@ -48,10 +54,14 @@ param(
     [Parameter(Mandatory=$true, Position=2)][string]$New,
     [string[]]$Include = @(),
     [switch]$All,
-    [switch]$IncludeUpstream
+    [switch]$IncludeUpstream,
+    [string[]]$Packages = @(),
+    [string[]]$SincePackages = @()
 )
 
 $ErrorActionPreference = "Stop"
+if ($Since -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') { throw 'Invalid release version.' }
+if ($New -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') { throw 'Invalid release version.' }
 
 function Say($m)    { Write-Host "[+] $m" -ForegroundColor Green }
 function Warn($m)   { Write-Host "[!] $m" -ForegroundColor Yellow }
@@ -69,6 +79,8 @@ $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 . "$PSScriptRoot/scripts/lib/windows-root.ps1"
 . "$PSScriptRoot/scripts/lib/release-membership.ps1"
 . "$PSScriptRoot/scripts/lib/stage-bounded.ps1"
+. "$PSScriptRoot/scripts/lib/installed-packages.ps1"
+$selected = if ($PSBoundParameters.ContainsKey('Packages')) { @(ConvertTo-PackageSelection $RootDir $Packages) } else { @(Get-AvailablePackages $RootDir) }
 
 # Binfmt is included in arm64 deltas so students applying deltas without
 # internet still have qemu-x86_64 for the amd64-only OpenPLC image.
@@ -78,8 +90,7 @@ $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 $BINFMT_IMAGE = "tonistiigi/binfmt:qemu-v10.2.1"
 
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
-if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
-$OutDir = (Resolve-Path $OutDir).Path
+
 
 # Normalize -Include into a flat list of short names. Either form a
 # student-facing doc would use is accepted: "gps-sim" or
@@ -101,6 +112,7 @@ $releaseFiles = @($ComposeFile)
 $packagesRoot = Join-Path $RootDir "lab-definitions/packages"
 if (Test-Path $packagesRoot) {
     foreach ($packageDir in (Get-ChildItem -Path $packagesRoot -Directory | Sort-Object Name)) {
+        if ($packageDir.Name -cnotin $selected) { continue }
         $packageCompose = Join-Path $packageDir.FullName "compose.release.yml"
         if (-not (Test-Path $packageCompose)) {
             Die "Missing package release Compose file: $packageCompose"
@@ -128,6 +140,7 @@ try {
         $composeStatus = if (-not $run -or $run.TimedOut) { 1 } else { $run.ExitCode }
         if ($composeStatus -ne 0) { break }
         $imagesForFile = $run.StdOut -split '\r?\n' | Where-Object { $_ }
+        if (-not $imagesForFile) { $composeStatus = 1; break }
         foreach ($image in $imagesForFile) { $allImages.Add([string]$image) }
     }
 } finally {
@@ -143,7 +156,9 @@ try {
     }
 }
 if ($composeStatus -ne 0) { Die "Could not enumerate the platform/package release image union" }
-$allImages = @($allImages | Sort-Object -Unique)
+$uniqueImages = New-Object 'Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal)
+foreach ($image in $allImages) { $null = $uniqueImages.Add($image) }
+$allImages = @($uniqueImages)
 if (-not $allImages) { Die "Could not enumerate images from the release models" }
 
 function Get-ImageRepository($reference) {
@@ -163,10 +178,20 @@ try {
         $recordUrl = "https://github.com/$ownerRepo/releases/download/$([uri]::EscapeDataString($release.Tag))/release-images.json"
         Invoke-WebRequest -Uri $recordUrl -OutFile $release.Path -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
     }
+    $oldJson = Get-Content -LiteralPath $sinceRecordPath -Raw -Encoding UTF8
+    $oldRecord = ConvertFrom-Json -InputObject $oldJson
+    $sourceSet = New-ReleaseSet
+    if ($PSBoundParameters.ContainsKey('SincePackages')) {
+        foreach ($value in $SincePackages) { foreach ($id in $value.Split(',')) { $null = $sourceSet.Add($id) } }
+        if (-not $sourceSet.Count) { throw 'Select at least one source package.' }
+    } else {
+        foreach ($property in $oldRecord.compose_files.packages.PSObject.Properties) { $null = $sourceSet.Add($property.Name) }
+    }
+    $sourcePackages = Get-ReleaseSorted $sourceSet
     $candidateRows = @(Get-DeltaImageCandidates `
         -PreviousJson (Get-Content -LiteralPath $sinceRecordPath -Raw -Encoding UTF8) `
         -NewJson (Get-Content -LiteralPath $newRecordPath -Raw -Encoding UTF8) `
-        -ComposeImages $allImages -SinceTag $Since -NewTag $New -IncludeUpstream:($IncludeUpstream -or $All))
+        -ComposeImages $allImages -SinceTag $Since -NewTag $New -SincePackages $sourcePackages -Packages $selected -IncludeUpstream:($IncludeUpstream -or $All))
 } catch {
     Die "Could not read old/new release package membership: $_"
 } finally {
@@ -175,6 +200,10 @@ try {
 if (-not $candidateRows) { Die "The new release membership has no stageable images." }
 $sinceRef = @($candidateRows | ForEach-Object { $_.since })
 $newRef = @($candidateRows | ForEach-Object { $_.image })
+
+if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
+$OutDir = (Resolve-Path $OutDir).Path
+[IO.File]::WriteAllText((Join-Path $OutDir '.version'), "$New`n", (New-Object Text.UTF8Encoding $false))
 
 function Get-RegistryName($img) {
     $registry = "docker.io"
@@ -416,12 +445,15 @@ function Add-PreflightImage($img, $manifest, [switch]$Arm64Only) {
 
 function Invoke-StageArch($arch) {
     if ($changed.Count -eq 0) { return }
-    $tarball = Join-Path $OutDir "delta-$arch.tar"
-    Banner "Stage linux/$arch -> $(Split-Path -Leaf $tarball)"
+    $index = Join-Path $OutDir "delta-image-index-$arch.txt"
+    $rows = @('rangerdanger-image-index-v1', "version`t$New", "arch`t$arch")
+    $count = 0
+    $null = New-Item -ItemType Directory -Path (Join-Path $OutDir "delta-images/$arch") -Force
+    $tarball = ''
+    Banner "Stage linux/$arch"
 
-    $pulledTags = @()
     $toStage = @($changed)
-    if ($arch -eq 'arm64') {
+    if ($arch -eq 'arm64' -and ($allImages -match 'rangerdanger-openplc')) {
         # binfmt is not part of the changed-image comparison; always include
         # it in an arm64 delta so OpenPLC works offline on arm64 Linux.
         $toStage += $BINFMT_IMAGE
@@ -439,30 +471,38 @@ function Invoke-StageArch($arch) {
         } elseif ($ref -ne $img) {
             Say "    -> $ref"
         }
-        $null = Invoke-StagePull $img $ref 3600 -StreamOutput
+        if ($img -ceq 'ghcr.io/tonylturner/containd:latest') {
+            $null = Invoke-StageDocker @('pull', '--platform', "linux/$arch", $img) 3600 -StreamOutput
+            $ref = $img
+        } else { $null = Invoke-StagePull $img $ref 3600 -StreamOutput }
         $targetTag = $img -replace '@.*$',''
         if ($ref -ne $targetTag) {
             $null = Invoke-StageDocker @('tag', $ref, $targetTag) 60
         }
-        $pulledTags += $targetTag
+        $count++
+        $relative = "delta-images/$arch/$count.tar"
+        $tarball = Join-Path $OutDir $relative
+        $saveArgs = @('save', '-o', $tarball, $targetTag)
+        if ($img -ceq 'ghcr.io/tonylturner/containd:latest') { $saveArgs = @('save', '--platform', "linux/$arch", '-o', $tarball, $targetTag) }
+        try { $null = Invoke-StageDocker $saveArgs 7200 -StreamOutput }
+        catch { Remove-StagePartial $tarball; throw }
+        $hash = (Get-FileHash -LiteralPath $tarball -Algorithm SHA256).Hash.ToLowerInvariant()
+        $owners = @($candidateRows | Where-Object { $_.image -ceq $img -or ($img -ceq $BINFMT_IMAGE -and $_.image -match 'rangerdanger-openplc') } |
+            ForEach-Object { $_.owners } | ForEach-Object { ($_ -split '/', 2)[0] } | Sort-Object -Unique)
+        foreach ($owner in $owners) { $rows += "$owner`t$img`t$relative`t$hash" }
     }
-    if ($pulledTags.Count -eq 0) {
-        Say "Nothing to save for $arch (no images compatible with this arch)"
-        return
-    }
-    Say "save $arch -> $tarball"
-    try { $null = Invoke-StageDocker (@('save', '-o', $tarball) + $pulledTags) 7200 -StreamOutput }
-    catch { Remove-StagePartial $tarball; throw }
-    $sizeMB = [math]::Round((Get-Item $tarball).Length / 1MB)
-    Say "wrote $tarball (${sizeMB} MB)"
+    [IO.File]::WriteAllText("$index.tmp", ($rows -join "`n") + "`n", (New-Object Text.UTF8Encoding $false))
+    Move-Item -LiteralPath "$index.tmp" -Destination $index -Force
 }
 
 if ($changed.Count -gt 0) {
     for ($i = 0; $i -lt $changed.Count; $i++) {
         Add-PreflightImage $changed[$i] $changedManifests[$i]
     }
-    $binfmtManifest = Get-PlatformManifest $BINFMT_IMAGE
-    Add-PreflightImage $BINFMT_IMAGE $binfmtManifest -Arm64Only
+    if ($allImages -match 'rangerdanger-openplc') {
+        $binfmtManifest = Get-PlatformManifest $BINFMT_IMAGE
+        Add-PreflightImage $BINFMT_IMAGE $binfmtManifest -Arm64Only
+    }
     Invoke-StageArch 'amd64'
     Invoke-StageArch 'arm64'
 }
@@ -581,8 +621,9 @@ $applyTableRows = foreach ($img in $changed) {
 $applyTable = if ($changed.Count -gt 0) { ($applyTableRows -join "`n") + "`n" } else { "" }
 
 $applyLoadCommand = if ($changed.Count -gt 0) {
-    'ARCH=$(uname -m | sed ''s/x86_64/amd64/;s/aarch64/arm64/'')
-docker load -i "$DELTA_DIR/delta-$ARCH.tar"'
+    'while IFS= read -r archive; do
+    [ -z "$archive" ] || docker load -i "$archive"
+done <<< "$DELTA_ARCHIVES"'
 } else {
     "# No image archive was created; no image load is needed."
 }
@@ -594,6 +635,20 @@ for ($i = 0; $i -lt $changed.Count; $i++) {
     $targetTag = ($changed[$i] -split '@', 2)[0]
     if ($sinceTag -ne $targetTag) { continue }
 
+    if ($targetTag -ceq 'ghcr.io/tonylturner/containd:latest') {
+        $applyBackupCommands.Add(@"
+if [ ! -f "../containd.before-$New.tar" ] && docker image inspect ghcr.io/tonylturner/containd:latest >/dev/null 2>&1; then
+    docker save --platform "linux/`$ARCH" -o "../containd.before-$New.tar.tmp" ghcr.io/tonylturner/containd:latest
+    mv "../containd.before-$New.tar.tmp" "../containd.before-$New.tar"
+fi
+"@.Trim())
+        $rollbackRestoreCommands.Add(@"
+if [ -f "../containd.before-$New.tar" ]; then
+    docker load -i "../containd.before-$New.tar"
+fi
+"@.Trim())
+        continue
+    }
     $targetRepository = Get-ImageRepository $targetTag
     $parkedTag = "${targetRepository}:before-$New"
     $applyBackupCommands.Add(@"
@@ -704,6 +759,16 @@ start_platform_and_selected_range() {
 }
 '@
 
+$preflight = [IO.File]::ReadAllText((Join-Path $RootDir 'scripts/lib/delta-preflight.sh'))
+$oldMembership = Select-ReleaseMembership (Read-ReleaseMembership $oldJson $Since) $oldJson $sourcePackages
+$oldImages = @($oldMembership.Refs.Values | ForEach-Object { $_ } | Sort-Object -Unique)
+$renderedPreflight = $preflight.Replace('__SOURCE_PACKAGES__', ($sourcePackages -join "`n")).
+    Replace('__TARGET_PACKAGES__', ($selected -join "`n")).Replace('__OLD_IMAGES__', ($oldImages -join "`n")).
+    Replace('__HAS_IMAGES__', $(if ($changed.Count) { 'yes' } else { 'no' })).
+    Replace('__NEW_VERSION__', $New).Replace('__CHANGED_IMAGES__', ($changed -join "`n"))
+$reader = [IO.File]::ReadAllText((Join-Path $RootDir 'scripts/lib/image-index.sh'))
+$recipeFunctions += "`n`n" + $reader + "`n" + 'die() { echo "$*" >&2; return 1; }' + "`n" + $renderedPreflight
+
 $applyBlock = @'
 set -e
 # Set this to the directory containing this delta bundle.
@@ -711,10 +776,9 @@ DELTA_DIR="/path/to/delta-__NEW__"
 cd ~/rangerdanger
 test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
 __RECIPE_FUNCTIONS__
-
 # Only apply a delta to the version it was built from. Check before stopping
 # services or touching the install so a wrong or repeated delta is harmless.
-CURRENT_VERSION=$(awk '/^VERSION=/ { sub(/^VERSION=/, ""); print; exit }' .env)
+CURRENT_VERSION=$(awk '/^VERSION=/ { sub(/^VERSION=/, ""); print }' .env)
 if [ "$CURRENT_VERSION" = "__NEW__" ]; then
     echo "This delta looks already applied: install VERSION is $CURRENT_VERSION, but this delta expects __SINCE__; nothing was changed." >&2
     exit 1
@@ -727,6 +791,8 @@ if [ "$CURRENT_VERSION" != "__SINCE__" ]; then
     fi
     exit 1
 fi
+
+delta_preflight || exit 1
 
 # Stop only the two owned projects by labels before reading mutable state
 # into the rollback snapshot. Teardown does not load either Compose model.
@@ -771,6 +837,8 @@ NEW_VERSION=__NEW__ awk '
   END { if (!replaced) print "VERSION=" version }
 ' .env > .env.delta.tmp && mv .env.delta.tmp .env
 
+write_delta_selection
+
 # Start the platform from local images without contacting GHCR, then have
 # its backend select the recorded package through the normal range API.
 start_platform_and_selected_range
@@ -786,7 +854,6 @@ $rollbackBlock = @'
 set -e
 cd ~/rangerdanger
 __RECIPE_FUNCTIONS__
-
 test -f "../rangerdanger.before-__NEW__.tar.gz" || {
     echo "Rollback snapshot not found beside ~/rangerdanger." >&2
     exit 1
@@ -812,6 +879,7 @@ $readme = @"
 # RangerDanger - delta patch
 
 Staged $now for upgrade from ``$Since`` -> ``$New``.
+Source packages: ``$($sourcePackages -join ',')``; target packages: ``$($selected -join ',')``.
 
 ## Changed
 
@@ -830,7 +898,7 @@ $applyBlock
 ``````
 
 **ARM64 Linux only:** OpenPLC needs amd64 emulation. When changed images
-are included, ``delta-arm64.tar`` also ships ``$BINFMT_IMAGE``; if
+are included, ``delta-images/arm64/`` also ships ``$BINFMT_IMAGE``; if
 OpenPLC isn't running after the restart (``docker ps | grep openplc``),
 register it once with
 ``docker run --privileged --rm $BINFMT_IMAGE --install amd64``.
@@ -850,11 +918,12 @@ follow the ``Rollback`` section below.
 
 The apply recipe saves the complete pre-upgrade ``~/rangerdanger`` tree
 beside the install as ``../rangerdanger.before-$New.tar.gz``. That snapshot
-includes all files and directories in the install tree: ``.env``, Compose
+includes ``data/installed-packages``, ``data/install-mode``, and all files and directories in the install tree: ``.env``, Compose
 files, lab definitions, policy files, local edits, and all of ``./data/``
 (including captures, Kali home, and simulator state; nothing in ``./data/``
 is excluded). Docker images are not part of it. It can be large and grows
 with lab state.
+The containd rollback archive is saved beside the install, never retagged.
 The retained ``$Since`` image tags and the parked mutable-image tags named
 ``:before-$New`` are reused, so rollback needs no network and no second
 bundle. Keep the snapshot, retained old image tags, and parked tags until

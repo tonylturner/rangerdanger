@@ -10,6 +10,8 @@
 #   ./stage-ssd-delta.sh <output-dir> <since-version> <new-version> [options]
 #
 # Options:
+#   --packages id1,id2        target installed set (default every package)
+#   --since-packages id1,id2  source installed set (default every old release package)
 #   --include image1,image2   force-include images even if their digest matches.
 #                             Either form works (gps-sim or rangerdanger-gps-sim);
 #                             an entry that matches no candidate is an error.
@@ -23,8 +25,8 @@
 #   ./stage-ssd-delta.sh ./out v0.1.5 v0.1.7 --all
 #
 # Output:
-#   <output-dir>/delta-amd64.tar       changed images only, amd64
-#   <output-dir>/delta-arm64.tar       changed images only, arm64
+#   <output-dir>/delta-images/amd64/       changed images only, amd64
+#   <output-dir>/delta-images/arm64/       changed images only, arm64
 #   <output-dir>/rangerdanger.tgz      repo archive at HEAD (always included)
 #   <output-dir>/DELTA-README.md       per-stage student-facing apply instructions
 #
@@ -73,8 +75,18 @@ shift 3
 INCLUDE_LIST=""
 SAVE_ALL=0
 INCLUDE_UPSTREAM=0
+PACKAGES=""
+SINCE_PACKAGES=""
 while [ $# -gt 0 ]; do
     case "$1" in
+        --packages|--since-packages)
+            require_value "$1" "${2:-}" "package ids"
+            if [ "$1" = --packages ]; then PACKAGES="$2"; else SINCE_PACKAGES="$2"; fi
+            shift 2 ;;
+        --packages=*|--since-packages=*)
+            require_value "${1%%=*}" "${1#*=}" "package ids"
+            if [ "${1%%=*}" = --packages ]; then PACKAGES="${1#*=}"; else SINCE_PACKAGES="${1#*=}"; fi
+            shift ;;
         --include)            require_value --include "${2:-}" "a comma-separated image list"; INCLUDE_LIST="$2"; shift 2 ;;
         --include=*)          require_value --include "${1#*=}" "a comma-separated image list"; INCLUDE_LIST="${1#*=}"; shift ;;
         --all)                SAVE_ALL=1; shift ;;
@@ -82,6 +94,9 @@ while [ $# -gt 0 ]; do
         *) echo "Unknown argument: $1 (see --help)"; exit 1 ;;
     esac
 done
+
+[[ "$SINCE" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "Invalid release version" >&2; exit 1; }
+[[ "$NEW" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "Invalid release version" >&2; exit 1; }
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
@@ -93,6 +108,9 @@ COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
 BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"
 
 . "$ROOT_DIR/scripts/lib/stage-pull.sh"
+. "$ROOT_DIR/scripts/lib/installed-packages.sh"
+SELECTED_PACKAGES=$(normalize_packages "${PACKAGES:-$(available_packages | paste -sd, -)}") || exit 1
+PACKAGES=$(printf '%s\n' "$SELECTED_PACKAGES" | paste -sd, -)
 
 [ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE not found - run from repo root."
 command -v python3 >/dev/null 2>&1 || die "python3 is required for exact Compose image-to-service mapping."
@@ -113,6 +131,7 @@ collect_release_images() {
         -f "$COMPOSE_FILE" config --images || return 1
     for package_dir in "$ROOT_DIR"/lab-definitions/packages/*; do
         [ -d "$package_dir" ] || continue
+        printf '%s\n' "$SELECTED_PACKAGES" | grep -qxF "$(basename "$package_dir")" || continue
         compose_file="$package_dir/compose.release.yml"
         [ -f "$compose_file" ] || {
             printf 'Missing package release Compose file: %s\n' "$compose_file" >&2
@@ -160,6 +179,17 @@ fetch_release_record "$SINCE" "$SINCE_RECORD" \
 fetch_release_record "$NEW" "$NEW_RECORD" \
     || die "Could not read the new release package membership"
 
+SINCE_PACKAGES=$(python3 - "$SINCE_RECORD" "$SINCE_PACKAGES" <<'PYSET'
+import json, re, sys
+record = json.load(open(sys.argv[1]))
+available = set(record["compose_files"]["packages"])
+selected = set(sys.argv[2].split(",")) if sys.argv[2] else available
+if not selected or not selected <= available or any(not re.fullmatch("[a-z0-9-]+", p) for p in selected):
+    raise SystemExit("Invalid source package selection")
+print(",".join(sorted(selected)))
+PYSET
+) || die "Invalid source package set"
+
 printf '%s\n' "$ALL_IMAGES" > "$MEMBERSHIP_DIR/compose-images.txt"
 CANDIDATE_NEW_REFS=()
 CANDIDATE_OLD_REFS=()
@@ -172,6 +202,8 @@ MEMBERSHIP_ARGS=(
     --new "$NEW"
     --compose-images "$MEMBERSHIP_DIR/compose-images.txt"
     --format tsv
+    --since-packages "$SINCE_PACKAGES"
+    --packages "$PACKAGES"
 )
 if [ "$INCLUDE_UPSTREAM" -eq 1 ] || [ "$SAVE_ALL" -eq 1 ]; then
     MEMBERSHIP_ARGS+=(--include-upstream)
@@ -488,7 +520,9 @@ if [ "${#CHANGED[@]}" -gt 0 ]; then
         preflight_image "${CHANGED[$i]}" "${CHANGED_MANIFESTS[$i]}" "amd64 arm64"
     done
 
-    if binfmt_manifest=$(inspect_platform_manifest "$BINFMT_IMAGE"); then
+    if [[ "$ALL_IMAGES" != *rangerdanger-openplc* ]]; then
+        :
+    elif binfmt_manifest=$(inspect_platform_manifest "$BINFMT_IMAGE"); then
         preflight_image "$BINFMT_IMAGE" "$binfmt_manifest" "arm64"
     else
         inspect_status=$?
@@ -501,11 +535,14 @@ fi
 
 mkdir -p "$OUT" || die "Couldn't create $OUT"
 OUT=$(cd "$OUT" && pwd)
+printf '%s\n' "$NEW" > "$OUT/.version"
 say "Output:           $OUT"
 
 stage_arch() {
     local arch="$1"
-    local tarball="$OUT/delta-$arch.tar"
+    local tarball relative count=0 index="$OUT/delta-image-index-$arch.txt" hash owners owner
+    mkdir -p "$OUT/delta-images/$arch"
+    printf 'rangerdanger-image-index-v1\nversion\t%s\narch\t%s\n' "$NEW" "$arch" > "$index.tmp"
 
     # Images to stage = the changed set, plus tonistiigi/binfmt on arm64.
     # binfmt isn't a rangerdanger image and never shows up in the digest
@@ -514,15 +551,14 @@ stage_arch() {
     # (e.g. from an SSD staged before binfmt was added) still ends up with
     # the qemu-x86_64 helper OpenPLC needs on arm64 Linux.
     local to_stage=(${CHANGED[@]+"${CHANGED[@]}"})
-    [ "$arch" = "arm64" ] && to_stage+=("$BINFMT_IMAGE")
+    [[ "$ALL_IMAGES" == *rangerdanger-openplc* ]] && [ "$arch" = "arm64" ] && to_stage+=("$BINFMT_IMAGE")
 
     if [ "${#to_stage[@]}" -eq 0 ]; then
         return 0
     fi
 
-    banner "Stage linux/$arch -> $(basename "$tarball")"
+    banner "Stage linux/$arch"
 
-    local -a pulled_tags=()
     local i preflight_index ref cross_arch
     for img in ${to_stage[@]+"${to_stage[@]}"}; do
         say "stage $arch  $img"
@@ -546,28 +582,40 @@ stage_arch() {
         elif [ "$ref" != "$img" ]; then
             say "    -> $ref"
         fi
-        stage_pull_image "$img" "$ref" \
+        if [ "$img" = ghcr.io/tonylturner/containd:latest ]; then
+            docker pull --platform "linux/$arch" "$img" || die "containd pull failed"
+            ref="$img"
+        fi
+        [ "$img" = ghcr.io/tonylturner/containd:latest ] || stage_pull_image "$img" "$ref" \
             || die "docker pull failed for new-version image $ref on $arch; see Docker's error above for the cause."
         local target_tag="${img%@*}"
         if [ "$ref" != "$target_tag" ]; then
             docker tag "$ref" "$target_tag" \
                 || die "docker tag $ref -> $target_tag failed"
         fi
-        pulled_tags+=("$target_tag")
+        count=$((count + 1))
+        relative="delta-images/$arch/$count.tar"
+        tarball="$OUT/$relative"
+        if [ "$img" = ghcr.io/tonylturner/containd:latest ]; then
+            docker save --platform "linux/$arch" -o "$tarball" "$target_tag" || die "docker save failed"
+        else
+            docker save -o "$tarball" "$target_tag" || die "docker save failed"
+        fi
+        hash=$(shasum -a 256 "$tarball" | awk '{print $1}') || die "checksum failed"
+        owners=$(python3 - "$CANDIDATE_DATA" "$img" "$BINFMT_IMAGE" <<'PYOWNERS'
+import sys
+rows, image, helper = sys.argv[1:]
+for row in rows.splitlines():
+    fields = row.split("\t")
+    if fields[0] == image or image == helper and "rangerdanger-openplc" in fields[0]:
+        for owner in sorted({s.split("/", 1)[0] for s in fields[5].split(",")}):
+            print(owner)
+PYOWNERS
+) || die "Cannot resolve delta owners"
+        for owner in $owners; do printf '%s\t%s\t%s\t%s\n' "$owner" "$img" "$relative" "$hash" >> "$index.tmp"; done
     done
 
-    if [ "${#pulled_tags[@]}" -eq 0 ]; then
-        say "Nothing to save for $arch (no images compatible with this arch)"
-        return 0
-    fi
-
-    say "save $arch -> $tarball"
-    docker save -o "$tarball" ${pulled_tags[@]+"${pulled_tags[@]}"} \
-        || die "docker save failed for $arch"
-
-    local size
-    size=$(du -h "$tarball" | awk '{print $1}')
-    say "wrote $tarball ($size)"
+    mv "$index.tmp" "$index"
 }
 
 if [ "${#CHANGED[@]}" -gt 0 ]; then
@@ -684,9 +732,9 @@ compose_down_project() {
 
 start_platform_and_selected_range() {
     local ready attempt range_status phase
-    RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
+    (unset RANGERDANGER_ROOT; docker compose -p rangerdanger-platform \
         --project-directory "$PWD" -f docker-compose.release.yml \
-        up -d --pull never || return 1
+        up -d --pull never) || return 1
     ready=0
     for attempt in $(seq 1 120); do
         if curl -fsS --max-time 5 http://127.0.0.1:8088/api/health >/dev/null; then
@@ -749,12 +797,28 @@ PY
 "
 done
 
+python3 - "$ROOT_DIR/scripts/lib/delta-preflight.sh" "$RECIPE_FUNCTIONS" "$SINCE_PACKAGES" "$PACKAGES" "${#CHANGED[@]}" "$SINCE_RECORD" "$NEW" "$(printf '%s\n' ${CHANGED[@]+"${CHANGED[@]}"})" "$ROOT_DIR/scripts/lib/image-index.sh" <<'PYPREFLIGHT'
+from pathlib import Path
+import sys
+source, output, old, new, count, record, version, changed, reader = sys.argv[1:]
+import json
+sys.path.insert(0, str(Path(source).resolve().parents[1]))
+from release_image_plan import _project_membership
+record = json.loads(Path(record).read_text())
+refs, _, _ = _project_membership(record, record['release'], old.split(','))
+images = sorted({ref for values in refs.values() for ref in values})
+text = Path(source).read_text().replace("__SOURCE_PACKAGES__", old.replace(",", "\n")).replace("__TARGET_PACKAGES__", new.replace(",", "\n")).replace("__OLD_IMAGES__", "\n".join(images)).replace("__HAS_IMAGES__", "yes" if int(count) else "no")
+text = text.replace("__NEW_VERSION__", version).replace("__CHANGED_IMAGES__", changed)
+with open(output, "a") as f: f.write("\n" + Path(reader).read_text() + "\ndie() { echo \"$*\" >&2; return 1; }\n" + text)
+PYPREFLIGHT
+
 APPLY_LOAD_COMMAND="# No image archive was created; no image load is needed."
 if [ "${#CHANGED[@]}" -gt 0 ]; then
     # Preserve the command substitutions for the generated student recipe.
     # shellcheck disable=SC2016
-    APPLY_LOAD_COMMAND='ARCH=$(uname -m | sed '\''s/x86_64/amd64/;s/aarch64/arm64/'\'')
-docker load -i "$DELTA_DIR/delta-$ARCH.tar"'
+    APPLY_LOAD_COMMAND='while IFS= read -r archive; do
+    [ -z "$archive" ] || docker load -i "$archive"
+done <<< "$DELTA_ARCHIVES"'
 fi
 
 APPLY_BACKUP_COMMANDS=""
@@ -763,6 +827,18 @@ for i in ${CHANGED[@]+"${!CHANGED[@]}"}; do
     since_tag="${CHANGED_SINCE_REFS[$i]%@*}"
     target_tag="${CHANGED[$i]%@*}"
     [ "$since_tag" = "$target_tag" ] || continue
+    if [ "$target_tag" = ghcr.io/tonylturner/containd:latest ]; then
+        APPLY_BACKUP_COMMANDS="$APPLY_BACKUP_COMMANDS"'if [ ! -f "../containd.before-'"$NEW"'.tar" ] && docker image inspect ghcr.io/tonylturner/containd:latest >/dev/null 2>&1; then
+    docker save --platform "linux/$ARCH" -o "../containd.before-'"$NEW"'.tar.tmp" ghcr.io/tonylturner/containd:latest
+    mv "../containd.before-'"$NEW"'.tar.tmp" "../containd.before-'"$NEW"'.tar"
+fi
+'
+        ROLLBACK_RESTORE_COMMANDS="$ROLLBACK_RESTORE_COMMANDS"'if [ -f "../containd.before-'"$NEW"'.tar" ]; then
+    docker load -i "../containd.before-'"$NEW"'.tar"
+fi
+'
+        continue
+    fi
     parked_tag="${target_tag%:*}:before-$NEW"
     APPLY_BACKUP_COMMANDS="$APPLY_BACKUP_COMMANDS"'if ! docker image inspect "'"$parked_tag"'" >/dev/null 2>&1; then
     if docker image inspect "'"$target_tag"'" >/dev/null 2>&1; then
@@ -792,153 +868,13 @@ if [ -z "$APPLY_RETAG_COMMANDS" ]; then
     APPLY_RETAG_COMMANDS="# No unchanged first-party image tags need to be created."
 fi
 
-cat > "$README_TEMPLATE" <<'README'
-# RangerDanger - delta patch
-
-Staged __STAGED_AT__ for upgrade from \`__SINCE__\` -> \`__NEW__\`.
-
-## Changed
-
-| Image | Package/service membership |
-|---|---|
-__APPLY_TABLE__
-__KERNEL_README_ROW__
-__UNCHANGED_SECTION__
-
-## Apply
-
-Run from the student's existing \`~/rangerdanger\` directory:
-
-\`\`\`sh
-set -e
-# Set this to the directory containing this delta bundle.
-DELTA_DIR="/path/to/delta-__NEW__"
-cd ~/rangerdanger
-test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
-__RECIPE_FUNCTIONS__
-# Only apply a delta to the version it was built from. Check before stopping
-# services or touching the install so a wrong or repeated delta is harmless.
-CURRENT_VERSION=\$(awk '/^VERSION=/ { sub(/^VERSION=/, ""); print; exit }' .env)
-if [ "\$CURRENT_VERSION" = "__NEW__" ]; then
-    echo "This delta looks already applied: install VERSION is \$CURRENT_VERSION, but this delta expects __SINCE__; nothing was changed." >&2
-    exit 1
-fi
-if [ "\$CURRENT_VERSION" != "__SINCE__" ]; then
-    if [ -n "\$CURRENT_VERSION" ]; then
-        echo "Install VERSION is \$CURRENT_VERSION; this delta expects __SINCE__. Refusing to apply; nothing was changed." >&2
-    else
-        echo "Install .env has no VERSION= line; this delta expects __SINCE__. Refusing to apply; nothing was changed." >&2
-    fi
-    exit 1
-fi
-
-# Stop only the two owned projects by labels before reading mutable state
-# into the rollback snapshot. Teardown does not load either Compose model.
-if ! compose_down_project rangerdanger || ! compose_down_project rangerdanger-platform
-then
-    echo "Could not stop and verify both RangerDanger projects; no snapshot or repo changes were made." >&2
-    exit 1
-fi
-
-# Save the complete existing install, including .env and local lab/policy
-# edits, for rollback. Keep the first snapshot if this delta is re-applied.
-SNAPSHOT="../rangerdanger.before-__NEW__.tar.gz"
-if [ ! -f "\$SNAPSHOT" ]; then
-    tar czf "\$SNAPSHOT" -C .. rangerdanger || {
-        rm -f "\$SNAPSHOT"
-        echo "Could not snapshot ~/rangerdanger; refusing to apply the delta. The RangerDanger projects are stopped; restore them from the rollback procedure." >&2
-        exit 1
-    }
-fi
-tar tzf "\$SNAPSHOT" >/dev/null || {
-    echo "Rollback snapshot is not a readable tar archive; refusing to apply the delta. The RangerDanger projects are stopped; restore them from the rollback procedure." >&2
-    exit 1
-}
-
-# Update the repo, then load the changed images (if any).
-tar xzf "\$DELTA_DIR/rangerdanger.tgz" -C ~
-__APPLY_BACKUP_COMMANDS__
-__APPLY_LOAD_COMMAND__
-
-# Re-tag unchanged first-party images so every required :__NEW__ tag exists.
-__APPLY_RETAG_COMMANDS__
-
-# Select the new release while preserving other .env settings.
-NEW_VERSION=__NEW__ awk '
-  BEGIN { version = ENVIRON["NEW_VERSION"]; replaced = 0 }
-  /^VERSION=/ {
-    if (!replaced) print "VERSION=" version
-    replaced = 1
-    next
-  }
-  { print }
-  END { if (!replaced) print "VERSION=" version }
-' .env > .env.delta.tmp && mv .env.delta.tmp .env
-
-# Start the platform from local images without contacting GHCR, then have
-# its backend select the recorded package through the normal range API.
-start_platform_and_selected_range
-\`\`\`
-
-**ARM64 Linux only:** OpenPLC needs amd64 emulation. When changed images
-are included, \`delta-arm64.tar\` also ships \`__BINFMT_IMAGE__\`; if
-OpenPLC isn't running after the restart (\`docker ps | grep openplc\`),
-register it once with
-\`docker run --privileged --rm __BINFMT_IMAGE__ --install amd64\`.
-(setup.sh does this automatically on a fresh install; the registration
-does not persist across a host reboot.) A repo-only delta has no image
-archives, so it cannot supply the binfmt image. Make sure that image is
-already present before applying a repo-only delta offline.
-
-If \`docker load\` fails with "no space left on device", free space
-without removing the prior \`__SINCE__\` image tags or parked mutable-image
-tags named \`:before-__NEW__\`; removing an old or parked tag forfeits rollback
-for that image. If any apply step after the stack is stopped fails, do not
-try to start a partially updated tree: keep the snapshot and old tags, then
-follow the \`Rollback\` section below.
-
-## Rollback
-
-The apply recipe saves the complete pre-upgrade \`~/rangerdanger\` tree
-beside the install as \`../rangerdanger.before-__NEW__.tar.gz\`. That snapshot
-includes all files and directories in the install tree: \`.env\`, Compose
-files, lab definitions, policy files, local edits, and all of \`./data/\`
-(including captures, Kali home, and simulator state; nothing in \`./data/\`
-is excluded). Docker images are not part of it. It can be large and grows
-with lab state.
-The retained \`__SINCE__\` image tags and the parked mutable-image tags named
-\`:before-__NEW__\` are reused, so rollback needs no network and no second
-bundle. Keep the snapshot, retained old image tags, and parked tags until
-the rollback window closes:
-
-\`\`\`sh
-set -e
-cd ~/rangerdanger
-__RECIPE_FUNCTIONS__
-test -f "../rangerdanger.before-__NEW__.tar.gz" || {
-    echo "Rollback snapshot not found beside ~/rangerdanger." >&2
-    exit 1
-}
-tar tzf "../rangerdanger.before-__NEW__.tar.gz" >/dev/null || {
-    echo "Rollback snapshot is not readable; leaving the current install untouched." >&2
-    exit 1
-}
-compose_down_project rangerdanger
-compose_down_project rangerdanger-platform
-cd ..
-rm -rf rangerdanger
-tar xzf "rangerdanger.before-__NEW__.tar.gz"
-cd rangerdanger
-__ROLLBACK_RESTORE_COMMANDS__
-start_platform_and_selected_range
-\`\`\`
-README
+cp "$ROOT_DIR/scripts/lib/ssd-delta-instructions.md" "$README_TEMPLATE"
 
 python3 - "$README_TEMPLATE" "$OUT/DELTA-README.md" "$SINCE" "$NEW" \
     "$APPLY_TABLE" "$KERNEL_README_ROW" "$UNCHANGED_SECTION" \
     "$APPLY_BACKUP_COMMANDS" "$APPLY_LOAD_COMMAND" "$APPLY_RETAG_COMMANDS" \
     "$BINFMT_IMAGE" "$ROLLBACK_RESTORE_COMMANDS" \
-    "$RECIPE_FUNCTIONS" \
+    "$RECIPE_FUNCTIONS" "$SINCE_PACKAGES" "$PACKAGES" \
     <<'PY' || die "Could not render DELTA-README.md"
 from datetime import datetime, timezone
 from pathlib import Path
@@ -947,11 +883,13 @@ import sys
 (
     template_path, output_path, since, new, apply_table, kernel_row,
     unchanged_section, backup_commands, load_command, retag_commands,
-    binfmt_image, rollback_commands, recipe_functions_path,
+    binfmt_image, rollback_commands, recipe_functions_path, source_packages, target_packages,
 ) = sys.argv[1:]
 template = Path(template_path).read_text(encoding="utf-8")
 template = template.replace(r"\$", "$").replace(r"\`", "`")
 replacements = {
+    "__SOURCE_PACKAGE_LIST__": source_packages,
+    "__TARGET_PACKAGE_LIST__": target_packages,
     "__STAGED_AT__": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "__SINCE__": since,
     "__NEW__": new,

@@ -49,7 +49,7 @@ $answers = @()
 foreach ($case in ($env:CASES | ConvertFrom-Json)) {
     try {
         $rows = @(Get-DeltaImageCandidates -PreviousJson $case.old -NewJson $case.new `
-            -ComposeImages $case.images -SinceTag 'v1' -NewTag 'v2' -IncludeUpstream:($case.include))
+            -SincePackages $case.source -Packages $case.target -ComposeImages $case.images -SinceTag 'v1' -NewTag 'v2' -IncludeUpstream:($case.include))
         $answers += @{ok=$true; rows=$rows}
     } catch { $answers += @{ok=$false; error="$_"} }
 }
@@ -70,6 +70,7 @@ class MembershipTests(unittest.TestCase):
                     expected = release_image_plan.delta_image_candidates(
                         previous_record=case["old"], new_record=case["new"], compose_images=case["images"],
                         since_tag="v1", new_tag="v2", include_upstream=case["include"],
+                        since_packages=case.get("source"), packages=case.get("target"),
                     )
                 except release_image_plan.PlanError:
                     self.assertFalse(answer["ok"], answer)
@@ -96,6 +97,50 @@ class MembershipTests(unittest.TestCase):
             dict(old=record("v1"), new=record("v2", {"one": PREFIX + "backend:v2"}),
                  images=[PREFIX + "backend:v2"], include=True),
         ])
+        self.compare(cases)
+
+    def test_selected_projection_expansion_and_global_validation(self):
+        cases = []
+        for source, target in ((['a'], ['a']), (['a'], ['a', 'd']),
+                               (['b'], ['d']), (['unknown'], ['a']), (['a'], [''])):
+            case = fixture()
+            case.update(source=source, target=target)
+            case['images'] = [ref for owner, model in
+                              [('platform', case['new']['compose_files']['platform'])] +
+                              list(case['new']['compose_files']['packages'].items())
+                              if owner == 'platform' or owner in target
+                              for ref in model['services'].values()]
+            cases.append(case)
+        corrupt = fixture()
+        corrupt.update(source=['a'], target=['a'])
+        corrupt['new']['compose_files']['packages']['c']['sha256'] = 'broken'
+        cases.append(corrupt)
+        self.compare(cases)
+
+    def test_new_upstream_tag_is_shipped_even_when_repository_was_installed(self):
+        case = fixture()
+        case.update(source=['a'], target=['d'])
+        case['images'] = list(case['new']['compose_files']['platform']['services'].values()) + ['registry:5000/tool:a']
+        self.compare([case])
+        rows = release_image_plan.delta_image_candidates(
+            previous_record=case['old'], new_record=case['new'], compose_images=case['images'],
+            since_tag='v1', new_tag='v2', since_packages=['a'], packages=['d'])
+        self.assertFalse(next(row for row in rows if row['image'] == 'registry:5000/tool:a')['old_member'])
+
+    def test_unselected_first_party_metadata_stays_globally_validated(self):
+        cases = []
+        for side, owner in (('old', 'a'), ('new', 'c')):
+            case = fixture()
+            case.update(source=['b'], target=['d'])
+            case['images'] = list(case['new']['compose_files']['platform']['services'].values()) + ['registry:5000/tool:a']
+            model = case[side]['compose_files']['packages'][owner]['services']
+            key = next(key for key, value in model.items() if value.startswith(PREFIX))
+            model[key] += '-mismatch'
+            with self.assertRaises(release_image_plan.PlanError):
+                release_image_plan.delta_image_candidates(
+                    previous_record=case['old'], new_record=case['new'], compose_images=case['images'],
+                    since_tag='v1', new_tag='v2', since_packages=['b'], packages=['d'])
+            cases.append(case)
         self.compare(cases)
 
     def test_release_schema_metadata_services_and_inventory_rejections(self):

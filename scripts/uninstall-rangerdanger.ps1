@@ -35,13 +35,13 @@ Pass -RemoveImages (A), -RemoveDevImages (B), and/or -RemoveBaseImages
 Skip the confirmation prompt before tearing down.
 
 .PARAMETER RemoveImages
-Also remove every ghcr.io/tonylturner/rangerdanger-* image (category
-A). Frees the 6 GB-ish disk those images occupy. Without this flag the
+Also remove exact release references for the platform and installed packages
+(category A). Without this flag the
 images are kept so a future setup.ps1 run reuses them.
 
 .PARAMETER RemoveDevImages
 Also remove the locally-built images (category B) that a source build
-produces from docker-compose.yml and every package's compose.source.yml.
+produces from docker-compose.yml and the installed packages' compose.source.yml.
 
 .PARAMETER RemoveBaseImages
 Also remove the shared third-party base images (category C: alpine,
@@ -157,64 +157,32 @@ $presentImages = & {
 }
 $presentImages = @($presentImages | Where-Object { $_ })
 
-# Category A -- pulled release images (ghcr.io/tonylturner/rangerdanger-*, containd).
-$rdImages = @($presentImages | Where-Object {
-    $_ -like "ghcr.io/tonylturner/rangerdanger-*" -or $_ -like "ghcr.io/tonylturner/containd*"
-})
-
-# Categories B + C are derived from the source Compose files (the
-# platform's and every range package's) as the single source of truth.
-# `docker compose config --images` prints locally-built images WITHOUT a
-# tag (e.g. "rangerdanger-platform-backend", "rangerdanger-rtac_sim") and
-# pulled images WITH one (e.g. "nginx:1.27-alpine"), which lets us split
-# them apart without hard-coding service lists.
-$sourceModels = @()
-$platformSource = Join-Path $RootDir "docker-compose.yml"
-if (Test-Path $platformSource) { $sourceModels += @{ project = 'rangerdanger-platform'; file = $platformSource } }
-foreach ($f in Get-ChildItem -Path (Join-Path $RootDir 'lab-definitions\packages\*\compose.source.yml') -ErrorAction SilentlyContinue) {
-    $sourceModels += @{ project = 'rangerdanger'; file = $f.FullName }
-}
-$composeImages = @()
+. "$RootDir/scripts/lib/installed-packages.ps1"
+. "$RootDir/scripts/lib/docker-bounded.ps1"
+. "$RootDir/scripts/lib/setup-package.ps1"
+$selected = @()
+try {
+    if (Test-Path -LiteralPath (Join-Path $RootDir 'data/installed-packages')) { $selected = @(Read-InstalledPackages $RootDir) }
+    elseif ($RemoveImages -or $RemoveDevImages -or $RemoveBaseImages) { throw "Missing $RootDir/data/installed-packages; run setup before removing images." }
+} catch { Warn $_; exit 3 }
+$rdImages = @(); $rdDevImages = @(); $rdBaseImages = @()
 $savedRoot = $env:RANGERDANGER_ROOT
+$savedVersion = $env:VERSION
 $env:RANGERDANGER_ROOT = $DaemonRoot
 try {
-    foreach ($m in $sourceModels) {
-        $composeImages += @(& {
-            $ErrorActionPreference = 'SilentlyContinue'
-            & docker compose -p $m.project --project-directory $RootDir -f $m.file config --images 2>$null
-        } | Where-Object { $_ })
+    if ($selected.Count) {
+        $env:VERSION = Get-InstalledEnvValue $RootDir VERSION
+        $releaseRefs = @(Get-SetupImages @(Get-SetupModels $RootDir 'release' $selected))
+        $sourceRefs = @(Get-SetupImages @(Get-SetupModels $RootDir 'source' $selected))
+        $rdImages = @($releaseRefs | Where-Object { $_ -clike 'ghcr.io/tonylturner/*' -and $_ -cin $presentImages })
+        $devRefs = @($sourceRefs | Where-Object { $_ -notmatch ':' } | ForEach-Object { "${_}:latest" })
+        $rdDevImages = @($devRefs | Where-Object { $_ -cin $presentImages })
+        $rdBaseImages = @($sourceRefs | Where-Object {
+            $_ -match ':' -and $_ -cnotlike 'ghcr.io/tonylturner/*' -and $_ -cnotlike 'rangerdanger-*' -and $_ -cin $presentImages
+        })
     }
-} finally { $env:RANGERDANGER_ROOT = $savedRoot }
-$composeImages = @($composeImages | Sort-Object -Unique)
-
-# Category B -- locally-built dev images.
-$devRepos = @($composeImages | Where-Object { $_ -notmatch ':' })
-if ($devRepos.Count -eq 0) {
-    $devRepos = @($presentImages | ForEach-Object { ($_ -split ':')[0] } |
-        Where-Object { $_ -match '^rangerdanger-[a-z]' -and $_ -notmatch '/' } | Sort-Object -Unique)
-}
-# The pre-split single project built the platform as rangerdanger-backend
-# and rangerdanger-frontend; the platform project now builds
-# rangerdanger-platform-<service>, so the old names are in no Compose file.
-$devRepos += @('rangerdanger-backend', 'rangerdanger-frontend')
-$rdDevImages = @()
-foreach ($repo in $devRepos) {
-    $rdDevImages += @($presentImages | Where-Object { $_ -like "${repo}:*" })
-}
-$rdDevImages = @($rdDevImages | Sort-Object -Unique)
-
-# Category C -- shared third-party base images (tagged, non-ghcr, non-built).
-$baseRefs = @($composeImages |
-    Where-Object { $_ -match ':' -and $_ -notlike "ghcr.io/tonylturner/*" -and $_ -notmatch '^rangerdanger-' } |
-    ForEach-Object { $_ -replace '@sha256:[0-9a-f]+', '' } | Sort-Object -Unique)
-if ($baseRefs.Count -eq 0) {
-    $baseRefs = @('alpine:3.21', 'nginx:1.27-alpine', 'linuxserver/webtop:ubuntu-mate')
-}
-# The WSL2 kernel probe pulls this image when the containd image is absent
-# (scripts\install-wsl-kernel.ps1 $AlpineImage; keep in sync). It is in no
-# compose file, so add it explicitly.
-$baseRefs = @(@($baseRefs) + 'alpine:3.20' | Sort-Object -Unique)
-$rdBaseImages = @($baseRefs | Where-Object { $presentImages -contains $_ } | Sort-Object -Unique)
+} catch { Warn "Could not resolve installed image closure: $_. Nothing was removed."; exit 3 }
+finally { $env:RANGERDANGER_ROOT = $savedRoot; $env:VERSION = $savedVersion }
 
 Say "Release images (ghcr):    $($rdImages.Count)"
 Say "Dev images (local build): $($rdDevImages.Count)"
@@ -235,7 +203,7 @@ $envFileFound = Test-Path $EnvFile
 if ($envFileFound) { Say ".env file found at $EnvFile" }
 
 # Nothing to do at all?
-if ($rdContainers.Count -eq 0 -and $rdNetworks.Count -eq 0 -and $rdImages.Count -eq 0 -and $rdDevImages.Count -eq 0 -and -not $kernelInstalled -and -not $envFileFound) {
+if ($rdContainers.Count -eq 0 -and $rdNetworks.Count -eq 0 -and $rdImages.Count -eq 0 -and $rdDevImages.Count -eq 0 -and -not $kernelInstalled -and -not $envFileFound -and -not $selected.Count) {
     Banner "Nothing to uninstall"
     Write-Host "  No RangerDanger state detected on this machine."
     exit 2
@@ -257,6 +225,7 @@ if ($RemoveBaseImages -and $rdBaseImages.Count -gt 0) {
 if ($envFileFound) {
     Write-Host "  - Remove $EnvFile"
 }
+if ($selected.Count) { Write-Host '  - Remove the installation receipt and saved mode' }
 if ($kernelInstalled -and -not $KeepKernel) {
     Write-Host "  - Revert the custom WSL2 kernel (runs wsl --shutdown)"
 } elseif ($kernelInstalled -and $KeepKernel) {
@@ -312,6 +281,10 @@ if ($envFileFound) {
     else                            { Warn "Could not remove $EnvFile" }
 }
 
+foreach ($name in 'installed-packages', 'install-mode') {
+    Remove-Item -LiteralPath (Join-Path $RootDir "data/$name") -Force -ErrorAction SilentlyContinue
+}
+
 # --- 4. kernel revert --------------------------------------------------
 if ($kernelInstalled -and -not $KeepKernel) {
     Banner "Reverting the custom WSL2 kernel"
@@ -343,7 +316,6 @@ if (-not $RemoveBaseImages -and $rdBaseImages.Count -gt 0) {
     Write-Host ""
     Warn "Shared base images left in place (other projects may use them):"
     Write-Host "    docker image rm $($rdBaseImages -join ' ')"
-    Write-Host "  or re-run with -RemoveBaseImages (in-use images are skipped)."
 }
 Write-Host ""
 Write-Host "To reinstall later: .\setup.ps1"

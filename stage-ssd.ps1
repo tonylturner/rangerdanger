@@ -3,8 +3,8 @@
 RangerDanger SSD/airgap stage helper -- Windows sibling of stage-ssd.sh.
 
 .DESCRIPTION
-Pulls every release image for both linux/amd64 and linux/arm64 from
-GHCR, saves each architecture into a tarball, and writes the repo
+Pulls selected release images for both linux/amd64 and linux/arm64 from
+GHCR, saves each unique ref with a checked index, and writes the repo
 archive alongside. The output directory is what students plug into
 .\setup.ps1 -FromTarballs <dir>.
 
@@ -14,6 +14,9 @@ Directory to write the staged bundle into. Created if it does not exist.
 .PARAMETER Version
 Image tag to stage. Default: latest. Pin to e.g. 'v0.1.16' for a
 release.
+
+.PARAMETER Packages
+Exact package IDs (comma-separated or array). Default: every discovered package.
 
 .EXAMPLE
 .\stage-ssd.ps1 D:\WORKSHOP_SSD v0.1.16
@@ -37,10 +40,12 @@ param(
     [Parameter(Mandatory=$true, Position=0)]
     [string]$OutDir,
     [Parameter(Position=1)]
-    [string]$Version = "latest"
+    [string]$Version = "latest",
+    [string[]]$Packages = @()
 )
 
 $ErrorActionPreference = "Stop"
+if ($Version -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') { throw 'Invalid release version.' }
 
 function Say($m)    { Write-Host "[+] $m" -ForegroundColor Green }
 function Warn($m)   { Write-Host "[!] $m" -ForegroundColor Yellow }
@@ -57,6 +62,8 @@ $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 . "$PSScriptRoot/scripts/lib/docker-bounded.ps1"
 . "$PSScriptRoot/scripts/lib/windows-root.ps1"
 . "$PSScriptRoot/scripts/lib/stage-bounded.ps1"
+. "$PSScriptRoot/scripts/lib/installed-packages.ps1"
+$selected = if ($PSBoundParameters.ContainsKey('Packages')) { @(ConvertTo-PackageSelection $RootDir $Packages) } else { @(Get-AvailablePackages $RootDir) }
 
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
 # tar.exe (bsdtar) ships with Windows 10 1803+ and Windows 11. It reads the
@@ -73,6 +80,7 @@ $releaseFiles = @($ComposeFile)
 $packagesRoot = Join-Path $RootDir "lab-definitions/packages"
 if (Test-Path $packagesRoot) {
     foreach ($packageDir in (Get-ChildItem -Path $packagesRoot -Directory | Sort-Object Name)) {
+        if ($packageDir.Name -cnotin $selected) { continue }
         $packageCompose = Join-Path $packageDir.FullName "compose.release.yml"
         if (-not (Test-Path $packageCompose)) {
             Die "Missing package release Compose file: $packageCompose"
@@ -85,6 +93,7 @@ $previousComposeVersion = $env:VERSION
 $hadRoot = Test-Path Env:RANGERDANGER_ROOT
 $previousRoot = $env:RANGERDANGER_ROOT
 $composeOutput = @()
+$imageMembership = @()
 $composeStatus = 0
 try {
     $env:VERSION = $Version
@@ -100,7 +109,10 @@ try {
         $composeStatus = if (-not $run -or $run.TimedOut) { 1 } else { $run.ExitCode }
         if ($composeStatus -ne 0) { break }
         $imagesForFile = $run.StdOut -split '\r?\n' | Where-Object { $_ }
+        if (-not $imagesForFile) { $composeStatus = 1; break }
         $composeOutput += $imagesForFile
+        $owner = if ($releaseFile -ceq $ComposeFile) { 'platform' } else { Split-Path -Leaf (Split-Path -Parent $releaseFile) }
+        foreach ($image in $imagesForFile) { $imageMembership += [pscustomobject]@{Owner=$owner; Image=$image} }
     }
 } finally {
     if ($hadComposeVersion) {
@@ -115,7 +127,9 @@ try {
     }
 }
 if ($composeStatus -ne 0) { Die "Could not enumerate the platform/package release image union" }
-$allImages = @($composeOutput | Sort-Object -Unique)
+$uniqueImages = New-Object 'Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal)
+foreach ($image in $composeOutput) { $null = $uniqueImages.Add($image) }
+$allImages = @($uniqueImages)
 if (-not $allImages) { Die "Could not enumerate images from the release models" }
 
 # Compose interpolation is the only version-selection mechanism. Refuse
@@ -254,14 +268,53 @@ function Add-PreflightImage($img, [switch]$Arm64Only) {
     }
 }
 
+function Verify-Archive($archivePath, $expectedTags) {
+    $version = $Version
+    if (-not $version) { Die "Staged VERSION is empty" }
+
+    $extractDir = Join-Path ([System.IO.Path]::GetTempPath()) ("rd-verify-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $extractDir | Out-Null
+    try {
+        $null = Invoke-StageNative $TarExe @('-xf', $archivePath, '-C', $extractDir, 'manifest.json') 1800
+        $manifestPath = Join-Path $extractDir "manifest.json"
+        if (-not (Test-Path $manifestPath)) {
+            Die "cannot verify ${archivePath}: no manifest.json (not a Docker save archive?)"
+        }
+        try {
+            $manifest = Get-Content -Path $manifestPath -Raw | ConvertFrom-Json
+        } catch {
+            Die "cannot verify ${archivePath}: invalid Docker save manifest: $_"
+        }
+    } finally {
+        Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $actual = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($image in @($manifest)) {
+        foreach ($tag in @($image.RepoTags)) { if ($tag) { $null = $actual.Add($tag) } }
+    }
+    $extra = @($actual | Where-Object { $_ -cnotin $expectedTags })
+    if ($extra.Count) { Die "Unexpected saved image tags: $($extra -join ', ')" }
+    $missing = @($expectedTags | Where-Object { -not $actual.Contains($_) } | Sort-Object -Unique)
+    $wrongVersion = @($actual |
+        Where-Object { $_.StartsWith("ghcr.io/tonylturner/rangerdanger-") -and ($_.Substring($_.LastIndexOf(':') + 1) -ne $version) } |
+        Sort-Object)
+    if ($missing.Count -gt 0) { Write-Host ("missing saved image tags: " + ($missing -join ", ")) }
+    if ($wrongVersion.Count -gt 0) { Write-Host ("first-party image tags do not match .version=${version}: " + ($wrongVersion -join ", ")) }
+    if ($missing.Count -gt 0 -or $wrongVersion.Count -gt 0) { Die "$archivePath archive verification failed" }
+    Write-Host "verified ${archivePath}: all $(@($expectedTags).Count) enumerated image tags are present; first-party tags match .version=$version"
+}
+
 function Invoke-StageArch($arch) {
-    $tarball = Join-Path $OutDir "images-$arch.tar"
-    Banner "Stage linux/$arch -> $(Split-Path -Leaf $tarball)"
+    $index = Join-Path $OutDir "image-index-$arch.txt"
+    $rows = @('rangerdanger-image-index-v1', "version`t$Version", "arch`t$arch")
+    $null = New-Item -ItemType Directory -Path (Join-Path $OutDir "images/$arch") -Force
+    $tarball = ''
+    Banner "Stage linux/$arch"
 
     $count = 0
-    $pulledTags = @()
     $toStage = @($resolved)
-    if ($arch -eq 'arm64') {
+    if ($arch -eq 'arm64' -and $openplcOwners.Count) {
         # arm64 Linux has no Rosetta fallback. Bundle qemu-x86_64 so the
         # amd64-only OpenPLC image can run fully offline; amd64 never needs it.
         $toStage += $BINFMT_IMAGE
@@ -282,33 +335,37 @@ function Invoke-StageArch($arch) {
             Say "    -> $ref"
         }
 
-        $null = Invoke-StagePull $img $ref 3600 -StreamOutput
+        if ($img -ceq 'ghcr.io/tonylturner/containd:latest') {
+            $null = Invoke-StageDocker @('pull', '--platform', "linux/$arch", $img) 3600 -StreamOutput
+            $ref = $img
+        } else { $null = Invoke-StagePull $img $ref 3600 -StreamOutput }
 
         # Re-tag locally so the saved tarball carries the friendly tag.
         $targetTag = $img -replace '@.*$',''
         if ($ref -ne $targetTag) {
             $null = Invoke-StageDocker @('tag', $ref, $targetTag) 60
         }
-        $pulledTags += $targetTag
+        $relative = "images/$arch/$count.tar"
+        $tarball = Join-Path $OutDir $relative
+        $saveArgs = @('save', '-o', $tarball, $targetTag)
+        if ($img -ceq 'ghcr.io/tonylturner/containd:latest') { $saveArgs = @('save', '--platform', "linux/$arch", '-o', $tarball, $targetTag) }
+        try { $null = Invoke-StageDocker $saveArgs 7200 -StreamOutput }
+        catch { Remove-StagePartial $tarball; throw }
+        Verify-Archive $tarball @($targetTag)
+        $hash = (Get-FileHash -LiteralPath $tarball -Algorithm SHA256).Hash.ToLowerInvariant()
+        $owners = if ($img -ceq $BINFMT_IMAGE) { $openplcOwners } else { @($imageMembership | Where-Object { $_.Image -ceq $img } | ForEach-Object { $_.Owner }) }
+        foreach ($owner in $owners) { $rows += "$owner`t$img`t$relative`t$hash" }
     }
 
-    Say "save $arch -> $tarball"
-    try { $null = Invoke-StageDocker (@('save', '-o', $tarball) + $pulledTags) 7200 -StreamOutput }
-    catch { Remove-StagePartial $tarball; throw }
-    if ($arch -eq 'amd64') {
-        $script:AMD64_TAGS = @($pulledTags)
-    } else {
-        $script:ARM64_TAGS = @($pulledTags)
-    }
-
-    $sizeMB = [math]::Round((Get-Item $tarball).Length / 1MB)
-    Say "wrote $tarball (${sizeMB} MB)"
+    [IO.File]::WriteAllText("$index.tmp", ($rows -join "`n") + "`n", (New-Object Text.UTF8Encoding $false))
+    Move-Item -LiteralPath "$index.tmp" -Destination $index -Force
 }
+$openplcOwners = @($imageMembership | Where-Object { $_.Image -match 'rangerdanger-openplc' } | ForEach-Object { $_.Owner } | Sort-Object -Unique)
 
 foreach ($img in $resolved) {
     if ($img) { Add-PreflightImage $img }
 }
-Add-PreflightImage $BINFMT_IMAGE -Arm64Only
+if ($openplcOwners.Count) { Add-PreflightImage $BINFMT_IMAGE -Arm64Only }
 
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
 $OutDir = (Resolve-Path $OutDir).Path
@@ -335,53 +392,6 @@ Say "wrote $tgzPath (${tgzSizeMB} MB)"
 $verPath = Join-Path $OutDir ".version"
 Set-Content -Path $verPath -Value $Version -NoNewline -Encoding ascii
 Say "wrote $verPath ($Version)"
-
-# docker save archives expose their RepoTags in manifest.json. Verify the
-# complete requested tag set, including the version marker, before the
-# bundle is reported as complete. Only the archive is read; nothing
-# contacts Docker or the registry. Native tar.exe + ConvertFrom-Json
-# rather than an inline `python -c` script (the stage-ssd.sh approach):
-# Windows laptops often have no real Python (python3 is a Store stub),
-# and PS 5.1 strips embedded double quotes from native-exe arguments,
-# which broke the inline script outright.
-function Verify-Archive($arch, $expectedTags) {
-    $archivePath = Join-Path $OutDir "images-$arch.tar"
-    $version = (Get-Content -Path $verPath -Raw).Trim()
-    if (-not $version) { Die "$verPath is empty" }
-
-    $extractDir = Join-Path ([System.IO.Path]::GetTempPath()) ("rd-verify-" + [guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $extractDir | Out-Null
-    try {
-        $null = Invoke-StageNative $TarExe @('-xf', $archivePath, '-C', $extractDir, 'manifest.json') 1800
-        $manifestPath = Join-Path $extractDir "manifest.json"
-        if (-not (Test-Path $manifestPath)) {
-            Die "cannot verify ${archivePath}: no manifest.json (not a Docker save archive?)"
-        }
-        try {
-            $manifest = Get-Content -Path $manifestPath -Raw | ConvertFrom-Json
-        } catch {
-            Die "cannot verify ${archivePath}: invalid Docker save manifest: $_"
-        }
-    } finally {
-        Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-
-    $actual = @{}
-    foreach ($image in @($manifest)) {
-        foreach ($tag in @($image.RepoTags)) { if ($tag) { $actual[$tag] = $true } }
-    }
-    $missing = @($expectedTags | Where-Object { -not $actual.ContainsKey($_) } | Sort-Object -Unique)
-    $wrongVersion = @($actual.Keys |
-        Where-Object { $_.StartsWith("ghcr.io/tonylturner/rangerdanger-") -and ($_.Substring($_.LastIndexOf(':') + 1) -ne $version) } |
-        Sort-Object)
-    if ($missing.Count -gt 0) { Write-Host ("missing saved image tags: " + ($missing -join ", ")) }
-    if ($wrongVersion.Count -gt 0) { Write-Host ("first-party image tags do not match .version=${version}: " + ($wrongVersion -join ", ")) }
-    if ($missing.Count -gt 0 -or $wrongVersion.Count -gt 0) { Die "$arch archive verification failed" }
-    Write-Host "verified ${archivePath}: all $(@($expectedTags).Count) enumerated image tags are present; first-party tags match .version=$version"
-}
-
-Verify-Archive amd64 $AMD64_TAGS
-Verify-Archive arm64 $ARM64_TAGS
 
 # Bundle the WSL2 kernel asset for Windows students on offline /
 # air-gapped laptops. setup.ps1 -FromTarballs picks up
@@ -481,11 +491,12 @@ $readme = @"
 # RangerDanger -- offline / SSD install
 
 Staged $now for version ``$Version``.
+Staged packages: ``$($selected -join ',')``.
 
 ## Contents
 
-- ``images-amd64.tar`` -- Docker images for Intel / AMD64 hosts
-- ``images-arm64.tar`` -- Docker images for Apple Silicon / ARM64 hosts. Includes the amd64 openplc image (cross-arch; macOS runs it under Rosetta 2) plus ``$BINFMT_IMAGE``, which ``setup.sh`` uses to register amd64 emulation on arm64 *Linux* so openplc runs fully offline.
+- ``image-index-amd64.txt`` and ``image-index-arm64.txt`` -- rangerdanger-image-index-v1, VERSION/arch headers then tab-separated owner, image ref, relative archive path, SHA-256.
+- ``images/<arch>/*.tar`` -- one Docker-save archive per unique selected ref; shared refs saved once. OpenPLC uses amd64 on arm64; its owners also get ``$BINFMT_IMAGE`` on arm64.
 - ``rangerdanger.tgz`` -- Repo archive at $shortSha ($lastSubject)
 $kernelReadmeRow
 
@@ -496,13 +507,20 @@ Copy the whole folder, including hidden files such as .version, to the student's
 ``````sh
 tar xzf rangerdanger.tgz -C ~
 cd ~/rangerdanger
-./setup.sh --from-tarballs <dir-containing-the-tarballs>
+./setup.sh --from-tarballs <dir-containing-the-tarballs> --packages $($selected -join ',')
 ``````
 
-(or ``./setup.ps1 -FromTarballs <dir>`` on Windows).
+(or ``./setup.ps1 -FromTarballs <dir> -Packages $($selected -join ',')`` on Windows).
 
 ``setup.sh`` / ``setup.ps1`` auto-detects the host architecture and
-loads the right ``images-<arch>.tar`` before bringing the stack up.
+validates VERSION, architecture, selected membership, safe relative paths and
+checksums before loading only platform + selected archives. Unselected archives
+are never loaded. Old monolithic bundles are rejected; re-stage with
+rangerdanger-image-index-v1.
+
+Staging and setup default to every package. To narrow, use --packages
+us-dnp3-substation (PowerShell: -Packages us-dnp3-substation). A superset
+bundle supports subset installs. The installed receipt is data/installed-packages.
 
 On arm64 Linux, register amd64 emulation after loading the bundle if it
 is not already enabled:
