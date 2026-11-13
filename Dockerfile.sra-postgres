@@ -1,0 +1,11 @@
+FROM guacamole/guacamole:1.6.0@sha256:f344085e618bb05e22b964b0208dbd06d3468275bac70206f93805245e067b40 AS guacamole-schema
+RUN /opt/guacamole/bin/initdb.sh --postgresql > /tmp/001-guacamole.sql && grep -q "'AUDIT'" /tmp/001-guacamole.sql
+FROM postgres:17.11-alpine@sha256:e5d2edd28b1f8d40a0a6c0c9cdc545b19b56a0d5d88f94bc11a97d970d4700d0
+COPY --from=guacamole-schema /tmp/001-guacamole.sql /docker-entrypoint-initdb.d/001-guacamole.sql
+COPY services/sra/common/ /opt/sra/common/
+COPY services/sra/postgres/ /opt/sra/postgres/
+RUN mkdir -p /var/lib/sra && chown postgres:postgres /var/lib/sra && chmod +x /opt/sra/common/*.sh /opt/sra/postgres/*.sh && cp /opt/sra/postgres/002-sra.sh /docker-entrypoint-initdb.d/002-sra.sh
+ENV POSTGRES_DB=guacamole POSTGRES_USER=guacamole POSTGRES_PASSWORD=lab-db-password
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=24 CMD ["/opt/sra/postgres/health.sh"]
+ENTRYPOINT ["/opt/sra/postgres/entrypoint.sh"]
+CMD ["postgres"]

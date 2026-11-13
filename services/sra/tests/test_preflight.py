@@ -1,5 +1,7 @@
 """Offline tests for the disposable upstream-contract reproducer."""
 import importlib.util
+import contextlib
+import io
 from pathlib import Path
 import subprocess
 import unittest
@@ -50,6 +52,18 @@ class PreflightTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'start failed'):
                 preflight.observe('empty-directory')
             self.assertEqual(docker.call_args.args, ('rm', '-fv', 'rdsra-b-preflight-empty-directory'))
+
+    def test_only_newly_pulled_image_is_removed(self):
+        result = {'running': False, 'container_exit_code': 0}
+        for preexisting in (True, False):
+            with self.subTest(preexisting=preexisting):
+                with patch.object(preflight, 'image_present', side_effect=[preexisting, True] if not preexisting else [True]), \
+                        patch.object(preflight, 'observe', return_value=result), \
+                        patch.object(preflight, 'docker', return_value='aarch64') as docker, \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(preflight.main(), 0)
+                    removals = [c for c in docker.call_args_list if c.args[:2] == ('image', 'rm')]
+                    self.assertEqual(len(removals), 0 if preexisting else 1)
 
 
 if __name__ == '__main__':
