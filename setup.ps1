@@ -433,7 +433,7 @@ Re-run with -SkipFirewallGate to bring the stack up anyway for diagnosis.
 }
 
 
-# OpenPLC is used by both US and EU packages when their release Compose declares it.
+# OpenPLC readiness runs for packages whose release Compose declares it.
 # Like setup.sh this is diagnostic, not a lifecycle gate.
 $openPlcCompose = Join-Path $RootDir "lab-definitions/packages/$RangePackage/compose.release.yml"
 if ((Test-Path -LiteralPath $openPlcCompose -PathType Leaf) -and

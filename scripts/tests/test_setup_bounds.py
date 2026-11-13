@@ -429,7 +429,6 @@ curl() {
         end = SOURCE.index("# ─── OpenPLC readiness", start)
         gate = SOURCE[start:end]
         for package in ("us-dnp3-substation", "eu-iec104-substation", "us-sra-substation"):
-            reset_timeout = "180" if package == "us-sra-substation" else "60"
             for route in ("valid", "apply", "reset"):
                 protections = ("protecting",) if route == "valid" else (
                     "empty", "missing", "pending", "degraded", "failed")
@@ -476,7 +475,7 @@ curl() {
 ''' + gate
                         result = run_bash(
                             script, ROOT=str(ROOT), ROUTE=route, PROTECTION=protection,
-                            RANGE_PACKAGE=package, EXPECTED_RESET_TIMEOUT=reset_timeout)
+                            RANGE_PACKAGE=package, EXPECTED_RESET_TIMEOUT="60")
                         self.assertEqual(result.returncode, expected, result.stderr)
                         if expected:
                             self.assertIn("Workshop-readiness gate failed", result.stderr)

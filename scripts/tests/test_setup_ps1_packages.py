@@ -231,10 +231,9 @@ if ($env:SCENARIO -in @('wrong-then-ready','unknown-then-ready') -and $script:ge
     def test_firewall_gate_requires_apply_and_reset_protection_receipts(self):
         source = (ROOT / "setup.ps1").read_text()
         start = source.index("if ($SkipFirewallGate) {")
-        end = source.index("# OpenPLC is used by both", start)
+        end = source.index("# OpenPLC readiness", start)
         gate = source[start:end]
         for package in ("us-dnp3-substation", "eu-iec104-substation", "us-sra-substation"):
-            reset_timeout = "180" if package == "us-sra-substation" else "60"
             for route in ("valid", "apply", "reset"):
                 protections = ("protecting",) if route == "valid" else (
                     "empty", "missing", "pending", "degraded", "failed")
@@ -276,7 +275,7 @@ try {
 ''' + gate + r'''
 } catch { $failed = $true }
 if ($failed -ne ($env:ROUTE -ne 'valid')) { throw 'incorrect installer gate result' }
-''', ROUTE=route, PROTECTION=protection, RANGE_PACKAGE=package, RESET_TIMEOUT=reset_timeout)
+''', ROUTE=route, PROTECTION=protection, RANGE_PACKAGE=package, RESET_TIMEOUT="60")
                         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_setup_orders_proof_and_acquisition_before_migration_and_start(self):
