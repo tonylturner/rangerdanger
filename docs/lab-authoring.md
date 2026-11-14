@@ -223,16 +223,21 @@ the package `revision`.
 
 ### `expected_config`
 
-Sets the policy state the step assumes. The loader accepts only
-these values (`improved` is rejected):
+Sets the policy state the step assumes, using a policy name declared by
+the active package. Packages that declare `weak` and `improved` use:
 
 | Value | Meaning |
 |---|---|
-| `weak` | The weak-baseline `lab-definitions/firewall/substation-weak.json` is applied. Used during assessment / before-state phases. |
-| `hardened` | A hardened policy is active: the canned `substation-improved.json` (backend config `improved`) or the student's own (`custom`). Used in after-state and validation phases. |
+| `weak` | The package's Weak baseline is expected. Used during assessment / before-state phases. |
+| `improved` | The package's Improved reference policy or a custom policy is expected. Used in after-state phases. |
+| `hardened` | Alias for the package's declared hardened policy or a custom policy. Valid only when the package declares a hardened policy. |
 
-If a student's running policy doesn't match `expected_config`, the
-runner shows a config-mismatch banner with a one-click reset.
+`expected_config` does not apply policy. If the running policy doesn't
+match, the runner shows a policy-mismatch banner with guidance, not a
+one-click reset. Apply a policy through an explicit
+`action: {type: firewall, config: improved}` step, containd, or the
+activity's optional policy controls. Use the active package's policy
+names and wording; do not assume every package uses the US policies.
 
 Steps that don't depend on a specific policy state can omit it.
 
@@ -512,7 +517,7 @@ Supported `type` values:
   package curriculum. The catalog actions, effort, roles, requirements
   and readiness mappings belong in that package's `curriculum/`.
 - `check` - a state-check action with `expect: {key: value}` against the substation API. Used to confirm "the lab is in known-good state" between phases.
-- `probe` - TCP reachability check from `step.node` (or a per-target `from` topology node). Set `outcome: reachable|blocked` and one or more `targets` with IPv4 `host`, TCP `port` (1–65535), and optional `note`. Every target must match the outcome. Fast connection refusal counts as reachable; a timeout counts as blocked; any other exit status is a probe error and fails the target. UDP is not supported.
+- `probe` - TCP reachability check from `step.node` (or a per-target `from` topology node). Set one or more `targets` with IPv4 `host`, TCP `port` (1–65535), and optional `note`. There is no `probe.outcome` field: each target's expected verdict derives from the judging policy (the package's Weak baseline for `expected_config: weak`; otherwise the package's reference or compiled plan). Fast connection refusal counts as reachable; a timeout counts as blocked. Errors or unavailable policy evidence cannot pass a target. UDP is not supported.
 - `firewall`, `sequence` - older patterns for auto-running specific commands (a `sequence` carries one or more device commands; the former single-command `command` type was retired and the loader rejects it). Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks. A manual step has no `action`; `type: manual` is invalid.
 
 `DecisionPanel` automatically reads:
@@ -639,6 +644,7 @@ Before opening a PR with a new or modified lab:
 2. **Run the lab-commands smoke** - catches typo'd IPs, missing tools, wrong source containers, broken policies. Same gate CI runs.
    ```sh
    ./scripts/lab-commands-smoke.sh <your-scenario-id>
+   ./scripts/lab-commands-smoke.sh --package <package-id>
    ```
 3. **Run the firewall traffic smoke** if you changed policy state expectations or rule shape.
    ```sh
