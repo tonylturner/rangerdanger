@@ -17,6 +17,17 @@ with patch.object(Path, 'read_text', return_value='{"users": []}'):
 
 
 class BrowserRoleTests(unittest.TestCase):
+    def test_vendor_relogin_clears_invalidated_session_before_login(self):
+        browser = MagicMock()
+        with patch.object(browser_checks, 'CDP', return_value=browser), \
+                patch.object(browser_checks, 'clear_login') as clear, \
+                patch.object(browser_checks, 'login', return_value={'authToken': 'fresh'}) as login, \
+                patch.object(Path, 'write_text') as save:
+            browser_checks.main('vendor-relogin')
+        clear.assert_called_once_with(browser)
+        login.assert_called_once_with(browser, 'vendor')
+        save.assert_called_once_with('{"authToken": "fresh"}')
+
     def test_auditor_requires_history_with_empty_recording_logs(self):
         for history, permitted in [
             ([{'logs': {}}], True),

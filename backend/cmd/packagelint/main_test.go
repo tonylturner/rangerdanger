@@ -199,6 +199,23 @@ func TestSRAPoliciesPreserveManagementAndRemoveDirectVendorAllows(t *testing.T) 
 					t.Fatalf("US conduit %q changed", id)
 				}
 			}
+			observer, present := byID["vendor-to-sra-controller"]
+			if name == "weak" {
+				if present {
+					t.Fatal("weak must not admit vendor controller access")
+				}
+			} else {
+				want := map[string]any{
+					"id": "vendor-to-sra-controller", "description": "Vendor Ziti observer to SRA controller",
+					"sourceZones": []any{"dmz"}, "destZones": []any{"lan4"},
+					"sources": []any{"10.20.20.10/32"}, "destinations": []any{"10.25.25.40/32"},
+					"protocols": []any{map[string]any{"name": "tcp", "port": "1280"}},
+					"ics":       map[string]any{}, "action": "ALLOW", "log": true,
+				}
+				if !present || !reflect.DeepEqual(observer, want) {
+					t.Fatalf("observer source-pinned path = %#v", observer)
+				}
+			}
 		})
 	}
 }

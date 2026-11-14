@@ -309,6 +309,14 @@ flows:
   cadence: manual
   category: scenario
   liveness_key: direct-vendor
+- id: vendor-jump-1-ziti-ctrl-1-management
+  source: vendor-jump-1
+  target: ziti-ctrl-1
+  protocol: HTTPS
+  port: 1280
+  cadence: manual
+  category: scenario
+  liveness_key: ziti-management
 liveness:
   rtac-relay:
     provider: workshop-device
@@ -329,4 +337,6 @@ liveness:
   scenario:
     provider: traffic-generator
   direct-vendor:
+    provider: unobserved
+  ziti-management:
     provider: unobserved

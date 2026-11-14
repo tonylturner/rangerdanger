@@ -437,6 +437,31 @@
         ]
       },
       {
+        "id": "vendor-to-sra-controller",
+        "description": "Vendor Ziti observer to SRA controller",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan4"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "1280"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW",
+        "log": true,
+        "sources": [
+          "10.20.20.10/32"
+        ],
+        "destinations": [
+          "10.25.25.40/32"
+        ]
+      },
+      {
         "id": "ot-host-to-sra-controller",
         "description": "OT overlay host dials SRA controller",
         "sourceZones": [
