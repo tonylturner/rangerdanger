@@ -195,7 +195,7 @@ describe("Execute Step command log", () => {
       expect(execute).toHaveBeenCalledWith(authored.package_id, authored.id, 0, undefined);
       expect(line.classList.contains("text-amber-400")).toBe(true);
       expect(line.textContent).not.toContain("BLOCKED");
-      expect(loadProgress(scope, authored).cmdLog).toEqual([line.textContent]);
+      await waitFor(() => expect(loadProgress(scope, authored).cmdLog).toEqual([line.textContent]));
       expect(loadProgress(scope, authored).completedStepIds).toEqual([]);
     } finally { tree.close(); }
   });
