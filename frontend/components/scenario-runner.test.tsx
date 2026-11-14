@@ -222,7 +222,7 @@ describe("firewall apply revision receipt", () => {
       success: true,
       containd: receipt,
       results: [{
-        action: "Apply firewall: Brokered Vendor Access",
+        action: "Set policy",
         success: true,
         detail: "containd policy set to Brokered Vendor Access",
         containd: receipt,
@@ -243,7 +243,7 @@ describe("firewall apply revision receipt", () => {
     });
     try {
       expect(tree.container.textContent).toContain(
-        "Apply firewall: Brokered Vendor Access: containd policy set to Brokered Vendor Access · running revision: policy-revision-42",
+        "Set policy: containd policy set to Brokered Vendor Access · running revision: policy-revision-42",
       );
     } finally { tree.close(); }
   });
@@ -255,7 +255,7 @@ describe("firewall apply revision receipt", () => {
     });
     try {
       expect(tree.container.textContent).toContain(
-        "Apply firewall: Brokered Vendor Access: containd policy set to Brokered Vendor Access · running revision: not reported",
+        "Set policy: containd policy set to Brokered Vendor Access · running revision: not reported",
       );
     } finally { tree.close(); }
   });

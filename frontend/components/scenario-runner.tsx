@@ -599,7 +599,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     </span>
                     <span className="text-slate-300 font-medium">{r.action}: </span>
                     <span className="text-slate-400">{r.impact || r.detail}</span>
-                    {r.action.startsWith("Apply firewall:") && (
+                    {stepResult.action_type === "firewall" && (
                       <span className="text-slate-400">
                         {" "}· running revision: {r.containd?.runningRevision || "not reported"}
                       </span>
