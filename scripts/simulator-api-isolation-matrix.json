@@ -2750,6 +2750,27 @@
             "path": null,
             "label": "approved vendor source exact-address control"
           }
+        },
+        {
+          "service": "sra_ziti_controller",
+          "host": "10.25.25.40",
+          "port": 1280,
+          "purpose": "Ziti shared controller API; observer authorization is checked separately",
+          "expected": {
+            "weak": "D",
+            "improved": "D"
+          },
+          "overrides": {
+            "vendor_jump": {
+              "improved": "A"
+            }
+          },
+          "control": {
+            "service": "sra_postgres",
+            "tool": "nc",
+            "path": null,
+            "label": "same-SRA-network peer exact-address TCP control in both policies; nc verified by SRA harness"
+          }
         }
       ],
       "excluded_listeners": [

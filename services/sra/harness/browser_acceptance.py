@@ -77,8 +77,10 @@ def main(mode):
         else:
             raise RuntimeError(Path('/tmp/chromium.log').read_text())
         browser.wait('location.pathname === "/guacamole/images/logo-64.png" && document.readyState === "complete"')
-    elif mode == 'vendor-login':
+    elif mode in ('vendor-login', 'vendor-relogin'):
         browser = CDP()
+        if mode == 'vendor-relogin':
+            clear_login(browser)
         auth = login(browser, 'vendor')
         Path('/tmp/vendor-auth.json').write_text(json.dumps(auth))
     elif mode == 'one-connection':

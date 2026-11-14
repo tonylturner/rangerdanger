@@ -8,6 +8,8 @@ for attempt in {1..30}; do
     if (( attempt == 30 )); then exit 1; fi
     sleep 2
 done
+ziti edge create identity sra-observer --admin=false --permissions service.read,service-policy.read,identity.read,edge-router-policy.read,service-edge-router-policy.read
+ziti edge create authenticator updb sra-observer sra-observer rangerdanger
 ziti edge create edge-router sra-router --tunneler-enabled --role-attributes sra-routers --jwt-output-file /run/sra/enrollment/router.jwt
 ziti edge update identity sra-router --role-attributes sra-dialers
 ziti edge create identity ot-host --role-attributes sra-hosts --jwt-output-file /run/sra/enrollment/ot-host.jwt

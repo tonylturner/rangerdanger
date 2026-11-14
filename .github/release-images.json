@@ -47,6 +47,7 @@
       "platforms": ["linux/amd64", "linux/arm64"],
       "always_build": false,
       "inputs": [
+        {"kind": "file", "path": "Dockerfile.sra-ziti-controller"},
         {"kind": "dir", "path": "dnp3go"},
         {"kind": "file", "path": "scripts/vendor-jump-services.sh"},
         {"kind": "file", "path": "scripts/vendor-jump-x11vnc-service.sh"}

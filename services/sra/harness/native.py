@@ -5,6 +5,7 @@ import time
 from resources import docker, ROOT
 from lifecycle_checks import (check_recordings, closed_history, snapshot, check_retained,
                               interrupted, offline_host, inventory)
+from observer_checks import observer_identity, read_and_refuse, controller_listeners
 
 NAMES = ('keycloak', 'guacamole', 'guacd', 'postgres', 'ziti-controller', 'ziti-router', 'ziti-host')
 
@@ -89,6 +90,12 @@ def run_native(results, resources):
         return vendor, target
 
     results.run('harness-desktops', desktops)
+    results.run('observer-exact-permissions', lambda: observer_identity(containers['ziti-controller']))
+    results.run('observer-student-commands-and-refused-write',
+                lambda: read_and_refuse(results.require('harness-desktops')[0]))
+    results.run('controller-positive-control', lambda: docker('exec', containers['postgres'],
+                'sh', '-ec', 'command -v nc; exec nc -w 3 "$1" 1280 </dev/null',
+                'control', '172.31.250.40'))
 
     def browser(mode):
         vendor, _ = results.require('harness-desktops')
@@ -133,9 +140,24 @@ def run_native(results, resources):
         results.run('plain-restart:' + name, restart)
     results.run('plain-restart-identities-and-recordings-retained',
                 lambda: check_retained(results.require('pre-restart-state'), containers))
+    def retained_observer():
+        assert observer_identity(containers['ziti-controller']) == results.require('observer-exact-permissions')
+    results.run('observer-restart-same-identity', retained_observer)
+    results.run('observer-restart-student-commands-and-refused-write',
+                lambda: read_and_refuse(results.require('harness-desktops')[0]))
+    results.run('post-restart-verified-admin-login', lambda: docker('exec', '-u', '2171',
+                containers['ziti-controller'], 'ziti', 'edge', 'login', 'https://172.31.250.40:1280',
+                '-u', 'admin', '-p', 'lab-ziti-password', '--ca', '/ziti-controller/pki/root/certs/root.cert'))
+    def restarted_ssh():
+        browser('vendor-relogin')
+        docker('exec', results.require('harness-desktops')[1], 'rm', '/tmp/rdsra-b-user')
+        ssh()
+    results.run('post-restart-brokered-SSH-command', restarted_ssh)
     for name in ('ziti-controller', 'guacd', 'ziti-router', 'keycloak', 'guacamole', 'postgres'):
         results.run('interrupted-marker:' + name,
                     lambda name=name: interrupted(resources, containers, {name: image(name)}, name))
     results.run('host-controller-unreachable-retry-and-recovery',
                 lambda: offline_host(resources, containers, {'ziti-host': image('ziti-host')}, results.require('network')))
     results.run('listener-inventory', lambda: json.dumps(inventory(containers), sort_keys=True))
+    results.run('controller-listeners-classified',
+                lambda: controller_listeners(inventory(containers)['ziti-controller']))

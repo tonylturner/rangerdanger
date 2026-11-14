@@ -5,10 +5,13 @@ The vendor desktop is `10.20.20.10` in the Vendor zone. The RTAC is
 (TCP 22) and HTTPS (TCP 443), along with broader OT access.
 
 Brokered Vendor Access removes direct Vendor-to-OT and Vendor-to-Field
-allows. It admits only the vendor desktop to Keycloak (`10.25.25.10:8080`)
-and Guacamole (`10.25.25.20:8080`) in the Secure Remote Access DMZ.
+allows. It admits only the vendor desktop to Keycloak (`10.25.25.10:8080`),
+Guacamole (`10.25.25.20:8080`) and the Ziti management API
+(`10.25.25.40:1280`) in the Secure Remote Access DMZ. The `sra-observer`
+identity has read-only management permissions; the shared controller listener
+also serves client, fabric and OIDC APIs. TCP admission is not authorization.
 Use the vendor desktop browser, not the host browser or portal proxy,
-to reach those addresses.
+to reach Keycloak and Guacamole; use its terminal's Ziti CLI for management reads.
 
 The session path is browser → Guacamole → guacd → Ziti router →
 OT overlay host → RTAC SSH. The OT host (`10.30.30.60`) dials out to

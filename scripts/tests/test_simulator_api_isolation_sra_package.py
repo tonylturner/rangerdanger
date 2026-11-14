@@ -7,4 +7,6 @@ class SRAShippedIsolationTests(unittest.TestCase):
     def test_shipped_sra_catalogue(self):
         cat = g3.load_inventory("us-sra-substation")
         self.assertEqual(cat["sources"], ["kali", "vendor_jump"])
-        self.assertEqual(len(cat["destinations"]), 37)
+        self.assertEqual(len(cat["destinations"]), 38)
+        self.assertIn(("10.25.25.40", 1280),
+                      {(d["host"], d["port"]) for d in cat["destinations"]})

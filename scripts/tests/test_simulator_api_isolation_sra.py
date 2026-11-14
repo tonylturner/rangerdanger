@@ -39,13 +39,41 @@ class SRAIsolationTests(unittest.TestCase):
         self.assertEqual(cat["sources"], ["kali", "vendor_jump"])
         self.assertFalse(any(d["service"] == "openplc" for d in cat["destinations"]))
         self.assertFalse({"openplc", "corp_ws", "eng_workstation"} & {s["key"] for s in cat["services"]})
-        for policy, counts in (("weak", (74, 43, 31)), ("improved", (74, 2, 72))):
+        for policy, counts in (('weak', (76, 43, 33)), ('improved', (76, 3, 73))):
             rows = g3.expand_matrix(cat, SRA, policy)
             self.assertEqual((len(rows), sum(r["expected"] == "A" for r in rows),
                               sum(r["expected"] == "D" for r in rows)), counts)
             self.assertEqual(len({r["id"] for r in rows}), counts[0])
         vendor_https = next(d for d in cat["destinations"] if d["host"] == "10.30.30.20" and d["port"] == 443)
         self.assertEqual(vendor_https["overrides"], {"vendor_jump": {"weak": "A", "improved": "D"}})
+
+    def test_controller_source_pin_and_both_policy_positive_control(self):
+        cat = self.catalogue()
+        controller = [d for d in cat["destinations"] if d["service"] == "sra_ziti_controller"]
+        self.assertEqual(len(controller), 1)
+        self.assertEqual((controller[0]["host"], controller[0]["port"]), ("10.25.25.40", 1280))
+        self.assertEqual(controller[0]["control"]["service"], "sra_postgres")
+        self.assertEqual(controller[0]["control"]["tool"], "nc")
+        self.assertIsNone(controller[0]["control"]["path"])
+        for policy in g3.POLICIES:
+            rows = g3.expand_matrix(cat, SRA, policy)
+            self.assertEqual({r["source"]: r["expected"] for r in rows
+                              if (r["host"], r["port"]) == ("10.25.25.40", 1280)},
+                             {"kali": "D", "vendor_jump": "A" if policy == "improved" else "D"})
+
+    def test_controller_listener_inventory_rejects_unclassified_ports(self):
+        cat = self.catalogue()
+        # Actual kernel table shape: the controller shares one IPv6 wildcard
+        # socket for all 1280 APIs; Docker DNS is namespace-local.
+        raw = (" 0: 00000000000000000000000000000000:0500 "
+               "00000000000000000000000000000000:0000 0A 0 0 0 0 0 100\n"
+               " 1: 0B00007F:1234 00000000:0000 0A 0 0 0 0 0 101\n")
+        loopbacks = []
+        g3.check_listeners(cat, "sra_ziti_controller", raw,
+                           record_loopback=lambda host, port: loopbacks.append((host, port)))
+        self.assertEqual(loopbacks, [("127.0.0.11", 4660)])
+        with self.assertRaisesRegex(ValueError, "unclassified listener"):
+            g3.check_listeners(cat, "sra_ziti_controller", raw.replace(":0500", ":0501"))
 
     def test_controls_and_gate_never_request_openplc(self):
         cat = self.catalogue()
@@ -78,4 +106,4 @@ class SRAIsolationTests(unittest.TestCase):
         with patch("sys.argv", ["g3", SRA, "--list"]), patch.object(cli, "load_inventory", return_value=self.catalogue()), \
                 patch("builtins.print") as output:
             self.assertEqual(cli.main(), 0)
-            self.assertEqual(len(json.loads(output.call_args.args[0])["weak"]), 74)
+            self.assertEqual(len(json.loads(output.call_args.args[0])["weak"]), 76)
