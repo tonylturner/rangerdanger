@@ -22,12 +22,13 @@ def totp(secret):
 
 
 def login(browser, username):
+    user = next(u for u in REALM['users'] if u['username'] == username)
+    password = next(c for c in user['credentials'] if c['type'] == 'password')['value']
     browser.call('Page.navigate', url=BASE)
     browser.wait('document.querySelector("#username") !== null')
     browser.js('document.querySelector("#username").value=' + json.dumps(username))
-    browser.js('document.querySelector("#password").value="rangerdanger"; document.querySelector("form").requestSubmit()')
+    browser.js('document.querySelector("#password").value=' + json.dumps(password) + '; document.querySelector("form").requestSubmit()')
     browser.wait('document.querySelector("#otp") !== null')
-    user = next(u for u in REALM['users'] if u['username'] == username)
     secret = json.loads(next(c for c in user['credentials'] if c['type'] == 'otp')['secretData'])['value']
     # Avoid crossing a TOTP boundary while submitting.
     if time.time() % 30 > 27:
@@ -45,6 +46,13 @@ def api(browser, path, token):
     if result['status'] != 200:
         raise RuntimeError((path, result))
     return json.loads(result['body'])
+
+
+def clear_login(browser):
+    browser.call('Page.navigate', url=BASE + 'images/logo-64.png')
+    browser.wait('location.pathname === "/guacamole/images/logo-64.png" && document.readyState === "complete"')
+    browser.js('localStorage.clear()')
+    browser.call('Network.clearBrowserCookies')
 
 
 def main(mode):
@@ -110,10 +118,7 @@ def main(mode):
         print('Pre-reset auth token rejected', result, flush=True)
     elif mode == 'audit-history':
         browser = CDP()
-        browser.call('Page.navigate', url=BASE + 'images/logo-64.png')
-        browser.wait('location.pathname === "/guacamole/images/logo-64.png" && document.readyState === "complete"')
-        browser.js('localStorage.clear()')
-        browser.call('Network.clearBrowserCookies')
+        clear_login(browser)
         auth = login(browser, 'auditor')
         token = auth['authToken']
         assert not api(browser, 'session/data/postgresql/connections', token)
@@ -121,15 +126,16 @@ def main(mode):
         print('HISTORY', history, flush=True)
         assert history and all(h.get('endDate') is not None for h in history), history
         Path('/tmp/auditor-history.json').write_text(json.dumps(history))
+    elif mode == 'auditor-no-playback':
+        history = json.loads(Path('/tmp/auditor-history.json').read_text())
+        assert history and all(h.get('logs') == {} for h in history), history
     elif mode == 'playback':
         browser = CDP()
-        history = json.loads(Path('/tmp/auditor-history.json').read_text())
-        recordings = [h for h in history if h.get('logs')]
-        if not recordings:
-            raise RuntimeError('Contract blocker: auditor with system AUDIT and no connection '
-                               'permissions lists history but cannot access recording logs. '
-                               'Guacamole 1.6.0 recording-storage requires system ADMINISTER '
-                               'or connection UPDATE for playback; AUDIT alone is insufficient.')
+        clear_login(browser)
+        auth = login(browser, 'sra-admin')
+        history = api(browser, 'session/data/postgresql/history/connections', auth['authToken'])
+        recordings = [h for h in history if h.get('endDate') is not None and h.get('logs')]
+        assert recordings, history
         recording = recordings[0]
         log_name = next(iter(recording['logs']))
         from urllib.parse import quote
@@ -139,7 +145,7 @@ def main(mode):
         browser.js('document.querySelector(".guac-player-play").click()')
         browser.wait('document.querySelector(".guac-player-controls.playing") !== null')
         browser.wait('Number(document.querySelector(".guac-player-seek").value) > 0')
-        print('AUDIT PLAYBACK ACCEPTED', browser.js('document.querySelector(".guac-player-position").innerText'), flush=True)
+        print('SRA ADMIN PLAYBACK ACCEPTED', browser.js('document.querySelector(".guac-player-position").innerText'), flush=True)
 
 
 if __name__ == '__main__':

@@ -31,11 +31,15 @@ class ContractTests(unittest.TestCase):
         self.assertEqual([f['authenticator'] for f in custom], ['auth-username-password-form', 'auth-otp-form'])
         self.assertTrue(all(f['requirement'] == 'REQUIRED' for f in custom))
         self.assertEqual(realm['sslRequired'], 'none')
-        self.assertEqual({u['username'] for u in realm['users']}, {'vendor', 'auditor'})
+        self.assertEqual({u['username'] for u in realm['users']}, {'vendor', 'auditor', 'sra-admin'})
+        self.assertEqual({g['name'] for g in realm['groups']}, {'sra-vendors', 'sra-auditors', 'sra-admins'})
         for user in realm['users']:
             self.assertEqual(user['requiredActions'], [])
             credential = next(c for c in user['credentials'] if c['type'] == 'otp')
             self.assertEqual(json.loads(credential['credentialData'])['secretEncoding'], 'BASE32')
+            self.assertRegex(json.loads(credential['secretData'])['value'], r'^[A-Z2-7]+=*$')
+        admin = next(u for u in realm['users'] if u['username'] == 'sra-admin')
+        self.assertEqual(admin['groups'], ['/sra-admins'])
 
     def test_interrupted_seed_fails_closed_but_completed_seed_survives(self):
         # Use the actual marker functions with only the state root rewritten.

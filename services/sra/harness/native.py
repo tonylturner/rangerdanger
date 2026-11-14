@@ -52,6 +52,16 @@ def run_native(results, resources):
 
     results.run('cold-start', chain)
 
+    def permissions():
+        grants = docker('exec', containers['postgres'], 'psql', '-U', 'guacamole', '-d', 'guacamole', '-Atqc',
+                        "SELECT e.name||':'||s.permission||':'||"
+                        "(SELECT count(*) FROM guacamole_connection_permission p WHERE p.entity_id=e.entity_id) "
+                        "FROM guacamole_entity e JOIN guacamole_system_permission s USING(entity_id) "
+                        "WHERE e.name IN ('auditor','sra-admin') ORDER BY e.name")
+        assert grants == 'auditor:AUDIT:0\nsra-admin:ADMINISTER:0', grants
+        return grants
+    results.run('auditor-admin-permission-separation', permissions)
+
     def certificate(name, path, address):
         san = docker('exec', containers[name], 'openssl', 'x509', '-in', path, '-noout', '-ext', 'subjectAltName')
         assert 'IP Address:' + address in san, san
@@ -111,7 +121,8 @@ def run_native(results, resources):
     results.run('reset-old-token-rejected', lambda: browser('token-rejected'))
     results.run('reset-no-active-history', lambda: closed_history(containers))
     results.run('auditor-history-no-connections', lambda: browser('audit-history'))
-    results.run('auditor-playback', lambda: browser('playback'))
+    results.run('auditor-no-playback', lambda: browser('auditor-no-playback'))
+    results.run('sra-admin-SAML-TOTP-recording-playback', lambda: browser('playback'))
 
     # None of these items depends on playback authorization.
     results.run('pre-restart-state', lambda: snapshot(containers))

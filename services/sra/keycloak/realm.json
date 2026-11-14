@@ -448,6 +448,9 @@
     },
     {
       "name": "sra-auditors"
+    },
+    {
+      "name": "sra-admins"
     }
   ],
   "defaultRole": {
@@ -2770,6 +2773,31 @@
           "type": "otp",
           "userLabel": "lab-seeded",
           "secretData": "{\"value\": \"KRUGS4ZANFZSAYJA\"}",
+          "credentialData": "{\"subType\": \"totp\", \"digits\": 6, \"counter\": 0, \"period\": 30, \"algorithm\": \"HmacSHA1\", \"secretEncoding\": \"BASE32\"}"
+        }
+      ]
+    },
+    {
+      "username": "sra-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "SRA",
+      "lastName": "Admin",
+      "email": "sra-admin@example.test",
+      "groups": [
+        "/sra-admins"
+      ],
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "rangerdanger",
+          "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "lab-seeded",
+          "secretData": "{\"value\": \"VVTSWY6Y7SBYXOKLY2KE3SAZGNLM3NWD\"}",
           "credentialData": "{\"subType\": \"totp\", \"digits\": 6, \"counter\": 0, \"period\": 30, \"algorithm\": \"HmacSHA1\", \"secretEncoding\": \"BASE32\"}"
         }
       ]
