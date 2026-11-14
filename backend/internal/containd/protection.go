@@ -10,8 +10,9 @@ import (
 
 // ApplyReceipt identifies the committed application and its last observed state.
 type ApplyReceipt struct {
-	ApplyID    string `json:"applyId"`
-	Protection string `json:"protection"`
+	ApplyID         string `json:"applyId"`
+	Protection      string `json:"protection"`
+	RunningRevision string `json:"runningRevision"`
 }
 
 // ApplyResult retains both runtime readiness and auxiliary commit warnings.
@@ -84,7 +85,7 @@ func (c *Client) waitProtection(parent context.Context, applied RuntimeApplyResp
 	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
 	observation := applied.Protection
-	receipt := &ApplyReceipt{ApplyID: applied.ApplyID}
+	receipt := &ApplyReceipt{ApplyID: applied.ApplyID, RunningRevision: applied.RunningRevision}
 	fail := func(reason string) (*ApplyReceipt, error) {
 		return receipt, &ProtectionError{Reason: reason, Observation: observation}
 	}

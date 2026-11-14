@@ -106,7 +106,8 @@ func TestApplyRoutesProtectionReceipts(t *testing.T) {
 					observed = "protecting"
 				}
 				receipt, ok := body["containd"].(map[string]any)
-				if !ok || receipt["applyId"] != "route-apply" || receipt["protection"] != observed {
+				if !ok || receipt["applyId"] != "route-apply" || receipt["protection"] != observed ||
+					receipt["runningRevision"] != "runtime-revision" {
 					t.Fatalf("missing or inferred receipt: %s", rec.Body)
 				}
 				if receipt["warning"] != nil {
@@ -117,7 +118,8 @@ func TestApplyRoutesProtectionReceipts(t *testing.T) {
 						t.Fatalf("failed apply published success or lost observation: %s", rec.Body)
 					}
 				}
-				if last := s.rng.(*fakeRange).gen.Containd().LastApply(); last == nil || last.Protection != observed {
+				if last := s.rng.(*fakeRange).gen.Containd().LastApply(); last == nil || last.Protection != observed ||
+					last.RunningRevision != "runtime-revision" {
 					t.Fatalf("range's last apply = %+v", last)
 				}
 			})
@@ -136,7 +138,7 @@ func TestInstallerReceiptEncoding(t *testing.T) {
 			s.orchestrator = &orchestrator.Orchestrator{}
 			rng := s.rng.(*fakeRange)
 			want := `"containd":{"applyId":"route-apply","protection":"` + state + `"`
-			want += `}`
+			want += `,"runningRevision":"runtime-revision"}`
 			assertEncoding := func(t *testing.T, rec *httptest.ResponseRecorder) {
 				t.Helper()
 				if rec.Code != http.StatusOK || strings.Count(rec.Body.String(), want) != 1 {
@@ -287,7 +289,9 @@ func TestScenarioApplyReceiptAndConflict(t *testing.T) {
 					t.Fatalf("incorrect conflict receipt: %s", rec.Body)
 				}
 			} else if result.Containd == nil || result.Containd.ApplyID != "route-apply" || result.Containd.Protection != state ||
-				len(result.Results) != 1 || result.Results[0].Containd == nil {
+				result.Containd.RunningRevision != "runtime-revision" ||
+				len(result.Results) != 1 || result.Results[0].Containd == nil ||
+				*result.Results[0].Containd != *result.Containd {
 				t.Fatalf("missing scenario receipt: %s", rec.Body)
 			}
 		})
