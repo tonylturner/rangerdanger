@@ -19,6 +19,14 @@ const commands = (text: string, inherited?: string): Extract<Segment, { type: "c
   });
 
 describe("reviewed smoke contracts match UI dispatch", () => {
+  it("keeps seeded TOTP and broker-terminal identity commands copy-only", () => {
+    for (const command of ["oathtool --totp -b JBSWY3DPEHPK3PXP", "whoami"]) {
+      const parsed = commands(`From the vendor terminal:\n\n    ${command}`);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0]).toMatchObject({ value: command, copyOnly: true, sourceNode: "vendor-jump-1" });
+    }
+  });
+
   for (const id of readdirSync(resolve(root, "lab-definitions/packages"))) {
     it(`checks every command and all three dispatch classes in ${id}`, () => {
       const base = resolve(root, "lab-definitions/packages", id);

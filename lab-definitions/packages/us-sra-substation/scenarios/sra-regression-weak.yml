@@ -1,0 +1,144 @@
+id: sra-regression-weak
+name: Regression to Weak
+summary: Use Reset Lab to reopen the direct path, then restore and retest Improved.
+estimated_minutes: 15
+description: >
+  Detect a policy regression with network evidence, not old MFA or recordings.
+  Reset Lab ends one test window and starts another; finish on Improved.
+nodes: [vendor-jump-1, fw-1, rtac-1, relay-1]
+tags: [remote-access, regression, evidence]
+steps:
+  - id: preserve-improved-baseline
+    title: Preserve a fresh Improved before-state
+    expected_config: improved
+    description: |
+      Execute Step to apply **Brokered Vendor Access**. Start a UTC window.
+      Save the 5.1 signed record, captures, events, counters and operator
+      observations outside the reset path. Record the new apply receipt's
+      runningRevision if exposed. In this portal it is **unavailable**; keep
+      POL-1 inconclusive, never substitute applyId or a policy banner.
+      All source probes below use vendor-jump-1 (`10.20.20.10`, dmz).
+    action: {type: firewall, config: improved}
+  - id: direct-before-state
+    title: Observe Improved closure before regression
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      Use 2.1's saved successful Weak controls; if missing, repeat 2.1 first
+      and restart this lesson's window. From the vendor-jump-1 terminal:
+
+          nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4
+
+      Expect RTAC 22/443 and relay 502 filtered. Record UTC and actual results.
+      From the fw-1 containd CLI:
+
+          show protection
+
+      Save applied/protecting revisions and protecting state; the absent
+      Execute Step runningRevision prevents the full receipt comparison.
+      Save before counters via the authenticated portal's
+      **/containd/api/v1/firewall/counters**, including snapshotVersion/since.
+      Optionally open a working 2.2 vendor SAML+TOTP brokered session now to
+      observe teardown; record its user/connection/start time.
+  - id: reset-lab-regression
+    title: Trigger the actual regression with Reset Lab
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      Click **Reset Lab** in the runner and confirm. Do not use Reset Progress,
+      a policy-only Weak apply, range restart or session-cut as substitutes.
+      Save UTC, actual reset actions/errors and any live session disconnect.
+      Reset Lab reapplies **Weak Baseline**, resets field state, restarts broker
+      services and deletes captures; identities/TOTP/recordings are retained.
+      Failure is not successful regression evidence: stop and record it.
+      This ends the Improved test window; subsequent evidence is Weak.
+  - id: weak-regression-evidence
+    title: Show which security expectations now fail
+    node: vendor-jump-1
+    expected_config: weak
+    description: |
+      From the vendor-jump-1 terminal:
+
+          nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4
+
+          curl -ksS --max-time 10 https://10.30.30.20/
+
+      Expect all three ports **open**, plus **RTAC Management Console**.
+      `-k` accepts the disposable lab certificate. NET-1's Improved security
+      expectation now fails, although these tool executions succeed.
+      These working Weak listeners also control the restored-policy negatives.
+      From the fw-1 containd CLI:
+
+          show running-config
+
+          show protection
+
+      Save Weak readback, UTC and applied/protecting revisions. Compare with
+      the pre-reset readback; expect a changed revision, but preserve actual
+      values and flag a mismatch rather than fabricating revision evidence.
+      Re-read portal counters with new snapshotVersion/since. Every apply
+      resets counters: do not subtract across Reset Lab.
+      Old MFA successes or playable recordings may remain true: neither detects
+      reopened direct paths. Name the test rows that detected regression.
+  - id: restore-improved
+    title: Explicitly restore Brokered Vendor Access
+    expected_config: improved
+    description: |
+      Execute Step to apply **Brokered Vendor Access**. Start another UTC
+      evidence window, fresh capture/counter baseline and operator baseline.
+      Record receipt runningRevision as unavailable until exposed by the UI;
+      require the fw-1 readback to be protecting and note the incomplete join.
+    action: {type: firewall, config: improved}
+  - id: retest-restored-access
+    title: Retest negatives and authorized positives
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      First prove authorized services still work. From the vendor-jump-1 terminal:
+
+          curl -sS --max-time 10 http://10.25.25.10:8080/realms/sra/.well-known/openid-configuration
+
+          curl -sS --max-time 10 -o /dev/null -w '%{http_code}\n' http://10.25.25.20:8080/guacamole/
+
+      Expect issuer `http://10.25.25.10:8080/realms/sra` and HTTP `200`.
+      Repeat 2.2's fresh private vendor SAML+TOTP login, exactly one connection
+      and brokered RTAC whoami = rangerdanger; record new session/time evidence.
+      IdP/broker use HTTP :8080, not HTTPS, a disposable-lab limitation.
+      From the vendor-jump-1 terminal:
+
+          nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4
+
+      Expect all three filtered again. Timeout = deny evidence with the
+      preceding working Weak controls plus firewall correlation; fast refused /
+      closed means reached. No route, tool errors or failed controls are inconclusive.
+  - id: close-regression-record
+    title: Update and sign the regression record
+    node: fw-1
+    expected_config: improved
+    description: |
+      From the fw-1 containd CLI:
+
+          show protection
+
+          show events
+
+      Save restored applied/protecting revisions, UTC and protecting state.
+      Collect after counters for `deny-vendor-to-ot`, `deny-vendor-to-field`,
+      `vendor-to-sra-identity` and `vendor-to-sra-broker` via the authenticated
+      portal path; retain snapshotVersion/since and deltas only within the
+      restored window. Join events/packets to source tuples and time as in 5.1.
+      Counters are packets/bytes, not logins.
+      Obtain final operator Process View observations versus this window's
+      baseline. Final policy must be **Improved**, not Weak.
+      Amend the 5.1 record with before/reset/Weak/restored windows, actual
+      revisions, test IDs that detected regression, raw outputs, limitations,
+      failed/inconclusive rows, residual-risk owner and retest date. The receipt
+      visibility gap and absent 3.1 remain unresolved; no unrestricted go.
+      Tester, operator and change owner sign and date the new go/no-go decision.
+      No automated PASS claim can replace this human record.

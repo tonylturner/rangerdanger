@@ -1,0 +1,199 @@
+id: sra-vendor-test-record
+name: Vendor access test record
+summary: Combine independent layer evidence in a human-signed acceptance record.
+estimated_minutes: 20
+description: >
+  Plan, baseline, test, correlate, check operations and sign by hand under
+  Improved. Neither Execute Step nor Mark Complete certifies acceptance.
+nodes: [vendor-jump-1, fw-1, kali-1, rtac-1, relay-1]
+tags: [remote-access, acceptance, evidence]
+steps:
+  - id: write-test-plan
+    title: Plan the evidence and the stop conditions
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      Write a record ID, scope, UTC window, tester, operator and rollback owner.
+      Source vendor-jump-1 is `10.20.20.10`/dmz; Kali is `10.10.10.50`/wan;
+      fw-1 is the policy/capture observation point, not the vendor test source.
+      Agree expected TCP AND application results before running:
+
+      | Test ID | Requirement / evidence | Expected under Improved |
+      | --- | --- | --- |
+      | NET-1 | Vendor to RTAC 10.30.30.20:22,443 and relay 10.40.40.20:502 | Filtered/timeouts; working Weak controls from 2.1 |
+      | NET-2 | Vendor to IdP 10.25.25.10:8080 and broker 10.25.25.20:8080 | Discovery issuer JSON and HTTP 200 |
+      | SRC-1 | Kali to those same SRA HTTP endpoints | Filtered; working vendor NET-2 is the control |
+      | AUTH-1 | Vendor fresh SAML + TOTP versus password-only POST | Fresh OTP challenge succeeds; POST returns HTTP 403 |
+      | GRANT-1 | Seeded vendor connection grant | Exactly RTAC SSH (brokered); brokered whoami returns rangerdanger |
+      | REC-1 | Auditor versus sra-admin on the same closed session | Auditor sees history/no playback; admin plays matching recording |
+      | OPS-1 | Operator baseline versus final feeder observations | No unexplained operational change |
+      | POL-1 | Apply receipt runningRevision versus fw-1 show protection | Same applied/protecting revision, protecting state |
+
+      Dial/Bind and read-management evidence from lesson 3.1 is **not yet
+      available in this course**. Record it as untested with an owner; do not
+      infer workload authorization just because a brokered SSH session works.
+      Human authorization means seeded role grants plus this human sign-off,
+      not broker approval. HTTP :8080 for IdP/broker is a disposable-lab limitation.
+      Abort on plant deviation, failed positive controls, reset/apply errors or
+      policy mismatch. Stop tests, notify the operator/rollback owner and record
+      their decision. Any rollback ends this window; preserve artifacts first.
+  - id: baseline-policy-and-capture
+    title: Apply Improved and open a bounded evidence window
+    node: fw-1
+    expected_config: improved
+    description: |
+      Execute Step to apply **Brokered Vendor Access** before baselines.
+      Record the apply receipt's **runningRevision** from Execute Step and
+      compare it with the applied/protecting revisions below.
+      **Availability limit:** this portal version does not expose runningRevision
+      in Execute Step. Record POL-1 as **inconclusive**, notify the instructor
+      and do not sign an unrestricted go decision. Do not substitute applyId,
+      the policy banner, a packaged file hash or an invented endpoint.
+
+      From the fw-1 containd CLI:
+
+          show protection
+
+          show running-config
+
+          export config
+
+      Save readback/export of **running**, not an uncommitted candidate, with
+      UTC and record ID. Expect protecting state and equal applied/protecting
+      revisions; without the missing receipt field the full POL-1 join is unproven.
+      Ask the operator to save the Process View baseline (breaker/recloser,
+      energized loads and voltage observations), with UTC and observer name.
+
+      In the Network Map's **Traffic Matrix** drawer, select Duration **2 min**
+      and **Capture PCAP** after applying Improved, immediately before network
+      tests. Record start/end UTC; use **Stop** if finished sooner. Repeat
+      bounded captures for further test batches without reapplying policy.
+      Download every filename link (or **Download PCAP**), saving outside the
+      range before any Reset Lab, restart or switch. Record which test IDs each
+      file covers; expired capture cannot prove later traffic. If capture
+      cannot start, record the limitation; do not invent an eng-ws desktop.
+
+      In a second authenticated portal browser tab, read the embedded containd
+      path **/containd/api/v1/firewall/counters** (same portal origin). Save the
+      before JSON with `snapshotVersion`, `since` and packets/bytes by rule ID:
+      `deny-vendor-to-ot`, `deny-vendor-to-field`, `deny-enterprise-to-sra`,
+      `vendor-to-sra-identity`, `vendor-to-sra-broker`. Never use the vendor
+      browser to reach management or change the management envelope.
+      Every policy apply resets counters; no reset/apply is allowed mid-window.
+      A failed counter read (including 502/503) is unavailable, not zero.
+    action: {type: firewall, config: improved}
+  - id: run-source-tests
+    title: Run the planned tests from their real sources
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      Reuse 2.1's **saved successful Weak controls** with their UTC and source;
+      if unavailable, repeat 2.1 first, then restart this Improved window.
+      Never apply Weak inside this capture just to manufacture a control.
+      First run authorized positives. From the vendor-jump-1 terminal:
+
+          curl -sS --max-time 10 http://10.25.25.10:8080/realms/sra/.well-known/openid-configuration
+
+          curl -sS --max-time 10 -o /dev/null -w '%{http_code}\n' http://10.25.25.20:8080/guacamole/
+
+      Expect issuer `http://10.25.25.10:8080/realms/sra` and HTTP `200`.
+      Repeat 2.2's **fresh** private-browser vendor SAML+TOTP login and one
+      brokered RTAC session (read-only whoami = rangerdanger). Record new
+      user/connection/time references. Old SSO or a port response is not MFA.
+      Then, from the vendor-jump-1 terminal:
+
+          curl -sS --max-time 10 -o /dev/null -w '%{http_code}\n' -X POST --data 'username=vendor&password=rangerdanger' http://10.25.25.20:8080/guacamole/api/tokens
+
+          nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4
+
+      Expect application HTTP `403`, then three filtered ports respectively.
+      A broker HTTP 403 proves reached/application refusal, not firewall deny.
+      A timeout supports deny only with working controls and correlation;
+      fast connection refused / closed means reached, not a deny success.
+      No route, tool errors or failed controls mean inconclusive.
+
+      From the kali-1 terminal:
+
+          nmap -Pn -sT -p 8080 10.25.25.10 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 8080 10.25.25.20 --max-retries 1 -T4
+
+      Expect both filtered. NET-2's vendor successes control these source
+      negatives; Kali is enterprise/wan, testing toward SRA lan4.
+      Save stdout/stderr, exit status and UTC per row. A Run success only means
+      a tool executed; it is not acceptance of a security requirement.
+  - id: correlate-firewall-evidence
+    title: Join packets, counters and events without overclaiming
+    node: fw-1
+    expected_config: improved
+    description: |
+      From the fw-1 containd CLI:
+
+          show events
+
+          show audit
+
+          show protection
+
+      Save final applied/protecting revision readback and require no change
+      within the window. Re-read **/containd/api/v1/firewall/counters** in the
+      authenticated portal tab. Save after JSON, snapshotVersion/since and
+      before/after packet/byte deltas for the five named SRA rules in step 2.
+      Record both snapshot versions and verify a consistent `since`/counter
+      generation; a reset or discontinuity invalidates subtraction.
+      Counters count packets/bytes, **not logins or users**. Background traffic
+      can contribute. Match events by SRC/DST/port/time/rule ID, not totals alone.
+
+      Stop and download the capture, retaining start/stop times and file reference.
+      With the instructor's offline PCAP reader, join current firewall interface
+      names/indexes (not Docker ethN order) to source-zone SYNs, destination-zone
+      presence/absence and replies. Record frame references, capture loss and
+      visibility limits; no loss-free source/destination comparison means no
+      packet-level deny conclusion. Do not invent an on-node PCAP mount.
+      Intra-lan4 exchanges (broker/guacd/router/DB) and same-subnet OT traffic
+      need endpoint/recording evidence: inter-zone counters cannot prove them.
+      Missing events or packets are not automatically allow or deny.
+      The L4 source pin enforces; DPI detects and logs.
+  - id: operator-and-recording-review
+    title: Check operations and join role evidence
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      Close the new brokered RTAC session normally with `exit`; do **not** Reset
+      Lab inside this window. Repeat 4.1's isolated auditor and sra-admin logins,
+      matching this closed session by user, connection and UTC start/end (plus
+      history ID when shown). Auditor: successful history view, no playback.
+      Admin: same recording plays with advancing time and expected read-only
+      output. If the positive playback control fails, REC-1 is inconclusive.
+      Refer to 4.1's separately timed Reset Lab teardown evidence; do not relabel
+      it as occurring in this unchanged-policy window.
+
+      Ask the operator to compare Process View final breaker/recloser, loads
+      and voltage with the baseline, signing UTC observations and deviations.
+      Playback and MFA cannot prove direct-path closure; healthy operations
+      cannot prove role isolation. Each row needs its own evidence.
+  - id: sign-test-record
+    title: Sign the human acceptance record
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      Save the record outside reset-sensitive storage, with linked raw evidence:
+
+      | Field | Human entry required |
+      | --- | --- |
+      | Identity | Record ID, package/revision, running policy name, receipt runningRevision or explicit unavailable, before/after applied/protecting revisions |
+      | Window | UTC start/end, all applies/resets, counter snapshotVersion/since before/after |
+      | Per test | Test ID, requirement/layer, actual source node/IP/zone, destination/port, expected TCP/application result, actual result |
+      | Evidence | stdout/stderr/exit, UTC, rule/event IDs, packet/byte deltas, PCAP/frame refs and loss limits, session/history/recording refs |
+      | Operations | Operator baseline/final state, deviations, abort/rollback decisions |
+      | Judgment | Pass/fail/inconclusive/untested per row, limitations, residual-risk owner and retest date |
+      | Decision | Go/no-go with scope and justification; unresolved POL-1 and absent 3.1 prohibit unrestricted acceptance |
+      | Signatures | Tester name/signature/UTC; operator name/signature/UTC; change-owner name/signature/UTC |
+
+      Do not replace missing evidence with “all tests passed”. Current receipt
+      visibility and untested workload authorization belong in the signed
+      limitations/no-go record. The human signatures attest to the recorded
+      observations and decision, not an automated PASS. Mark Complete and any
+      successful Execute Step neither validate this record nor sign it.

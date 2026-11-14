@@ -1,7 +1,7 @@
 schema: 1
 id: us-sra-substation
 title: "US distribution substation: secure remote access"
-revision: 1
+revision: 2
 topology: topology.yml
 knowledge: knowledge/index.yml
 scenarios: scenarios
@@ -24,4 +24,28 @@ course:
       activities:
         - scenario: sra-direct-vendor-access
           label: '1.1'
+          validate: false
+    - id: brokered-access
+      title: Brokered access
+      activities:
+        - scenario: sra-close-direct-path
+          label: '2.1'
+          validate: false
+        - scenario: sra-broker-login
+          label: '2.2'
+          validate: false
+    - id: recorded-session-review
+      title: Recorded-session review
+      activities:
+        - scenario: sra-history-playback
+          label: '4.1'
+          validate: false
+    - id: combined-acceptance
+      title: Combined acceptance
+      activities:
+        - scenario: sra-vendor-test-record
+          label: '5.1'
+          validate: false
+        - scenario: sra-regression-weak
+          label: '5.2'
           validate: false

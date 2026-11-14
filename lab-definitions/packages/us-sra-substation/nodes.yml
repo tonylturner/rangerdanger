@@ -2,6 +2,21 @@ nodeMap:
   sra-direct-vendor-access:
     primary: vendor-jump-1
     others: [fw-1, rtac-1]
+  sra-close-direct-path:
+    primary: vendor-jump-1
+    others: [kali-1, fw-1, rtac-1, relay-1]
+  sra-broker-login:
+    primary: vendor-jump-1
+    others: [fw-1, rtac-1]
+  sra-history-playback:
+    primary: vendor-jump-1
+    others: [fw-1, rtac-1]
+  sra-vendor-test-record:
+    primary: vendor-jump-1
+    others: [fw-1, kali-1, rtac-1, relay-1]
+  sra-regression-weak:
+    primary: vendor-jump-1
+    others: [fw-1, rtac-1, relay-1]
 nodeInference:
   - node: vendor-jump-1
     ip: ${ip:vendor-jump-1}
