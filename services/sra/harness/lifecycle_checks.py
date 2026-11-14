@@ -1,8 +1,44 @@
 """Restart, first-boot interruption, enrollment liveness and listener evidence."""
+import base64
+import hashlib
 import json
+import re
 import socket
 import time
 from resources import docker
+
+
+def host_credential_fingerprints(identity_json):
+    identity = json.loads(identity_json)
+    credentials = identity.get('id') if isinstance(identity, dict) else None
+    assert isinstance(credentials, dict), 'host identity has no id credentials'
+    certificate = credentials.get('cert')
+    private_key = credentials.get('key')
+    assert isinstance(certificate, str) and certificate.strip(), 'host identity has no leaf certificate'
+    assert isinstance(private_key, str) and private_key.strip(), 'host identity has no private key'
+    match = re.search(
+        r'-----BEGIN CERTIFICATE-----\s*(.*?)\s*-----END CERTIFICATE-----',
+        certificate, re.DOTALL)
+    assert match, 'host identity leaf certificate is not PEM'
+    der = base64.b64decode(''.join(match.group(1).split()), validate=True)
+    assert der, 'host identity leaf certificate is empty'
+    return {
+        'leaf_certificate_sha256': hashlib.sha256(der).hexdigest(),
+        'private_key_sha256': hashlib.sha256(private_key.encode('utf-8')).hexdigest(),
+    }
+
+
+def host_run_marker(phase, attempt_time, process_cmdline):
+    argv = process_cmdline.replace('\x00', ' ').split()
+    assert phase == 'running', f'host wrapper phase is {phase!r}'
+    assert attempt_time.isdecimal(), 'host wrapper has no enrollment attempt marker'
+    assert (len(argv) >= 2 and argv[0].rsplit('/', 1)[-1] == 'ziti-edge-tunnel'
+            and argv[1] == 'run-host'), f'host is not running run-host: {argv}'
+    return {'phase': phase, 'attempt-time': attempt_time, 'argv': argv}
+
+
+def assert_same_host_credentials(before, after):
+    assert before == after, {'before': before, 'after': after}
 
 
 def wait_exit(name, limit=10):
@@ -36,11 +72,17 @@ def snapshot(containers):
         'ziti-controller': ['/run/sra/enrollment/router.jwt', '/run/sra/enrollment/ot-host.jwt',
                             '/ziti-controller/pki/root/certs/root.cert'],
         'ziti-router': ['/ziti-router/sra-router.cert', '/ziti-router/sra-router.key'],
-        'ziti-host': ['/ziti-edge-tunnel/ot-host.json'],
         'keycloak': ['/opt/keycloak/data/import/sra-realm.json'],
     }
     result = {name: docker('exec', containers[name], 'sha256sum', *paths)
               for name, paths in files.items()}
+    host = containers['ziti-host']
+    result['ziti-host'] = host_credential_fingerprints(
+        docker('exec', host, 'cat', '/ziti-edge-tunnel/ot-host.json'))
+    result['ziti-host-wrapper'] = host_run_marker(
+        docker('exec', host, 'cat', '/var/lib/sra/phase'),
+        docker('exec', host, 'cat', '/var/lib/sra/attempt-time'),
+        docker('exec', host, 'cat', '/proc/1/cmdline'))
     for name in ('ziti-controller', 'ziti-router', 'guacd', 'guacamole', 'postgres'):
         result[name + '-marker'] = docker('exec', containers[name], 'stat', '-c', '%Y', '/var/lib/sra/seed-complete')
     result['recordings'] = docker('exec', containers['guacd'], 'find', '/recordings', '-type', 'f')
@@ -49,8 +91,11 @@ def snapshot(containers):
 
 def check_retained(before, containers):
     after = snapshot(containers)
-    assert before == after, {name: (before.get(name), after.get(name))
-                             for name in before if before.get(name) != after.get(name)}
+    assert_same_host_credentials(before['ziti-host'], after['ziti-host'])
+    before_other = {key: value for key, value in before.items() if key != 'ziti-host'}
+    after_other = {key: value for key, value in after.items() if key != 'ziti-host'}
+    assert before_other == after_other, {name: (before_other.get(name), after_other.get(name))
+                                         for name in before_other if before_other.get(name) != after_other.get(name)}
 
 
 def interrupted(r, containers, images, name):
