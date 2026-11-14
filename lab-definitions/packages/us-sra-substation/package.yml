@@ -14,7 +14,7 @@ policies:
   improved:
     file: firewall/improved.json
     label: Brokered Vendor Access
-    description: Vendor access is limited to the identity provider and session broker.
+    description: Vendor desktop access is limited to the identity provider, session broker and Ziti management API with a read-only observer identity.
 operator_view: us-dnp3-substation
 course:
   nodes: nodes.yml
@@ -33,6 +33,12 @@ course:
           validate: false
         - scenario: sra-broker-login
           label: '2.2'
+          validate: false
+    - id: workload-authorization
+      title: Workload authorization
+      activities:
+        - scenario: sra-no-inbound-ot
+          label: '3.1'
           validate: false
     - id: recorded-session-review
       title: Recorded-session review

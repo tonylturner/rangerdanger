@@ -1,0 +1,214 @@
+id: sra-no-inbound-ot
+name: No inbound to OT
+summary: Separate firewall listener admission from Ziti workload and observer authorization.
+estimated_minutes: 20
+description: >
+  Prove the brokered service works without a vendor-to-OT inbound allow.
+  Read Dial/Bind policy as the observer and retain the refused write plus
+  same-session re-read. This is manual evidence, not an automated acceptance.
+nodes: [vendor-jump-1, kali-1, fw-1, rtac-1]
+tags: [remote-access, overlay, authorization, evidence]
+steps:
+  - id: weak-window
+    title: Establish the Weak comparison window
+    expected_config: weak
+    description: |
+      Preserve earlier evidence outside the range, then Execute Step to apply
+      **Weak Baseline**. Record UTC and the running revision in the result.
+      This apply resets counters. Source vendor-jump-1 is `10.20.20.10`/dmz;
+      Kali is `10.10.10.50`/enterprise/wan, testing toward SRA lan4.
+      Do not reset, restart services or change the feeder during this lesson.
+      Before probing, use 5.1's portal counter workflow to save a Weak baseline
+      with snapshotVersion/since, and its fw-1 running-policy export workflow.
+    action: {type: firewall, config: weak}
+  - id: weak-source-comparison
+    title: Compare direct SSH and controller admission under Weak
+    node: vendor-jump-1
+    expected_config: weak
+    description: |
+      From the vendor-jump-1 terminal:
+
+          nmap -Pn -sT -p 22 10.30.30.20 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4
+
+      Expect RTAC `22/tcp open`, but controller `1280/tcp filtered`.
+      Keep the working SSH result as the direct-path negative's control.
+
+      From the kali-1 terminal:
+
+          nmap -Pn -sT -p 8080 10.25.25.10 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 8080 10.25.25.20 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4
+
+      Expect all three filtered in Weak too. These missing answers alone are
+      not deny proof: retain stdout/stderr, exit, tuple and UTC. Pair them with
+      the vendor's working IdP/broker controls in 2.1 and the Improved controller
+      success below, plus running policy and firewall evidence for each window.
+      If a positive fails, mark its paired negatives inconclusive and stop.
+      Timeout = deny evidence with those controls; fast refused / closed =
+      reached, not deny. No route and tool errors are inconclusive.
+      Before the next apply, use 5.1's fw-1 event/counter workflow to preserve
+      the Weak after-state and any matching rule/tuple/UTC evidence. Do not
+      substitute Improved-only rule IDs for the Weak running rules. Missing
+      correlation is an explicit limitation, not a proven firewall cause.
+  - id: improved-window
+    title: Apply Improved and baseline the evidence
+    expected_config: improved
+    description: |
+      Execute Step to apply **Brokered Vendor Access**. Record UTC and the
+      new running revision; this begins a new counter generation.
+      In an authenticated portal tab, save before JSON from
+      **/containd/api/v1/firewall/counters**, with `snapshotVersion`, `since`
+      and packets/bytes for `vendor-to-sra-controller`, `deny-vendor-to-ot`,
+      `deny-enterprise-to-sra`, `ot-host-to-sra-controller` and
+      `ot-host-to-sra-router`. This is the portal's reserved management path,
+      not the vendor browser. No more applies/resets inside this window.
+      Record an operator Process View baseline. Use 5.1's bounded Traffic
+      Matrix capture workflow if packet evidence is required.
+    action: {type: firewall, config: improved}
+  - id: observer-reads
+    title: Read the workload policies through the admitted listener
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      From the vendor-jump-1 terminal:
+
+          nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4
+
+      Expect `1280/tcp open`: the same listener that timed out under Weak.
+      This is the positive control for both sources' controller negatives.
+      Manually paste the following copy-only commands into that terminal,
+      not fw-1, the host or node exec. The terminal runs as root with writable
+      HOME `/config`. Use only the seeded observer, never an admin credential.
+
+          ziti edge login 10.25.25.40:1280 -u sra-observer -p rangerdanger -y
+
+          ziti edge list service-policies
+
+          ziti edge list identities
+
+          ziti edge list edge-router-policies
+
+          ziti edge policy-advisor services rtac-ssh
+
+      Login saves identity `default`; `-y` accepts the disposable lab CA,
+      not production trust guidance. Reads should exit 0. Find `sra-dial`
+      (Dial, service role `#sra-services`, identity role `#sra-dialers`) and
+      `sra-bind` (Bind, `#sra-services`, `#sra-hosts`). Join identities:
+      sra-router has `sra-dialers`; ot-host has `sra-hosts`; sra-observer has
+      neither. The vendor SAML user is not a Ziti workload identity at all.
+      Do not confuse broker grants, management permissions and workload roles.
+      Edge-router policy `sra-identities` joins those roles to `#sra-routers`.
+      Advisor should show sra-router Dial Y / Bind N and ot-host Dial N /
+      Bind Y, both OKAY with an online common router. Save actual tables,
+      UTC and exit codes; missing/offline or unexpected grants are discrepancies.
+  - id: observer-refused-write
+    title: Prove observer refusal with an immediate same-session read
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      Keep the successful policy tables above. From the vendor-jump-1 terminal,
+      manually attempt this copy-only write using that same observer session:
+
+          ziti edge delete service-policy sra-dial
+
+      Expect exit **1**, stdout `delete of service-policy with id ...: FAIL`
+      and stderr `not authorized: your session is invalid or has expired,
+      please run 'ziti edge login' again (401 Unauthorized)`.
+      That session-expiry wording is misleading in this lab. Do **not** log
+      in again before the control: immediately re-read with the same session.
+
+          ziti edge list service-policies
+
+      Expect exit 0 and both policies unchanged, including their IDs, types
+      and roles. The before/read, refused write and successful unchanged
+      after/read together are evidence of observer authorization, not session
+      expiry or firewall deny. If deletion succeeds, stop, preserve evidence
+      and notify the instructor; do not attempt repairs with admin credentials.
+      A failed re-read is inconclusive, not proof of read-only permissions.
+      Port 1280 also serves client API and router control: the firewall opens
+      a whole listener. The observer identity's permissions make this access
+      read-only. Two layers, one proof each; TCP admission is not authorization.
+  - id: direct-negative-broker-positive
+    title: Reach the service without a vendor-to-OT allow
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      First repeat 2.2's fresh vendor SAML+TOTP login in the vendor desktop
+      browser. Open **RTAC SSH (brokered)**. Inside that brokered RTAC terminal
+      only, manually type this copy-only control:
+
+          whoami
+
+      Expect `rangerdanger`. Keep the session open while comparing the direct
+      path. From the vendor-jump-1 Linux terminal, not the brokered terminal:
+
+          nmap -Pn -sT -p 22 10.30.30.20 --max-retries 1 -T4
+
+      Expect `22/tcp filtered` against the working Weak SSH control in step 2.
+      The brokered result additionally proves the target SSH service works now.
+      Timeout = deny with controls and firewall correlation; fast refused /
+      closed = reached. Record both session and direct tuple/time evidence.
+      Close the brokered session normally with `exit` after collecting it.
+  - id: improved-source-negative
+    title: Repeat the other-source negatives under Improved
+    node: kali-1
+    expected_config: improved
+    description: |
+      Repeat 2.1's working vendor IdP/broker HTTP controls under this policy.
+      From the kali-1 terminal:
+
+          nmap -Pn -sT -p 8080 10.25.25.10 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 8080 10.25.25.20 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4
+
+      Expect all three filtered, as under Weak. Pair with the working vendor
+      HTTP controls and step 4's controller success; correlate
+      `deny-enterprise-to-sra`. Kali never gains controller admission in Weak.
+      Retain actual outputs/UTC; missing answers without controls or matching
+      firewall evidence remain inconclusive. Refused / closed means reached.
+  - id: outbound-and-record
+    title: Join running rules, outbound evidence and workload authorization
+    node: fw-1
+    expected_config: improved
+    description: |
+      From the fw-1 containd CLI:
+
+          show running-config
+
+          show events
+
+      Inspect the **running** ordered rule list, not a staged candidate:
+      no vendor-to-OT/field allow, `deny-vendor-to-ot` and
+      `deny-vendor-to-field`, and source-pinned `vendor-to-sra-controller`
+      from `10.20.20.10` to `10.25.25.40:1280`. Check for any broader matching
+      allow, not only a rule name. No vendor-to-OT inbound allow is needed;
+      this does not mean all traffic into OT or local OT-host-to-RTAC SSH is
+      forbidden. The broker path is Guacamole → guacd → sra-router → ot-host
+      → RTAC, not the vendor's direct routed SSH path.
+
+      Find outbound allows and events with these tuples:
+      `ot-host-to-sra-controller`: `10.30.30.60` → `10.25.25.40:1280`;
+      `ot-host-to-sra-router`: `10.30.30.60` → `10.25.25.50:3022`.
+      The OT host initiates those connections OUT to the SRA DMZ.
+      Save rule IDs, action, SRC/DST/port and UTC, alongside the vendor and
+      Kali events. Re-read portal counters; retain after JSON, snapshotVersion,
+      since and deltas within this unchanged-policy generation only. Counters
+      count packets/bytes, not logins. Persistent connections/background traffic
+      may contribute; missing events/deltas are unavailable evidence, not zero
+      or proof of direction. Do not restart workloads to manufacture evidence.
+      Firewall observations cannot prove intra-lan4 or same-subnet OT exchanges;
+      retain endpoint/recording evidence and capture visibility limitations.
+      The L4 source pin enforces; DPI detects and logs.
+
+      Add 3.1 evidence to 5.1: controller source/policy comparison, no inbound
+      vendor allow plus brokered SSH control, outbound OT-host tuples, Dial/Bind
+      tables/advisor, refused write and unchanged same-session read.
+      Compare final operator state with baseline. Missing controls, mismatches
+      or missing correlation remain failed/inconclusive rows with owner/retest
+      date, never an automatic PASS. Finish on Improved; Mark Complete is manual.

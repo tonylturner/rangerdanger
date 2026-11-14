@@ -60,7 +60,7 @@ steps:
       reached, not a successful deny. No route, tool errors or missing controls
       are inconclusive. Record SRC/DST/port, UTC and policy, not just a screenshot.
   - id: approved-http-surface
-    title: Prove vendor IdP and broker reachability
+    title: Prove the approved vendor surface
     node: vendor-jump-1
     expected_config: improved
     description: |
@@ -70,14 +70,18 @@ steps:
 
           curl -sS --max-time 10 -o /dev/null -w '%{http_code}\n' http://10.25.25.20:8080/guacamole/
 
+          nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4
+
       Expect discovery JSON with issuer `http://10.25.25.10:8080/realms/sra`
       and the broker HTTP status `200`. Preserve unexpected responses as
       discrepancies; do not silently accept any HTTP status.
       Both services use **HTTP :8080, not HTTPS**: a disposable-lab limitation,
       not production transport guidance. Reachability is not login evidence.
-      These are the approved vendor application endpoints, not a claim that
-      every other SRA management path has been tested. Lesson 3.1 is not
-      included yet; do not infer its authorization from these results.
+      Expect controller `1280/tcp open` as well. The approved vendor surface
+      includes the Ziti management API with a read-only observer identity.
+      Port 1280 is a shared listener, not intrinsically read-only. Lesson 3.1
+      separately proves its source pin and observer permissions; these port
+      results alone cannot prove application or workload authorization.
   - id: different-source-control
     title: Compare Kali with the authorized vendor source
     node: kali-1
@@ -107,7 +111,8 @@ steps:
       Match UTC, source, destination, port and rule ID for
       `deny-vendor-to-ot`, `deny-vendor-to-field` and `deny-enterprise-to-sra`.
       Compare the successful vendor requests with `vendor-to-sra-identity`
-      and `vendor-to-sra-broker`. Save event references alongside the outputs.
+      and `vendor-to-sra-broker`, plus the controller connection with
+      `vendor-to-sra-controller`. Save event references alongside the outputs.
       Missing events are a limitation, not proof of allow or deny.
       Write which tuples are closed and which HTTP endpoints work. This is
       manual network evidence, not an automated PASS or proof of MFA.

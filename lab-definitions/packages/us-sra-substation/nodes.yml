@@ -8,6 +8,9 @@ nodeMap:
   sra-broker-login:
     primary: vendor-jump-1
     others: [fw-1, rtac-1]
+  sra-no-inbound-ot:
+    primary: vendor-jump-1
+    others: [kali-1, fw-1, rtac-1]
   sra-history-playback:
     primary: vendor-jump-1
     others: [fw-1, rtac-1]

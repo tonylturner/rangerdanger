@@ -17,7 +17,9 @@ steps:
       observations outside the reset path. Record the running revision shown
       in the Execute Step result; this is the pre-reset Improved receipt.
       Never substitute applyId or a policy banner.
-      All source probes below use vendor-jump-1 (`10.20.20.10`, dmz).
+      Source probes below use vendor-jump-1 (`10.20.20.10`, dmz).
+      Preserve 3.1's controller source comparison, Dial/Bind tables, observer
+      refusal/re-read and outbound OT-host evidence with the 5.1 record.
     action: {type: firewall, config: improved}
   - id: direct-before-state
     title: Observe Improved closure before regression
@@ -119,6 +121,10 @@ steps:
       Repeat 2.2's fresh private vendor SAML+TOTP login, exactly one connection
       and brokered RTAC whoami = rangerdanger; record new session/time evidence.
       IdP/broker use HTTP :8080, not HTTPS, a disposable-lab limitation.
+      Repeat 3.1's Improved controller admission, Kali negatives, observer
+      reads/advisor, refused write and immediate unchanged same-session re-read
+      in this restored window. Collect its outbound rule/event/counter evidence.
+      Keep its saved Weak comparisons separately timed; do not apply Weak here.
       From the vendor-jump-1 terminal:
 
           nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4
@@ -146,7 +152,9 @@ steps:
       Otherwise mark POL-1 **failed**, retain the output and notify the
       instructor/rollback owner.
       Collect after counters for `deny-vendor-to-ot`, `deny-vendor-to-field`,
-      `vendor-to-sra-identity` and `vendor-to-sra-broker` via the authenticated
+      `vendor-to-sra-identity`, `vendor-to-sra-broker`,
+      `vendor-to-sra-controller`, `deny-enterprise-to-sra`,
+      `ot-host-to-sra-controller` and `ot-host-to-sra-router` via the authenticated
       portal path; retain snapshotVersion/since and deltas only within the
       restored window. Join events/packets to source tuples and time as in 5.1.
       Counters are packets/bytes, not logins.
@@ -155,6 +163,7 @@ steps:
       Amend the 5.1 record with before/reset/Weak/restored windows, actual
       revisions and receipt comparisons, test IDs that detected regression,
       raw outputs, limitations, failed/inconclusive rows, residual-risk owner
-      and retest date. Failed POL-1 and absent 3.1 prohibit unrestricted go.
+      and retest date. Failed POL-1 or missing/failed WORK-1, OBS-1 or OUT-1
+      prohibit unrestricted go; a lesson being available is not evidence of pass.
       Tester, operator and change owner sign and date the new go/no-go decision.
       No automated PASS claim can replace this human record.

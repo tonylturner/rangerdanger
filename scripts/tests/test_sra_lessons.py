@@ -26,11 +26,11 @@ class SRALessonTests(unittest.TestCase):
     def lesson(self, name):
         return self.lessons["sra-" + name]
 
-    def test_course_is_six_manual_activities_in_four_modules(self):
+    def test_course_is_seven_manual_activities_in_five_modules(self):
         modules = self.package["course"]["modules"]
-        self.assertEqual(len(modules), 4)
+        self.assertEqual(len(modules), 5)
         activities = [a for m in modules for a in m["activities"]]
-        self.assertEqual([a["label"] for a in activities], ["1.1", "2.1", "2.2", "4.1", "5.1", "5.2"])
+        self.assertEqual([a["label"] for a in activities], ["1.1", "2.1", "2.2", "3.1", "4.1", "5.1", "5.2"])
         self.assertEqual({a["scenario"] for a in activities}, set(self.lessons))
         self.assertEqual(len(activities), len(self.lessons))
         self.assertGreater(self.package["revision"], 1)
@@ -76,7 +76,16 @@ class SRALessonTests(unittest.TestCase):
         for row in self.rows:
             command = row["command"]
             if command.startswith("nmap "):
-                source = "kali-1" if "-p 8080 " in command else "vendor-jump-1"
+                if row["scenario"] == "sra-no-inbound-ot":
+                    source = ("kali-1" if "-p 8080 " in command or
+                              row["step_id"] == "improved-source-negative" or
+                              (row["step"] == 2 and row["occurrence"] == 2)
+                              else "vendor-jump-1")
+                else:
+                    source = ("kali-1" if "-p 8080 " in command or
+                              (row["scenario"] == "sra-vendor-test-record" and
+                               "-p 1280 " in command and row["occurrence"] == 2)
+                              else "vendor-jump-1")
                 self.assertEqual(row["node"], source, extract.key(row))
             elif command.startswith("curl "):
                 self.assertEqual(row["node"], "vendor-jump-1", extract.key(row))
@@ -114,11 +123,17 @@ class SRALessonTests(unittest.TestCase):
             command = row["command"]
             if command.startswith("nmap "):
                 ports = re.search(r"-p ([0-9,]+)", command)[1].split(",")
-                state = "open" if row["policy"] == "weak" else "filtered"
+                if ports == ["1280"]:
+                    state = ("open" if row["policy"] == "improved" and
+                             row["node"] == "vendor-jump-1" else "filtered")
+                elif ports == ["8080"]:
+                    state = "filtered"  # Kali is denied under both policies.
+                else:
+                    state = "open" if row["policy"] == "weak" else "filtered"
                 output = "\n".join(f"{p}/tcp {state} test" for p in ports)
                 is_deny = oracle["intent"] == "deny"
                 self.assertTrue(extract.verdict(oracle, 0, output, "", control=is_deny), extract.key(row))
-                for wrong in ("closed", "open" if state == "filtered" else "filtered"):
+                for wrong in ("closed", "open" if state == "filtered" else "filtered", "unfiltered"):
                     self.assertFalse(extract.verdict(
                         oracle, 0, output.replace(state, wrong), "", control=is_deny
                     ), extract.key(row))
@@ -160,16 +175,25 @@ class SRALessonTests(unittest.TestCase):
         self.assertIn("/containd/api/v1/firewall/counters", baseline)
         for token in ("snapshotVersion", "since", "deny-vendor-to-ot",
                       "deny-vendor-to-field", "deny-enterprise-to-sra",
-                      "vendor-to-sra-identity", "vendor-to-sra-broker"):
+                      "vendor-to-sra-identity", "vendor-to-sra-broker",
+                      "vendor-to-sra-controller", "ot-host-to-sra-controller",
+                      "ot-host-to-sra-router"):
             self.assertIn(token, baseline)
         final = lesson["steps"][-1]["description"]
         for token in ("Tester name/signature/UTC", "operator name/signature/UTC",
                       "change-owner name/signature/UTC", "residual-risk owner",
-                      "inconclusive/untested", "absent 3.1"):
+                      "inconclusive/untested", "WORK-1", "OBS-1", "OUT-1"):
             self.assertIn(token, final)
         body = "\n".join(s["description"] for s in lesson["steps"])
         self.assertIn("not logins or users", body)
-        self.assertIn("not yet available", " ".join(body.split()))
+        for token in ("Dial/Bind", "same-session re-read", "10.30.30.60",
+                      "10.25.25.40:1280", "10.25.25.50:3022"):
+            self.assertIn(token, body)
+        for lesson in self.lessons.values():
+            text = " ".join(" ".join(s["description"] for s in lesson["steps"]).split())
+            for stale in ("not yet available", "not included yet", "absent 3.1",
+                          "remains untested until 3.1"):
+                self.assertNotIn(stale, text)
 
         regression = self.lesson("regression-weak")
         steps = regression["steps"]
@@ -193,6 +217,44 @@ class SRALessonTests(unittest.TestCase):
                             restored, final_readback):
             self.assertNotIn("receipt visibility gap", description)
             self.assertNotIn("runningRevision if exposed", description)
+
+    def test_no_inbound_proof_has_separate_controls_and_manual_observer(self):
+        steps = self.lesson("no-inbound-ot")["steps"]
+        self.assertEqual(steps[0]["action"]["config"], "weak")
+        self.assertEqual(steps[2]["action"]["config"], "improved")
+        self.assertEqual([s["expected_config"] for s in steps], ["weak"] * 2 + ["improved"] * 6)
+        read = steps[3]["description"]
+        for token in ("#sra-dialers", "#sra-hosts", "sra-router", "ot-host",
+                      "not a Ziti workload identity", "1280/tcp open", "HOME `/config`"):
+            self.assertIn(token, read)
+        refusal = steps[4]["description"]
+        for token in ("exit **1**", "401 Unauthorized", "Do **not** log",
+                      "same session", "including their IDs", "whole listener"):
+            self.assertIn(token, refusal)
+        observer = [r for r in self.rows if r["command"].startswith("ziti ")]
+        self.assertEqual(len(observer), 7)
+        for row in observer:
+            self.assertEqual((row["node"], row["action"]), ("vendor-jump-1", "SKIP"))
+            self.assertTrue(self.contract["commands"][extract.key(row)]["reason"])
+        command_order = [r["command"] for r in observer]
+        self.assertEqual(command_order[-2:], [
+            "ziti edge delete service-policy sra-dial", "ziti edge list service-policies",
+        ])
+        direct = steps[5]["description"]
+        for token in ("whoami", "rangerdanger", "working Weak SSH control",
+                      "service works now", "refused", "reached"):
+            self.assertIn(token, direct)
+        final = steps[-1]["description"]
+        policy = json.loads((PACKAGE / "firewall/improved.json").read_text())
+        rules = {r["id"]: r for r in policy["firewall"]["rules"]}
+        for rule_id in ("vendor-to-sra-controller", "ot-host-to-sra-controller",
+                        "ot-host-to-sra-router", "deny-vendor-to-ot"):
+            self.assertIn(rule_id, final)
+            self.assertIn(rule_id, rules)
+        for token in ("snapshotVersion", "since", "packets/bytes, not logins",
+                      "10.30.30.60", "10.25.25.40:1280", "10.25.25.50:3022",
+                      "not mean all traffic into OT", "inconclusive"):
+            self.assertIn(token, final)
 
 
 if __name__ == "__main__":

@@ -55,7 +55,7 @@ func TestDiscoverPackagesValidatesScenarioAndCurriculum(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				want := map[string]int{"eu-iec104-substation": 7, "us-dnp3-substation": 7, "us-sra-substation": 6}
+				want := map[string]int{"eu-iec104-substation": 7, "us-dnp3-substation": 7, "us-sra-substation": 7}
 				if len(packages) != len(want) {
 					t.Fatalf("packages = %d, want %d", len(packages), len(want))
 				}

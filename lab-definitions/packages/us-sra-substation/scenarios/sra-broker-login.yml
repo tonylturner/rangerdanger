@@ -70,6 +70,7 @@ steps:
       Human authorization here means **seeded role grants plus human sign-off**,
       not a per-session broker approval flow. One connection and a read-only
       identity result prove the granted session works, not all least-privilege
-      properties. Overlay Dial/Bind policy review remains untested until 3.1.
+      properties. Perform the separate overlay Dial/Bind policy review and
+      observer authorization comparison in lesson 3.1; do not infer them here.
       Save this session's identity/time for [Session lifecycle](/knowledge#sra-session-lifecycle)
       review in 4.1. Mark Complete is a note-taking action, not automatic acceptance.

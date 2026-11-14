@@ -27,6 +27,19 @@ describe("reviewed smoke contracts match UI dispatch", () => {
     }
   });
 
+  it("keeps observer reads and the refused write copy-only on the vendor terminal", () => {
+    for (const command of [
+      "ziti edge login 10.25.25.40:1280 -u sra-observer -p rangerdanger -y",
+      "ziti edge list service-policies", "ziti edge list identities",
+      "ziti edge list edge-router-policies", "ziti edge policy-advisor services rtac-ssh",
+      "ziti edge delete service-policy sra-dial",
+    ]) {
+      const parsed = commands(`From the vendor-jump-1 terminal:\n\n    ${command}`);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0]).toMatchObject({ value: command, copyOnly: true, sourceNode: "vendor-jump-1" });
+    }
+  });
+
   for (const id of readdirSync(resolve(root, "lab-definitions/packages"))) {
     it(`checks every command and all three dispatch classes in ${id}`, () => {
       const base = resolve(root, "lab-definitions/packages", id);
