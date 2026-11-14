@@ -27,7 +27,7 @@ steps:
       | GRANT-1 | Seeded vendor connection grant | Exactly RTAC SSH (brokered); brokered whoami returns rangerdanger |
       | REC-1 | Auditor versus sra-admin on the same closed session | Auditor sees history/no playback; admin plays matching recording |
       | OPS-1 | Operator baseline versus final feeder observations | No unexplained operational change |
-      | POL-1 | Apply receipt runningRevision versus fw-1 show protection | Same applied/protecting revision, protecting state |
+      | POL-1 | Apply receipt runningRevision versus fw-1 show protection | For each apply, receipt runningRevision, appliedRevision and protectingRevision match; state is protecting |
 
       Dial/Bind and read-management evidence from lesson 3.1 is **not yet
       available in this course**. Record it as untested with an owner; do not
@@ -43,12 +43,15 @@ steps:
     expected_config: improved
     description: |
       Execute Step to apply **Brokered Vendor Access** before baselines.
-      Record the apply receipt's **runningRevision** from Execute Step and
-      compare it with the applied/protecting revisions below.
-      **Availability limit:** this portal version does not expose runningRevision
-      in Execute Step. Record POL-1 as **inconclusive**, notify the instructor
-      and do not sign an unrestricted go decision. Do not substitute applyId,
-      the policy banner, a packaged file hash or an invented endpoint.
+      Record the **running revision** shown in the Execute Step result. From
+      the fw-1 containd CLI, compare it with both revisions from `show protection`.
+      POL-1 passes for this apply only when the receipt runningRevision equals
+      appliedRevision and protectingRevision, all three are non-null/non-empty,
+      and state is **protecting**. If a revision is missing/null, the values
+      differ, or state is not protecting, record POL-1 as **failed**, preserve
+      the raw output and notify the instructor/rollback owner. Do not sign an
+      unrestricted go decision. Never substitute applyId, the policy banner,
+      a packaged file hash or an invented endpoint.
 
       From the fw-1 containd CLI:
 
@@ -59,8 +62,8 @@ steps:
           export config
 
       Save readback/export of **running**, not an uncommitted candidate, with
-      UTC and record ID. Expect protecting state and equal applied/protecting
-      revisions; without the missing receipt field the full POL-1 join is unproven.
+      UTC and record ID. Keep the receipt and `show protection` output together
+      as the POL-1 evidence for this apply.
       Ask the operator to save the Process View baseline (breaker/recloser,
       energized loads and voltage observations), with UTC and observer name.
 
@@ -183,17 +186,17 @@ steps:
 
       | Field | Human entry required |
       | --- | --- |
-      | Identity | Record ID, package/revision, running policy name, receipt runningRevision or explicit unavailable, before/after applied/protecting revisions |
+      | Identity | Record ID, package/revision, running policy name, each Execute Step/Reset Lab runningRevision and before/reset/restored applied/protecting revisions |
       | Window | UTC start/end, all applies/resets, counter snapshotVersion/since before/after |
       | Per test | Test ID, requirement/layer, actual source node/IP/zone, destination/port, expected TCP/application result, actual result |
       | Evidence | stdout/stderr/exit, UTC, rule/event IDs, packet/byte deltas, PCAP/frame refs and loss limits, session/history/recording refs |
       | Operations | Operator baseline/final state, deviations, abort/rollback decisions |
       | Judgment | Pass/fail/inconclusive/untested per row, limitations, residual-risk owner and retest date |
-      | Decision | Go/no-go with scope and justification; unresolved POL-1 and absent 3.1 prohibit unrestricted acceptance |
+      | Decision | Go/no-go with scope and justification; failed POL-1 and absent 3.1 prohibit unrestricted acceptance |
       | Signatures | Tester name/signature/UTC; operator name/signature/UTC; change-owner name/signature/UTC |
 
-      Do not replace missing evidence with “all tests passed”. Current receipt
-      visibility and untested workload authorization belong in the signed
-      limitations/no-go record. The human signatures attest to the recorded
+      Do not replace missing evidence with “all tests passed”. Any missing or
+      mismatched POL-1 value and untested workload authorization belong in the
+      signed limitations/no-go record. The human signatures attest to the recorded
       observations and decision, not an automated PASS. Mark Complete and any
       successful Execute Step neither validate this record nor sign it.

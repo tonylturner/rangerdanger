@@ -212,6 +212,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       );
       setCmdLog((prev) => [
         `[RESET] ${result.success ? "Lab restored" : "Reset had errors"} (${result.actions.length} actions)`,
+        `[RESET] Containd running revision: ${result.containd?.runningRevision || "not reported"}`,
         ...actionLines,
         ...prev,
       ].slice(0, 100));
@@ -596,8 +597,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     <span className={`shrink-0 font-bold ${r.success ? "text-green-400" : "text-red-400"}`}>
                       {r.success ? "\u2713" : "\u2717"}
                     </span>
-                    <span className="text-slate-300 font-medium">{r.action}:</span>
+                    <span className="text-slate-300 font-medium">{r.action}: </span>
                     <span className="text-slate-400">{r.impact || r.detail}</span>
+                    {r.action.startsWith("Apply firewall:") && (
+                      <span className="text-slate-400">
+                        {" "}· running revision: {r.containd?.runningRevision || "not reported"}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>

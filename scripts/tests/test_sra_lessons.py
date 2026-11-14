@@ -153,8 +153,10 @@ class SRALessonTests(unittest.TestCase):
         lesson = self.lesson("vendor-test-record")
         self.assertEqual(len(lesson["steps"]), 6)
         baseline = lesson["steps"][1]["description"]
-        self.assertIn("does not expose runningRevision", baseline)
-        self.assertIn("inconclusive", baseline)
+        self.assertIn("runningRevision equals", baseline)
+        self.assertIn("non-null/non-empty", baseline)
+        self.assertIn("record POL-1 as **failed**", baseline)
+        self.assertNotIn("does not expose runningRevision", baseline)
         self.assertIn("/containd/api/v1/firewall/counters", baseline)
         for token in ("snapshotVersion", "since", "deny-vendor-to-ot",
                       "deny-vendor-to-field", "deny-enterprise-to-sra",
@@ -168,6 +170,29 @@ class SRALessonTests(unittest.TestCase):
         body = "\n".join(s["description"] for s in lesson["steps"])
         self.assertIn("not logins or users", body)
         self.assertIn("not yet available", " ".join(body.split()))
+
+        regression = self.lesson("regression-weak")
+        steps = regression["steps"]
+        before = steps[1]["description"]
+        reset = steps[2]["description"]
+        weak = steps[3]["description"]
+        restored = steps[4]["description"]
+        final_readback = steps[6]["description"]
+        self.assertIn("running revision shown in the Execute Step result", restored)
+        for description in (before, weak, final_readback):
+            self.assertIn("runningRevision", description)
+            self.assertIn("appliedRevision", description)
+            self.assertIn("protectingRevision", description)
+            self.assertIn("non-null/non-empty", description)
+            self.assertIn("POL-1", description)
+        self.assertIn("Containd running revision", reset)
+        self.assertIn("do not reuse the earlier Execute Step revision", reset)
+        self.assertIn("the Weak revision must differ", weak)
+        self.assertIn("Compare the restored Execute Step", final_readback)
+        for description in (steps[0]["description"], before, reset, weak,
+                            restored, final_readback):
+            self.assertNotIn("receipt visibility gap", description)
+            self.assertNotIn("runningRevision if exposed", description)
 
 
 if __name__ == "__main__":
