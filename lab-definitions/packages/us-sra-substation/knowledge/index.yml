@@ -1,0 +1,13 @@
+sections:
+  - id: remote-access
+    heading: Secure Remote Access
+    description: Direct access, brokered sessions and disposable workshop state.
+    icon: shield
+    accent: violet
+    articles:
+      - id: sra-access-boundaries
+        title: Remote access boundaries
+        file: access-boundaries.md
+      - id: sra-session-lifecycle
+        title: Session lifecycle
+        file: session-lifecycle.md

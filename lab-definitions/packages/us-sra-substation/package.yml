@@ -1,0 +1,27 @@
+schema: 1
+id: us-sra-substation
+title: "US distribution substation: secure remote access"
+revision: 1
+topology: topology.yml
+knowledge: knowledge/index.yml
+scenarios: scenarios
+capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
+policies:
+  weak:
+    file: firewall/weak.json
+    label: Weak Baseline
+    description: Direct vendor access to OT remains available.
+  improved:
+    file: firewall/improved.json
+    label: Brokered Vendor Access
+    description: Vendor access is limited to the identity provider and session broker.
+operator_view: us-dnp3-substation
+course:
+  nodes: nodes.yml
+  modules:
+    - id: before
+      title: Before brokered access
+      activities:
+        - scenario: sra-direct-vendor-access
+          label: '1.1'
+          validate: false

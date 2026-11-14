@@ -32,6 +32,14 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
         ("file", "iec104go/LICENSE"),
     }
     return {
+        **{
+            "rangerdanger-sra-" + name: {
+                ("dir", "services/sra/common"),
+                ("dir", "services/sra/" + name),
+            } | ({("file", "scripts/set-gateway.sh")} if name not in ("guacd", "postgres") else set())
+            for name in ("keycloak", "guacamole", "guacd", "postgres",
+                         "ziti-controller", "ziti-router", "ziti-host")
+        },
         "rangerdanger-backend": {("dir", "backend")},
         "rangerdanger-frontend": {("dir", "frontend")},
         "rangerdanger-kali": {("dir", "dnp3go")} | iec104_cli_sources,

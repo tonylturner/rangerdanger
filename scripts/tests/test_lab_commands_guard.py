@@ -21,7 +21,8 @@ class PackageGuardTests(unittest.TestCase):
 
     def test_all_packages_and_zero_command_scenarios_are_pinned(self):
         # Backup listings and EU export are reads; file-writing mutations stay SKIP.
-        minimums = {"us-dnp3-substation": 87, "eu-iec104-substation": 47}
+        minimums = {"us-dnp3-substation": 87, "eu-iec104-substation": 47,
+                    "us-sra-substation": 2}
         for package_id in extract.packages():
             with self.subTest(package=package_id):
                 data = json.loads(extract.expectations_path(ROOT, package_id).read_text())

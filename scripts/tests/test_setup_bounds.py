@@ -428,13 +428,14 @@ curl() {
         start = SOURCE.index('if [ "$SKIP_FW_GATE" -eq 1 ]; then')
         end = SOURCE.index("# ─── OpenPLC readiness", start)
         gate = SOURCE[start:end]
-        for route in ("valid", "apply", "reset"):
-            protections = ("protecting",) if route == "valid" else (
-                "empty", "missing", "pending", "degraded", "failed")
-            for protection in protections:
-                expected = 0 if route == "valid" else 1
-                with self.subTest(route=route, protection=protection):
-                    script = r'''
+        for package in ("us-dnp3-substation", "eu-iec104-substation", "us-sra-substation"):
+            for route in ("valid", "apply", "reset"):
+                protections = ("protecting",) if route == "valid" else (
+                    "empty", "missing", "pending", "degraded", "failed")
+                for protection in protections:
+                    expected = 0 if route == "valid" else 1
+                    with self.subTest(package=package, route=route, protection=protection):
+                        script = r'''
 set -euo pipefail
 . "$ROOT/scripts/lib/range.sh"
 say() { :; }
@@ -457,7 +458,7 @@ curl() {
             fi
             ;;
         *api/workshop/reset*)
-            [[ "$*" = *"--max-time 60"* ]] || exit 91
+            [[ "$*" = *"--max-time $EXPECTED_RESET_TIMEOUT"* ]] || exit 91
             if [ "$ROUTE" = reset ]; then
                 case "$PROTECTION" in
                     empty) : ;;
@@ -472,11 +473,12 @@ curl() {
     esac
 }
 ''' + gate
-                    result = run_bash(
-                        script, ROOT=str(ROOT), ROUTE=route, PROTECTION=protection)
-                    self.assertEqual(result.returncode, expected, result.stderr)
-                    if expected:
-                        self.assertIn("Workshop-readiness gate failed", result.stderr)
+                        result = run_bash(
+                            script, ROOT=str(ROOT), ROUTE=route, PROTECTION=protection,
+                            RANGE_PACKAGE=package, EXPECTED_RESET_TIMEOUT="60")
+                        self.assertEqual(result.returncode, expected, result.stderr)
+                        if expected:
+                            self.assertIn("Workshop-readiness gate failed", result.stderr)
 
     def test_docker_floor_compares_compose_and_engine_api(self):
         cases = (

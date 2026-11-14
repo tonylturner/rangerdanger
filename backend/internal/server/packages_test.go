@@ -232,7 +232,8 @@ func TestSeedSerializesCatalogPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := serve(s, http.MethodPost, "/api/admin/seed")
-	if rec.Code != http.StatusOK || writes != 14 {
+	// One write per shipped scenario: US 7, EU 7, SRA 1.
+	if rec.Code != http.StatusOK || writes != 15 {
 		t.Fatalf("seed = %d %s; writes=%d", rec.Code, rec.Body, writes)
 	}
 	if _, ok := s.currentCatalog().Info(usPackageID); !ok {

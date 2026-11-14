@@ -28,6 +28,7 @@ FROM linuxserver/webtop:ubuntu-xfce@sha256:432475b977d9ff06f8f8adfb9608541bbde51
 RUN apt-get update && \
     apt-get install -y --only-upgrade libbrotli1 && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        oathtool \
         mbpoll \
         python3 \
         python3-pip \
