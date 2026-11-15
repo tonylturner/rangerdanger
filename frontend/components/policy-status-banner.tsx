@@ -132,19 +132,29 @@ function bannerStyle(kind: Kind, activeConfig: string | null, policies: PackageP
 }
 
 // What the mismatch variant asks for, and how to get there.
-function mismatchText(expectedConfig: string, policies: PackagePolicies): { need: string; action: string } {
+function mismatchText(
+  expectedConfig: string,
+  policies: PackagePolicies,
+  hasCatchUpControls: boolean,
+): { need: string; action: string } {
   if (expectedConfig === HARDENED_ALIAS || expectedConfig === HARDENED_POLICY) {
     return {
       need: `${policyWording(HARDENED_POLICY, policies).label} (reference or your custom policy)`,
-      action: "Author, review, commit and read back in containd. Optional catch-up — for less technical students or teams behind schedule: use the catch-up controls below. These replace typing rules, not your own observations, operator check or sign-off.",
+      action: hasCatchUpControls
+        ? "Author, review, commit and read back in containd. Optional catch-up — for less technical students or teams behind schedule: use the catch-up controls below. These replace typing rules, not your own observations, operator check or sign-off."
+        : "Author, review, commit and read back in containd.",
     };
   }
-  return {
-    need: policyWording(expectedConfig, policies).label,
-    action: expectedConfig === "weak"
-      ? "Restore the baseline in containd and read it back. Optional catch-up — for less technical students or teams behind schedule: use Reset to Weak below. It replaces typing rules, not your own observations, operator check or sign-off."
-      : "Author, review, commit and read back in containd. Optional catch-up controls below replace typing rules, not your own observations, operator check or sign-off.",
-  };
+  const need = policyWording(expectedConfig, policies).label;
+  const action = expectedConfig === "weak"
+    ? "Restore the baseline in containd and read it back."
+    : "Author, review, commit and read back in containd.";
+  if (!hasCatchUpControls) return { need, action };
+
+  const catchUp = expectedConfig === "weak"
+    ? " Optional catch-up — for less technical students or teams behind schedule: use Reset to Weak below. It replaces typing rules, not your own observations, operator check or sign-off."
+    : " Optional catch-up controls below replace typing rules, not your own observations, operator check or sign-off.";
+  return { need, action: `${action}${catchUp}` };
 }
 
 function StateIcon({ kind, className }: { kind: Kind; className?: string }) {
@@ -163,11 +173,13 @@ export function PolicyStatusBanner({
   expectedConfig,
   policies,
   plan,
+  hasCatchUpControls,
 }: {
   course: Course | undefined;
   activeConfig: string | null;
   policySource: PolicySource;
   plan?: PlanProvenance;
+  hasCatchUpControls: boolean;
   /** From step.expected_config in the lab YAML. Undefined for steps
       that don't pin a policy (planning labs, intros, etc.) */
   expectedConfig?: string;
@@ -184,7 +196,7 @@ export function PolicyStatusBanner({
 
   // Mismatch variant - amber warning, action prompt inline.
   if (!matched && expectedConfig && activeConfig && policies) {
-    const { need: needLabel, action: promptedAction } = mismatchText(expectedConfig, policies);
+    const { need: needLabel, action: promptedAction } = mismatchText(expectedConfig, policies, hasCatchUpControls);
 
     return (
       <div className="sticky top-0 z-10 -mx-4 mb-3 bg-slate-950">

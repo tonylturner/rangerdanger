@@ -537,6 +537,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               plan={appliedPlan}
               expectedConfig={step?.expected_config}
               policies={packagePolicies}
+              hasCatchUpControls={hasPolicyActions}
             />
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
             {scenario.id === binding?.activities.implementation && dynamicPlan &&
