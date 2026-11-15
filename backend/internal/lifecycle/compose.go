@@ -32,6 +32,8 @@ type Compose interface {
 	// Down removes the range project, with its anonymous volumes, by its
 	// labels alone.
 	Down(ctx context.Context) error
+	// Restart restarts only the named services without recreating their state.
+	Restart(ctx context.Context, file string, services []string) error
 }
 
 // ComposeCLI runs the Compose binary with explicit argv and no shell.
@@ -122,6 +124,22 @@ func (c *ComposeCLI) Up(ctx context.Context, file string) error {
 // Down implements Compose.
 func (c *ComposeCLI) Down(ctx context.Context) error {
 	_, err := c.run(ctx, c.downArgs())
+	return err
+}
+
+// Restart implements Compose. An empty service list must never restart the
+// whole project. --no-deps leaves identities and enrollment untouched.
+func (c *ComposeCLI) Restart(ctx context.Context, file string, services []string) error {
+	if len(services) == 0 {
+		return fmt.Errorf("restart requires named services")
+	}
+	for _, service := range services {
+		if service == "" || strings.HasPrefix(service, "-") {
+			return fmt.Errorf("invalid restart service %q", service)
+		}
+	}
+	args := append(c.modelArgs(file), "restart", "--no-deps")
+	_, err := c.run(ctx, append(args, services...))
 	return err
 }
 

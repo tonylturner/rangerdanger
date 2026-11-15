@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 type resetAction struct {
@@ -64,6 +65,14 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 			Detail:  result.Detail,
 		})
 	}
+	if len(recipe.resetRestartNodes) > 0 {
+		err := restartResetNodes(ctx, s.rng, gen, recipe.resetRestartNodes)
+		actions = append(actions, resetAction{
+			Action:  "End broker sessions",
+			Success: err == nil,
+			Detail:  boolDetail(err == nil, "broker and gateway restarted; identities and recordings kept", errStr(err)),
+		})
+	}
 	// Clear PCAP captures so validators reflect fresh state
 	s.pcapMu.Lock()
 	s.pcap.FileReady = false
@@ -111,7 +120,7 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 	}
 
 	status := http.StatusOK
-	if recipe.resetTruth != nil && !allSuccess {
+	if (recipe.resetTruth != nil || len(recipe.resetRestartNodes) > 0) && !allSuccess {
 		status = http.StatusBadGateway
 	}
 	c.JSON(status, gin.H{
@@ -119,6 +128,26 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		"success":  allSuccess,
 		"actions":  actions,
 	})
+}
+
+type resetServiceRestarter interface {
+	RestartServices(context.Context, *lifecycle.Generation, []string) error
+}
+
+func restartResetNodes(ctx context.Context, runner any, gen *lifecycle.Generation, nodes []string) error {
+	services := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		service, err := nodeService(gen, node)
+		if err != nil {
+			return err
+		}
+		services = append(services, service.Key)
+	}
+	restarter, ok := runner.(resetServiceRestarter)
+	if !ok {
+		return fmt.Errorf("range lifecycle does not support service restart")
+	}
+	return restarter.RestartServices(ctx, gen, services)
 }
 
 type resetCommandRunner interface {

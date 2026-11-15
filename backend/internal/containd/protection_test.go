@@ -53,8 +53,17 @@ func TestImportRevisionChain(t *testing.T) {
 				client := newTestClient(srv.URL)
 				applied, err := client.ImportConfig(t.Context(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`))
 				if status == 200 {
-					if err != nil || applied.Receipt.ApplyID != "ours" || applied.Receipt.Protection != "protecting" {
+					if err != nil || applied.Receipt.ApplyID != "ours" || applied.Receipt.Protection != "protecting" ||
+						applied.Receipt.RunningRevision != "runtime-ours" {
 						t.Fatalf("applied=%+v err=%v", applied, err)
+					}
+					last := client.LastApply()
+					if last == nil || *last != *applied.Receipt {
+						t.Fatalf("last apply=%+v, receipt=%+v", last, applied.Receipt)
+					}
+					last.RunningRevision = "changed-copy"
+					if client.LastApply().RunningRevision != "runtime-ours" {
+						t.Fatal("LastApply exposed mutable receipt")
 					}
 				} else {
 					var upstream *ConfigWriteError
@@ -163,7 +172,7 @@ func TestProtectionReadiness(t *testing.T) {
 			receipt, err := newTestClient(srv.URL).waitProtection(ctx, RuntimeApplyResponse{
 				ApplyID: "informational-only", RunningRevision: ours, Protection: initial,
 			})
-			if receipt.ApplyID != "informational-only" {
+			if receipt.ApplyID != "informational-only" || receipt.RunningRevision != ours {
 				t.Fatalf("receipt=%+v", receipt)
 			}
 			if tc.wantError == "" {
@@ -193,7 +202,7 @@ func TestProtectionAcceptsCommitReadinessWithoutApplyID(t *testing.T) {
 	receipt, err := newTestClient("http://unused.invalid").waitProtection(t.Context(), RuntimeApplyResponse{
 		RunningRevision: "runtime-ours", Protection: readyProtection("runtime-ours"),
 	})
-	if err != nil || receipt.Protection != "protecting" {
+	if err != nil || receipt.Protection != "protecting" || receipt.RunningRevision != "runtime-ours" {
 		t.Fatalf("receipt=%+v err=%v", receipt, err)
 	}
 }

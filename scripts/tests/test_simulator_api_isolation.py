@@ -50,7 +50,7 @@ def observed(row, outcome="connected", source="10.10.10.50"):
 
 
 def bodies(package, seq=1):
-    if package == US:
+    if package in (US, "us-sra-substation"):
         state = {"devices": {s: {"state": True} for s in ("relay", "recloser", "regulator", "capbank")},
                  "device_comms": {s: True for s in ("relay", "recloser", "regulator", "capbank")},
                  "physics": {"stale": False, "solved_at": iso(seq), "last_good_at": iso(seq)}}

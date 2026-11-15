@@ -433,7 +433,11 @@ Re-run with -SkipFirewallGate to bring the stack up anyway for diagnosis.
 }
 
 
-# OpenPLC is used by both US and EU packages. Like setup.sh this is diagnostic, not a lifecycle gate.
+# OpenPLC readiness runs for packages whose release Compose declares it.
+# Like setup.sh this is diagnostic, not a lifecycle gate.
+$openPlcCompose = Join-Path $RootDir "lab-definitions/packages/$RangePackage/compose.release.yml"
+if ((Test-Path -LiteralPath $openPlcCompose -PathType Leaf) -and
+    (Select-String -LiteralPath $openPlcCompose -Pattern '^\s*container_name:\s*rangerdanger-openplc\s*$' -Quiet)) {
 $openplcOk = $false
 for ($i = 0; $i -lt 8; $i++) {
     $run = Invoke-DockerBounded @('inspect', '-f', '{{.State.Status}}', 'rangerdanger-openplc') 5
@@ -444,6 +448,7 @@ for ($i = 0; $i -lt 8; $i++) {
 }
 if ($openplcOk) { Say 'OpenPLC container is running' }
 else { Warn 'OpenPLC is not running. Check docker logs rangerdanger-openplc.' }
+}
 Banner 'RangerDanger is up'
 @"
   Web UI:        http://localhost:8088

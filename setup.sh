@@ -852,6 +852,8 @@ fi
 # rather than crash-looping with "exec format error" (the silent failure
 # mode when emulation is missing). Non-fatal: OpenPLC is isolated (nothing
 # depends on it), so warn loudly with the fix instead of blocking install.
+openplc_compose="$ROOT_DIR/lab-definitions/packages/$RANGE_PACKAGE/compose.release.yml"
+if [ -f "$openplc_compose" ] && grep -qE '^[[:space:]]*container_name:[[:space:]]*rangerdanger-openplc[[:space:]]*$' "$openplc_compose"; then
 say "Workshop-readiness: OpenPLC (protection-logic lab)..."
 openplc_ok=0
 for _ in $(seq 1 8); do
@@ -878,6 +880,8 @@ else
         warn "  Check: docker logs rangerdanger-openplc"
     fi
 fi
+
+fi # packages with OpenPLC
 
 # ─── done ────────────────────────────────────────────────────────────
 banner "RangerDanger is up"

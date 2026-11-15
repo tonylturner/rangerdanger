@@ -21,6 +21,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Display containd running revisions after firewall applies and Reset Lab.
 - Scenario IDs are unique within a package, not across packages, so two packages may use the same ID. Scenario actions name the package they expect, so a stale browser tab cannot act on a different range.
 - Each package declares its course as ordered modules of lessons, and
   segmentation planning is an optional course feature instead of seven fixed

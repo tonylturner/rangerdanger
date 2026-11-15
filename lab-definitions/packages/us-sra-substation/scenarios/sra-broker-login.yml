@@ -1,0 +1,76 @@
+id: sra-broker-login
+name: Log in through the broker
+summary: Separate SAML and TOTP authentication from seeded connection authorization.
+estimated_minutes: 15
+description: >
+  Under Improved, collect application authentication and authorization evidence
+  from the vendor desktop. A working TCP port alone proves neither.
+nodes: [vendor-jump-1, fw-1, rtac-1]
+tags: [remote-access, authentication, authorization]
+steps:
+  - id: apply-improved
+    title: Establish the Improved policy
+    expected_config: improved
+    description: |
+      Execute Step to apply **Brokered Vendor Access**. Source for all browser
+      work is the vendor-jump-1 desktop (`10.20.20.10`, dmz), not the host browser.
+      Start a new UTC test window; preserve older evidence before applying.
+    action: {type: firewall, config: improved}
+  - id: fresh-saml-totp-login
+    title: Observe a fresh SAML and TOTP login
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      On the vendor desktop, close old private browser windows and open a fresh
+      private session. Visit **http://10.25.25.20:8080/guacamole/** manually.
+      Observe the redirect to Keycloak at `http://10.25.25.10:8080` (realm `sra`).
+      Enter username `vendor`, password `rangerdanger`, then a fresh six-digit OTP.
+
+      From the vendor-jump-1 terminal, manually generate the code (copy-only):
+
+          oathtool --totp -b JBSWY3DPEHPK3PXP
+
+      Use it within its 30-second interval; never save a live code as a secret.
+      If SSO skips the OTP prompt, this is not fresh MFA evidence: close the
+      private session and retry. Do not clear portal curriculum storage.
+      Record redirect origins, username, UTC and observed OTP challenge/success,
+      not the password/code. HTTP :8080 is a disposable-lab limitation, not HTTPS.
+      Published seeded passwords/TOTP secrets are not production enrollment.
+      This working SAML+TOTP flow is the positive control for the next refusal.
+  - id: password-only-refusal
+    title: Distinguish application refusal from firewall deny
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      From the vendor-jump-1 terminal:
+
+          curl -sS --max-time 10 -o /dev/null -w '%{http_code}\n' -X POST --data 'username=vendor&password=rangerdanger' http://10.25.25.20:8080/guacamole/api/tokens
+
+      Expect HTTP `403`: the password-only token request reached the broker,
+      which refused it at the application layer. It is not TCP connection
+      refused and not a firewall deny. Compare with the successful fresh
+      SAML+TOTP browser login under the same Improved policy. A timeout here
+      is inconclusive for authentication; retain stdout, stderr, exit and UTC.
+  - id: one-brokered-connection
+    title: Inspect the seeded vendor grant
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      In the vendor's Guacamole browser session, expect exactly one launchable
+      connection: **RTAC SSH (brokered)**. Open it.
+      Inside that brokered RTAC terminal only, manually type this copy-only
+      command; do not paste it into the vendor Linux terminal or use node exec:
+
+          whoami
+
+      Expect `rangerdanger`. Record connection name, authenticated vendor user,
+      target account, UTC start/end and the read-only output. Type `exit` inside
+      the brokered terminal to close it, or retain an explicitly timed live
+      session for 4.1. Never write to feeder controls.
+      Human authorization here means **seeded role grants plus human sign-off**,
+      not a per-session broker approval flow. One connection and a read-only
+      identity result prove the granted session works, not all least-privilege
+      properties. Perform the separate overlay Dial/Bind policy review and
+      observer authorization comparison in lesson 3.1; do not infer them here.
+      Save this session's identity/time for [Session lifecycle](/knowledge#sra-session-lifecycle)
+      review in 4.1. Mark Complete is a note-taking action, not automatic acceptance.

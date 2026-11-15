@@ -17,6 +17,7 @@ def response(state):
     result = {"success": True, "package": "fixture", "phase": "ready"}
     if state != "missing":
         result["containd"] = {"applyId": "route-id", "protection": state,
+                              "runningRevision": "runtime-revision",
                               "warning": "receipt-diagnostic"}
     return result
 
@@ -31,6 +32,12 @@ class BackendReceiptConsumers(unittest.TestCase):
     def test_shell_and_python_receipt_verdicts_agree(self):
         fixtures = [
             ("protecting", response("protecting"), True),
+            # Field order/encoding is pinned by TestInstallerReceiptEncoding
+            # against the real backend handlers, not a native containd reply.
+            ("backend-running-revision", {"containd": {
+                "applyId": "route-apply", "protection": "protecting",
+                "runningRevision": "runtime-revision",
+            }}, True),
             ("degraded", response("degraded"), False),
             ("missing", response("missing"), False),
             ("empty-applyId", {"containd": {"applyId": "", "protection": "protecting"}}, False),

@@ -33,7 +33,7 @@ it.each([US_PACKAGE, EU_PACKAGE])("propagates $id's authored wording to every st
     firewall_config: "weak", scenario_count: 1,
   };
   const banner = text(renderToStaticMarkup(
-    <PolicyStatusBanner course={authored.course} activeConfig="weak" policySource="" policies={packagePolicies(authored)} />,
+    <PolicyStatusBanner course={authored.course} activeConfig="weak" policySource="" policies={packagePolicies(authored)} hasCatchUpControls={false} />,
   ));
   expect(banner).toContain("Training baseline Package-owned teaching text.");
   for (const node of [
@@ -51,7 +51,7 @@ describe("PolicyStatusBanner", () => {
   it.each(["weak", "partial", "hardened"] as const)("shows the %s label for a custom plan in both packages", (label) => {
     for (const pkg of [US_PACKAGE, EU_PACKAGE]) {
       const plan = { packageId: pkg.id, revision: pkg.revision, label, actionIds: [], policyHash: "abc", appliedAt: "now" };
-      const out = text(renderToStaticMarkup(<PolicyStatusBanner course={pkg.course} activeConfig="custom" policySource="plan" plan={plan} policies={packagePolicies(pkg)} />));
+      const out = text(renderToStaticMarkup(<PolicyStatusBanner course={pkg.course} activeConfig="custom" policySource="plan" plan={plan} policies={packagePolicies(pkg)} hasCatchUpControls={false} />));
       expect(out).toContain(`Your plan — ${label[0].toUpperCase() + label.slice(1)}`);
       expect(out).not.toContain("Hardened reference");
       expect(out).toContain("(Lab 1.4 plan)");
@@ -62,12 +62,12 @@ describe("PolicyStatusBanner", () => {
     const course = structuredClone(US_PACKAGE.course);
     const planning = course.features.segmentationPlan!.activities.planning;
     course.modules.flatMap((module) => module.activities).find((a) => a.scenario === planning)!.label = "B";
-    const out = text(renderToStaticMarkup(<PolicyStatusBanner course={course} activeConfig="custom" policySource="plan" policies={packagePolicies(US_PACKAGE)} />));
+    const out = text(renderToStaticMarkup(<PolicyStatusBanner course={course} activeConfig="custom" policySource="plan" policies={packagePolicies(US_PACKAGE)} hasCatchUpControls={false} />));
     expect(out).toContain("(Lab B plan)");
     expect(out).not.toContain("1.4");
   });
 
-  const banner = (pkg: PackageSummary, activeConfig: string, expectedConfig?: string) =>
+  const banner = (pkg: PackageSummary, activeConfig: string, expectedConfig?: string, hasCatchUpControls = true) =>
     text(
       renderToStaticMarkup(
         <PolicyStatusBanner
@@ -76,6 +76,7 @@ describe("PolicyStatusBanner", () => {
           policySource=""
           expectedConfig={expectedConfig}
           policies={packagePolicies(pkg)}
+          hasCatchUpControls={hasCatchUpControls}
         />,
       ),
     );
@@ -83,18 +84,30 @@ describe("PolicyStatusBanner", () => {
   it.each([US_PACKAGE, EU_PACKAGE])("uses $id's labels and the shared policy-actions instruction", (pkg) => {
     expect(banner(pkg, "weak")).toBe("Currently running Weak Baseline Cross-zone attacks succeed under this policy.");
     expect(banner(pkg, "improved")).toBe("Currently running Hardened Segmentation The reference segmentation policy for this range.");
-    expect(banner(pkg, "improved", "weak")).toContain("use Reset to Weak below");
+    expect(banner(pkg, "improved", "weak")).toContain("Restore the baseline in containd and read it back. Optional catch-up — for less technical students or teams behind schedule: use Reset to Weak below. It replaces typing rules, not your own observations, operator check or sign-off.");
     expect(banner(pkg, "weak", "hardened")).toContain("Hardened Segmentation (reference or your custom policy)");
     expect(banner(pkg, "weak", "hardened")).toContain("Author, review, commit and read back in containd");
-    expect(banner(pkg, "weak", "hardened")).toContain("use the catch-up controls below");
+    expect(banner(pkg, "weak", "hardened")).toContain("Optional catch-up — for less technical students or teams behind schedule: use the catch-up controls below. These replace typing rules, not your own observations, operator check or sign-off.");
     expect(banner(pkg, "weak", "hardened")).not.toContain("Apply Hardened");
     expect(banner(pkg, "weak", "improved")).not.toContain("Network Console");
     expect(banner(pkg, "custom", "weak")).toContain("expects the Weak Baseline");
   });
 
+  it.each([US_PACKAGE, EU_PACKAGE])("omits catch-up instructions for $id when its controls are absent", (pkg) => {
+    const weakMismatch = banner(pkg, "improved", "weak", false);
+    expect(weakMismatch).toContain("Restore the baseline in containd and read it back.");
+    expect(weakMismatch).not.toContain("Optional catch-up");
+    expect(weakMismatch).not.toContain("below");
+
+    const hardenedMismatch = banner(pkg, "weak", "hardened", false);
+    expect(hardenedMismatch).toContain("Author, review, commit and read back in containd.");
+    expect(hardenedMismatch).not.toContain("Optional catch-up");
+    expect(hardenedMismatch).not.toContain("below");
+  });
+
   it("waits for the package before naming a policy", () => {
     const out = text(
-      renderToStaticMarkup(<PolicyStatusBanner course={undefined} activeConfig="weak" policySource="" policies={undefined} />),
+      renderToStaticMarkup(<PolicyStatusBanner course={undefined} activeConfig="weak" policySource="" policies={undefined} hasCatchUpControls={false} />),
     );
     expect(out).toBe("Currently running Loading…");
   });

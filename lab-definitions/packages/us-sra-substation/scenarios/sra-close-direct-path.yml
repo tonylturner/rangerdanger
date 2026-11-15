@@ -1,0 +1,119 @@
+id: sra-close-direct-path
+name: Close the direct path
+summary: Compare direct exposure under Weak with source-pinned broker access under Improved.
+estimated_minutes: 15
+description: >
+  Prove network reachability, not authentication. Begin with fresh Weak controls,
+  then apply Brokered Vendor Access and repeat from the same vendor source.
+nodes: [vendor-jump-1, kali-1, fw-1, rtac-1, relay-1]
+tags: [remote-access, segmentation, evidence]
+steps:
+  - id: fresh-weak-control
+    title: Start a fresh Weak control window
+    expected_config: weak
+    description: |
+      Execute Step to apply **Weak Baseline**. This replaces policy and resets
+      counters. Lesson 1.1 did not include a field probe: do not borrow one.
+      Record UTC start, policy, tester and source vendor-jump-1 (`10.20.20.10`,
+      vendor/dmz). Do not change the feeder.
+    action: {type: firewall, config: weak}
+  - id: direct-positive-controls
+    title: Prove the direct listeners work under Weak
+    node: vendor-jump-1
+    expected_config: weak
+    description: |
+      From the vendor-jump-1 terminal:
+
+          nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4
+
+          curl -ksS --max-time 10 https://10.30.30.20/
+
+      Expect RTAC `22/tcp open`, `443/tcp open`, relay `502/tcp open` and
+      **RTAC Management Console**. Save actual output and UTC times. These
+      controls establish working destinations for the later negatives.
+      Stop if they fail; a broken listener cannot prove segmentation.
+      `-Pn` skips ICMP discovery; `-k` accepts the disposable RTAC certificate.
+  - id: apply-brokered-access
+    title: Apply Brokered Vendor Access
+    expected_config: improved
+    description: |
+      Execute Step to apply **Brokered Vendor Access** (Improved).
+      Start a new evidence window; do not subtract counters across this apply.
+      The L4 source pin enforces; DPI detects and logs.
+    action: {type: firewall, config: improved}
+  - id: repeat-direct-negatives
+    title: Repeat the same vendor tuples
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      From the vendor-jump-1 terminal:
+
+          nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4
+
+      Expect all three ports `filtered` (no answer/timeouts), unlike the
+      working Weak controls. Timeout = deny evidence only with those controls
+      and matching firewall evidence. Fast connection refused / `closed` =
+      reached, not a successful deny. No route, tool errors or missing controls
+      are inconclusive. Record SRC/DST/port, UTC and policy, not just a screenshot.
+  - id: approved-http-surface
+    title: Prove the approved vendor surface
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      From the vendor-jump-1 terminal:
+
+          curl -sS --max-time 10 http://10.25.25.10:8080/realms/sra/.well-known/openid-configuration
+
+          curl -sS --max-time 10 -o /dev/null -w '%{http_code}\n' http://10.25.25.20:8080/guacamole/
+
+          nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4
+
+      Expect discovery JSON with issuer `http://10.25.25.10:8080/realms/sra`
+      and the broker HTTP status `200`. Preserve unexpected responses as
+      discrepancies; do not silently accept any HTTP status.
+      Both services use **HTTP :8080, not HTTPS**: a disposable-lab limitation,
+      not production transport guidance. Reachability is not login evidence.
+      Expect controller `1280/tcp open` as well. The approved vendor surface
+      includes the Ziti management API with a read-only observer identity.
+      Port 1280 is a shared listener, not intrinsically read-only. Lesson 3.1
+      separately proves its source pin and observer permissions; these port
+      results alone cannot prove application or workload authorization.
+  - id: different-source-control
+    title: Compare Kali with the authorized vendor source
+    node: kali-1
+    expected_config: improved
+    description: |
+      From the kali-1 terminal:
+
+          nmap -Pn -sT -p 8080 10.25.25.10 --max-retries 1 -T4
+
+          nmap -Pn -sT -p 8080 10.25.25.20 --max-retries 1 -T4
+
+      Kali is `10.10.10.50` on enterprise/wan: this is **from Kali to the SRA
+      DMZ (lan4)**, not Kali on lan4. Expect `8080/tcp filtered` for both.
+      The preceding working vendor HTTP requests to the same endpoints are
+      the positive controls. Kali is denied in Weak too; never claim a Weak
+      Kali success or replace Kali with the vendor for this negative.
+      These scans alone do not establish the cause of missing answers.
+  - id: correlate-network-evidence
+    title: Read the matching firewall evidence
+    node: fw-1
+    expected_config: improved
+    description: |
+      From the fw-1 containd CLI:
+
+          show events
+
+      Match UTC, source, destination, port and rule ID for
+      `deny-vendor-to-ot`, `deny-vendor-to-field` and `deny-enterprise-to-sra`.
+      Compare the successful vendor requests with `vendor-to-sra-identity`
+      and `vendor-to-sra-broker`, plus the controller connection with
+      `vendor-to-sra-controller`. Save event references alongside the outputs.
+      Missing events are a limitation, not proof of allow or deny.
+      Write which tuples are closed and which HTTP endpoints work. This is
+      manual network evidence, not an automated PASS or proof of MFA.
+      Read [Remote access boundaries](/knowledge#sra-access-boundaries).

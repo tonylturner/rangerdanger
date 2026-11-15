@@ -678,8 +678,8 @@ func firstDifference(left, right any, path string) string {
 	return ""
 }
 
-// CheckCrossPackage verifies build consistency for service keys shared by two
-// source-mode package models.
+// CheckCrossPackage verifies that shared built keys agree and that every local
+// image name identifies one source build across both package models.
 func CheckCrossPackage(packageA string, sourceA []byte, packageB string, sourceB []byte) error {
 	modelA, err := decodeCompose(sourceA)
 	if err != nil {
@@ -710,19 +710,43 @@ func CheckCrossPackage(packageA string, sourceA []byte, packageB string, sourceB
 		if !hasA || !hasB || !reflect.DeepEqual(buildA, buildB) {
 			return fmt.Errorf("shared service %q has inconsistent source build between %s and %s", key, packageA, packageB)
 		}
-		expectedImage := RangeProject + "-" + key
-		imageA, imageB := stringValue(a["image"]), stringValue(b["image"])
-		if imageA == "" {
-			imageA = modelA.ProjectName + "-" + key
+		if sourceImage(modelA, key) != sourceImage(modelB, key) {
+			return fmt.Errorf("shared built service %q has inconsistent source image between %s and %s", key, packageA, packageB)
 		}
-		if imageB == "" {
-			imageB = modelB.ProjectName + "-" + key
+	}
+	type producer struct {
+		build any
+		owner string
+	}
+	producers := make(map[string]producer)
+	for index, model := range []composeModel{modelA, modelB} {
+		packageID := []string{packageA, packageB}[index]
+		keys := make([]string, 0, len(model.Services))
+		for key := range model.Services {
+			keys = append(keys, key)
 		}
-		if imageA != expectedImage || imageB != expectedImage {
-			return fmt.Errorf("shared built service %q must produce image %q", key, expectedImage)
+		sort.Strings(keys)
+		for _, key := range keys {
+			build, built := model.ServicesRaw[key]["build"]
+			if !built {
+				continue
+			}
+			image := sourceImage(model, key)
+			owner := packageID + "/" + key
+			if previous, exists := producers[image]; exists && !reflect.DeepEqual(previous.build, build) {
+				return fmt.Errorf("source image %q has inconsistent source build between %s and %s", image, previous.owner, owner)
+			}
+			producers[image] = producer{build: build, owner: owner}
 		}
 	}
 	return nil
+}
+
+func sourceImage(model composeModel, key string) string {
+	if image := stringValue(model.ServicesRaw[key]["image"]); image != "" {
+		return image
+	}
+	return model.ProjectName + "-" + key
 }
 
 type composeModel struct {

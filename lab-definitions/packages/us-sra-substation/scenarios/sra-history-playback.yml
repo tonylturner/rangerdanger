@@ -1,0 +1,99 @@
+id: sra-history-playback
+name: History versus playback
+summary: Join a terminated vendor session to role-separated history and recording evidence.
+estimated_minutes: 15
+description: >
+  From the vendor desktop, distinguish auditor history visibility from admin
+  playback permission. Reset Lab changes policy to Weak; restore Improved before review.
+nodes: [vendor-jump-1, fw-1, rtac-1]
+tags: [remote-access, recording, provenance]
+steps:
+  - id: apply-improved
+    title: Start under Improved
+    expected_config: improved
+    description: |
+      Execute Step to apply **Brokered Vendor Access**. Start a UTC window.
+      Use vendor-jump-1 (`10.20.20.10`, dmz) for the browser and TOTP terminal.
+      Save prior notes, captures and counter snapshots outside the reset path.
+    action: {type: firewall, config: improved}
+  - id: identify-live-session
+    title: Create an identifiable vendor recording
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      Repeat 2.2's fresh private SAML+TOTP login as `vendor` at
+      **http://10.25.25.20:8080/guacamole/**, with password `rangerdanger`.
+      From the vendor-jump-1 terminal, manually generate the vendor OTP:
+
+          oathtool --totp -b JBSWY3DPEHPK3PXP
+
+      Open the one **RTAC SSH (brokered)** connection. Inside that brokered
+      RTAC terminal only (not vendor Linux), manually type:
+
+          whoami
+
+      Expect `rangerdanger`. Record a unique UTC observation marker, username,
+      connection name and start time. Leave this session live for the reset.
+      If it never worked, stop: teardown and playback have no positive control.
+      Browser and IdP use HTTP :8080, a disposable-lab limitation.
+  - id: reset-live-session
+    title: Reset Lab ends the live session and reapplies Weak
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      Save evidence outside the portal reset path first. Click **Reset Lab** in
+      the runner and confirm. This is not Reset Progress and not a range restart.
+      Record UTC, each reset action and any error; expect the active brokered
+      session to disconnect. Reconnection must require a new session.
+      Reset Lab reapplies **Weak Baseline**, resets field state, restarts broker
+      services and deletes captures. It retains seeded identities, TOTP and
+      recordings. A failed reset is not successful teardown evidence.
+      The Improved test window is over. Do not collect further Improved evidence
+      until the next explicit policy step.
+  - id: restore-improved
+    title: Restore Improved before role review
+    expected_config: improved
+    description: |
+      Execute Step to apply **Brokered Vendor Access** after Reset Lab's Weak
+      transition. Begin a new UTC window and fresh counter generation.
+      Never combine pre-reset capture/counter deltas with post-reset evidence.
+    action: {type: firewall, config: improved}
+  - id: auditor-history-only
+    title: Observe auditor history without playback
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      From the vendor-jump-1 terminal, manually generate the auditor OTP:
+
+          oathtool --totp -b KRUGS4ZANFZSAYJA
+
+      On the vendor desktop, close every old private window (broker and IdP)
+      and open a fresh private session at **http://10.25.25.20:8080/guacamole/**.
+      Log in through Keycloak as `auditor`, password `rangerdanger`, fresh OTP.
+      Verify the displayed user; cached vendor/admin SSO invalidates the test.
+      Expect no launchable connections. Open connection history and find the
+      vendor's closed session by user, **RTAC SSH (brokered)** and UTC start/end;
+      record its history identifier if displayed. Expect no recording logs or
+      playback access for auditor. History visibility is the positive control
+      for this role's successful login; the next admin playback is the control
+      that the recording actually exists. Missing history makes this inconclusive.
+  - id: admin-playback
+    title: Play the same session as sra-admin
+    node: vendor-jump-1
+    expected_config: improved
+    description: |
+      From the vendor-jump-1 terminal, manually generate the admin OTP:
+
+          oathtool --totp -b VVTSWY6Y7SBYXOKLY2KE3SAZGNLM3NWD
+
+      Close all private windows again; use a new private browser session at the
+      same broker URL. Log in as `sra-admin`, password `rangerdanger`, fresh OTP.
+      Verify the user. Find the **same** closed session in history and open its
+      recording. Expect advancing playback time and the recorded `whoami` /
+      `rangerdanger` exchange. Save history/session reference, user, connection,
+      start/end times, recording reference and observed playback range.
+      Auditor's absent logs mean a permission boundary, not missing disk files.
+      Playback proves this recording is usable, not tamper-proof provenance of
+      every session. If no matching recording plays, do not pass the auditor
+      negative. Preserve evidence before a new range generation; see
+      [Session lifecycle](/knowledge#sra-session-lifecycle).

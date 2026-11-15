@@ -532,11 +532,18 @@ export async function applyPlan(body: PlanRequest) {
     method: "POST", body: JSON.stringify(body),
   });
 }
+export type ContaindApplyReceipt = {
+  applyId: string;
+  protection: string;
+  runningRevision?: string;
+};
+
 export type StepActionResult = {
   action: string;
   success: boolean;
   detail: string;
   impact?: string;
+  containd?: ContaindApplyReceipt;
 };
 
 export type StepExecutionResult = {
@@ -544,6 +551,7 @@ export type StepExecutionResult = {
   step_title: string;
   action_type: string;
   success: boolean;
+  containd?: ContaindApplyReceipt;
   results: StepActionResult[];
   timestamp: string;
 };
@@ -678,6 +686,7 @@ export type ResetAction = {
 
 export type ResetResult = {
   success: boolean;
+  containd?: ContaindApplyReceipt;
   actions: ResetAction[];
 };
 

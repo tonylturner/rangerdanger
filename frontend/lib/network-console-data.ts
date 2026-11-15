@@ -3,7 +3,7 @@ import { nodeZone } from "./observed-flows";
 
 // All supported zone names
 export const zones = [
-  "enterprise_net", "vendor_net", "ot_ops_net", "field_net",
+  "enterprise_net", "vendor_net", "sra_dmz_net", "ot_ops_net", "field_net",
   // EU IEC 104 package zones
   "station_net", "control_centre_net", "ops_dmz_net", "lan5",
   // Legacy zone names
@@ -59,6 +59,7 @@ export type ViewMode = {
 export const ZONE_HUMAN_NAME: Record<string, string> = {
   enterprise_net: "Enterprise",
   vendor_net: "Vendor / DMZ",
+  sra_dmz_net: "Secure Remote Access DMZ",
   ot_ops_net: "OT Ops",
   field_net: "Field Devices",
   station_net: "Station",

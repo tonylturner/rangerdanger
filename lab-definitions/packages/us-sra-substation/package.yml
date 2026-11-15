@@ -1,0 +1,57 @@
+schema: 1
+id: us-sra-substation
+title: "US distribution substation: secure remote access"
+revision: 2
+topology: topology.yml
+knowledge: knowledge/index.yml
+scenarios: scenarios
+capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
+policies:
+  weak:
+    file: firewall/weak.json
+    label: Weak Baseline
+    description: Direct vendor access to OT remains available.
+  improved:
+    file: firewall/improved.json
+    label: Brokered Vendor Access
+    description: Vendor desktop access is limited to the identity provider, session broker and Ziti management API with a read-only observer identity.
+operator_view: us-dnp3-substation
+course:
+  nodes: nodes.yml
+  modules:
+    - id: before
+      title: Before brokered access
+      activities:
+        - scenario: sra-direct-vendor-access
+          label: '1.1'
+          validate: false
+    - id: brokered-access
+      title: Brokered access
+      activities:
+        - scenario: sra-close-direct-path
+          label: '2.1'
+          validate: false
+        - scenario: sra-broker-login
+          label: '2.2'
+          validate: false
+    - id: workload-authorization
+      title: Workload authorization
+      activities:
+        - scenario: sra-no-inbound-ot
+          label: '3.1'
+          validate: false
+    - id: recorded-session-review
+      title: Recorded-session review
+      activities:
+        - scenario: sra-history-playback
+          label: '4.1'
+          validate: false
+    - id: combined-acceptance
+      title: Combined acceptance
+      activities:
+        - scenario: sra-vendor-test-record
+          label: '5.1'
+          validate: false
+        - scenario: sra-regression-weak
+          label: '5.2'
+          validate: false

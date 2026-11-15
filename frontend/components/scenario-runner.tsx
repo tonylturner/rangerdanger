@@ -212,6 +212,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       );
       setCmdLog((prev) => [
         `[RESET] ${result.success ? "Lab restored" : "Reset had errors"} (${result.actions.length} actions)`,
+        `[RESET] Containd running revision: ${result.containd?.runningRevision || "not reported"}`,
         ...actionLines,
         ...prev,
       ].slice(0, 100));
@@ -281,7 +282,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       // Log results
       for (const r of result.results) {
         const label = r.success ? "SUCCEEDED" : "NOT MET";
-        const msg = `[${label}] Step ${idx + 1}: ${scenario.steps[idx]?.title} — ${r.action}: ${r.impact || r.detail}`;
+        const revision = result.action_type === "firewall"
+          ? ` · running revision: ${r.containd?.runningRevision || "not reported"}`
+          : "";
+        const msg = `[${label}] Step ${idx + 1}: ${scenario.steps[idx]?.title} — ${r.action}: ${r.impact || r.detail}${revision}`;
         setCmdLog((prev) => [msg, ...prev].slice(0, 100));
       }
 
@@ -533,6 +537,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               plan={appliedPlan}
               expectedConfig={step?.expected_config}
               policies={packagePolicies}
+              hasCatchUpControls={hasPolicyActions}
             />
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
             {scenario.id === binding?.activities.implementation && dynamicPlan &&
@@ -596,8 +601,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     <span className={`shrink-0 font-bold ${r.success ? "text-green-400" : "text-red-400"}`}>
                       {r.success ? "\u2713" : "\u2717"}
                     </span>
-                    <span className="text-slate-300 font-medium">{r.action}:</span>
+                    <span className="text-slate-300 font-medium">{r.action}: </span>
                     <span className="text-slate-400">{r.impact || r.detail}</span>
+                    {stepResult.action_type === "firewall" && (
+                      <span className="text-slate-400">
+                        {" "}· running revision: {r.containd?.runningRevision || "not reported"}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>

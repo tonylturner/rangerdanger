@@ -1,0 +1,849 @@
+{
+  "schema": 1,
+  "inventory": {
+    "sra-broker-login": {
+      "RUN": 1,
+      "SKIP": 2
+    },
+    "sra-close-direct-path": {
+      "RUN": 11,
+      "SKIP": 0
+    },
+    "sra-direct-vendor-access": {
+      "RUN": 2,
+      "SKIP": 1
+    },
+    "sra-history-playback": {
+      "RUN": 0,
+      "SKIP": 4
+    },
+    "sra-no-inbound-ot": {
+      "RUN": 12,
+      "SKIP": 8
+    },
+    "sra-regression-weak": {
+      "RUN": 14,
+      "SKIP": 0
+    },
+    "sra-vendor-test-record": {
+      "RUN": 15,
+      "SKIP": 0
+    }
+  },
+  "minimum_executed": 55,
+  "commands": {
+    "sra-broker-login|2|oathtool --totp -b JBSWY3DPEHPK3PXP|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual fresh six-digit TOTP generation on the vendor desktop; copy-only, outside the backend exec allowlist. Pair with an isolated browser SAML login; smoke cannot attest to an OTP challenge."
+    },
+    "sra-broker-login|3|curl -sS --max-time 10 -o /dev/null -w '%{http_code}\\n' -X POST --data 'username=vendor&password=rangerdanger' http://10.25.25.20:8080/guacamole/api/tokens|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "^403\\s*$"
+      },
+      "reason": null
+    },
+    "sra-broker-login|4|whoami|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Type manually inside Guacamole RTAC SSH (brokered), never in vendor Linux or node exec. The vendor container is the desktop context only; smoke cannot attest to broker session authorization or recording."
+    },
+    "sra-close-direct-path|2|nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b22/tcp\\s+open\\b.*\\b443/tcp\\s+open\\b"
+      },
+      "reason": null
+    },
+    "sra-close-direct-path|2|nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b502/tcp\\s+open\\b"
+      },
+      "reason": null
+    },
+    "sra-close-direct-path|2|curl -ksS --max-time 10 https://10.30.30.20/|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "RTAC Management Console"
+      },
+      "reason": null
+    },
+    "sra-close-direct-path|4|nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)\\b22/tcp\\s+filtered\\b.*\\b443/tcp\\s+filtered\\b",
+        "control_match": "(?s)\\b22/tcp\\s+open\\b.*\\b443/tcp\\s+open\\b",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "sra-close-direct-path|4|nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)\\b502/tcp\\s+filtered\\b",
+        "control_match": "(?s)\\b502/tcp\\s+open\\b",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "sra-close-direct-path|5|curl -sS --max-time 10 http://10.25.25.10:8080/realms/sra/.well-known/openid-configuration|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"issuer\"\\s*:\\s*\"http://10\\.25\\.25\\.10:8080/realms/sra\""
+      },
+      "reason": null
+    },
+    "sra-close-direct-path|5|curl -sS --max-time 10 -o /dev/null -w '%{http_code}\\n' http://10.25.25.20:8080/guacamole/|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "^200\\s*$"
+      },
+      "reason": null
+    },
+    "sra-close-direct-path|5|nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b1280/tcp\\s+open\\b"
+      },
+      "reason": null
+    },
+    "sra-close-direct-path|6|nmap -Pn -sT -p 8080 10.25.25.10 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b8080/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-close-direct-path|6|nmap -Pn -sT -p 8080 10.25.25.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b8080/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-close-direct-path|7|show events|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=deny-(?:vendor-to-(?:ot|field)|enterprise-to-sra)\\b)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
+      },
+      "reason": null
+    },
+    "sra-direct-vendor-access|2|nmap -Pn -sT -p 22,443 10.30.30.20|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)22/tcp\\s+open.*443/tcp\\s+open"
+      },
+      "reason": null
+    },
+    "sra-direct-vendor-access|2|curl -ksS --max-time 10 https://10.30.30.20/|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "RTAC Management Console"
+      },
+      "reason": null
+    },
+    "sra-direct-vendor-access|3|ssh rangerdanger@10.30.30.20|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Interactive SSH login and host-key confirmation are performed manually; the smoke verifies both management listeners with nmap and HTTPS with curl."
+    },
+    "sra-history-playback|2|oathtool --totp -b JBSWY3DPEHPK3PXP|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual fresh six-digit TOTP generation on the vendor desktop; copy-only, outside the backend exec allowlist. Pair with an isolated browser SAML login; smoke cannot attest to an OTP challenge."
+    },
+    "sra-history-playback|2|whoami|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Type manually inside Guacamole RTAC SSH (brokered), never in vendor Linux or node exec. The vendor container is the desktop context only; smoke cannot attest to broker session authorization or recording."
+    },
+    "sra-history-playback|5|oathtool --totp -b KRUGS4ZANFZSAYJA|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual fresh six-digit TOTP generation on the vendor desktop; copy-only, outside the backend exec allowlist. Pair with an isolated browser SAML login; smoke cannot attest to an OTP challenge."
+    },
+    "sra-history-playback|6|oathtool --totp -b VVTSWY6Y7SBYXOKLY2KE3SAZGNLM3NWD|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual fresh six-digit TOTP generation on the vendor desktop; copy-only, outside the backend exec allowlist. Pair with an isolated browser SAML login; smoke cannot attest to an OTP challenge."
+    },
+    "sra-no-inbound-ot|2|nmap -Pn -sT -p 22 10.30.30.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b22/tcp\\s+open\\b"
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|2|nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b1280/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|2|nmap -Pn -sT -p 8080 10.25.25.10 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b8080/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|2|nmap -Pn -sT -p 8080 10.25.25.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b8080/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|2|nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4|2": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b1280/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|4|nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b1280/tcp\\s+open\\b"
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|4|ziti edge login 10.25.25.40:1280 -u sra-observer -p rangerdanger -y|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual Ziti observer login/policy read on the vendor terminal, copy-only and outside the backend exec allowlist. Preserve tables and exit codes for Dial/Bind and observer evidence; smoke cannot attest to the stateful observer session."
+    },
+    "sra-no-inbound-ot|4|ziti edge list service-policies|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual Ziti observer login/policy read on the vendor terminal, copy-only and outside the backend exec allowlist. Preserve tables and exit codes for Dial/Bind and observer evidence; smoke cannot attest to the stateful observer session."
+    },
+    "sra-no-inbound-ot|4|ziti edge list identities|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual Ziti observer login/policy read on the vendor terminal, copy-only and outside the backend exec allowlist. Preserve tables and exit codes for Dial/Bind and observer evidence; smoke cannot attest to the stateful observer session."
+    },
+    "sra-no-inbound-ot|4|ziti edge list edge-router-policies|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual Ziti observer login/policy read on the vendor terminal, copy-only and outside the backend exec allowlist. Preserve tables and exit codes for Dial/Bind and observer evidence; smoke cannot attest to the stateful observer session."
+    },
+    "sra-no-inbound-ot|4|ziti edge policy-advisor services rtac-ssh|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual Ziti observer login/policy read on the vendor terminal, copy-only and outside the backend exec allowlist. Preserve tables and exit codes for Dial/Bind and observer evidence; smoke cannot attest to the stateful observer session."
+    },
+    "sra-no-inbound-ot|5|ziti edge delete service-policy sra-dial|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual observer-only refused-write test on the vendor terminal, outside the backend exec allowlist. Expect exit 1 / 401 Unauthorized; must pair with immediate unchanged policy re-read using the same session. Never automate deletion or substitute admin credentials."
+    },
+    "sra-no-inbound-ot|5|ziti edge list service-policies|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Manual immediate same-observer-session re-read after the refused write, outside the backend exec allowlist. Expect exit 0 and unchanged policy IDs/types/roles; smoke cannot prove this stateful authorization control."
+    },
+    "sra-no-inbound-ot|6|whoami|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "Type manually inside Guacamole RTAC SSH (brokered), never in vendor Linux or node exec. The vendor container is the desktop context only; smoke cannot attest to broker session authorization or recording."
+    },
+    "sra-no-inbound-ot|6|nmap -Pn -sT -p 22 10.30.30.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)\\b22/tcp\\s+filtered\\b",
+        "control_match": "(?s)\\b22/tcp\\s+open\\b",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|7|nmap -Pn -sT -p 8080 10.25.25.10 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b8080/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|7|nmap -Pn -sT -p 8080 10.25.25.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b8080/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|7|nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b1280/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|8|show running-config|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:"
+      },
+      "reason": null
+    },
+    "sra-no-inbound-ot|8|show events|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=deny-(?:vendor-to-(?:ot|field)|enterprise-to-sra)\\b)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
+      },
+      "reason": null
+    },
+    "sra-regression-weak|2|nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)\\b22/tcp\\s+filtered\\b.*\\b443/tcp\\s+filtered\\b",
+        "control_match": "(?s)\\b22/tcp\\s+open\\b.*\\b443/tcp\\s+open\\b",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "sra-regression-weak|2|nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)\\b502/tcp\\s+filtered\\b",
+        "control_match": "(?s)\\b502/tcp\\s+open\\b",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "sra-regression-weak|2|show protection|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?s)(?=.*\"state\"\\s*:\\s*\"protecting\")(?=.*\"ready\"\\s*:\\s*true)(?=.*\"appliedRevision\"\\s*:\\s*\"[^\"\\s]+\")[\\s\\S]*\"protectingRevision\"\\s*:\\s*\"[^\"\\s]+\""
+      },
+      "reason": null
+    },
+    "sra-regression-weak|4|nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b22/tcp\\s+open\\b.*\\b443/tcp\\s+open\\b"
+      },
+      "reason": null
+    },
+    "sra-regression-weak|4|nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b502/tcp\\s+open\\b"
+      },
+      "reason": null
+    },
+    "sra-regression-weak|4|curl -ksS --max-time 10 https://10.30.30.20/|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "RTAC Management Console"
+      },
+      "reason": null
+    },
+    "sra-regression-weak|4|show running-config|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:"
+      },
+      "reason": null
+    },
+    "sra-regression-weak|4|show protection|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?s)(?=.*\"state\"\\s*:\\s*\"protecting\")(?=.*\"ready\"\\s*:\\s*true)(?=.*\"appliedRevision\"\\s*:\\s*\"[^\"\\s]+\")[\\s\\S]*\"protectingRevision\"\\s*:\\s*\"[^\"\\s]+\""
+      },
+      "reason": null
+    },
+    "sra-regression-weak|6|curl -sS --max-time 10 http://10.25.25.10:8080/realms/sra/.well-known/openid-configuration|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"issuer\"\\s*:\\s*\"http://10\\.25\\.25\\.10:8080/realms/sra\""
+      },
+      "reason": null
+    },
+    "sra-regression-weak|6|curl -sS --max-time 10 -o /dev/null -w '%{http_code}\\n' http://10.25.25.20:8080/guacamole/|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "^200\\s*$"
+      },
+      "reason": null
+    },
+    "sra-regression-weak|6|nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)\\b22/tcp\\s+filtered\\b.*\\b443/tcp\\s+filtered\\b",
+        "control_match": "(?s)\\b22/tcp\\s+open\\b.*\\b443/tcp\\s+open\\b",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "sra-regression-weak|6|nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)\\b502/tcp\\s+filtered\\b",
+        "control_match": "(?s)\\b502/tcp\\s+open\\b",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "sra-regression-weak|7|show protection|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?s)(?=.*\"state\"\\s*:\\s*\"protecting\")(?=.*\"ready\"\\s*:\\s*true)(?=.*\"appliedRevision\"\\s*:\\s*\"[^\"\\s]+\")[\\s\\S]*\"protectingRevision\"\\s*:\\s*\"[^\"\\s]+\""
+      },
+      "reason": null
+    },
+    "sra-regression-weak|7|show events|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=deny-(?:vendor-to-(?:ot|field)|enterprise-to-sra)\\b)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|2|show protection|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?s)(?=.*\"state\"\\s*:\\s*\"protecting\")(?=.*\"ready\"\\s*:\\s*true)(?=.*\"appliedRevision\"\\s*:\\s*\"[^\"\\s]+\")[\\s\\S]*\"protectingRevision\"\\s*:\\s*\"[^\"\\s]+\""
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|2|show running-config|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|2|export config|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|3|curl -sS --max-time 10 http://10.25.25.10:8080/realms/sra/.well-known/openid-configuration|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"issuer\"\\s*:\\s*\"http://10\\.25\\.25\\.10:8080/realms/sra\""
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|3|curl -sS --max-time 10 -o /dev/null -w '%{http_code}\\n' http://10.25.25.20:8080/guacamole/|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "^200\\s*$"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|3|nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b1280/tcp\\s+open\\b"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|3|curl -sS --max-time 10 -o /dev/null -w '%{http_code}\\n' -X POST --data 'username=vendor&password=rangerdanger' http://10.25.25.20:8080/guacamole/api/tokens|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "^403\\s*$"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|3|nmap -Pn -sT -p 22,443 10.30.30.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)\\b22/tcp\\s+filtered\\b.*\\b443/tcp\\s+filtered\\b",
+        "control_match": "(?s)\\b22/tcp\\s+open\\b.*\\b443/tcp\\s+open\\b",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|3|nmap -Pn -sT -p 502 10.40.40.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)\\b502/tcp\\s+filtered\\b",
+        "control_match": "(?s)\\b502/tcp\\s+open\\b",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|3|nmap -Pn -sT -p 8080 10.25.25.10 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b8080/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|3|nmap -Pn -sT -p 8080 10.25.25.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b8080/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|3|nmap -Pn -sT -p 1280 10.25.25.40 --max-retries 1 -T4|2": {
+      "container": "rangerdanger-kali",
+      "policy": "improved",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)\\b1280/tcp\\s+filtered\\b"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|4|show events|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?m)^(?=.*\\bfirewall\\.rule\\.hit\\b)(?=.*\\baction=DENY\\b)(?=.*\\bruleId=deny-(?:vendor-to-(?:ot|field)|enterprise-to-sra)\\b)(?=.*\\bproto=tcp\\b)(?=.*\\bport=\\d+\\b).+$"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|4|show audit|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?i)(?:config\\.|audit|no entries|\\[\\])"
+      },
+      "reason": null
+    },
+    "sra-vendor-test-record|4|show protection|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "improved",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?s)(?=.*\"state\"\\s*:\\s*\"protecting\")(?=.*\"ready\"\\s*:\\s*true)(?=.*\"appliedRevision\"\\s*:\\s*\"[^\"\\s]+\")[\\s\\S]*\"protectingRevision\"\\s*:\\s*\"[^\"\\s]+\""
+      },
+      "reason": null
+    }
+  }
+}

@@ -7,7 +7,15 @@ import {
   getFlowAuthorization,
   getZonePolicyInfo,
   humanizeSummary,
+  humanZoneName,
+  zones,
 } from "./network-console-data";
+
+it("includes the SRA DMZ in multi-homed badges without relabelling EU lan4", () => {
+  expect(zones).toContain("sra_dmz_net");
+  expect(humanZoneName("sra_dmz_net")).toBe("Secure Remote Access DMZ");
+  expect(humanZoneName("lan4")).toBe("Control Centre");
+});
 
 describe("humanizeSummary", () => {
   it("maps known port labels and strips the more-count tail", () => {

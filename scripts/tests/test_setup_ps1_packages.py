@@ -231,18 +231,20 @@ if ($env:SCENARIO -in @('wrong-then-ready','unknown-then-ready') -and $script:ge
     def test_firewall_gate_requires_apply_and_reset_protection_receipts(self):
         source = (ROOT / "setup.ps1").read_text()
         start = source.index("if ($SkipFirewallGate) {")
-        end = source.index("# OpenPLC is used by both", start)
+        end = source.index("# OpenPLC readiness", start)
         gate = source[start:end]
-        for route in ("valid", "apply", "reset"):
-            protections = ("protecting",) if route == "valid" else (
-                "empty", "missing", "pending", "degraded", "failed")
-            for protection in protections:
-                with self.subTest(route=route, protection=protection):
-                    result = powershell(LOAD_PACKAGE + r'''
+        for package in ("us-dnp3-substation", "eu-iec104-substation", "us-sra-substation"):
+            for route in ("valid", "apply", "reset"):
+                protections = ("protecting",) if route == "valid" else (
+                    "empty", "missing", "pending", "degraded", "failed")
+                for protection in protections:
+                    with self.subTest(package=package, route=route, protection=protection):
+                        result = powershell(LOAD_PACKAGE + r'''
 function Say($Message) { }
 function Warn($Message) { }
 function Die($Message) { throw $Message }
 $SkipFirewallGate = $false
+$RangePackage = $env:RANGE_PACKAGE
 function Invoke-WebRequest($Uri, $Method, $ContentType, $Body, [switch]$UseBasicParsing, $TimeoutSec, $ErrorAction) {
     if ($Uri.EndsWith('/api/firewall/health')) {
         if ($TimeoutSec -ne 10) { throw 'unbounded health request' }
@@ -258,7 +260,7 @@ function Invoke-WebRequest($Uri, $Method, $ContentType, $Body, [switch]$UseBasic
         return [pscustomobject]@{Content=('{' + $receipt + '}')}
     }
     if ($Uri.EndsWith('/api/workshop/reset')) {
-        if ($TimeoutSec -ne 60 -or $Method -ne 'POST') { throw 'reset timeout or method changed' }
+        if ($TimeoutSec -ne [int]$env:RESET_TIMEOUT -or $Method -ne 'POST') { throw 'reset timeout or method changed' }
         $protection = if ($env:ROUTE -eq 'reset') { $env:PROTECTION } else { 'protecting' }
         if ($protection -eq 'empty') { return [pscustomobject]@{Content=''} }
         $receipt = if ($protection -eq 'missing') { '' } else {
@@ -273,8 +275,8 @@ try {
 ''' + gate + r'''
 } catch { $failed = $true }
 if ($failed -ne ($env:ROUTE -ne 'valid')) { throw 'incorrect installer gate result' }
-''', ROUTE=route, PROTECTION=protection)
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+''', ROUTE=route, PROTECTION=protection, RANGE_PACKAGE=package, RESET_TIMEOUT="60")
+                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_setup_orders_proof_and_acquisition_before_migration_and_start(self):
         source = (ROOT / "setup.ps1").read_text()

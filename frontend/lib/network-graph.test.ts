@@ -7,6 +7,28 @@ import usFixture from "../../backend/internal/labs/testdata/us-flow-graph.json";
 import { aggregateFlows, createFlowContext } from "./observed-flows";
 
 describe("buildStyledGraph", () => {
+  it.each([false, true])("places the SRA DMZ between vendor and OT, Purdue=%s", (iec62443) => {
+    const graph = structuredClone(usFixture) as LabGraph;
+    graph.networks.push({
+      id: "sra_dmz_net", name: "Secure Remote Access DMZ", cidr: "10.25.25.0/24",
+      zone: "lan4", purdue: "Level 3.5",
+    });
+    graph.nodes.push({
+      id: "sra-broker-1", type: "sra_broker", position: { x: 0, y: 0 },
+      data: { label: "Session broker", zone: "sra_dmz_net", networks: ["sra_dmz_net"] },
+    });
+    const { nodes, edges } = buildStyledGraph(graph, [], { policyDim: true, traffic: false, iec62443 });
+    const vendor = nodes.find((n) => n.id === "zone-boundary-vendor_net")!;
+    const sra = nodes.find((n) => n.id === "zone-boundary-sra_dmz_net")!;
+    const ot = nodes.find((n) => n.id === "zone-boundary-ot_ops_net")!;
+    const axis = iec62443 ? "y" : "x";
+    // Adjacent Level 3.5 zones share a Purdue row, not an extra tier.
+    expect(sra.position[axis]).toBeGreaterThanOrEqual(vendor.position[axis]);
+    expect(sra.position[axis]).toBeLessThan(ot.position[axis]);
+    expect(sra.data.label).toContain("Secure Remote Access DMZ");
+    expect(nodes.find((n) => n.id === "sra-broker-1")?.data.nodeType).toBe("sra_broker");
+    expect(edges.find((e) => e.id === "fw-to-sra_dmz_net")?.data.zoneMeta.role).toBe("lan4");
+  });
   it.each([euFixture, usFixture])("uses package-authored Purdue labels and optional targets for $networks.0.name", (fixture) => {
     const graph = structuredClone(fixture) as LabGraph;
     // Neither labels nor targets can be inferred from familiar zone IDs.

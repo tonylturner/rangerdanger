@@ -195,8 +195,74 @@ describe("Execute Step command log", () => {
       expect(execute).toHaveBeenCalledWith(authored.package_id, authored.id, 0, undefined);
       expect(line.classList.contains("text-amber-400")).toBe(true);
       expect(line.textContent).not.toContain("BLOCKED");
-      expect(loadProgress(scope, authored).cmdLog).toEqual([line.textContent]);
+      await waitFor(() => expect(loadProgress(scope, authored).cmdLog).toEqual([line.textContent]));
       expect(loadProgress(scope, authored).completedStepIds).toEqual([]);
+    } finally { tree.close(); }
+  });
+});
+
+describe("firewall apply revision receipt", () => {
+  const firewallScenario: Scenario = {
+    ...scenario,
+    steps: [{
+      id: "apply", title: "Apply Improved", description: "",
+      action: { type: "firewall", config: "improved" },
+    }],
+  };
+
+  async function renderFirewallReceipt(receipt: {
+    applyId: string;
+    protection: string;
+    runningRevision?: string;
+  }) {
+    vi.spyOn(api, "executeScenarioStep").mockResolvedValue({
+      step_index: 0,
+      step_title: "Apply Improved",
+      action_type: "firewall",
+      success: true,
+      containd: receipt,
+      results: [{
+        action: "Set policy",
+        success: true,
+        detail: "containd policy set to Brokered Vendor Access",
+        containd: receipt,
+      }],
+      timestamp: "2026-11-07T00:00:00Z",
+    });
+    const tree = renderStep(firewallScenario, "apply", EU);
+    fireEvent.click(tree.getByRole("button", { name: "Execute Step" }));
+    await tree.findByText("Execution Result — Step 1: Apply Improved — firewall");
+    return tree;
+  }
+
+  it("shows the reported running revision after the firewall action", async () => {
+    const tree = await renderFirewallReceipt({
+      applyId: "apply-1",
+      protection: "protecting",
+      runningRevision: "policy-revision-42",
+    });
+    try {
+      expect(tree.container.textContent).toContain(
+        "Set policy: containd policy set to Brokered Vendor Access · running revision: policy-revision-42",
+      );
+      const logEntry = "[SUCCEEDED] Step 1: Apply Improved — Set policy: containd policy set to Brokered Vendor Access · running revision: policy-revision-42";
+      await tree.findByText(logEntry);
+      await waitFor(() => expect(loadProgress(scope, firewallScenario).cmdLog).toContain(logEntry));
+    } finally { tree.close(); }
+  });
+
+  it("shows not reported when the receipt has no running revision", async () => {
+    const tree = await renderFirewallReceipt({
+      applyId: "apply-1",
+      protection: "protecting",
+    });
+    try {
+      expect(tree.container.textContent).toContain(
+        "Set policy: containd policy set to Brokered Vendor Access · running revision: not reported",
+      );
+      const logEntry = "[SUCCEEDED] Step 1: Apply Improved — Set policy: containd policy set to Brokered Vendor Access · running revision: not reported";
+      await tree.findByText(logEntry);
+      await waitFor(() => expect(loadProgress(scope, firewallScenario).cmdLog).toContain(logEntry));
     } finally { tree.close(); }
   });
 });

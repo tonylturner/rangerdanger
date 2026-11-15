@@ -1,0 +1,10 @@
+FROM guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f
+USER root
+ENV XDG_CACHE_HOME=/tmp/sra-font-cache
+RUN apk add --no-cache util-linux && addgroup -g 2172 sra-recordings && addgroup guacd sra-recordings && mkdir -p /var/lib/sra /recordings /tmp/sra-font-cache && chown 1000:1000 /var/lib/sra /tmp/sra-font-cache
+COPY services/sra/common/ /opt/sra/common/
+COPY services/sra/guacd/ /opt/sra/guacd/
+RUN chmod +x /opt/sra/common/*.sh /opt/sra/guacd/*.sh
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=24 CMD ["/opt/sra/guacd/health.sh"]
+ENTRYPOINT ["/opt/sra/guacd/entrypoint.sh"]
+CMD []

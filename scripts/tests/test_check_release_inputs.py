@@ -32,10 +32,19 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
         ("file", "iec104go/LICENSE"),
     }
     return {
+        **{
+            "rangerdanger-sra-" + name: {
+                ("dir", "services/sra/common"),
+                ("dir", "services/sra/" + name),
+            } | ({("file", "scripts/set-gateway.sh")} if name not in ("guacd", "postgres") else set())
+            for name in ("keycloak", "guacamole", "guacd", "postgres",
+                         "ziti-controller", "ziti-router", "ziti-host")
+        },
         "rangerdanger-backend": {("dir", "backend")},
         "rangerdanger-frontend": {("dir", "frontend")},
         "rangerdanger-kali": {("dir", "dnp3go")} | iec104_cli_sources,
         "rangerdanger-vendor-jump": {
+            ("file", "Dockerfile.sra-ziti-controller"),
             ("dir", "dnp3go"),
             ("file", "scripts/vendor-jump-services.sh"),
             ("file", "scripts/vendor-jump-x11vnc-service.sh"),
@@ -112,6 +121,15 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
 
 
 class CheckReleaseInputsTests(unittest.TestCase):
+    def test_vendor_ziti_cli_matches_controller_pinned_multiarch_base(self) -> None:
+        vendor = (ROOT / "Dockerfile.vendor-jump").read_text()
+        controller = (ROOT / "Dockerfile.sra-ziti-controller").read_text()
+        base = next(line.split()[1] for line in controller.splitlines()
+                    if line.startswith("FROM openziti/ziti-controller:"))
+        self.assertIn("FROM " + base + " AS ziti-cli", vendor)
+        self.assertIn("COPY --from=ziti-cli /usr/local/bin/ziti /usr/local/bin/ziti", vendor)
+        self.assertRegex(base, r":2\.0\.8@sha256:[0-9a-f]{64}$")
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

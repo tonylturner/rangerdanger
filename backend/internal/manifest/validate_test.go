@@ -310,6 +310,59 @@ func TestCrossModeAndCrossPackageFailures(t *testing.T) {
 	}
 }
 
+func TestCrossPackageSourceImageOwnership(t *testing.T) {
+	build := func(file string) map[string]any {
+		return map[string]any{"context": ".", "dockerfile": file}
+	}
+	service := func(image, file string) map[string]any {
+		result := map[string]any{"build": build(file)}
+		if image != "" {
+			result["image"] = image
+		}
+		return result
+	}
+	for _, tc := range []struct {
+		name string
+		a, b map[string]any
+		want string
+	}{
+		{"explicit shared image", map[string]any{"fuxa_hmi": service("rangerdanger-fuxa-hmi", "Dockerfile.fuxa-hmi")},
+			map[string]any{"fuxa_hmi": service("rangerdanger-fuxa-hmi", "Dockerfile.fuxa-hmi")}, ""},
+		{"default equals explicit", map[string]any{"sim": service("", "Dockerfile.sim")},
+			map[string]any{"sim": service("rangerdanger-sim", "Dockerfile.sim")}, ""},
+		{"different images", map[string]any{"sim": service("one", "Dockerfile.sim")},
+			map[string]any{"sim": service("two", "Dockerfile.sim")}, "inconsistent source image"},
+		{"different builds same key", map[string]any{"sim": service("same", "Dockerfile.one")},
+			map[string]any{"sim": service("same", "Dockerfile.two")}, "inconsistent source build"},
+		{"different keys same image different builds", map[string]any{"one": service("same", "Dockerfile.one")},
+			map[string]any{"two": service("same", "Dockerfile.two")}, `source image "same" has inconsistent source build`},
+		{"different keys default image collision", map[string]any{"one": service("", "Dockerfile.one")},
+			map[string]any{"two": service("rangerdanger-one", "Dockerfile.two")}, "inconsistent source build"},
+		{"different keys same image same build", map[string]any{"one": service("same", "Dockerfile.sim")},
+			map[string]any{"two": service("same", "Dockerfile.sim")}, ""},
+		{"collision within one package", map[string]any{
+			"one": service("same", "Dockerfile.one"), "two": service("same", "Dockerfile.two")},
+			map[string]any{}, "inconsistent source build"},
+		{"shared key missing build", map[string]any{"sim": service("same", "Dockerfile.sim")},
+			map[string]any{"sim": map[string]any{"image": "same"}}, "inconsistent source build"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := marshalObject(t, map[string]any{"name": RangeProject, "services": tc.a})
+			b := marshalObject(t, map[string]any{"name": RangeProject, "services": tc.b})
+			for _, pair := range [][2][]byte{{a, b}, {b, a}} {
+				err := CheckCrossPackage("a", pair[0], "b", pair[1])
+				if tc.want == "" {
+					if err != nil {
+						t.Fatal(err)
+					}
+				} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("error = %v, want %q", err, tc.want)
+				}
+			}
+		})
+	}
+}
+
 func TestPlatformCrossModeFixturesAndPaths(t *testing.T) {
 	root := fixturePath(t, fixtureRoot)
 	source := fixtureNormalized(t, root, "platform.source.json")

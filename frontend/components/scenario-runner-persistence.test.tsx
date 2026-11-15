@@ -115,12 +115,17 @@ describe.each(packageIds)("runner persistence in %s", (packageId) => {
 
   it("lab reset preserves historical outcome and student progress through refresh", async () => {
     vi.spyOn(api, "validateScenario").mockResolvedValue(result("PASS"));
-    const reset = vi.spyOn(api, "resetWorkshop").mockResolvedValue({ success: true, actions: [] });
+    const reset = vi.spyOn(api, "resetWorkshop").mockResolvedValue({
+      success: true,
+      containd: { applyId: "reset-1", protection: "protecting", runningRevision: "weak-reset-revision" },
+      actions: [],
+    });
     const tree = mount(packageId);
     markAndSkip(tree);
     await validate(tree, "PASS");
     fireEvent.click(tree.getByRole("button", { name: "Reset Lab" }));
     await waitFor(() => expect(loadProgress(scope(packageId), scenario).cmdLog.join(" ")).toContain("Lab restored"));
+    expect(loadProgress(scope(packageId), scenario).cmdLog.join(" ")).toContain("Containd running revision: weak-reset-revision");
     expect(reset).toHaveBeenCalledTimes(1);
     tree.refresh();
     expectProgress(tree, packageId);

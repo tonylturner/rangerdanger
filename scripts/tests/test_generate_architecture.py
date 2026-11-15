@@ -22,6 +22,28 @@ class ArchitectureTests(unittest.TestCase):
         cls.packages, cls.overlay = architecture.load(ROOT)
         cls.us = next(p for p in cls.packages if p.short == "us")
         cls.eu = next(p for p in cls.packages if p.short == "eu")
+        cls.sra = next(p for p in cls.packages if p.short == "us-sra-substation")
+
+    def test_third_package_has_its_own_identity_and_complete_regions(self):
+        self.assertEqual(len(self.packages), 3)
+        self.assertNotEqual(self.us.short, self.sra.short)
+        self.assertEqual(self.us.key, "us-dnp3-substation")
+        self.assertEqual(self.sra.topology_path, self.sra.directory / "topology.yml")
+        for kind in ("compose", "network", "wiring"):
+            self.assertIn(f"{kind}-{self.sra.short}", self.rendered)
+        self.assertIn("sra_dmz_net", self.rendered[f"wiring-{self.sra.short}"])
+        self.assertIn("Secure Remote Access DMZ", self.rendered[f"network-{self.sra.short}"])
+        self.assertNotIn("sra_keycloak", self.rendered["compose-us"])
+        routes = architecture.routes(ROOT, self.sra)
+        self.assertNotIn(("proxy", "openplc:8080"), routes)
+        self.assertNotIn(("proxy", "corp_ws:3000"), routes)
+        self.assertNotIn(("proxy", "eng_workstation:3000"), routes)
+        self.assertFalse(any(host.startswith("sra_") for kind, host in routes if kind == "proxy"))
+        node = lambda key: architecture.ident(self.sra.short, "compose", key)
+        for source, target in (("sra_guacamole", "sra_keycloak"), ("sra_guacd", "sra_ziti_router"),
+                               ("sra_ziti_host", "sra_ziti_controller")):
+            self.assertIn(architecture.edge(node(source), node(target), "service_healthy", "-.->"),
+                          self.rendered[f"compose-{self.sra.short}"])
 
     def test_deterministic_and_repository_is_current(self):
         self.assertEqual(self.rendered, architecture.render(ROOT))
@@ -262,7 +284,8 @@ class ArchitectureTests(unittest.TestCase):
         self.assertNotIn("^/", self.rendered["request-flow"])
         self.assertNotIn("/api/projectData", self.rendered["request-flow"])
         self.assertIn("+", self.rendered["request-flow"])
-        self.assertIn("fuxa_hmi:1881 (US)", self.rendered["request-flow"])
+        self.assertIn("fuxa_hmi:1881", self.rendered["request-flow"])
+        self.assertNotIn("fuxa_hmi:1881 (US)", self.rendered["request-flow"])
         self.assertIn("openplc_eu:8080 (EU)", self.rendered["request-flow"])
 
     def test_terminal_counts_and_request_nodes_are_connected(self):
