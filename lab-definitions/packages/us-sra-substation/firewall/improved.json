@@ -203,7 +203,6 @@
         "destZones": [
           "lan1"
         ],
-        "protocols": [],
         "ics": {},
         "action": "DENY",
         "log": true
@@ -217,7 +216,6 @@
         "destZones": [
           "lan2"
         ],
-        "protocols": [],
         "ics": {},
         "action": "DENY",
         "log": true
@@ -520,7 +518,6 @@
         "destZones": [
           "lan4"
         ],
-        "protocols": [],
         "ics": {},
         "action": "DENY",
         "log": true

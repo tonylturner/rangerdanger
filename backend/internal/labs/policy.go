@@ -70,6 +70,82 @@ func LintPolicy(file string, data []byte, icsRules string) error {
 	return fmt.Errorf("%s", strings.Join(problems, "; "))
 }
 
+// lintEmptyFirewallRuleArrays rejects empty arrays in any field of a package
+// firewall rule. containd drops empty arrays when storing policies, preventing
+// the stored policy from matching its package file.
+func lintEmptyFirewallRuleArrays(packageID, policyName string, data []byte) error {
+	var document map[string]any
+	if err := json.Unmarshal(data, &document); err != nil {
+		return fmt.Errorf("package %s policy %s: invalid JSON: %w", packageID, policyName, err)
+	}
+	firewall, ok := document["firewall"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	rules, ok := firewall["rules"].([]any)
+	if !ok {
+		return nil
+	}
+
+	var problems []string
+	for _, value := range rules {
+		rule, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		ruleID, ok := rule["id"].(string)
+		if !ok || strings.TrimSpace(ruleID) == "" {
+			ruleID = "<missing>"
+		}
+		fields := make([]string, 0, len(rule))
+		for field := range rule {
+			fields = append(fields, field)
+		}
+		sort.Strings(fields)
+		for _, field := range fields {
+			for _, path := range emptyArrayPaths(rule[field], "/"+escapePointer(field)) {
+				problems = append(problems, fmt.Sprintf(
+					"package %s policy %s rule %q field %q: containd drops empty arrays, so the policy can never be recognised",
+					packageID, policyName, ruleID, path,
+				))
+			}
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(problems, "; "))
+}
+
+// emptyArrayPaths returns every JSON pointer below value that names an empty
+// array. Map keys are sorted so policy lint diagnostics are deterministic.
+func emptyArrayPaths(value any, pointer string) []string {
+	switch value := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		var paths []string
+		for _, key := range keys {
+			paths = append(paths, emptyArrayPaths(value[key], pointer+"/"+escapePointer(key))...)
+		}
+		return paths
+	case []any:
+		if len(value) == 0 {
+			return []string{pointer}
+		}
+		var paths []string
+		for index, item := range value {
+			paths = append(paths, emptyArrayPaths(item, fmt.Sprintf("%s/%d", pointer, index))...)
+		}
+		return paths
+	default:
+		return nil
+	}
+}
+
 // monitorPolicyICS requires an explicit monitor predicate, not inherited enforce.
 func monitorPolicyICS(raw json.RawMessage) bool {
 	var predicate map[string]json.RawMessage
@@ -336,6 +412,10 @@ func resolvePolicies(definitionsDir, packageDir string, declared map[string]Poli
 		}
 		if err := LintPolicy(relative, data, icsRules); err != nil {
 			problems = append(problems, fmt.Sprintf("policy %s: %v", name, err))
+			continue
+		}
+		if err := lintEmptyFirewallRuleArrays(filepath.Base(packageDir), name, data); err != nil {
+			problems = append(problems, err.Error())
 			continue
 		}
 		resolved[name] = relative

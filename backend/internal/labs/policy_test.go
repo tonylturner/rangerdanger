@@ -204,6 +204,32 @@ func TestLoadEUPackageRejectsICSKeys(t *testing.T) {
 	}
 }
 
+func TestLoadEUPackageRejectsEmptyFirewallRuleArrays(t *testing.T) {
+	definitions, dir := copyEUDefinitions(t)
+	writeDefinition(t, filepath.Join(dir, "firewall", "improved.json"), `{
+		"interfaces": [{"name": "lan3", "zone": "lan3"}],
+		"firewall": {"rules": [
+			{"id": "deny-vendor-to-ot", "action": "DENY", "protocols": []}
+		]}
+	}`)
+	_, err := seedLoader(definitions).Load()
+	if err == nil {
+		t.Fatal("Load() = nil, want empty firewall rule array rejected")
+	}
+	for _, want := range []string{
+		"package eu-iec104-substation",
+		"policy improved",
+		`rule "deny-vendor-to-ot"`,
+		`field "/protocols"`,
+		"containd drops empty arrays",
+		"policy can never be recognised",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load() = %q, want %q", err, want)
+		}
+	}
+}
+
 func TestReadDefinitionNeedsNoValidators(t *testing.T) {
 	definitions, dir := copyEUDefinitions(t)
 	// A validator the loader would reject without a registry entry.
