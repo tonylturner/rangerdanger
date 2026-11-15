@@ -245,6 +245,9 @@ describe("firewall apply revision receipt", () => {
       expect(tree.container.textContent).toContain(
         "Set policy: containd policy set to Brokered Vendor Access · running revision: policy-revision-42",
       );
+      const logEntry = "[SUCCEEDED] Step 1: Apply Improved — Set policy: containd policy set to Brokered Vendor Access · running revision: policy-revision-42";
+      await tree.findByText(logEntry);
+      await waitFor(() => expect(loadProgress(scope, firewallScenario).cmdLog).toContain(logEntry));
     } finally { tree.close(); }
   });
 
@@ -257,6 +260,9 @@ describe("firewall apply revision receipt", () => {
       expect(tree.container.textContent).toContain(
         "Set policy: containd policy set to Brokered Vendor Access · running revision: not reported",
       );
+      const logEntry = "[SUCCEEDED] Step 1: Apply Improved — Set policy: containd policy set to Brokered Vendor Access · running revision: not reported";
+      await tree.findByText(logEntry);
+      await waitFor(() => expect(loadProgress(scope, firewallScenario).cmdLog).toContain(logEntry));
     } finally { tree.close(); }
   });
 });

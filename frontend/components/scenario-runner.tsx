@@ -282,7 +282,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       // Log results
       for (const r of result.results) {
         const label = r.success ? "SUCCEEDED" : "NOT MET";
-        const msg = `[${label}] Step ${idx + 1}: ${scenario.steps[idx]?.title} — ${r.action}: ${r.impact || r.detail}`;
+        const revision = result.action_type === "firewall"
+          ? ` · running revision: ${r.containd?.runningRevision || "not reported"}`
+          : "";
+        const msg = `[${label}] Step ${idx + 1}: ${scenario.steps[idx]?.title} — ${r.action}: ${r.impact || r.detail}${revision}`;
         setCmdLog((prev) => [msg, ...prev].slice(0, 100));
       }
 
