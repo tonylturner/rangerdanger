@@ -42,7 +42,7 @@
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.6",
     "jsdom": "28.1.0",
-    "playwright-core": "1.65.0",
+    "playwright-core": "1.65.1",
     "postcss": "8.5.32",
     "tailwindcss": "4.3.5",
     "typescript": "5.9.3",
