@@ -93,7 +93,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # source against alpine's libmodbus. Resulting binary links against
 # libmodbus.so dynamically, so the final rtac-sim stage installs the
 # libmodbus runtime package alongside it.
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS mbpoll-builder
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS mbpoll-builder
 RUN apk add --no-cache git cmake make gcc musl-dev libmodbus-dev pkgconfig
 RUN git init /src \
  && git -C /src remote add origin https://github.com/epsilonrt/mbpoll \
@@ -103,7 +103,7 @@ WORKDIR /src
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
  && cmake --build build
 
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS sim-base
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS sim-base
 
 # iproute2: ip(8) for route manipulation in harden scripts
 # iptables: FORWARD DROP policy and per-interface INPUT filtering in rtac-harden.sh
