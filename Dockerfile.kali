@@ -16,7 +16,7 @@ COPY iec104go/go.mod iec104go/*.go ./
 COPY iec104go/cmd/iec104cmd/ ./cmd/iec104cmd/
 RUN go build -trimpath -o /out/iec104cmd ./cmd/iec104cmd
 
-FROM kalilinux/kali-rolling:latest@sha256:7997e0581c4f5c185cfe6773d5cae8fcc7c6b79798726ccaabf843af4bcd2013
+FROM kalilinux/kali-rolling:latest@sha256:1ff4a2be3849333687b3ed2b31bb5af0cd1b7c0a11ec7713feb5abe5a6b2795c
 
 # Avoid prompts during package installation.
 ENV DEBIAN_FRONTEND=noninteractive
